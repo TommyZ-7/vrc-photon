@@ -7,7 +7,6 @@
 
 use std::path::Path;
 
-use gpui_kit::component::IconName;
 use gpui_kit::component::WindowExt;
 use gpui_kit::component::menu::{PopupMenu, PopupMenuItem};
 use gpui_kit::*;
@@ -182,8 +181,7 @@ impl PhotoApp {
             menu.action_context(action_context)
                 .min_w(px(252.))
                 .open_animation(CONTEXT_MENU_OPEN, px(CONTEXT_MENU_SLIDE))
-                .submenu_with_icon(
-                    Some(IconName::Minimize.into()),
+                .submenu(
                     tr!("photos.compress"),
                     window,
                     cx,
@@ -193,7 +191,6 @@ impl PhotoApp {
                         let clipboard_label = clipboard_label.clone();
                         menu.item(
                             PopupMenuItem::new(tr!("photos.context_menu.compress_folder"))
-                                .icon(IconName::FolderOpen)
                                 .on_click(move |_, window, cx| {
                                     if let Some(app) = app_for_folder.upgrade() {
                                         app.update(cx, |app, cx| {
@@ -204,7 +201,6 @@ impl PhotoApp {
                         )
                         .item(
                             PopupMenuItem::new(clipboard_label)
-                                .icon(IconName::Copy)
                                 .disabled(!enablement.compress_clipboard)
                                 .on_click(move |_, _window, cx| {
                                     if let Some(app) = app_for_clipboard.upgrade() {
@@ -218,7 +214,6 @@ impl PhotoApp {
                 )
                 .item(
                     PopupMenuItem::new(discord_label)
-                        .icon(IconName::Globe)
                         .disabled(!enablement.discord)
                         .on_click(move |_, _window, cx| {
                             if let Some(app) = app_for_discord.upgrade() {
@@ -230,7 +225,6 @@ impl PhotoApp {
                 )
                 .item(
                     PopupMenuItem::new(ai_label)
-                        .icon(IconName::Bot)
                         .disabled(!enablement.ai)
                         .on_click(move |_, _window, cx| {
                             if let Some(app) = app_for_ai.upgrade() {
@@ -241,43 +235,40 @@ impl PhotoApp {
                         }),
                 )
                 .separator()
+                .item(PopupMenuItem::new(tr!("photos.tag_edit.menu")).on_click(
+                    move |_, window, cx| {
+                        if let Some(app) = app_for_tag.upgrade() {
+                            app.update(cx, |app, cx| {
+                                app.open_tag_edit(window, cx);
+                            });
+                        }
+                    },
+                ))
                 .item(
-                    PopupMenuItem::new(tr!("photos.tag_edit.menu"))
-                        .icon(IconName::Asterisk)
-                        .on_click(move |_, window, cx| {
-                            if let Some(app) = app_for_tag.upgrade() {
-                                app.update(cx, |app, cx| {
-                                    app.open_tag_edit(window, cx);
-                                });
-                            }
-                        }),
-                )
-                .item(
-                    PopupMenuItem::new(tr!("photos.context_menu.copy_path"))
-                        .icon(IconName::Copy)
-                        .on_click(move |_, _window, cx| {
+                    PopupMenuItem::new(tr!("photos.context_menu.copy_path")).on_click(
+                        move |_, _window, cx| {
                             if let Some(app) = app_for_copy.upgrade() {
                                 app.update(cx, |app, cx| {
                                     app.copy_selected_paths(&copy_ids, cx);
                                 });
                             }
-                        }),
+                        },
+                    ),
                 )
                 .item(
-                    PopupMenuItem::new(tr!("photos.action.open_folder"))
-                        .icon(IconName::FolderOpen)
-                        .on_click(move |_, _window, cx| {
+                    PopupMenuItem::new(tr!("photos.action.open_folder")).on_click(
+                        move |_, _window, cx| {
                             if let Some(app) = app_for_open.upgrade() {
                                 app.update(cx, |app, cx| {
                                     app.open_folder_for_photo(anchor_photo, cx);
                                 });
                             }
-                        }),
+                        },
+                    ),
                 )
                 .separator()
                 .item(
                     PopupMenuItem::new(tr!("photos.action.trash"))
-                        .icon(IconName::Delete)
                         .action(Box::new(TrashSelectedPhotos)),
                 )
         });
@@ -537,6 +528,25 @@ mod tests {
     fn context_menu_open_duration_stays_within_the_issue_window() {
         assert!(CONTEXT_MENU_OPEN >= Duration::from_millis(100));
         assert!(CONTEXT_MENU_OPEN <= Duration::from_millis(150));
+    }
+
+    #[test]
+    fn context_menu_items_stay_text_only() {
+        let source = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/app/context_menu.rs"
+        ))
+        .expect("read the context menu source");
+        let forbidden_icon = concat!(".icon", "(");
+        let forbidden_submenu = concat!("submenu_with_", "icon");
+        assert!(
+            !source.contains(forbidden_icon),
+            "the photo context menu must stay text-only; remove icon calls"
+        );
+        assert!(
+            !source.contains(forbidden_submenu),
+            "the photo context menu must stay text-only; use submenu() instead"
+        );
     }
 
     #[test]
