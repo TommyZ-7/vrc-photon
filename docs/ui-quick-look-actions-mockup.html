@@ -1,0 +1,795 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VRC PhotoN — クイックルック 操作ボタン行 モック (#430)</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%230d1420'/%3E%3Ccircle cx='16' cy='16' r='7' fill='none' stroke='%238bcbff' stroke-width='2'/%3E%3C/svg%3E">
+<style>
+  :root {
+    color-scheme: dark;
+    --font: "Inter", "Noto Sans JP", "Hiragino Sans", "Yu Gothic UI", system-ui, -apple-system, sans-serif;
+    --mono: "SFMono-Regular", "Cascadia Code", "Cascadia Mono", Consolas, "Liberation Mono", monospace;
+
+    --text: #eef4ff;
+    --muted: #a8b4ca;
+    --muted-2: #7f8ba3;
+    --faint: #5e6a81;
+    --accent: #8bcbff;
+    --accent-2: #7f92ff;
+    --blue: #5aa9ff;
+    --amber: #f4c878;
+    --rose: #ff94a8;
+    --red: #ff94a8;
+    --green: #7ee2b8;
+
+    --line: rgba(255, 255, 255, 0.105);
+    --line-strong: rgba(255, 255, 255, 0.17);
+    --line-soft: rgba(255, 255, 255, 0.065);
+
+    --panel-sidebar: #0b111b;
+    --panel-sidebar-deep: #080d15;
+    --panel-header: #101725;
+    --panel-card: #0d1420;
+    --panel-inner: #111927;
+    --panel-inner-deep: #0c1320;
+    --panel-deep: #0a1019;
+    --panel-raised: #172132;
+
+    --r-window: 28px;
+    --r-card: 22px;
+    --r-inner: 17px;
+    --ease: cubic-bezier(0.22, 0.8, 0.24, 1);
+  }
+
+  * { box-sizing: border-box; }
+  html { overflow-x: hidden; }
+  body {
+    margin: 0;
+    min-width: 320px;
+    background: #05070d;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -2;
+    background:
+      radial-gradient(ellipse 58% 54% at 10% 2%, rgba(54, 107, 255, 0.28), transparent 66%),
+      radial-gradient(ellipse 46% 52% at 92% 6%, rgba(255, 86, 181, 0.12), transparent 68%),
+      radial-gradient(ellipse 52% 48% at 64% 104%, rgba(30, 202, 178, 0.10), transparent 68%),
+      linear-gradient(140deg, #04060c 0%, #0a0f1e 44%, #060811 100%);
+  }
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    opacity: 0.03;
+    pointer-events: none;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
+    mix-blend-mode: overlay;
+  }
+
+  button, input { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  a { color: inherit; }
+  ::selection { background: rgba(139, 203, 255, 0.28); }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 99px; background: rgba(255,255,255,.14); background-clip: padding-box; }
+  :focus-visible { outline: 2px solid rgba(139, 203, 255, 0.78); outline-offset: 2px; }
+
+  .icon {
+    width: 18px; height: 18px; flex: 0 0 auto;
+    fill: none; stroke: currentColor; stroke-width: 1.8;
+    stroke-linecap: round; stroke-linejoin: round;
+  }
+  .icon-sm { width: 14px; height: 14px; }
+  kbd {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 18px; height: 17px; padding: 0 4px;
+    border: 1px solid var(--line); border-radius: 4px;
+    background: rgba(255,255,255,.035); color: var(--faint);
+    font-family: var(--mono); font-size: 8px; line-height: 1; white-space: nowrap;
+  }
+
+  /* ---------- page ---------- */
+  .page { width: min(1360px, calc(100% - 48px)); margin: 0 auto; padding: 38px 0 64px; }
+  .page-head {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto;
+    gap: 28px; align-items: end; padding-bottom: 24px;
+  }
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 8px;
+    color: var(--accent); font-size: 11px; font-weight: 650;
+    letter-spacing: 0.02em; margin-bottom: 10px;
+  }
+  .eyebrow::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 12px rgba(139,203,255,.8); }
+  h1 { margin: 0; font-size: clamp(30px, 3.6vw, 46px); line-height: 1.12; letter-spacing: -0.035em; font-weight: 680; }
+  .lede { margin: 12px 0 0; max-width: 760px; color: var(--muted); font-size: 13px; line-height: 1.75; }
+  .lede strong { color: var(--text); font-weight: 600; }
+  .head-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
+  .issue-stack { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+  .issue-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 25px; padding: 0 9px; border: 1px solid var(--line);
+    border-radius: 999px; background: rgba(255,255,255,.025);
+    color: var(--muted); font-family: var(--mono); font-size: 9px;
+  }
+  .issue-chip b { color: var(--text); font-weight: 600; }
+  .issue-chip.recommended { border-color: rgba(126,226,184,.24); background: rgba(126,226,184,.06); color: #bff4e2; }
+  .head-note { color: var(--faint); font-size: 10px; }
+
+  /* ---------- toolbar ---------- */
+  .stage-toolbar {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 10px 0 12px;
+  }
+  .state-switch { display: inline-flex; padding: 3px; border: 1px solid var(--line); border-radius: 999px; background: rgba(8,13,21,.72); }
+  .state-btn {
+    height: 29px; padding: 0 13px; border: 0; border-radius: 999px;
+    background: transparent; color: var(--dim, #7f8ba3); font-size: 10px; font-weight: 550;
+    transition: background .18s var(--ease), color .18s var(--ease);
+  }
+  .state-btn span { margin-left: 5px; color: var(--faint); font-family: var(--mono); font-size: 8px; }
+  .state-btn:hover { color: var(--text); }
+  .state-btn.active { background: rgba(90,169,255,.16); color: #dceeff; box-shadow: inset 0 0 0 1px rgba(90,169,255,.24); }
+  .state-btn.active span { color: #9bcfff; }
+  .lang-switch { display: inline-flex; padding: 3px; border: 1px solid var(--line); border-radius: 999px; background: rgba(8,13,21,.72); }
+  .lang-btn { height: 29px; padding: 0 11px; border: 0; border-radius: 999px; background: transparent; color: var(--faint); font-size: 10px; }
+  .lang-btn.active { background: rgba(255,255,255,.07); color: var(--text); }
+  .toolbar-btn {
+    display: inline-flex; align-items: center; gap: 6px; height: 29px; padding: 0 10px;
+    border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,.025);
+    color: var(--muted); font-size: 10px;
+  }
+  .toolbar-btn:hover { border-color: var(--line-strong); color: var(--text); background: rgba(255,255,255,.05); }
+  .guide-toggle { display: inline-flex; align-items: center; gap: 7px; color: var(--faint); font-size: 10px; cursor: pointer; }
+  .guide-toggle input { width: 13px; height: 13px; accent-color: var(--blue); }
+  .measure {
+    margin-left: auto; display: inline-flex; align-items: center; gap: 7px;
+    height: 29px; padding: 0 10px; border: 1px solid var(--line);
+    border-radius: 8px; background: rgba(8,13,21,.7);
+    color: var(--faint); font-family: var(--mono); font-size: 9px; white-space: nowrap;
+  }
+  .measure b { color: var(--muted); font-weight: 500; }
+  .measure .over { color: var(--rose); }
+  .measure .ok { color: var(--green); }
+
+  /* ---------- stage ---------- */
+  .stage-scroll { overflow-x: auto; padding: 4px 0 12px; }
+  .app-window {
+    position: relative; width: 1280px; height: 820px; margin: 0 auto; overflow: hidden;
+    border: 1px solid rgba(255,255,255,.13); border-radius: var(--r-window);
+    background: #05080e;
+    box-shadow: 0 50px 130px rgba(0,0,0,.62), 0 12px 36px rgba(0,0,0,.38), inset 0 1px 0 rgba(255,255,255,.08);
+  }
+  .viewer { position: absolute; inset: 0; display: flex; flex-direction: column; background: #060a11; }
+  .viewer-backdrop {
+    position: absolute; inset: 0; z-index: 0;
+    background:
+      radial-gradient(ellipse 58% 54% at 38% 44%, rgba(90, 169, 255, 0.10), transparent 66%),
+      radial-gradient(ellipse 40% 44% at 82% 72%, rgba(255, 148, 168, 0.06), transparent 70%),
+      linear-gradient(140deg, #060a11 0%, #0a1320 52%, #06090f 100%);
+  }
+
+  .topbar {
+    position: relative; z-index: 3; height: 56px; flex-shrink: 0;
+    display: flex; align-items: center; gap: 10px; padding: 0 20px;
+    background: rgba(16, 23, 37, 0.60);
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .tb-btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    height: 28px; min-width: 28px; padding: 0 9px;
+    border: 1px solid rgba(255,255,255,.10); border-radius: 8px;
+    background: rgba(255,255,255,.04); color: var(--muted-2);
+    font-size: 11px; font-weight: 500; white-space: nowrap;
+  }
+  .tb-btn:hover { color: var(--text); border-color: rgba(255,255,255,.17); background: rgba(255,255,255,.07); }
+  .tb-btn.icon-only { width: 28px; padding: 0; }
+  .tb-btn.primary { border-color: rgba(139,203,255,.25); background: rgba(139,203,255,.10); color: var(--accent); }
+  .topbar .file {
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: var(--muted); font-size: 12px;
+  }
+  .zoom { color: var(--muted); font-family: var(--mono); font-size: 11px; }
+
+  .viewer-content { position: relative; z-index: 2; flex: 1; min-height: 0; display: flex; }
+  .image-area {
+    position: relative; flex: 1; min-width: 0; min-height: 0; overflow: hidden;
+    display: flex; align-items: center; justify-content: center; padding: 24px;
+  }
+  .image-area::after {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: radial-gradient(ellipse 58% 58% at 50% 46%, transparent 58%, rgba(0,0,0,.22) 100%);
+  }
+  .photo-frame {
+    position: relative; width: 852px; height: 568px; flex: 0 0 auto;
+    overflow: hidden; border-radius: 10px;
+    box-shadow: 0 26px 70px rgba(0,0,0,.48), 0 0 0 1px rgba(255,255,255,.05);
+  }
+  .photo-frame::after {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(180deg, rgba(255,255,255,.035), transparent 24%, transparent 74%, rgba(0,0,0,.22));
+  }
+  .scene-sunset { background: linear-gradient(180deg, #301a2f 0%, #8a3e42 48%, #e08b55 72%, #1a1725 100%); }
+  .scene-sunset::before {
+    content: ""; position: absolute; width: 34%; aspect-ratio: 1; left: 33%; top: 27%; border-radius: 50%;
+    background: radial-gradient(circle, rgba(255,222,174,.95), rgba(255,168,102,.45) 48%, transparent 72%);
+    filter: blur(1px);
+  }
+  .scene-sunset::after {
+    content: ""; position: absolute; width: 100%; height: 36%; left: 0; bottom: 0;
+    background: linear-gradient(180deg, transparent, rgba(7,9,17,.92)), repeating-linear-gradient(90deg, rgba(9,12,20,.92) 0 18px, transparent 18px 32px);
+    clip-path: polygon(0 45%, 10% 45%, 10% 22%, 20% 22%, 20% 58%, 31% 58%, 31% 34%, 44% 34%, 44% 66%, 57% 66%, 57% 18%, 69% 18%, 69% 52%, 81% 52%, 81% 30%, 91% 30%, 91% 60%, 100% 60%, 100% 100%, 0 100%);
+  }
+
+  /* ---------- details panel ---------- */
+  .details-panel { width: 380px; flex-shrink: 0; padding: 14px; }
+  .details-card {
+    position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0;
+    overflow: hidden; border-radius: 17px; border: 0;
+    background: var(--panel-deep);
+    box-shadow:
+      0 18px 44px rgba(0,0,0,.42),
+      inset 0 0 0 1px var(--line-soft),
+      inset 0 1px 0 rgba(255,255,255,.045);
+  }
+  .details-body {
+    position: relative; flex: 1; min-height: 0; min-width: 0;
+    padding: 16px; display: flex; flex-direction: column; gap: 12px;
+    overflow-y: auto; overflow-x: hidden;
+  }
+  .details-body::-webkit-scrollbar { width: 6px; }
+  .details-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,.10); border-radius: 99px; }
+
+  .photo-title {
+    min-width: 0; overflow: hidden; color: var(--text);
+    font-size: 24px; line-height: 1.2; font-weight: 600; letter-spacing: -0.02em;
+    text-overflow: ellipsis; white-space: nowrap;
+  }
+  .date-row { display: flex; align-items: center; gap: 8px; }
+  .date-row .date {
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: var(--muted-2); font-family: var(--mono); font-size: 10px;
+  }
+  .meta-list { display: flex; flex-direction: column; gap: 4px; }
+  .meta-row { display: flex; gap: 8px; font-size: 10px; line-height: 1.5; }
+  .meta-row .label { width: 86px; flex-shrink: 0; color: var(--muted-2); }
+  .meta-row .value { flex: 1; min-width: 0; overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
+  .section { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .section-label { color: var(--muted-2); font-size: 10px; font-weight: 600; }
+  .pill-row { display: flex; flex-wrap: wrap; gap: 4px; }
+  .pill {
+    display: inline-flex; align-items: center; height: 19px; padding: 0 7px;
+    border-radius: 99px; border: 1px solid rgba(255,255,255,.07);
+    background: rgba(255,255,255,.059); color: var(--muted); font-size: 10px;
+  }
+  .tag {
+    display: inline-flex; align-items: center; gap: 3px; height: 19px; padding: 0 7px;
+    border-radius: 99px; border: 1px solid rgba(255,255,255,.07);
+    background: rgba(255,255,255,.059); color: var(--muted); font-size: 10px;
+  }
+  .tag b { color: var(--faint); font-weight: 400; }
+  .input-row { display: flex; align-items: center; gap: 8px; }
+  .tag-input {
+    flex: 1; min-width: 0; height: 28px; padding: 0 10px;
+    border: 1px solid var(--line); border-radius: 8px;
+    background: rgba(0,0,0,.18); color: var(--muted); font-size: 10px;
+  }
+  .tag-input::placeholder { color: var(--faint); }
+  .tag-input:focus { outline: none; border-color: rgba(139,203,255,.45); }
+  .ai-block { display: flex; flex-direction: column; gap: 6px; }
+  .ai-facts { display: flex; gap: 6px; }
+  .ai-fact { color: var(--muted-2); font-size: 9px; }
+  .ai-fact b { color: var(--muted); font-weight: 500; }
+  .retag-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    height: 28px; width: 100%; border-radius: 8px;
+    border: 1px solid rgba(139,203,255,.25); background: rgba(139,203,255,.10);
+    color: var(--accent); font-size: 11px; font-weight: 500;
+  }
+  .retag-btn:hover { background: rgba(139,203,255,.16); border-color: rgba(139,203,255,.38); }
+  .history-line { display: flex; gap: 8px; color: var(--muted); font-size: 10px; }
+  .history-line .mono { font-family: var(--mono); color: var(--muted-2); }
+  .history-line .path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--faint); }
+  .note-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .note-box {
+    padding: 8px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--panel-card); color: var(--muted); font-size: 10px; line-height: 1.5;
+  }
+
+  /* ---------- action row (the subject) ---------- */
+  .actions-wrap { position: relative; min-width: 0; }
+  .actions { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .action-btn {
+    display: inline-flex; align-items: center; justify-content: flex-start;
+    height: 28px; padding: 0 10px; border-radius: 8px;
+    border: 1px solid; background: transparent;
+    font-size: 11px; font-weight: 500; line-height: 1; white-space: nowrap;
+    transition: background .15s var(--ease), color .15s var(--ease), border-color .15s var(--ease);
+  }
+  .action-btn.neutral { border-color: rgba(255,255,255,.063); background: rgba(255,255,255,.031); color: var(--muted-2); }
+  .action-btn.neutral:hover { border-color: rgba(255,255,255,.12); background: rgba(255,255,255,.075); color: var(--text); }
+  .action-btn.primary { border-color: rgba(139,203,255,.25); background: rgba(139,203,255,.10); color: var(--accent); }
+  .action-btn.primary:hover { border-color: var(--accent); background: var(--accent); color: var(--text); }
+  .action-btn.danger { border-color: rgba(255,148,168,.40); background: rgba(255,148,168,.15); color: var(--red); }
+  .action-btn.danger:hover { border-color: var(--red); background: rgba(255,148,168,.24); color: var(--text); }
+  .action-btn:focus-visible { outline: 2px solid rgba(139,203,255,.78); outline-offset: 2px; }
+
+  .state-wrap .actions { flex-wrap: wrap; }
+  .state-grid .actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .state-grid .actions .action-btn { width: 100%; justify-content: center; }
+
+  .actions-badge {
+    position: absolute; right: 0; top: -20px;
+    display: inline-flex; align-items: center; gap: 5px;
+    height: 17px; padding: 0 6px; border-radius: 99px;
+    font-family: var(--mono); font-size: 8px; white-space: nowrap;
+    pointer-events: none;
+  }
+  .actions-badge.over { border: 1px solid rgba(255,148,168,.36); background: rgba(255,148,168,.12); color: #ffc1cd; }
+  .actions-badge.ok { border: 1px solid rgba(126,226,184,.30); background: rgba(126,226,184,.10); color: #bff4e2; }
+  .state-wrap .actions-badge.over, .state-grid .actions-badge.over { display: none; }
+  .state-current .actions-badge.ok { display: none; }
+
+  /* ---------- guides ---------- */
+  .content-guide {
+    display: none; position: absolute; left: 16px; right: 16px; top: 0; bottom: 0;
+    z-index: 6; pointer-events: none;
+    border-left: 1px dashed rgba(255,148,168,.42);
+    border-right: 1px dashed rgba(255,148,168,.42);
+  }
+  .show-guides .content-guide { display: block; }
+  .content-guide span {
+    position: absolute; right: 2px; top: 2px;
+    padding: 1px 4px; border-radius: 3px;
+    background: rgba(5,8,14,.78); color: rgba(255,193,205,.8);
+    font-family: var(--mono); font-size: 7px; letter-spacing: .02em;
+  }
+  .show-guides .state-current .actions { outline: 1px dashed rgba(255,148,168,.42); outline-offset: 3px; }
+
+  /* ---------- toast ---------- */
+  .mock-toast {
+    position: absolute; left: 50%; bottom: 24px; z-index: 20;
+    transform: translate(-50%, 8px); opacity: 0; pointer-events: none;
+    display: inline-flex; align-items: center; gap: 8px;
+    max-width: 520px; padding: 8px 12px;
+    border: 1px solid var(--line-strong); border-radius: 10px;
+    background: rgba(18,26,40,.94); color: var(--muted);
+    box-shadow: 0 16px 40px rgba(0,0,0,.48);
+    font-size: 10px; white-space: nowrap;
+    transition: opacity .18s var(--ease), transform .18s var(--ease);
+  }
+  .mock-toast.show { opacity: 1; transform: translate(-50%, 0); }
+  .mock-toast b { color: var(--text); font-weight: 600; }
+
+  /* ---------- notes / compare ---------- */
+  .compare-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 24px; }
+  .compare-card {
+    display: flex; flex-direction: column; gap: 12px; min-width: 0;
+    padding: 16px; border: 1px solid var(--line); border-radius: 16px;
+    background: rgba(13,20,32,.72);
+  }
+  .compare-card.recommended { border-color: rgba(126,226,184,.26); box-shadow: inset 0 1px 0 rgba(255,255,255,.035), 0 0 0 1px rgba(126,226,184,.08); }
+  .compare-head { display: flex; align-items: flex-start; gap: 8px; }
+  .compare-head h3 { margin: 0; font-size: 13px; font-weight: 650; }
+  .compare-head p { margin: 2px 0 0; color: var(--faint); font-size: 9px; }
+  .compare-badge { margin-left: auto; height: 19px; padding: 0 7px; display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 99px; color: var(--faint); font-family: var(--mono); font-size: 7.5px; white-space: nowrap; }
+  .compare-card.recommended .compare-badge { color: #bff4e2; border-color: rgba(126,226,184,.24); background: rgba(126,226,184,.06); }
+  .mini-frame {
+    position: relative; width: 100%; padding: 9px; border: 1px solid var(--line-soft);
+    border-radius: 10px; background: rgba(0,0,0,.16); overflow: hidden;
+  }
+  .mini-content { position: relative; width: 220px; max-width: 100%; }
+  .mini-boundary { position: absolute; top: -4px; bottom: -4px; right: 0; border-right: 1px dashed rgba(255,148,168,.45); }
+  .mini-row { display: flex; align-items: center; gap: 4px; }
+  .mini-row.wrap { flex-wrap: wrap; }
+  .mini-row.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
+  .mini-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    height: 18px; padding: 0 5px; border-radius: 5px; border: 1px solid;
+    font-size: 6.5px; line-height: 1; white-space: nowrap;
+  }
+  .mini-btn.neutral { border-color: rgba(255,255,255,.08); background: rgba(255,255,255,.04); color: var(--muted-2); }
+  .mini-btn.primary { border-color: rgba(139,203,255,.25); background: rgba(139,203,255,.10); color: var(--accent); }
+  .mini-btn.danger { border-color: rgba(255,148,168,.40); background: rgba(255,148,168,.15); color: var(--red); }
+  .mini-row.grid .mini-btn { width: 100%; }
+  .compare-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 5px; }
+  .compare-list li { position: relative; padding-left: 13px; color: var(--muted); font-size: 10px; line-height: 1.55; }
+  .compare-list li::before { content: ""; position: absolute; left: 0; top: 7px; width: 4px; height: 4px; border-radius: 50%; background: var(--faint); }
+  .compare-card.recommended .compare-list li::before { background: var(--green); }
+  .compare-list li b { color: var(--text); font-weight: 600; }
+  .compare-foot { display: flex; align-items: center; gap: 8px; margin-top: auto; padding-top: 2px; color: var(--faint); font-family: var(--mono); font-size: 8px; }
+  .compare-foot .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--faint); }
+  .compare-card.recommended .compare-foot .dot { background: var(--green); }
+
+  .checklist { margin-top: 18px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 16px; background: rgba(13,20,32,.55); }
+  .checklist h2 { margin: 0 0 8px; font-size: 13px; font-weight: 650; }
+  .checklist ol { margin: 0; padding-left: 18px; color: var(--muted); font-size: 11px; line-height: 1.8; }
+  .checklist li b { color: var(--text); font-weight: 600; }
+  .checklist .note { margin: 10px 0 0; color: var(--faint); font-size: 10px; }
+  .page-foot { margin-top: 28px; padding-top: 14px; border-top: 1px solid var(--line-soft); display: flex; justify-content: space-between; gap: 16px; color: var(--faint); font-size: 10px; }
+  .page-foot code { color: var(--muted); font-family: var(--mono); font-size: 9px; }
+
+  @media (max-width: 1080px) {
+    .page-head { grid-template-columns: 1fr; align-items: start; }
+    .head-meta { align-items: flex-start; }
+    .compare-grid { grid-template-columns: 1fr; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+    <symbol id="i-left" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></symbol>
+    <symbol id="i-right" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></symbol>
+    <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M15 4.5v15"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></symbol>
+    <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2 4.5 13.5H11l-1 8.5 8.5-11.5H12z"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="M21 3 10 14"/><path d="M21 3l-7 18-4-7-7-4z"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V5h6v2M6.5 7l1 13h9l1-13"/></symbol>
+  </defs>
+</svg>
+
+<div class="page">
+  <header class="page-head">
+    <div>
+      <div class="eyebrow">ISSUE #430 · UI MOCK</div>
+      <h1>クイックルック 操作ボタン行の収まり</h1>
+      <p class="lede">
+        写真詳細パネル下部の4つの操作ボタンが、パネル幅を超えてはみ出す問題の修正案です。
+        詳細パネルは <strong>380px 固定</strong>、本文の実効幅は <strong>320px</strong>。
+        日本語・英語の両方で、現行と2つの修正案を比較できます。
+      </p>
+    </div>
+    <div class="head-meta">
+      <div class="issue-stack">
+        <span class="issue-chip"><b>#430</b> bug / area: ui</span>
+        <span class="issue-chip">panel <b>380px</b></span>
+        <span class="issue-chip">content <b>320px</b></span>
+        <span class="issue-chip recommended">A 推奨</span>
+      </div>
+      <span class="head-note">モックのみ・コードは含みません</span>
+    </div>
+  </header>
+
+  <div class="stage-toolbar">
+    <div class="state-switch" role="tablist" aria-label="レイアウト案">
+      <button class="state-btn active" type="button" data-state="current" role="tab" aria-selected="true">現行 <span>overflow</span></button>
+      <button class="state-btn" type="button" data-state="wrap" role="tab" aria-selected="false">A 折り返し <span>推奨</span></button>
+      <button class="state-btn" type="button" data-state="grid" role="tab" aria-selected="false">B 2×2</button>
+    </div>
+    <div class="lang-switch" role="group" aria-label="言語">
+      <button class="lang-btn active" type="button" data-lang="ja">日本語</button>
+      <button class="lang-btn" type="button" data-lang="en">English</button>
+    </div>
+    <label class="guide-toggle"><input type="checkbox" id="guides" checked> 境界ガイド</label>
+    <div class="measure" id="measure">ボタン行 <b>—</b> / 本文 <b>320px</b></div>
+  </div>
+
+  <div class="stage-scroll">
+    <div class="app-window state-current show-guides" id="appWindow">
+      <div class="viewer">
+        <div class="viewer-backdrop"></div>
+
+        <div class="topbar">
+          <button class="tb-btn icon-only" type="button" aria-label="閉じる"><svg class="icon icon-sm"><use href="#i-close"/></svg></button>
+          <button class="tb-btn icon-only" type="button" aria-label="前の写真"><svg class="icon icon-sm"><use href="#i-left"/></svg></button>
+          <button class="tb-btn icon-only" type="button" aria-label="次の写真"><svg class="icon icon-sm"><use href="#i-right"/></svg></button>
+          <div class="file" data-ja="VRChat_2026-10-31_21-42-18.png" data-en="VRChat_2026-10-31_21-42-18.png">VRChat_2026-10-31_21-42-18.png</div>
+          <div class="zoom">100%</div>
+          <button class="tb-btn primary" type="button"><svg class="icon icon-sm"><use href="#i-panel"/></svg><span data-ja="詳細を閉じる" data-en="Close details">詳細を閉じる</span></button>
+        </div>
+
+        <div class="viewer-content">
+          <div class="image-area">
+            <div class="photo-frame scene-sunset" role="img" aria-label="夕暮れのルーフトップラウンジ"></div>
+          </div>
+
+          <aside class="details-panel">
+            <div class="details-card">
+              <div class="details-body">
+                <div class="content-guide" aria-hidden="true"><span data-ja="本文 320px" data-en="content 320px">本文 320px</span></div>
+
+                <div class="photo-title" data-ja="夕暮れのルーフトップラウンジ" data-en="Sunset Rooftop Lounge">夕暮れのルーフトップラウンジ</div>
+
+                <div class="date-row">
+                  <div class="date">2026-10-31 21:42:18</div>
+                  <button class="action-btn neutral" type="button" style="height:26px" data-ja="お気に入り" data-en="Favorite">お気に入り</button>
+                </div>
+
+                <div class="meta-list">
+                  <div class="meta-row"><span class="label" data-ja="ワールド" data-en="World">ワールド</span><span class="value">Sunset Rooftop Lounge</span></div>
+                  <div class="meta-row"><span class="label" data-ja="インスタンス" data-en="Instance">インスタンス</span><span class="value">~public</span></div>
+                  <div class="meta-row"><span class="label" data-ja="取得元" data-en="Source">取得元</span><span class="value" data-ja="VRChat ログ" data-en="VRChat log">VRChat ログ</span></div>
+                  <div class="meta-row"><span class="label" data-ja="撮影者" data-en="Author">撮影者</span><span class="value">TommyZ</span></div>
+                  <div class="meta-row"><span class="label" data-ja="ファイル" data-en="File">ファイル</span><span class="value">VRChat_2026-10-31_21-42-18.png</span></div>
+                  <div class="meta-row"><span class="label" data-ja="解像度" data-en="Resolution">解像度</span><span class="value">1920 × 1080</span></div>
+                  <div class="meta-row"><span class="label" data-ja="サイズ" data-en="Size">サイズ</span><span class="value">2.4 MB</span></div>
+                </div>
+
+                <div class="section">
+                  <div class="section-label" data-ja="撮影時のプレイヤー" data-en="Players at capture">撮影時のプレイヤー</div>
+                  <div class="pill-row">
+                    <span class="pill">TommyZ</span><span class="pill">Mika</span><span class="pill">Ren</span>
+                  </div>
+                </div>
+
+                <div class="section">
+                  <div class="section-label" data-ja="タグ" data-en="Tags">タグ</div>
+                  <div class="pill-row">
+                    <span class="tag">#sunset</span><span class="tag">#rooftop</span><span class="tag">#chill</span>
+                  </div>
+                </div>
+
+                <div class="input-row">
+                  <input class="tag-input" type="text" data-ja-placeholder="タグを追加" data-en-placeholder="Add a tag" placeholder="タグを追加">
+                  <button class="action-btn neutral" type="button" data-ja="追加" data-en="Add">追加</button>
+                </div>
+
+                <div class="ai-block">
+                  <div class="section-label" data-ja="AIタグ" data-en="AI tags">AIタグ</div>
+                  <div class="ai-facts">
+                    <span class="ai-fact"><span data-ja="人数（AI）" data-en="People (AI)">人数（AI）</span> <b>3人</b></span>
+                    <span class="ai-fact"><span data-ja="場所（AI）" data-en="Place (AI)">場所（AI）</span> <b data-ja="屋外" data-en="Outdoor">屋外</b></span>
+                  </div>
+                  <button class="retag-btn" type="button" data-ja="AIタグを再生成" data-en="Regenerate AI tags">AIタグを再生成</button>
+                </div>
+
+                <div class="section">
+                  <div class="section-label" data-ja="圧縮履歴" data-en="Compression history">圧縮履歴</div>
+                  <div class="history-line">
+                    <span class="mono">WEBP</span>
+                    <span>1.8 MB</span>
+                    <span class="path">/photos/compressed/VRChat_2026-10-31_21-42-18.webp</span>
+                  </div>
+                </div>
+
+                <div class="section">
+                  <div class="note-head">
+                    <div class="section-label" data-ja="メモ" data-en="Note">メモ</div>
+                    <button class="action-btn neutral" type="button" style="height:26px" data-ja="編集" data-en="Edit">編集</button>
+                  </div>
+                  <div class="note-box" data-ja="夕暮れの景色がきれいだった。" data-en="The sunset view was beautiful.">夕暮れの景色がきれいだった。</div>
+                </div>
+
+                <div class="actions-wrap">
+                  <div class="actions-badge over" id="overBadge">はみ出し +24px</div>
+                  <div class="actions-badge ok" id="okBadge">本文内に収まる</div>
+                  <div class="actions" id="actions">
+                    <button class="action-btn neutral" type="button" data-action="folder" data-ja="フォルダを開く" data-en="Open folder">フォルダを開く</button>
+                    <button class="action-btn primary" type="button" data-action="compress" data-ja="圧縮" data-en="Compress">圧縮</button>
+                    <button class="action-btn neutral" type="button" data-action="discord" data-ja="Discord へ送る" data-en="Send to Discord">Discord へ送る</button>
+                    <button class="action-btn danger" type="button" data-action="trash" data-ja="ゴミ箱へ移動" data-en="Move to trash">ゴミ箱へ移動</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </aside>
+        </div>
+
+        <div class="mock-toast" id="toast" role="status" aria-live="polite"></div>
+      </div>
+    </div>
+  </div>
+
+  <section class="compare-grid" aria-label="案の比較">
+    <article class="compare-card">
+      <div class="compare-head">
+        <div>
+          <h3>現行</h3>
+          <p>折り返しなし・1行固定</p>
+        </div>
+        <span class="compare-badge">before</span>
+      </div>
+      <div class="mini-frame">
+        <div class="mini-content">
+          <div class="mini-boundary"></div>
+          <div class="mini-row">
+            <span class="mini-btn neutral">フォルダを開く</span>
+            <span class="mini-btn primary">圧縮</span>
+            <span class="mini-btn neutral">Discord へ送る</span>
+            <span class="mini-btn danger">ゴミ箱へ移動</span>
+          </div>
+        </div>
+      </div>
+      <ul class="compare-list">
+        <li>4ボタンの合計は本文 320px を超過（このモックの実測で <b>JA 約 350px</b> / <b>EN 約 380px</b>）。</li>
+        <li>右端の「ゴミ箱へ移動」がパネル端でクリップされる。</li>
+        <li>パネル幅を変えると再発し、ロケール追加にも弱い。</li>
+      </ul>
+      <div class="compare-foot"><span class="dot"></span>現状の再現</div>
+    </article>
+
+    <article class="compare-card recommended">
+      <div class="compare-head">
+        <div>
+          <h3>A 折り返し</h3>
+          <p>flex-wrap: wrap</p>
+        </div>
+        <span class="compare-badge">推奨</span>
+      </div>
+      <div class="mini-frame">
+        <div class="mini-content">
+          <div class="mini-row wrap">
+            <span class="mini-btn neutral">フォルダを開く</span>
+            <span class="mini-btn primary">圧縮</span>
+            <span class="mini-btn neutral">Discord へ送る</span>
+            <span class="mini-btn danger">ゴミ箱へ移動</span>
+          </div>
+        </div>
+      </div>
+      <ul class="compare-list">
+        <li>ボタン幅・文言・順序はそのままに、<b>3 + 1 の2行</b>へ折り返す。</li>
+        <li>実装はボタン行に <b>flex-wrap</b> を足すだけ。差分が最小。</li>
+        <li>JA / EN とも本文内に収まり、将来の長いラベルにも追従。</li>
+      </ul>
+      <div class="compare-foot"><span class="dot"></span>最小差分・堅牢</div>
+    </article>
+
+    <article class="compare-card">
+      <div class="compare-head">
+        <div>
+          <h3>B 2×2 グリッド</h3>
+          <p>等幅・2行</p>
+        </div>
+        <span class="compare-badge">alternative</span>
+      </div>
+      <div class="mini-frame">
+        <div class="mini-content">
+          <div class="mini-row grid">
+            <span class="mini-btn neutral">フォルダを開く</span>
+            <span class="mini-btn primary">圧縮</span>
+            <span class="mini-btn neutral">Discord へ送る</span>
+            <span class="mini-btn danger">ゴミ箱へ移動</span>
+          </div>
+        </div>
+      </div>
+      <ul class="compare-list">
+        <li>2列の等幅ボタンで、見た目のバランスは最も整う。</li>
+        <li>ボタン幅をセルに合わせるため、ラベルの中央寄せが必要。</li>
+        <li>高さは A と同じ +36px。実装は A より少し大きい。</li>
+      </ul>
+      <div class="compare-foot"><span class="dot"></span>見た目重視の代替案</div>
+    </article>
+  </section>
+
+  <section class="checklist">
+    <h2>確認してほしいこと</h2>
+    <ol>
+      <li><b>A / B のどちらを採用するか</b>（A 推奨: 差分が最小で、ボタンの見た目を変えない）</li>
+      <li>A の場合、2行目に「ゴミ箱へ移動」が単独で来る見た目で問題ないか</li>
+      <li>パネル幅 380px は固定のままでよいか（このモックでは変更していません）</li>
+      <li>ボタンの文言・動作・有効条件は現行どおりでよいか</li>
+    </ol>
+    <p class="note">承認後に実装計画へ進みます。修正指摘があればこのモックに反映します。</p>
+  </section>
+
+  <footer class="page-foot">
+    <span>VRC PhotoN · quick look actions mock</span>
+    <span>Refs <code>#430</code> · <code>crates/ui/src/ui/library.rs</code></span>
+  </footer>
+</div>
+
+<script>
+  const app = document.getElementById('appWindow');
+  const actions = document.getElementById('actions');
+  const measure = document.getElementById('measure');
+  const overBadge = document.getElementById('overBadge');
+  const okBadge = document.getElementById('okBadge');
+  const toast = document.getElementById('toast');
+  let lang = 'ja';
+  let state = 'current';
+  let toastTimer = null;
+
+  const strings = {
+    ja: {
+      overflow: (px) => `はみ出し +${px}px`,
+      fits: '本文内に収まる',
+      measureOver: (row, content) => `ボタン行 <b class="over">${row}px</b> / 本文 <b>${content}px</b>`,
+      measureOk: (row, content) => `ボタン行 <b class="ok">${row}px</b> / 本文 <b>${content}px</b>`,
+      toast: (label) => `<b>${label}</b> をクリックしました（モック）`,
+    },
+    en: {
+      overflow: (px) => `overflow +${px}px`,
+      fits: 'Fits within content',
+      measureOver: (row, content) => `Button row <b class="over">${row}px</b> / content <b>${content}px</b>`,
+      measureOk: (row, content) => `Button row <b class="ok">${row}px</b> / content <b>${content}px</b>`,
+      toast: (label) => `Clicked <b>${label}</b> (mock)`,
+    },
+  };
+
+  function applyLanguage(next) {
+    lang = next;
+    document.documentElement.lang = next === 'ja' ? 'ja' : 'en';
+    document.querySelectorAll('[data-ja][data-en]').forEach((el) => {
+      el.textContent = el.dataset[next];
+    });
+    document.querySelectorAll('[data-ja-placeholder][data-en-placeholder]').forEach((el) => {
+      el.placeholder = next === 'ja' ? el.dataset.jaPlaceholder : el.dataset.enPlaceholder;
+    });
+    document.querySelectorAll('.lang-btn').forEach((btn) => {
+      const active = btn.dataset.lang === next;
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-pressed', String(active));
+    });
+    updateMeasurement();
+  }
+
+  function applyState(next) {
+    state = next;
+    app.classList.remove('state-current', 'state-wrap', 'state-grid');
+    app.classList.add(`state-${next}`);
+    document.querySelectorAll('.state-btn').forEach((btn) => {
+      const active = btn.dataset.state === next;
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-selected', String(active));
+    });
+    updateMeasurement();
+  }
+
+  function updateMeasurement() {
+    requestAnimationFrame(() => {
+      const bodyStyle = getComputedStyle(document.querySelector('.details-body'));
+      const contentWidth = Math.round(
+        document.querySelector('.details-body').clientWidth -
+        parseFloat(bodyStyle.paddingLeft) -
+        parseFloat(bodyStyle.paddingRight)
+      );
+      const rowWidth = Math.ceil(actions.scrollWidth);
+      const overflow = Math.max(0, rowWidth - contentWidth);
+      const s = strings[lang];
+
+      if (overflow > 0) {
+        overBadge.textContent = s.overflow(overflow);
+        overBadge.style.display = '';
+        okBadge.style.display = 'none';
+        measure.innerHTML = s.measureOver(rowWidth, contentWidth);
+      } else {
+        okBadge.textContent = s.fits;
+        overBadge.style.display = 'none';
+        okBadge.style.display = '';
+        measure.innerHTML = s.measureOk(contentWidth, contentWidth);
+      }
+    });
+  }
+
+  document.querySelectorAll('.state-btn').forEach((btn) => {
+    btn.addEventListener('click', () => applyState(btn.dataset.state));
+  });
+  document.querySelectorAll('.lang-btn').forEach((btn) => {
+    btn.addEventListener('click', () => applyLanguage(btn.dataset.lang));
+  });
+  document.getElementById('guides').addEventListener('change', (event) => {
+    app.classList.toggle('show-guides', event.target.checked);
+  });
+
+  actions.addEventListener('click', (event) => {
+    const button = event.target.closest('.action-btn');
+    if (!button) return;
+    const label = button.dataset[lang];
+    toast.innerHTML = strings[lang].toast(label);
+    toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.remove('show'), 1600);
+  });
+
+  applyLanguage('ja');
+  applyState('current');
+  window.addEventListener('resize', updateMeasurement);
+</script>
+</body>
+</html>
