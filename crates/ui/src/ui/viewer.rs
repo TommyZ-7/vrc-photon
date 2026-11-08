@@ -344,14 +344,30 @@ impl App {
 
         let mut details_panel = v_flex().h_full().flex_shrink_0().overflow_hidden();
         if details_open {
+            let (details_content, actions) = self.detail_body(&photo, window, cx);
             let body = v_flex()
                 .id("viewer-details-body")
-                .h_full()
+                .flex_1()
+                .min_h_0()
                 .p(px(16.))
                 .gap(px(10.))
-                .overflow_y_scrollbar();
-            let body = body
-                .child(self.detail_body(&photo, window, cx))
+                .overflow_y_scrollbar()
+                .child(details_content);
+            let footer = div()
+                .flex_shrink_0()
+                .w_full()
+                .px(px(16.))
+                .pb(px(16.))
+                .pt(px(10.))
+                .border_t_1()
+                .border_color(rgba(p.line_soft))
+                .child(actions);
+            let details_inner = v_flex()
+                .h_full()
+                .w_full()
+                .min_h_0()
+                .child(body)
+                .child(footer)
                 .with_animation(
                     ("viewer-details-body", self.quick_look_details_epoch),
                     Animation::new(if self.quick_look_details_epoch == 0 {
@@ -380,7 +396,7 @@ impl App {
                             .inset()
                             .blur_radius(px(0.)),
                     ])
-                    .child(body),
+                    .child(details_inner),
             );
         }
         let panel_state = self.viewer_panel;
