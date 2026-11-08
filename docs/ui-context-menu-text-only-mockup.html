@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VRC PhotoN — 右クリックメニュー テキストのみ化モック (#429)</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%230d1420'/%3E%3Ccircle cx='16' cy='16' r='7' fill='none' stroke='%238bcbff' stroke-width='2'/%3E%3C/svg%3E">
+<style>
+  :root {
+    color-scheme: dark;
+    --font: "Inter", "Noto Sans JP", "Hiragino Sans", "Yu Gothic UI", system-ui, -apple-system, sans-serif;
+    --text: #eef4ff;
+    --muted: #a8b4ca;
+    --dim: #7f8ba3;
+    --faint: #5e6a81;
+    --accent: #8bcbff;
+    --blue: #5aa9ff;
+    --green: #7ee2b8;
+    --rose: #ff94a8;
+    --amber: #f4c878;
+
+    --line: rgba(255, 255, 255, 0.105);
+    --line-strong: rgba(255, 255, 255, 0.17);
+    --line-soft: rgba(255, 255, 255, 0.065);
+
+    --panel: #0d1420;
+    --panel-deep: #080d15;
+    --panel-inner: #111927;
+    --panel-raised: #121a28;
+    --r-card: 22px;
+    --r-inner: 16px;
+    --r-menu: 12px;
+    --ease: cubic-bezier(0.22, 0.8, 0.24, 1);
+  }
+
+  * { box-sizing: border-box; }
+  html { overflow-x: hidden; }
+  body {
+    margin: 0;
+    min-width: 320px;
+    background: #05070d;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -2;
+    background:
+      radial-gradient(ellipse 58% 54% at 10% 2%, rgba(54, 107, 255, 0.28), transparent 66%),
+      radial-gradient(ellipse 46% 52% at 92% 6%, rgba(255, 86, 181, 0.12), transparent 68%),
+      radial-gradient(ellipse 52% 48% at 64% 104%, rgba(30, 202, 178, 0.10), transparent 68%),
+      linear-gradient(140deg, #04060c 0%, #0a0f1e 44%, #060811 100%);
+  }
+
+  .icon { width: 15px; height: 15px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .icon-sm { width: 13px; height: 13px; }
+
+  .page { width: min(1360px, calc(100% - 48px)); margin: 0 auto; padding: 44px 0 72px; }
+  .masthead { display: flex; align-items: flex-start; justify-content: space-between; gap: 28px; margin-bottom: 30px; }
+  .eyebrow { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; }
+  .issue-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border: 1px solid rgba(139,203,255,.24); border-radius: 999px; background: rgba(139,203,255,.08); color: var(--accent); font-size: 10px; letter-spacing: .08em; }
+  h1 { margin: 11px 0 9px; font-size: clamp(25px, 3vw, 36px); line-height: 1.22; letter-spacing: -.035em; font-weight: 620; }
+  .lede { max-width: 780px; margin: 0; color: var(--muted); font-size: 13px; }
+  .lede b { color: var(--text); font-weight: 560; }
+  .meta-card { flex: none; min-width: 236px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 16px; background: rgba(13,20,32,.72); }
+  .meta-row { display: flex; justify-content: space-between; gap: 18px; padding: 4px 0; color: var(--dim); font-size: 11px; }
+  .meta-row b { color: var(--text); font-weight: 550; }
+  .meta-row + .meta-row { border-top: 1px solid var(--line-soft); }
+
+  .section-label { display: flex; align-items: baseline; gap: 12px; margin: 0 0 14px; }
+  .section-label h2 { margin: 0; font-size: 15px; font-weight: 580; letter-spacing: -.01em; }
+  .section-label span { color: var(--dim); font-size: 11px; }
+
+  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 38px; }
+  .panel { border: 1px solid var(--line); border-radius: var(--r-card); background: linear-gradient(180deg, rgba(17,25,39,.78), rgba(9,14,23,.9)); padding: 16px; box-shadow: 0 20px 60px rgba(0,0,0,.22); }
+  .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 2px 4px 13px; }
+  .panel-title { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 560; }
+  .state-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
+  .state-dot.after { background: var(--green); box-shadow: 0 0 0 4px rgba(126,226,184,.09); }
+  .panel-note { color: var(--dim); font-size: 10.5px; }
+  .tag { padding: 2px 7px; border-radius: 999px; font-size: 9.5px; letter-spacing: .04em; }
+  .tag.before { color: var(--dim); background: rgba(255,255,255,.04); border: 1px solid var(--line-soft); }
+  .tag.after { color: var(--green); background: rgba(126,226,184,.07); border: 1px solid rgba(126,226,184,.18); }
+
+  .stage { position: relative; min-height: 374px; overflow: hidden; border: 1px solid var(--line-soft); border-radius: var(--r-inner); background: var(--panel-deep); }
+  .stage::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(180deg, transparent 58%, rgba(3,5,10,.42)); }
+  .mini-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; padding: 11px; }
+  .thumb { position: relative; aspect-ratio: 3 / 2; overflow: hidden; border: 1px solid rgba(255,255,255,.05); border-radius: 8px; background: linear-gradient(135deg, #1d3557, #0b1727); }
+  .thumb::before { content: ""; position: absolute; inset: -20% -10% auto; height: 80%; background: radial-gradient(circle at 34% 28%, rgba(139,203,255,.44), transparent 44%), radial-gradient(circle at 76% 16%, rgba(255,148,168,.28), transparent 40%); }
+  .thumb::after { content: ""; position: absolute; inset: auto -12% -35% 24%; height: 90%; background: radial-gradient(circle at 48% 38%, rgba(244,200,120,.25), transparent 52%); }
+  .thumb.t2 { background: linear-gradient(135deg, #2a153a, #10111d); }
+  .thumb.t3 { background: linear-gradient(135deg, #0f3532, #081717); }
+  .thumb.t4 { background: linear-gradient(135deg, #38231b, #160f0c); }
+  .thumb.t5 { background: linear-gradient(135deg, #1d2a49, #0b1020); }
+  .thumb.t6 { background: linear-gradient(135deg, #2d1c2f, #120b15); }
+  .thumb.selected { outline: 2px solid rgba(139,203,255,.82); outline-offset: -2px; }
+  .thumb.selected .check { position: absolute; top: 5px; left: 5px; display: grid; place-items: center; width: 15px; height: 15px; border-radius: 50%; background: rgba(9,18,32,.82); color: var(--accent); }
+  .thumb.selected .check .icon { width: 8px; height: 8px; stroke-width: 2.8; }
+
+  .menu-wrap { position: absolute; z-index: 4; left: 34px; top: 26px; }
+  .menu-wrap.center { left: 50%; top: 30px; transform: translateX(-50%); }
+  .menu-wrap.submenu { left: 20px; top: 34px; }
+
+  .context-menu {
+    position: relative;
+    width: 252px;
+    padding: 4px;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r-menu);
+    background: var(--panel-raised);
+    box-shadow: 0 28px 80px rgba(0,0,0,.66), 0 8px 24px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.06);
+  }
+  .context-menu::before { content: ""; position: absolute; inset: 0 10px auto; height: 1px; background: linear-gradient(90deg, transparent, rgba(139,203,255,.38), transparent); }
+  .context-menu.compact { width: 236px; }
+  .menu-item {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    height: 26px;
+    padding: 0 8px;
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background .12s var(--ease), color .12s var(--ease);
+  }
+  .menu-item .icon { width: 15px; height: 15px; margin-right: 5px; color: var(--muted); }
+  .menu-item .label { flex: 1; min-width: 0; }
+  .menu-item .shortcut { margin-left: auto; color: var(--faint); font-family: var(--font); font-size: 9.5px; letter-spacing: .02em; }
+  .menu-item .chevron { width: 13px; height: 13px; margin-left: auto; color: var(--faint); }
+  .menu-item:hover, .menu-item.active { background: rgba(90,169,255,.14); color: #e9f6ff; }
+  .menu-item:hover .icon, .menu-item.active .icon { color: var(--accent); }
+  .menu-item.disabled { opacity: .34; pointer-events: none; }
+  .menu-item.danger { color: #ffb1bd; }
+  .menu-item.danger .icon { color: var(--rose); }
+  .menu-item.danger:hover { background: rgba(255,148,168,.11); color: #ffd3da; }
+  .menu-sep { height: 0; margin: 2px -4px; border-top: 2px solid var(--line); }
+
+  .submenu {
+    position: absolute;
+    left: calc(100% + 4px);
+    top: 4px;
+    width: 232px;
+    padding: 4px;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r-menu);
+    background: var(--panel-raised);
+    box-shadow: 0 24px 64px rgba(0,0,0,.6), 0 8px 22px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.06);
+  }
+  .submenu .menu-item { height: 26px; }
+
+  .guide { position: absolute; z-index: 5; top: 22px; left: 44px; height: 214px; border-left: 1px dashed rgba(126,226,184,.5); pointer-events: none; }
+
+  .states { display: grid; grid-template-columns: 1fr 1fr 1.3fr; gap: 18px; }
+  .states .stage { min-height: 390px; }
+  .states .menu-wrap { left: 50%; top: 26px; transform: translateX(-50%); }
+  .states .menu-wrap.submenu { left: 14px; transform: none; }
+  .states .submenu { width: 196px; }
+  .states .context-menu { width: 236px; }
+
+  .callouts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 18px 0 0; }
+  .callout { padding: 13px 14px; border: 1px solid var(--line-soft); border-radius: 14px; background: rgba(13,20,32,.55); }
+  .callout b { display: block; margin-bottom: 4px; font-size: 11px; font-weight: 560; color: var(--text); }
+  .callout p { margin: 0; color: var(--dim); font-size: 10.5px; line-height: 1.6; }
+  .callout .num { display: inline-grid; place-items: center; width: 16px; height: 16px; margin-right: 6px; border-radius: 50%; background: rgba(139,203,255,.1); color: var(--accent); font-size: 9px; }
+
+  .notes { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, .75fr); gap: 18px; margin-top: 38px; }
+  .note-card { padding: 18px 20px; border: 1px solid var(--line); border-radius: 18px; background: rgba(13,20,32,.7); }
+  .note-card h3 { margin: 0 0 11px; font-size: 12px; font-weight: 580; }
+  .note-card ul { margin: 0; padding-left: 17px; color: var(--muted); font-size: 11px; line-height: 1.9; }
+  .note-card li::marker { color: var(--faint); }
+  .note-card code { padding: 1px 5px; border-radius: 4px; background: rgba(255,255,255,.055); color: #cfe7ff; font-family: "SFMono-Regular", Consolas, monospace; font-size: 10px; }
+  .checks { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+  .checks li { display: flex; align-items: flex-start; gap: 8px; color: var(--muted); font-size: 11px; }
+  .checks .icon { width: 13px; height: 13px; margin-top: 2px; color: var(--green); }
+  .callout a, .note-card a { color: var(--accent); text-decoration: none; }
+  .foot { margin-top: 26px; padding-top: 16px; border-top: 1px solid var(--line-soft); color: var(--faint); font-size: 10px; display: flex; justify-content: space-between; gap: 20px; }
+
+  @media (max-width: 1080px) {
+    .compare, .states { grid-template-columns: 1fr; }
+    .callouts { grid-template-columns: 1fr; }
+    .notes { grid-template-columns: 1fr; }
+    .meta-card { display: none; }
+    .stage { min-height: 360px; }
+  }
+</style>
+</head>
+<body>
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+  <symbol id="i-compress" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M16 3h3a2 2 0 0 1 2 2v3"/><path d="M8 21H5a2 2 0 0 1-2-2v-3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/><path d="M9 12h6"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H9l2 2h7.5A2.5 2.5 0 0 1 21 9.5v8A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5z"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
+  <symbol id="i-discord" viewBox="0 0 24 24"><path d="M8.5 8.8a12 12 0 0 1 7 0"/><path d="M8.2 17.5c-1.3-.2-2.5-.7-3.6-1.4-.7-2.6-.2-5.4 1.4-7.7C7.2 7.7 8.6 7.2 10 7l.5 1.1a13 13 0 0 1 3 0L14 7c1.4.2 2.8.7 4 1.4 1.6 2.3 2.1 5.1 1.4 7.7-1.1.7-2.3 1.2-3.6 1.4l-.8-1.3"/><path d="M9.2 13.7h.01"/><path d="M14.8 13.7h.01"/></symbol>
+  <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="m12 3 1.2 3.2L16.5 7.5l-3.3 1.3L12 12l-1.2-3.2L7.5 7.5l3.3-1.3z"/><path d="m18.5 14 .9 2.4 2.4.9-2.4.9-.9 2.4-.9-2.4-2.4-.9 2.4-.9z"/><path d="m5 14 .7 1.8 1.8.7-1.8.7L5 19l-.7-1.8-1.8-.7 1.8-.7z"/></symbol>
+  <symbol id="i-tag" viewBox="0 0 24 24"><path d="M20 13.3 13.3 20a2 2 0 0 1-2.8 0L4 13.5V4h9.5l6.5 6.5a2 2 0 0 1 0 2.8z"/><circle cx="8.5" cy="8.5" r="1.2"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"/><path d="M10 11v6"/><path d="M14 11v6"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+</svg>
+
+<div class="page">
+  <header class="masthead">
+    <div>
+      <div class="eyebrow">
+        <span class="issue-chip">#429</span>
+        <span>UI mock · context menu</span>
+      </div>
+      <h1>右クリックメニューをテキストのみに</h1>
+      <p class="lede">
+        写真グリッド／検索結果グリッドの右クリックメニューから左アイコンを削除し、
+        <b>項目の構成・順序・文言・有効条件・動作はそのまま</b>にします。
+        アイコン列を確保しないため、すべてのラベルが同じ左位置から始まります。
+      </p>
+    </div>
+    <aside class="meta-card">
+      <div class="meta-row"><span>対象</span><b>写真 / 検索グリッド</b></div>
+      <div class="meta-row"><span>変更</span><b>左アイコンのみ削除</b></div>
+      <div class="meta-row"><span>維持</span><b>圧縮サブメニュー ›</b></div>
+      <div class="meta-row"><span>メニュー幅</span><b>252 px のまま</b></div>
+    </aside>
+  </header>
+
+  <div class="section-label">
+    <h2>変更前 / 変更後</h2>
+    <span>単一選択・圧縮サブメニューを開いた状態</span>
+  </div>
+
+  <section class="compare" aria-label="変更前と変更後の比較">
+    <article class="panel">
+      <header class="panel-head">
+        <div class="panel-title"><span class="state-dot"></span>変更前</div>
+        <span class="tag before">アイコンあり</span>
+      </header>
+      <div class="stage">
+        <div class="mini-grid" aria-hidden="true">
+          <div class="thumb t2"></div><div class="thumb selected"><span class="check"><svg class="icon"><use href="#i-check"/></svg></span></div><div class="thumb t3"></div>
+          <div class="thumb t4"></div><div class="thumb t5"></div><div class="thumb t6"></div>
+        </div>
+        <div class="menu-wrap">
+          <div class="context-menu" role="menu" aria-label="変更前の写真メニュー">
+            <div class="menu-item active" role="menuitem" aria-haspopup="menu">
+              <svg class="icon"><use href="#i-compress"/></svg><span class="label">圧縮</span><svg class="icon chevron"><use href="#i-chevron"/></svg>
+            </div>
+            <div class="submenu" role="menu" aria-label="圧縮の出力先">
+              <div class="menu-item" role="menuitem"><svg class="icon"><use href="#i-folder"/></svg><span class="label">フォルダへ圧縮…</span></div>
+              <div class="menu-item" role="menuitem"><svg class="icon"><use href="#i-copy"/></svg><span class="label">クリップボードへ圧縮</span></div>
+            </div>
+            <div class="menu-item" role="menuitem"><svg class="icon"><use href="#i-discord"/></svg><span class="label">Discord へ送る</span></div>
+            <div class="menu-item" role="menuitem"><svg class="icon"><use href="#i-sparkles"/></svg><span class="label">AIタグ付け</span></div>
+            <div class="menu-sep" role="separator"></div>
+            <div class="menu-item" role="menuitem"><svg class="icon"><use href="#i-tag"/></svg><span class="label">タグを編集…</span></div>
+            <div class="menu-item" role="menuitem"><svg class="icon"><use href="#i-copy"/></svg><span class="label">パスをコピー</span></div>
+            <div class="menu-item" role="menuitem"><svg class="icon"><use href="#i-folder"/></svg><span class="label">フォルダを開く</span></div>
+            <div class="menu-sep" role="separator"></div>
+            <div class="menu-item danger" role="menuitem"><svg class="icon"><use href="#i-trash"/></svg><span class="label">ゴミ箱へ移動</span><span class="shortcut">Delete</span></div>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <article class="panel">
+      <header class="panel-head">
+        <div class="panel-title"><span class="state-dot after"></span>変更後（提案）</div>
+        <span class="tag after">テキストのみ</span>
+      </header>
+      <div class="stage">
+        <div class="mini-grid" aria-hidden="true">
+          <div class="thumb t2"></div><div class="thumb selected"><span class="check"><svg class="icon"><use href="#i-check"/></svg></span></div><div class="thumb t3"></div>
+          <div class="thumb t4"></div><div class="thumb t5"></div><div class="thumb t6"></div>
+        </div>
+        <div class="guide" aria-hidden="true"></div>
+        <div class="menu-wrap">
+          <div class="context-menu" role="menu" aria-label="変更後の写真メニュー">
+            <div class="menu-item active" role="menuitem" aria-haspopup="menu">
+              <span class="label">圧縮</span><svg class="icon chevron"><use href="#i-chevron"/></svg>
+            </div>
+            <div class="submenu" role="menu" aria-label="圧縮の出力先">
+              <div class="menu-item" role="menuitem"><span class="label">フォルダへ圧縮…</span></div>
+              <div class="menu-item" role="menuitem"><span class="label">クリップボードへ圧縮</span></div>
+            </div>
+            <div class="menu-item" role="menuitem"><span class="label">Discord へ送る</span></div>
+            <div class="menu-item" role="menuitem"><span class="label">AIタグ付け</span></div>
+            <div class="menu-sep" role="separator"></div>
+            <div class="menu-item" role="menuitem"><span class="label">タグを編集…</span></div>
+            <div class="menu-item" role="menuitem"><span class="label">パスをコピー</span></div>
+            <div class="menu-item" role="menuitem"><span class="label">フォルダを開く</span></div>
+            <div class="menu-sep" role="separator"></div>
+            <div class="menu-item danger" role="menuitem"><span class="label">ゴミ箱へ移動</span><span class="shortcut">Delete</span></div>
+          </div>
+        </div>
+      </div>
+    </article>
+  </section>
+
+  <div class="section-label">
+    <h2>状態別の表示</h2>
+    <span>単一選択 / 複数選択 / 圧縮サブメニュー</span>
+  </div>
+
+  <section class="states" aria-label="状態別のメニュー">
+    <article class="panel">
+      <header class="panel-head">
+        <div class="panel-title"><span class="state-dot after"></span>単一選択</div>
+        <span class="panel-note">全項目が有効</span>
+      </header>
+      <div class="stage">
+        <div class="mini-grid" aria-hidden="true">
+          <div class="thumb t2"></div><div class="thumb selected"><span class="check"><svg class="icon"><use href="#i-check"/></svg></span></div><div class="thumb t3"></div>
+          <div class="thumb t4"></div><div class="thumb t5"></div><div class="thumb t6"></div>
+        </div>
+        <div class="menu-wrap">
+          <div class="context-menu compact" role="menu" aria-label="単一選択のメニュー">
+            <div class="menu-item" role="menuitem" aria-haspopup="menu"><span class="label">圧縮</span><svg class="icon chevron"><use href="#i-chevron"/></svg></div>
+            <div class="menu-item" role="menuitem"><span class="label">Discord へ送る</span></div>
+            <div class="menu-item" role="menuitem"><span class="label">AIタグ付け</span></div>
+            <div class="menu-sep" role="separator"></div>
+            <div class="menu-item" role="menuitem"><span class="label">タグを編集…</span></div>
+            <div class="menu-item" role="menuitem"><span class="label">パスをコピー</span></div>
+            <div class="menu-item" role="menuitem"><span class="label">フォルダを開く</span></div>
+            <div class="menu-sep" role="separator"></div>
+            <div class="menu-item danger" role="menuitem"><span class="label">ゴミ箱へ移動</span><span class="shortcut">Delete</span></div>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <article class="panel">
+      <header class="panel-head">
+        <div class="panel-title"><span class="state-dot after"></span>複数選択</div>
+        <span class="panel-note">1枚限定の項目は無効のまま</span>
+      </header>
+      <div class="stage">
+        <div class="mini-grid" aria-hidden="true">
+          <div class="thumb t2"></div><div class="thumb selected"><span class="check"><svg class="icon"><use href="#i-check"/></svg></span></div><div class="thumb t3 selected"><span class="check"><svg class="icon"><use href="#i-check"/></svg></span></div>
+          <div class="thumb t4 selected"><span class="check"><svg class="icon"><use href="#i-check"/></svg></span></div><div class="thumb t5"></div><div class="thumb t6"></div>
+        </div>
+        <div class="menu-wrap">
+          <div class="context-menu compact" role="menu" aria-label="複数選択のメニュー">
+            <div class="menu-item" role="menuitem" aria-haspopup="menu"><span class="label">圧縮</span><svg class="icon chevron"><use href="#i-chevron"/></svg></div>
+            <div class="menu-item disabled" role="menuitem" aria-disabled="true"><span class="label">Discord へ送る（1枚のみ）</span></div>
+            <div class="menu-item" role="menuitem"><span class="label">AIタグ付け</span></div>
+            <div class="menu-sep" role="separator"></div>
+            <div class="menu-item" role="menuitem"><span class="label">タグを編集…</span></div>
+            <div class="menu-item" role="menuitem"><span class="label">パスをコピー</span></div>
+            <div class="menu-item" role="menuitem"><span class="label">フォルダを開く</span></div>
+            <div class="menu-sep" role="separator"></div>
+            <div class="menu-item danger" role="menuitem"><span class="label">ゴミ箱へ移動</span><span class="shortcut">Delete</span></div>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <article class="panel">
+      <header class="panel-head">
+        <div class="panel-title"><span class="state-dot after"></span>圧縮サブメニュー</div>
+        <span class="panel-note">開閉は従来どおり</span>
+      </header>
+      <div class="stage">
+        <div class="mini-grid" aria-hidden="true">
+          <div class="thumb t2"></div><div class="thumb selected"><span class="check"><svg class="icon"><use href="#i-check"/></svg></span></div><div class="thumb t3"></div>
+          <div class="thumb t4"></div><div class="thumb t5"></div><div class="thumb t6"></div>
+        </div>
+        <div class="menu-wrap submenu">
+          <div class="context-menu compact" role="menu" aria-label="圧縮サブメニューを開いたメニュー">
+            <div class="menu-item active" role="menuitem" aria-haspopup="menu"><span class="label">圧縮</span><svg class="icon chevron"><use href="#i-chevron"/></svg></div>
+            <div class="submenu" role="menu" aria-label="圧縮の出力先">
+              <div class="menu-item" role="menuitem"><span class="label">フォルダへ圧縮…</span></div>
+              <div class="menu-item" role="menuitem"><span class="label">クリップボードへ圧縮</span></div>
+            </div>
+            <div class="menu-item" role="menuitem"><span class="label">Discord へ送る</span></div>
+            <div class="menu-item" role="menuitem"><span class="label">AIタグ付け</span></div>
+            <div class="menu-sep" role="separator"></div>
+            <div class="menu-item" role="menuitem"><span class="label">タグを編集…</span></div>
+            <div class="menu-item" role="menuitem"><span class="label">パスをコピー</span></div>
+            <div class="menu-item" role="menuitem"><span class="label">フォルダを開く</span></div>
+            <div class="menu-sep" role="separator"></div>
+            <div class="menu-item danger" role="menuitem"><span class="label">ゴミ箱へ移動</span><span class="shortcut">Delete</span></div>
+          </div>
+        </div>
+      </div>
+    </article>
+  </section>
+
+  <section class="callouts" aria-label="レイアウトの要点">
+    <div class="callout">
+      <b><span class="num">1</span>左アイコン列をなくす</b>
+      <p>メニュー全体にアイコンが1つもないため、gpui-kit は左アイコン用の余白を確保しません。全ラベルがメニューの左パディングから始まります（変更後パネルの緑の破線）。</p>
+    </div>
+    <div class="callout">
+      <b><span class="num">2</span>項目の中身は変えない</b>
+      <p>区切り線、項目順、文言、無効条件、ショートカット表示は現状のままです。複数選択時の「（1枚のみ）」も維持します。</p>
+    </div>
+    <div class="callout">
+      <b><span class="num">3</span>サブメニューの › は残す</b>
+      <p>圧縮の › は項目アイコンではなく、サブメニューがあることを示す手掛かりです。今回の提案では削除せず、開閉動作も維持します。</p>
+    </div>
+  </section>
+
+  <section class="notes">
+    <article class="note-card">
+      <h3>実装メモ</h3>
+      <ul>
+        <li>対象は <code>crates/ui/src/app/context_menu.rs</code>（Issue の <code>ui/actions.rs</code> はリファクタ前の参照）。</li>
+        <li><code>PopupMenuItem::icon(...)</code> を全項目から削除し、<code>submenu_with_icon(Some(...), ...)</code> を <code>submenu(...)</code> に置換。</li>
+        <li>メニュー幅は既存の <code>min_w(px(252.))</code> を維持し、レイアウトの跳ねを避ける。</li>
+        <li>左アイコンが無くなることで <code>has_left_icon</code> が false になり、テキスト開始位置が自動的に揃う。</li>
+      </ul>
+    </article>
+    <article class="note-card">
+      <h3>受け入れ条件</h3>
+      <ul class="checks">
+        <li><svg class="icon"><use href="#i-check"/></svg><span>単一選択・複数選択の全項目からアイコンが消えている</span></li>
+        <li><svg class="icon"><use href="#i-check"/></svg><span>圧縮サブメニューの開閉と各項目の操作が従来どおり</span></li>
+        <li><svg class="icon"><use href="#i-check"/></svg><span>項目の構成・順序・文言・有効条件・動作が変わらない</span></li>
+        <li><svg class="icon"><use href="#i-check"/></svg><span>既存のメニュー関連テストが通る</span></li>
+      </ul>
+    </article>
+  </section>
+
+  <footer class="foot">
+    <span>VRC PhotoN · #429 右クリックメニューのアイコン削除 · 承認用モック</span>
+    <span>実装前 · 2026-11-08</span>
+  </footer>
+</div>
+</body>
+</html>
