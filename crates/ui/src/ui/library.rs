@@ -935,12 +935,15 @@ impl App {
     }
 
     /// Metadata and actions for one photo. Shared by the full-screen viewer.
+    ///
+    /// Returns `(scrollable content, fixed action row)`. The viewer keeps the
+    /// action row outside the scroll area so every action stays visible.
     pub(crate) fn detail_body(
         &mut self,
         photo: &Photo,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> impl IntoElement {
+    ) -> (AnyElement, AnyElement) {
         let p = self.palette;
         let id = photo.id;
         let world = photo_world_label(photo);
@@ -1115,7 +1118,7 @@ impl App {
             |this, window, cx| this.cancel_note_edit(window, cx),
         );
 
-        v_flex()
+        let content = v_flex()
             .w_full()
             .flex_shrink_0()
             .gap(px(12.))
@@ -1276,14 +1279,21 @@ impl App {
                         )
                     }),
             )
-            .child(
-                h_flex()
-                    .gap(px(8.))
-                    .items_center()
-                    .child(folder_button)
-                    .child(compress_button)
-                    .child(discord_button)
-                    .child(trash_button),
-            )
+            .into_any_element();
+
+        // The details column is 380 px wide (320 px of content after padding).
+        // Wrap the actions so long labels and other locales stay inside the
+        // panel instead of clipping at the card edge.
+        let actions = h_flex()
+            .flex_wrap()
+            .gap(px(8.))
+            .items_center()
+            .child(folder_button)
+            .child(compress_button)
+            .child(discord_button)
+            .child(trash_button)
+            .into_any_element();
+
+        (content, actions)
     }
 }
