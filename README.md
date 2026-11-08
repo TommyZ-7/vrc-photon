@@ -1,163 +1,90 @@
+<p align="center">
+  <img src="packaging/icons/icon.png" width="96" alt="VRC PhotoN">
+</p>
+
 # VRC PhotoN
 
-VRChatの写真を、撮影時のワールド・同接プレイヤー・日時と一緒に管理するデスクトップアプリ。
+VRChatの写真を、撮ったときのワールド・一緒にいたプレイヤー・日時とあわせて管理するデスクトップアプリです。
 
-写真フォルダを監視し、VRChatの出力ログとPNGのXMPメタデータから「いつ・どこで・誰と撮ったか」をローカルSQLiteに記録する。既存の圧縮エンジンを移植し、JPEG / WebP / AVIF / JPEG XLへの変換と自動圧縮を提供する。
+VRChatのスクリーンショットは、ファイル名だけでは中身が分かりません。VRC PhotoNは写真フォルダを監視し、VRChatの出力ログとPNGのXMPメタデータから「いつ、どこで、誰と撮ったか」を読み取って写真に紐付けます。記録はすべて手元のSQLiteに保存され、写真やログが外部に送信されることはありません。
 
-## 現在の実装
+<!-- TODO: 実画面のスクリーンショットを docs/images/main.png に置き、下の行を有効化する
+![メイン画面](docs/images/main.png)
+-->
 
-- 写真一覧（仮想スクロール、サムネイル、日付、圧縮済み/未紐付け、お気に入り）
-- 写真の取り込み（コピー/移動を都度選択）
-- 写真詳細（プレビュー、ワールド、インスタンス、撮影者、同接プレイヤー、タグ、メモ、圧縮履歴）
-- 圧縮設定（プロファイル、形式、品質、ロスレス、リサイズ、出力フォルダ、自動適用）
-- ダッシュボード（共有圧縮キュー、待機ジョブの一括実行、ログ監視）
-- 設定（起動、トレイ、自動圧縮、即時/待機、自動圧縮の元画像の保持/置換）
-- 手動圧縮（プロファイル選択、指定フォルダ／プロファイルフォルダ／クリップボード出力、実行ごとの元画像の保持/置換）
-- ライブラリ／検索の複数選択と一括圧縮
-- 検索（ワールド、プレイヤー、タグ、日時、お気に入り、AI タグ、人数）
-- AI タグ付け（有償プラグイン、ローカル推論。人物の有無・人数・場所・シーンタグ）
-- VRChatログ監視（ワールド参加、プレイヤー入退室、セッション）
-- XMPメタデータ読取（撮影者、ワールド名/ID）とログが無い場合の補完
-- サムネイル生成（256px WebP、バックグラウンド）
-- Discord Webhook 連携（オプトイン、既定オフ。手動送信・送信履歴・自動送信。原画優先で、20 MiB 超は連携プロファイルへフォールバック）
-- 自動圧縮は設定、手動・一括圧縮は実行時に元画像の保持/置換を選択（置換はOSゴミ箱）
-- 写真のOSゴミ箱移動（2段階確認）
-- トレイ常駐、自動起動、デーモンのハートビート表示
-- UI⇔デーモンのローカルIPC（即時再スキャン、一時停止/再開、スキャン/圧縮進捗、終了）
-- 署名付き自動アップデート（AppImage / Windows current-user NSIS。deb/pacmanは通知のみ。更新確認はGitHub ReleasesへのHTTPS GETだけで、写真・ログは送信しない）
-- deb/pacman向けの任意のsystemdユーザーサービス（journalctlでログ確認可能）
-- 外部削除された写真の `missing` 検出
+## できること
 
-## ドキュメント
+**探す**
 
-- [docs/README.md](docs/README.md) — 開発ドキュメントの索引
-- [docs/architecture.md](docs/architecture.md) — 全体構成
-- [docs/development.md](docs/development.md) — 環境構築・実行
-- [docs/release.md](docs/release.md) — リリースとパッケージ
-- [docs/ai-tagging/README.md](docs/ai-tagging/README.md) — AI タグ付けプラグインの導入・GPU 要件・プライバシー
-- [docs/roadmap.md](docs/roadmap.md) — 残作業と優先度
-- [CONTRIBUTING.md](CONTRIBUTING.md) — 開発フロー
+- 写真一覧は仮想スクロールで、大量の写真でも一息にスクロールできます
+- ワールド名、プレイヤー名、タグ、日時、お気に入りで検索できます
+- 写真ごとにワールドと同接プレイヤーをログから自動で紐付けます。ログが無い写真はXMPメタデータで補います
 
-## 構成
+**圧縮する**
+
+- JPEG / WebP / AVIF / JPEG XL への変換とリサイズができます
+- プロファイルを作っておけば、取り込み時の自動圧縮も、選んだ写真の一括圧縮も同じ設定で回せます
+- 元画像を残すか、置き換える（OSのゴミ箱へ送る）かは実行ごとに選べます
+
+**その他**
+
+- 写真の詳細で、プレビュー、ワールド、インスタンス、同接プレイヤー、タグ、メモ、圧縮履歴を確認・編集できます
+- Discord Webhookへ写真を送れます（任意設定で、初期状態はオフ）
+- トレイ常駐と自動起動に対応し、署名付きの自動アップデートがあります
+- UIは日本語と英語に対応しています
+
+**AIタグ付け（有償プラグイン）**
+
+人物の有無と人数、場所、雰囲気をローカル推論でタグ付けするプラグインを別売しています。推論は手元のPCで完結します。導入方法と動作要件は [AIタグ付けのドキュメント](docs/ai-tagging/README.md) を参照してください。
+
+## インストール
+
+[Releases](https://github.com/TommyZ-7/vrc-photon/releases) から、使っている環境のファイルをダウンロードしてください。
+
+| 環境 | ファイル |
+|---|---|
+| Windows | `vrc-photon_<バージョン>_x64-setup.exe` |
+| Debian / Ubuntu | `vrc-photon_<バージョン>_amd64.deb` |
+| Arch系 | `vrc-photon-<バージョン>-1-x86_64.pkg.tar.zst` |
+| その他のLinux | `vrc-photon_<バージョン>_x86_64.AppImage`、または `.tar.gz` |
+
+写真フォルダとログフォルダは初回起動時に自動で検出されます。検出できない環境では、デーモンの起動時に `--photo-dir` と `--log-dir` で指定してください。
+
+## 仕組み
+
+UIとデーモンの2プロセス構成です。デーモンがフォルダ監視、ログ解析、圧縮、サムネイル生成を担当し、UIは表示と操作を担当します。両者は同じSQLiteデータベース（`library.db`）を共有し、即時の操作にはローカルIPCを使います。
 
 ```text
 crates/
-  core/     # DB、写真索引、ログ解析、XMP、紐付け、圧縮、サムネイル
-  ipc/      # ローカルIPCのプロトコルとトランスポート
-  daemon/   # 監視、自動圧縮、トレイ、自動起動、IPCサーバー
-  ui/       # gpui-kit アプリ、IPCクライアント
-docs/
-  開発企画書.md
-  ui-mockup.html   # ブラウザで開ける画面案
+  core/     DB、写真索引、ログ解析、XMP、紐付け、圧縮、サムネイル
+  ipc/      ローカルIPCのプロトコルとトランスポート
+  daemon/   監視、自動圧縮、トレイ、自動起動、IPCサーバー
+  ui/       GPUI製のUI、IPCクライアント
 ```
 
-UIとデーモンは同じSQLite（WAL）を共有する。重い書き込みはデーモン、UIは短い読み書きを行う。即時コマンドとイベント配信にはローカルIPC（Unix domain socket / Windows名前付きパイプ、改行区切りJSON）を使う。IPCはwake-upとイベントだけを担い、耐久データの正はSQLiteのまま。
+詳しい構成は [docs/architecture.md](docs/architecture.md) にあります。
 
-## ビルド
+## ソースからビルド
 
-前提:
-
-- Rust stable（edition 2024）
-- CMake / Ninja / C++コンパイラ（JPEG XLのvendoredビルド用）
-- Linux: `libxkbcommon-dev`、`libwayland-dev`、`libvulkan-dev`、`pkg-config`、`clang`
-- Windows: MSVC Build Tools、Windows SDK、CMake、Ninja。DirectX 12対応GPUを推奨
+前提はRust stableのほか、プラットフォームごとにいくつか要ります（Linuxは `libxkbcommon-dev`、`libwayland-dev`、`libvulkan-dev` など。JPEG XLのビルドには CMake / Ninja / C++コンパイラ）。詳細は [docs/development.md](docs/development.md) を参照してください。
 
 ```bash
 cargo build -p vrc-photon-ui
 cargo build -p vrc-photon-daemon
 ```
 
-## 起動
+サンプルデータでUIだけ試す場合は `cargo run -p vrc-photon-ui -- --demo` が使えます。
 
-### デモ画面
+## ドキュメント
 
-サンプルデータでUIだけを確認する。
-
-```bash
-cargo run -p vrc-photon-ui -- --demo
-```
-
-### 実データ
-
-1. デーモンを起動する。写真フォルダとログフォルダを自動検出できない場合は明示する。
-
-```bash
-cargo run -p vrc-photon-daemon -- --photo-dir "/path/to/Pictures/VRChat" --log-dir "/path/to/AppData/LocalLow/VRChat/VRChat"
-```
-
-2. UIを起動する。
-
-```bash
-cargo run -p vrc-photon-ui
-```
-
-デーモンとUIは同じDBを参照する。UIの「再読込」で最新状態を取得する。
-
-### 1回だけスキャン
-
-```bash
-cargo run -p vrc-photon-daemon -- --once --photo-dir ... --log-dir ...
-```
-
-`--compress-pending` を付けると、キューにある圧縮ジョブを処理して終了する。
-
-```bash
-cargo run -p vrc-photon-daemon -- --once --compress-pending --photo-dir ...
-```
-
-### ヘッドレス
-
-```bash
-cargo run -p vrc-photon-daemon -- --no-tray
-```
-
-## 環境変数
-
-| 変数 | 用途 |
-|---|---|
-| `VRC_PHOTON_DIR` | 写真フォルダの上書き |
-| `VRC_LOG_DIR` | VRChatログフォルダの上書き |
-| `VRC_PHOTON_DB` | SQLiteファイルの上書き |
-| `VRC_PHOTON_UPDATE_FEED` | 更新マニフェストURLの上書き（ミラー・QA用） |
-| `RUST_LOG` | ログレベル（例: `debug`） |
-
-## データの保存先
-
-- DB: OSのユーザーデータディレクトリ配下 `vrc-photon/library.db`
-  - Linux: `~/.local/share/vrc-photon/`
-  - Windows: `%LOCALAPPDATA%\vrc-photon\`
-- サムネイル: 同ディレクトリの `thumbnails/`
-- 更新ファイル・適用ログ・旧版バックアップ: 同ディレクトリの `updates/`
-- Discord Webhook URL: 同 DB の `app_settings` テーブル（`discord_webhook_url`）
-
-写真ファイル自体は移動しない。圧縮版は既定で元写真の `compressed/` に生成する。
-Discord 連携を有効化しない限り、写真・ログを外部へ送信しない。Webhook URL は
-認証情報のため、DB バックアップを共有するときは注意する。
-
-## 既知の制約
-
-- 写真の取り込みはコピー/移動を都度選択。取り込み先の既定はユーザーデータディレクトリの `imported/`。
-- 一覧は4列固定の仮想スクロールだが、現在は最大300枚を読み込んで表示する。100k枚のページングは未実装。検索も最大300枚/回。
-- UIはIPCイベントで監視状態・キュー・写真枚数を即時更新する。IPCが使えない場合は3秒ごとの自動更新にフォールバックする。
-- デーモンとUIはSQLiteで耐久状態を共有し、ローカルIPCで即時wakeとイベントを補完する（ADR-0011）。
-- トレイ/自動起動はLinuxでコンパイル確認済み。Windows実機は未検証。
-- VRChatの出力ログは24時間で削除される。過去分の復元は実行時に残っているログのみ。
-- プライベートワールドはXMPに名前が入らないことがある。その場合はワールドID表示になる。
-- AVIFの「ロスレス」は `ravif` の制約で品質100の近似。JPEG XLは現状αを保持しない。
-
-## 開発
-
-```bash
-cargo fmt --all
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
-```
-
-`cargo check`/`build`はWSLで負荷が高いため、並列実行しないこと。
+- [ドキュメント索引](docs/README.md)
+- [アーキテクチャ](docs/architecture.md)
+- [開発環境の構築](docs/development.md)
+- [リリースとパッケージ](docs/release.md)
+- [AIタグ付けプラグイン](docs/ai-tagging/README.md)
+- [ロードマップ](docs/roadmap.md)
+- [コントリビューション](CONTRIBUTING.md)
 
 ## ライセンス
 
-GPL-3.0-or-later（0.9.x 以前は MIT）。同梱アセットの通知とパッケージ内の配置は [docs/licenses.md](docs/licenses.md) を参照。
-
-- Noto Sans JP: SIL Open Font License 1.1（`crates/ui/assets/LICENSE-NotoSansJP.txt`）
-- Lucide アイコン（`gpui-kit-assets` 経由）: ISC、Feather 由来分は MIT（`packaging/licenses/LICENSE-LUCIDE`）
+本体は GPL-3.0-or-later です。AIタグ付けプラグインは、本体とは別のライセンスで提供しています。
