@@ -1144,7 +1144,7 @@
   document.getElementById('open-mouse').addEventListener('click', () => openMenu());
   document.getElementById('open-keyboard').addEventListener('click', () => openMenu({ keyboard: true }));
   document.getElementById('open-submenu').addEventListener('click', () => openMenu({ withSubmenu: true }));
-  document.getElementById('open-edge').addEventListener('click', () => openMenu({ withSubmenu: false, edge: true }));
+  document.getElementById('open-edge').addEventListener('click', () => openMenu({ withSubmenu: true, edge: true }));
 
   loopToggle.addEventListener('change', () => {
     loopEnabled = loopToggle.checked;
