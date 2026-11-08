@@ -8145,7 +8145,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vrc-photon-ai-host"
-version = "0.12.0"
+version = "0.12.1"
 dependencies = [
  "assert_cmd",
  "hex",
@@ -8169,7 +8169,7 @@ dependencies = [
 
 [[package]]
 name = "vrc-photon-ai-mock-sidecar"
-version = "0.12.0"
+version = "0.12.1"
 dependencies = [
  "serde_json",
  "vrc-photon-ai-protocol",
@@ -8177,7 +8177,7 @@ dependencies = [
 
 [[package]]
 name = "vrc-photon-ai-protocol"
-version = "0.12.0"
+version = "0.12.1"
 dependencies = [
  "proptest",
  "serde",
@@ -8187,7 +8187,7 @@ dependencies = [
 
 [[package]]
 name = "vrc-photon-core"
-version = "0.12.0"
+version = "0.12.1"
 dependencies = [
  "blake3",
  "chrono",
@@ -8217,7 +8217,7 @@ dependencies = [
 
 [[package]]
 name = "vrc-photon-daemon"
-version = "0.12.0"
+version = "0.12.1"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -8248,7 +8248,7 @@ dependencies = [
 
 [[package]]
 name = "vrc-photon-i18n"
-version = "0.12.0"
+version = "0.12.1"
 dependencies = [
  "regex",
  "rust-i18n",
@@ -8257,7 +8257,7 @@ dependencies = [
 
 [[package]]
 name = "vrc-photon-ipc"
-version = "0.12.0"
+version = "0.12.1"
 dependencies = [
  "interprocess",
  "proptest",
@@ -8271,7 +8271,7 @@ dependencies = [
 
 [[package]]
 name = "vrc-photon-release-tool"
-version = "0.12.0"
+version = "0.12.1"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -8289,7 +8289,7 @@ dependencies = [
 
 [[package]]
 name = "vrc-photon-ui"
-version = "0.12.0"
+version = "0.12.1"
 dependencies = [
  "anyhow",
  "async-channel",
@@ -8316,7 +8316,7 @@ dependencies = [
 
 [[package]]
 name = "vrc-photon-update"
-version = "0.12.0"
+version = "0.12.1"
 dependencies = [
  "base64 0.23.1",
  "chrono",
