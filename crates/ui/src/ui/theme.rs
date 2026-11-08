@@ -70,6 +70,9 @@ pub(crate) const MOTION_SIDEBAR: Duration = Duration::from_millis(440);
 pub(crate) const MOTION_MORPH: Duration = Duration::from_millis(340);
 pub(crate) const SCREEN_SLIDE: f32 = 14.0;
 pub(crate) const VIEWER_NAV_SLIDE: f32 = 28.0;
+/// Context menu opening: #428's approved 120 ms fade plus a 4 px settle.
+pub(crate) const CONTEXT_MENU_OPEN: Duration = Duration::from_millis(120);
+pub(crate) const CONTEXT_MENU_SLIDE: f32 = 4.0;
 
 pub(crate) fn format_bytes(bytes: u64) -> String {
     if bytes == 0 {
