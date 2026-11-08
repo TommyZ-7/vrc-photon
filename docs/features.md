@@ -363,8 +363,8 @@
 - ローカルIPC（Unix domain socket / Windows名前付きパイプ、改行区切りJSON）で即時wake-upとイベント配信を行う。UIとデーモンは引き続きSQLiteを共有し、処理エラー（`daemon_errors`）、再実行要求（`daemon_commands`）、送信 outbox（`send_outbox`）の正はDBに置く。IPCはコマンドを挿入せず、`wake_commands` / `wake_jobs` / `wake_sends` でデーモンを起こすだけ。
 - IPCイベント: スキャン開始・進捗・完了、圧縮の開始・完了・失敗、Discord 送信の状態変化（`send_progress`）、デーモンエラー変更、一時停止状態の変更。UIはイベントで即時更新し、接続できない間は3秒ポーリングにフォールバックする。
 - 稼働判定はハートビートが20秒以内、またはIPC購読が接続中であること。長時間スキャン中にハートビートが古くなっても「デーモン停止」と誤表示しない。
-- Windows実機のトレイ・IME・自動起動は未検証。
-- AppImageの実起動、deb/pacmanのインストール確認は未実施。
+- Windows実機のトレイ・IME・自動起動は確認済み。
+- AppImageの実起動、deb/pacmanのインストール確認は実施済み。
 - pacman / deb のアプリ内更新は、認証キャンセル・DB ロック・署名不正・
   systemd 管理デーモン・deb の実機 QA が未検証。ユニットテストと Release
   ワークフローのパッケージ検証で代替している。
