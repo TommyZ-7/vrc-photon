@@ -552,9 +552,16 @@ mod tests {
         parent_folder, right_click_replaces_selection,
     };
     use crate::state::selection::PhotoSelection;
-    use crate::ui::theme::CONTEXT_MENU_SLIDE;
+    use crate::ui::theme::{CONTEXT_MENU_OPEN, CONTEXT_MENU_SLIDE};
     use gpui_kit::{Bounds, point, px, size};
     use std::path::Path;
+    use std::time::Duration;
+
+    #[test]
+    fn context_menu_open_duration_stays_within_the_issue_window() {
+        assert!(CONTEXT_MENU_OPEN >= Duration::from_millis(100));
+        assert!(CONTEXT_MENU_OPEN <= Duration::from_millis(150));
+    }
 
     #[test]
     fn context_menu_open_frame_fades_in_and_settles_from_above() {
