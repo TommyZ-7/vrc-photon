@@ -218,9 +218,6 @@ pub struct App {
     pub(crate) photo_grid_focus: FocusHandle,
     pub(crate) search_grid_focus: FocusHandle,
     pub(crate) photo_context_menu: Option<context_menu::PhotoContextMenuState>,
-    /// Changes on every context-menu open so the entrance animation replays
-    /// even when a menu is closed and reopened within one frame.
-    pub(crate) photo_context_menu_epoch: u64,
     pub(crate) import_dialog_focus: FocusHandle,
     pub(crate) quick_look_open: bool,
     pub(crate) quick_look_epoch: u64,
@@ -1032,7 +1029,6 @@ impl App {
             photo_grid_focus,
             search_grid_focus,
             photo_context_menu: None,
-            photo_context_menu_epoch: 0,
             import_dialog_focus,
             quick_look_open: false,
             quick_look_epoch: 0,
@@ -1413,7 +1409,7 @@ impl Render for App {
             root = root.child(self.quick_look(window, cx));
         }
         let root = root.child(self.viewer_morph_view.clone());
-        let root = if let Some(menu) = self.photo_context_menu_overlay(window, cx) {
+        let root = if let Some(menu) = self.photo_context_menu_overlay() {
             root.child(menu)
         } else {
             root

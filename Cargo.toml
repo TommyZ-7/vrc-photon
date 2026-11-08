@@ -56,3 +56,8 @@ ureq = { version = "3.5", default-features = false, features = ["rustls", "gzip"
 url = "2"
 uuid = { version = "1", features = ["v4"] }
 zip = { version = "9", default-features = false, features = ["deflate"] }
+
+[patch.crates-io]
+# Fork-only patch for #428: opt-in PopupMenu opening animation.
+# Branch: vrc/popup-menu-open-animation (based on v0.9.0).
+gpui-component = { git = "https://github.com/TommyZ-7/gpui-kit", rev = "ff3a72031884300865ebca4b42afac3efd185499" }
