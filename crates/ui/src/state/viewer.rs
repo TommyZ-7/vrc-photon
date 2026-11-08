@@ -200,9 +200,12 @@ pub(crate) fn pixel_ratio(image: (u32, u32), frame: Size<f32>) -> f32 {
         .max(1e-4)
 }
 
+/// The smallest scale is fit or 100% actual pixels, whichever is smaller.
+/// The largest is 400% actual pixels, but never below fit so tiny images keep
+/// their fit-sized display.
 fn zoom_limits(ratio: f32) -> (f32, f32) {
     let actual = 1.0 / ratio;
-    (actual.min(1.0), actual.max(1.0))
+    (actual.min(1.0), (actual * 4.0).max(1.0))
 }
 
 #[derive(Clone)]
@@ -386,12 +389,37 @@ mod tests {
     }
 
     #[test]
-    fn zoom_clamps_at_fit_and_actual_pixels() {
+    fn zoom_clamps_at_fit_and_four_times_actual_pixels() {
         let image = (4000, 3000);
         let frame = size(800.0, 600.0);
         let fit = ViewerZoom::default();
-        assert_eq!(fit.zoom_at(point(0.0, 0.0), 10.0, image, frame).scale, 5.0);
+        let max = fit.zoom_at(point(0.0, 0.0), 100.0, image, frame);
+        assert_eq!(max.scale, 20.0);
+        assert_eq!(max.percent(image, frame), 400);
         assert_eq!(fit.zoom_at(point(0.0, 0.0), 0.01, image, frame).scale, 1.0);
+    }
+
+    #[test]
+    fn small_images_zoom_to_four_times_actual_pixels_without_losing_fit() {
+        let image = (400, 300);
+        let frame = size(800.0, 600.0);
+        let fit = ViewerZoom::default();
+        let max = fit.zoom_at(point(0.0, 0.0), 10.0, image, frame);
+        assert_eq!(max.scale, 2.0);
+        assert_eq!(max.percent(image, frame), 400);
+        assert_eq!(fit.clamped(image, frame).scale, 1.0);
+        assert_eq!(fit.clamped(image, frame).percent(image, frame), 200);
+    }
+
+    #[test]
+    fn pan_clamps_at_the_edges_of_a_four_hundred_percent_zoom() {
+        let image = (4000, 3000);
+        let frame = size(800.0, 600.0);
+        let zoomed = ViewerZoom::default()
+            .zoom_at(point(0.0, 0.0), 100.0, image, frame)
+            .pan_by(point(9999.0, -9999.0), image, frame);
+        assert_eq!(zoomed.scale, 20.0);
+        assert_eq!(zoomed.pan, point(7600.0, -5700.0));
     }
 
     #[test]
