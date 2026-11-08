@@ -17,6 +17,7 @@ use super::{App as PhotoApp, Screen};
 use crate::app::discord::discord_send_guard;
 use crate::state::selection::PhotoSelection;
 use crate::ui::actions::TrashSelectedPhotos;
+use crate::ui::theme::{CONTEXT_MENU_OPEN, CONTEXT_MENU_SLIDE, ease_motion};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct ContextMenuSnapshot {
@@ -42,6 +43,9 @@ pub(crate) struct PhotoContextMenuState {
     position: Point<Pixels>,
     snapshot: ContextMenuSnapshot,
     source_focus: FocusHandle,
+    /// Identifies this opening so the entrance animation starts from frame 0
+    /// even when a menu is closed and immediately reopened.
+    open_epoch: u64,
     _dismiss: Subscription,
 }
 
@@ -136,6 +140,8 @@ impl PhotoApp {
         if snapshot.selection.is_empty() {
             return;
         }
+        self.photo_context_menu_epoch = self.photo_context_menu_epoch.wrapping_add(1);
+        let open_epoch = self.photo_context_menu_epoch;
         let selection_len = snapshot.selection.len();
         let clipboard_enabled = self.settings.clipboard_enabled;
         let discord_ready = discord_send_guard(&self.settings, self.discord_url.as_deref()).is_ok();
@@ -298,6 +304,7 @@ impl PhotoApp {
             position,
             snapshot,
             source_focus,
+            open_epoch,
             _dismiss: dismiss,
         });
         cx.defer_in(window, move |this, window, cx| {
@@ -367,16 +374,26 @@ impl PhotoApp {
         }
     }
 
-    pub(crate) fn photo_context_menu_overlay(&self) -> Option<AnyElement> {
+    pub(crate) fn photo_context_menu_overlay(
+        &self,
+        window: &Window,
+        cx: &Context<Self>,
+    ) -> Option<AnyElement> {
         let state = self.photo_context_menu.as_ref()?;
+        let menu = div().child(state.menu.clone()).with_animation(
+            ("photo-context-menu-open", state.open_epoch),
+            Animation::new(CONTEXT_MENU_OPEN)
+                .with_easing(ease_motion)
+                .with_max_fps(self.motion_fps(window, cx)),
+            |el, t| {
+                let (opacity, offset) = context_menu_open_frame(t);
+                el.opacity(opacity).relative().top(px(offset))
+            },
+        );
         Some(
-            deferred(
-                anchored()
-                    .position(state.position)
-                    .child(state.menu.clone()),
-            )
-            .with_priority(gpui_kit::base::POPUP_PRIORITY)
-            .into_any_element(),
+            deferred(anchored().position(state.position).child(menu))
+                .with_priority(gpui_kit::base::POPUP_PRIORITY)
+                .into_any_element(),
         )
     }
 
@@ -506,6 +523,15 @@ fn parent_folder(path: &Path) -> &Path {
         .unwrap_or(path)
 }
 
+/// Opacity and vertical offset for the context menu's opening frame.
+///
+/// The menu fades in while settling down the last [`CONTEXT_MENU_SLIDE`] pixels;
+/// it starts above its final position and lands at `0`.
+fn context_menu_open_frame(t: f32) -> (f32, f32) {
+    let t = t.clamp(0.0, 1.0);
+    (t, -CONTEXT_MENU_SLIDE * (1.0 - t))
+}
+
 fn menu_position_from_bounds(
     bounds: Option<Bounds<Pixels>>,
     viewport: Size<Pixels>,
@@ -522,12 +548,33 @@ fn menu_position_from_bounds(
 mod tests {
     use super::{
         ContextMenuEnablement, ContextMenuSnapshot, Screen, clipboard_path_text,
-        context_menu_snapshot_is_stale, menu_position_from_bounds, parent_folder,
-        right_click_replaces_selection,
+        context_menu_open_frame, context_menu_snapshot_is_stale, menu_position_from_bounds,
+        parent_folder, right_click_replaces_selection,
     };
     use crate::state::selection::PhotoSelection;
+    use crate::ui::theme::{CONTEXT_MENU_OPEN, CONTEXT_MENU_SLIDE};
     use gpui_kit::{Bounds, point, px, size};
     use std::path::Path;
+    use std::time::Duration;
+
+    #[test]
+    fn context_menu_open_duration_stays_within_the_issue_window() {
+        assert!(CONTEXT_MENU_OPEN >= Duration::from_millis(100));
+        assert!(CONTEXT_MENU_OPEN <= Duration::from_millis(150));
+    }
+
+    #[test]
+    fn context_menu_open_frame_fades_in_and_settles_from_above() {
+        assert_eq!(context_menu_open_frame(0.0), (0.0, -CONTEXT_MENU_SLIDE));
+        assert_eq!(context_menu_open_frame(1.0), (1.0, 0.0));
+
+        let (opacity, offset) = context_menu_open_frame(0.5);
+        assert!((opacity - 0.5).abs() < f32::EPSILON);
+        assert!((offset + CONTEXT_MENU_SLIDE / 2.0).abs() < f32::EPSILON);
+
+        assert_eq!(context_menu_open_frame(-1.0), (0.0, -CONTEXT_MENU_SLIDE));
+        assert_eq!(context_menu_open_frame(2.0), (1.0, 0.0));
+    }
 
     #[test]
     fn context_menu_enablement_follows_the_issue_table() {
