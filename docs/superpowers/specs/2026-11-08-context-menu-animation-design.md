@@ -1,9 +1,19 @@
 # 右クリックメニュー開くアニメーション: 設計
 
 - Date: 2026-11-08
-- Status: Draft（サブメニュー方式の承認待ち）
-- Related: #428, #432（承認済みモック）, #415
+- Status: Approved（A1 / fork-only / shadow ramp 初版）
+- Related: #428, #432（承認済みモック）, #434（Phase 1）, #415
 - Approved mock: [docs/ui-context-menu-animation-mockup.html](../../ui-context-menu-animation-mockup.html)
+
+## 0. Decision (2026-11-08)
+
+- サブメニュー方式は **A1**。`PopupMenu` に opt-in の open animation hook を追加し、
+  メインとサブを同じ実装に寄せる。Phase 1 のアプリ側ラッパーは Phase 2 で削除する。
+- fork は **`TommyZ-7/gpui-kit`**。**上流 PR は出さない**。fork の patch branch を
+  commit SHA で固定して運用する。
+- **shadow ramp は初版から入れる**。フェード中も `popover_shadow(ring, t^3)` で
+  shadow の ink を抑える。
+- Phase 1（メイン）は #434 でマージ済み。Phase 2 はこの設計に従う。
 
 ## 1. Intent
 
@@ -139,25 +149,33 @@ let menu = div().child(state.menu.clone()).with_animation(
 `menu.clone()` を描画する。アプリ側からこの描画をラップする公開 API はない。
 そのため、同じアニメーションを付ける方法は次の 4 つ。
 
-### A. `PopupMenu` に opt-in の open animation を追加する（推奨）
+### A1. `PopupMenu` に opt-in の open animation を追加する（採用）
 
 `gpui-component` の `src/menu/popup_menu.rs` に小さな hook を追加する。
 
-- `PopupMenu` に `open_animation: bool`（または `Option<Duration>`）を追加する。
-- public builder `open_animation(bool)`（名前は実装時に調整）を追加する。既定は `false`。
-- `render()` の root `v_flex()` を、`dropdown_popup()` と同じ要領で
-  `with_animation` する:
-  - 120ms、`ease_out_cubic`。
-  - `opacity: 0 -> 1`、`relative().top(-4px -> 0)`。
-  - `shadow(popover_shadow(ring, t^3))` で shadow の透けを防ぐ。
-  - ID は menu entity ごとに一意にする（entity id または連番）。
-- submenu にも同じ flag を伝播する。`submenu_with_icon()` で親の flag をコピーするか、
-  アプリ側の submenu builder で `open_animation(true)` を呼ぶ。
-- アプリ側はメインメニューの builder で `open_animation(true)` を呼ぶ。
-  - **A1**: メインも submenu も patched hook に寄せ、Phase 1 のアプリ側ラッパーを外す。
-    実装が 1 箇所に集約され、メイン／サブの見た目が完全に一致する。
-  - **A2**: メインは Phase 1 のアプリ側ラッパーのまま、submenu だけ patched hook を使う。
-    Phase 1 のコードを残せるが、同じモーションの実装が 2 箇所になる。
+API:
+
+```rust
+// PopupMenu
+pub fn open_animation(mut self, duration: Duration, offset: Pixels) -> Self;
+```
+
+- `PopupMenu` に `open_animation: Option<(Duration, Pixels)>` を追加する。既定は `None`。
+- menu entity ごとに一意な `animation_id: u64` を `PopupMenu::new()` で採番する
+  （`AtomicU64` の連番）。アニメーション ID は `("popup-menu-open", animation_id)`。
+- `render()` の root `v_flex()`（`popover_style` を持つ surface 自身）を
+  `with_animation` で包む:
+  - `duration` は呼び出し側から渡す（アプリは 120ms）。
+  - `offset` は呼び出し側から渡す（アプリは 4px）。
+  - `ease_out_cubic`。
+  - `opacity: 0 -> 1`、`relative().top(-offset -> 0)`。
+  - `shadow(popover_shadow(popover_ring(cx), t^3))` を初版から入れる。
+- submenu にも同じ設定を伝播する。`submenu_with_icon()` で親の `open_animation` を
+  子の `PopupMenu` にコピーする。アプリ側はメインメニューの builder で
+  `.open_animation(CONTEXT_MENU_OPEN, px(CONTEXT_MENU_SLIDE))` を 1 回呼ぶだけでよい。
+- `item(PopupMenuItem::submenu(...))` で後から差し込む submenu には伝播しない。
+  アプリは `submenu_with_icon()` を使っているため対象外。必要になったら
+  `render()` の parent 配線で同じコピーを行う。
 
 依存の入れ方:
 
@@ -166,25 +184,31 @@ let menu = div().child(state.menu.clone()).with_animation(
 gpui-component = { git = "https://github.com/TommyZ-7/gpui-kit", rev = "<patch-commit>" }
 ```
 
-- `v0.9.0` tag から fork し、`crates/component/src/menu/popup_menu.rs` だけを変更する。
-- branch ではなく commit SHA に固定する。
-- 上流に PR を出し、リリースされたら patch を外して `gpui-kit` を上げる。
+- `v0.9.0` tag（commit `7591a35e`）から fork の patch branch を作り、
+  `crates/component/src/menu/popup_menu.rs` だけを変更する。
+- **上流 PR は出さない。** fork の patch branch を commit SHA で固定して運用する。
+- fork の branch 名は `vrc/popup-menu-open-animation` とし、tag `v0.9.0` を基点にする。
 - リリース build は git dependency を fetch する。`Cargo.lock` に SHA が残る。
-- `gpui-component` の license（Apache-2.0 / MIT）と provenance を
-  `docs/licenses.md` に追記するかは、実際の配布物に同梱されるかで判断する。
+- gpui-kit を上げるときは、新しい tag に patch を rebase して fork の branch を更新し、
+  `rev` を新しい commit に差し替える。
+- fork の commit message に patch の目的と適用ファイルを残す。上流に還元しないため、
+  fork が patch の source of truth になる。
+- license は fork 元の `gpui-component`（Apache-2.0 / MIT）に従う。配布物に
+  ソースを同梱しない限り `docs/licenses.md` への追記は不要とし、必要になった時点で
+  別 docs PR で追加する。
 
 Pros:
 
 - メイン／サブメニューが同じコードで動く。挙動の一致が保証される。
 - アプリ側のイベント処理、フォーカス、dismiss、キーボードナビゲーションを変更しない。
 - shadow ramp も crate 内の既存 helper で正しく扱える。
-- 上流に還元できる。
+- Phase 1 のアプリ側ラッパーを削除でき、同じモーションの実装が 1 箇所に集約される。
 
 Cons:
 
-- 上流リリースまで fork/patch 依存が残る。
+- fork の patch branch を恒久的に維持する必要がある（上流 PR は出さない方針）。
 - 依存の取得元が crates.io から git に変わる。CI / release のネットワーク前提が増える。
-- fork の管理（tag 追従、PR、リリース後の削除）が必要。
+- gpui-kit 更新時に patch の rebase が必要。
 
 ### B. 圧縮サブメニューをアプリ側で再実装する
 
@@ -237,35 +261,43 @@ Cons:
 
 | 方式 | 見た目の一致 | 回帰リスク | 依存変更 | 保守コスト | 備考 |
 |---|---|---|---|---|---|
-| A1: patched hook（メインも寄せる） | ◎ | 低 | git patch | 中 | 推奨 |
-| A2: patched hook（サブのみ） | ○ | 低 | git patch | 中 | Phase 1 を残す |
-| B: アプリ側再実装 | ○ | 高 | なし | 高 | 非推奨 |
-| C: vendoring | ◎ | 低 | vendored crate | 高 | fork 不可なら |
-| D: スコープ分割 | △ | 低 | なし | 低 | #428 未達 |
+| A1: patched hook（メインも寄せる） | ◎ | 低 | git patch | 中 | **採用** |
+| A2: patched hook（サブのみ） | ○ | 低 | git patch | 中 | 不採用（Phase 1 を残す案） |
+| B: アプリ側再実装 | ○ | 高 | なし | 高 | 不採用 |
+| C: vendoring | ◎ | 低 | vendored crate | 高 | 不採用 |
+| D: スコープ分割 | △ | 低 | なし | 低 | 不採用（#428 未達） |
 
-## 6. Recommendation
+## 6. Approved approach
 
-- **Phase 1（メイン）**: アプリ側ラッパーで実装する。依存変更なしで完結し、
-  右クリック／キーボード／画面端／連続開閉の受け入れ条件を満たせる。
-  実装 PR: #434。
-- **Phase 2（サブ）**: **A1** を推奨する。`PopupMenu` に opt-in hook を入れ、
-  メインとサブの両方を同じ実装に寄せる。上流に PR を出し、リリース後に patch を外す。
-- A1 が不可（fork を増やせない）なら **C**。B は回帰リスクが高く、D は #428 を満たさない。
+- **Phase 1（メイン）**: アプリ側ラッパーで実装・マージ済み（#434）。
+- **Phase 2（サブ）**: **A1 を採用**。`PopupMenu` に opt-in hook を入れ、
+  メインとサブの両方を同じ実装に寄せる。Phase 1 のアプリ側ラッパーは Phase 2 で削除する。
+- 上流 PR は出さない。fork `TommyZ-7/gpui-kit` の patch branch を commit SHA で固定する。
+- shadow ramp は初版から入れる。
 
-Phase 1 は #434 として実装・マージ済み。Phase 2 は submenu 方式の決定後に別 PR で進める。
-Phase 2 の patch が入ったら、Phase 1 のアプリ側ラッパーを A1 に合わせて削除するか、
-A2 として残すかを決める。
+Phase 2 は別 PR で進める。Phase 2 の patch が入ったら、Phase 1 の
+`photo_context_menu_epoch` / `open_epoch` / `context_menu_open_frame` と
+アプリ側ラッパーを削除し、アプリは `PopupMenu::open_animation(...)` を呼ぶだけにする。
 
 ## 7. Testing
 
 ### Unit tests
 
-- `context_menu_open_frame(0.0) == (0.0, -4.0)`
-- `context_menu_open_frame(1.0) == (1.0, 0.0)`
-- 0.5 で opacity 0.5、offset -2.0。
+Fork (`gpui-component`):
+
+- `popup_menu_open_frame(0.0) == (0.0, -offset, 0.0)`
+- `popup_menu_open_frame(1.0) == (1.0, 0.0, 1.0)`（shadow strength）
+- 0.5 で opacity 0.5、offset -offset/2、shadow strength 0.125。
 - 範囲外の t が clamp される。
-- 既存の context menu テスト 7 件＋新規 2 件（frame と duration）が通る。
+- `open_animation(None)` ではアニメーション要素を付けない（既存の menu が不変）。
+- `submenu_with_icon()` が親の `open_animation` をコピーする。
+- reduce motion 時は最初のフレームで最終値を採用する。
+
+App:
+
+- 既存の context menu テスト 7 件が通る。
 - `CONTEXT_MENU_OPEN` が 100–150ms の範囲にあること（定数テスト）。
+- Phase 2 で `context_menu_open_frame` とそのテストを削除する。
 
 ### Local commands
 
@@ -307,10 +339,11 @@ XWayland の XTest 合成入力が届かなかったため、debug ビルドに�
   B は高リスクなので採用しない。
 - **No exit animation**: 現行どおり。閉じる瞬間のチラつきは今回の対象外。
 
-## 9. Open decisions
+## 9. Decision log
 
-1. サブメニュー方式: **A1（推奨） / A2 / B / C / D** のどれにするか。
-2. A1/A2 の場合、fork は `TommyZ-7/gpui-kit` でよいか。上流 PR を出すか。
-3. A1/A2 の場合、shadow ramp を初版から入れるか、目視で必要になってから入れるか。
+- 2026-11-08: サブメニュー方式は **A1** を採用。
+- 2026-11-08: fork は **`TommyZ-7/gpui-kit`**。**上流 PR は出さない**。
+- 2026-11-08: **shadow ramp を初版から入れる**。
+- 2026-11-08: Phase 1（メイン）は #434 でマージ済み。
 
-Phase 1（メイン）は #434 でマージ済みのため、判断は不要。
+追加の判断事項はない。Phase 2 はこの設計に従って計画・実装する。
