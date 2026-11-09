@@ -114,7 +114,7 @@ impl App {
             browser.session_scroll.scroll_to_item(row, strategy);
             return;
         }
-        let Some(offset) = rows.offset_for_photo(position) else {
+        let Some(offset) = rows.anchor_offset_for_photo(position) else {
             return;
         };
         set_session_scroll_offset(&browser, offset);

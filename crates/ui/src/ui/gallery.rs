@@ -905,7 +905,7 @@ fn render_session_grid(
         );
         if let Some(id) = anchor
             && let Some(position) = browser.index.row_of_id(id)
-            && let Some(offset) = rows.offset_for_photo(position)
+            && let Some(offset) = rows.anchor_offset_for_photo(position)
         {
             set_session_scroll_offset(&browser, offset);
         }

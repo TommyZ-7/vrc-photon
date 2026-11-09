@@ -53,6 +53,9 @@ pub(crate) struct SessionRows {
     /// when the top row is not itself a photo row.
     row_photo_start: Vec<usize>,
     header_rows: HashMap<i64, usize>,
+    /// First photo of each header or date-label row. Anchoring to one of
+    /// these photos keeps its context row visible.
+    leading_rows: HashMap<usize, usize>,
     photo_count: usize,
 }
 
@@ -78,6 +81,7 @@ impl SessionRows {
         let mut photo_rows = Vec::new();
         let mut row_photo_start = Vec::new();
         let mut header_rows = HashMap::new();
+        let mut leading_rows = HashMap::new();
         let mut seen_sessions = HashSet::new();
         let mut index = 0;
 
@@ -103,6 +107,7 @@ impl SessionRows {
                     heights.push(header_height);
                     row_photo_start.push(start);
                     header_rows.insert(session_id, row);
+                    leading_rows.insert(start, row);
                 }
                 if !is_collapsed {
                     push_photo_rows(
@@ -137,6 +142,7 @@ impl SessionRows {
                     });
                     heights.push(date_label_height);
                     row_photo_start.push(day_start);
+                    leading_rows.insert(day_start, rows.len() - 1);
                     push_photo_rows(
                         &mut rows,
                         &mut heights,
@@ -166,6 +172,7 @@ impl SessionRows {
             photo_rows,
             row_photo_start,
             header_rows,
+            leading_rows,
             photo_count: entries.len(),
         }
     }
@@ -203,6 +210,16 @@ impl SessionRows {
         self.header_rows
             .get(&session_id)
             .map(|row| self.origins[*row])
+    }
+
+    /// Offset for anchoring `photo_index` at the top of the viewport. When
+    /// the photo starts a session or date-label run, keep that context row
+    /// visible; otherwise anchor to the photo row itself.
+    pub(crate) fn anchor_offset_for_photo(&self, photo_index: usize) -> Option<f32> {
+        if let Some(row) = self.leading_rows.get(&photo_index) {
+            return Some(self.origins[*row]);
+        }
+        self.offset_for_photo(photo_index)
     }
 
     pub(crate) fn row_for_photo(&self, photo_index: usize) -> Option<usize> {
@@ -426,6 +443,21 @@ mod tests {
         let header_offset = rows.offset_for_session(0).unwrap();
         assert_eq!(rows.top_photo_index(header_offset), Some(0));
         assert_eq!(rows.top_photo_index(-10.0), Some(0));
+    }
+
+    #[test]
+    fn anchor_offset_keeps_the_context_row_for_the_first_photo() {
+        let entries = vec![
+            entry(4, 20261109, Some(7)),
+            entry(3, 20261109, Some(7)),
+            entry(2, 20261109, None),
+            entry(1, 20261109, None),
+        ];
+        let rows = SessionRows::build(&entries, 2, 200.0, 92.0, 46.0, &HashSet::new());
+        assert_eq!(rows.anchor_offset_for_photo(0), rows.offset_for_session(7));
+        assert_eq!(rows.anchor_offset_for_photo(1), rows.offset_for_photo(1));
+        assert!(rows.anchor_offset_for_photo(2).unwrap() < rows.offset_for_photo(2).unwrap());
+        assert_eq!(rows.anchor_offset_for_photo(3), rows.offset_for_photo(3));
     }
 
     #[test]
