@@ -1259,6 +1259,58 @@ impl Db {
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
+    /// Tag-name autocomplete candidates from manual and applied AI tags.
+    ///
+    /// AI names follow the UI locale; `prefer_english` selects `name_en` when
+    /// available. Rows with the same display name merge, and a photo tagged
+    /// both manually and by the AI plugin is counted once.
+    pub fn tag_name_suggestions(
+        &self,
+        query: &str,
+        limit: usize,
+        prefer_english: bool,
+    ) -> Result<Vec<SearchSuggestion>> {
+        let query = query.trim();
+        if query.is_empty() {
+            return Ok(Vec::new());
+        }
+        let like = format!("%{}%", escape_like(query));
+        let sql = format!(
+            "WITH candidates(name, photo_id) AS ( \
+                 SELECT t.name, pt.photo_id \
+                 FROM tags t JOIN photo_tags pt ON pt.tag_id = t.id \
+                 UNION ALL \
+                 SELECT CASE WHEN ?1 THEN COALESCE(d.name_en, d.name) ELSE d.name END, \
+                        at.photo_id \
+                 FROM photo_ai_tags at \
+                 JOIN ai_tag_definitions d \
+                   ON d.plugin_id = at.plugin_id AND d.tag_key = at.tag_key \
+                 WHERE at.applied = 1 AND at.plugin_id = ?4 \
+             ) \
+             SELECT c.name AS name, COUNT(DISTINCT c.photo_id) AS photo_count \
+             FROM candidates c JOIN photos p ON p.id = c.photo_id \
+             WHERE {VISIBLE_STATUS} AND c.name <> '' AND c.name LIKE ?2 ESCAPE '\\' \
+             GROUP BY c.name \
+             ORDER BY photo_count DESC, c.name COLLATE NOCASE ASC LIMIT ?3"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(
+            params![
+                i64::from(prefer_english),
+                like,
+                limit as i64,
+                AI_PLUGIN_ID
+            ],
+            |row| {
+                Ok(SearchSuggestion {
+                    name: row.get(0)?,
+                    photo_count: row.get(1)?,
+                })
+            },
+        )?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
     /// Fetches photos by primary key, preserving the order of `ids` and
     /// skipping ids that no longer exist.
     pub fn photos_by_ids(&self, ids: &[i64]) -> Result<Vec<Photo>> {
@@ -7906,6 +7958,68 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].name, "100%_World");
         assert_eq!(db.world_name_suggestions("o", 1).unwrap().len(), 1);
+    }
+
+    fn seed_photo_at(db: &Db, path: &str) -> i64 {
+        let root = db.add_root("/photos", "reference").unwrap();
+        db.upsert_photo(&sample_photo(root, path, 1_700_000_000))
+            .unwrap()
+    }
+
+    #[test]
+    fn tag_suggestions_merge_manual_and_applied_ai_tags() {
+        let db = Db::open_in_memory().unwrap();
+        install_test_catalog(&db);
+        let a = seed_photo(&db);
+        let b = seed_photo_at(&db, "/photos/b.png");
+        let c = seed_photo_at(&db, "/photos/c.png");
+        db.set_photo_tags(a, &["夜景".into()]).unwrap();
+        db.set_photo_tags(b, &["夜景".into()]).unwrap();
+        seed_ai_tag(&db, c, AI_PLUGIN, "sea", 0.97, true);
+        seed_ai_tag(&db, c, AI_PLUGIN, "park", 0.97, false);
+
+        assert_eq!(
+            db.tag_name_suggestions("夜", 10, false).unwrap(),
+            vec![SearchSuggestion {
+                name: "夜景".into(),
+                photo_count: 2,
+            }]
+        );
+        assert_eq!(
+            db.tag_name_suggestions("海", 10, false).unwrap(),
+            vec![SearchSuggestion {
+                name: "海".into(),
+                photo_count: 1,
+            }]
+        );
+        assert_eq!(
+            db.tag_name_suggestions("Sea", 10, true).unwrap(),
+            vec![SearchSuggestion {
+                name: "Sea".into(),
+                photo_count: 1,
+            }]
+        );
+        assert!(db.tag_name_suggestions("公", 10, false).unwrap().is_empty());
+    }
+
+    #[test]
+    fn tag_suggestions_merge_same_name_and_skip_unapplied() {
+        let db = Db::open_in_memory().unwrap();
+        install_test_catalog(&db);
+        let a = seed_photo(&db);
+        let b = seed_photo_at(&db, "/photos/b.png");
+        db.set_photo_tags(a, &["海".into()]).unwrap();
+        seed_ai_tag(&db, a, AI_PLUGIN, "sea", 0.97, true);
+        seed_ai_tag(&db, b, AI_PLUGIN, "sea", 0.97, true);
+
+        let rows = db.tag_name_suggestions("海", 10, false).unwrap();
+        assert_eq!(
+            rows,
+            vec![SearchSuggestion {
+                name: "海".into(),
+                photo_count: 2,
+            }]
+        );
     }
 
     #[test]
