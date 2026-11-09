@@ -906,8 +906,19 @@ pub struct PhotoFilter {
 pub struct LibraryStats {
     pub photo_count: i64,
     pub total_bytes: u64,
+    pub world_count: i64,
     pub compressed_count: i64,
     pub derivative_bytes: u64,
+}
+
+/// One world represented in the library, with its visible photo count.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorldPhotoCount {
+    /// External VRChat world ID (`wrld_...`) when the photo is linked to a
+    /// stored world. Photos linked only by name have `None`.
+    pub world_id: Option<String>,
+    pub name: String,
+    pub photo_count: i64,
 }
 
 #[cfg(test)]

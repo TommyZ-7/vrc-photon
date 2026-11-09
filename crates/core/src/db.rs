@@ -22,7 +22,7 @@ use crate::model::{
     MAX_PROFILE_NAME_CHARS, NewPhoto, Photo, PhotoContext, PhotoFilter, PhotoIndexEntry,
     PhotoPlayer, PhotoSort, PhotoStatus, PhotoTextFilter, QueueStatus, SendCompletion,
     SendErrorCode, SendHistoryEntry, SendKind, SendOrigin, SendOutboxEntry, SendSource, SendStatus,
-    Session, SessionPlayer, World,
+    Session, SessionPlayer, World, WorldPhotoCount,
 };
 use crate::world_name::{
     NOT_FOUND_RETRY_SECONDS, REQUEST_INTERVAL_SECONDS, WorldNameFailure, WorldNameLookup,
@@ -1264,6 +1264,39 @@ impl Db {
         Ok(count)
     }
 
+    /// Returns a page of full photo rows matching the text filters.
+    ///
+    /// This is the read model behind the daemon's MCP search: it uses the same
+    /// filters as the UI index search but keeps paths and metadata for the
+    /// caller. Rows are ordered newest first.
+    pub fn search_photos_text(
+        &self,
+        filter: &PhotoTextFilter,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<Photo>> {
+        let (where_sql, mut values) = build_text_filter(filter);
+        values.push(Value::Integer(clamp_limit(limit)));
+        values.push(Value::Integer(offset.max(0)));
+        let sql = format!(
+            "SELECT {PHOTO_SELECT}{PHOTO_FROM} WHERE {where_sql} \
+             ORDER BY p.captured_at_utc DESC, p.id DESC LIMIT ? OFFSET ?"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(params_from_iter(values), row_to_photo)?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Counts full photo rows matching the same text filters as
+    /// [`Self::search_photos_text`].
+    pub fn count_photos_text(&self, filter: &PhotoTextFilter) -> Result<i64> {
+        let (where_sql, values) = build_text_filter(filter);
+        let sql = format!("SELECT COUNT(*){PHOTO_FROM} WHERE {where_sql}");
+        let mut stmt = self.conn.prepare(&sql)?;
+        let count = stmt.query_row(params_from_iter(values), |row| row.get(0))?;
+        Ok(count)
+    }
+
     pub fn unlinked_photos(&self, limit: i64) -> Result<Vec<Photo>> {
         let sql = format!(
             "SELECT {PHOTO_SELECT}{PHOTO_FROM} WHERE c.photo_id IS NULL \
@@ -1641,9 +1674,22 @@ impl Db {
             [],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )?;
+        let world_count: i64 = self.conn.query_row(
+            &format!(
+                "SELECT COUNT(*) FROM ( \
+                    SELECT DISTINCT COALESCE(c.world_id, c.world_name) AS world \
+                    FROM photos p JOIN photo_context c ON c.photo_id = p.id \
+                    WHERE {VISIBLE_STATUS} \
+                      AND COALESCE(c.world_id, c.world_name) IS NOT NULL \
+                 )"
+            ),
+            [],
+            |row| row.get(0),
+        )?;
         Ok(LibraryStats {
             photo_count,
             total_bytes: total_bytes.max(0) as u64,
+            world_count,
             compressed_count,
             derivative_bytes: derivative_bytes.max(0) as u64,
         })
@@ -1774,6 +1820,36 @@ impl Db {
             )
             .optional()?;
         Ok(world)
+    }
+
+    /// Lists the worlds represented by visible photos, with photo counts.
+    ///
+    /// Photos linked only by name are included with `world_id = None`. An
+    /// alias wins over the stored or log-derived name, matching the rest of
+    /// the UI.
+    pub fn worlds_with_photo_counts(&self) -> Result<Vec<WorldPhotoCount>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT w.world_id, \
+                COALESCE(w.alias, c.world_name, w.name, w.world_id, '') AS name, \
+                COUNT(*) \
+             FROM photos p \
+             JOIN photo_context c ON c.photo_id = p.id \
+             LEFT JOIN worlds w ON w.id = c.world_id \
+             WHERE p.status IN ('present', 'replaced') \
+               AND COALESCE(c.world_id, c.world_name) IS NOT NULL \
+             GROUP BY c.world_id, \
+                COALESCE(w.alias, c.world_name, w.name, w.world_id, ''), \
+                w.world_id \
+             ORDER BY COUNT(*) DESC, name COLLATE NOCASE",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(WorldPhotoCount {
+                world_id: row.get(0)?,
+                name: row.get(1)?,
+                photo_count: row.get(2)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
     // ---------- world name lookups ----------
@@ -13310,5 +13386,122 @@ mod tests {
         }
         assert_eq!(db.prune_send_history(0).unwrap(), 3);
         assert!(db.send_history(10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn text_search_paginates_and_counts_the_same_filter() {
+        let db = Db::open_in_memory().unwrap();
+        let root = db.add_root("/photos", "reference").unwrap();
+        for (name, captured) in [("a.png", 100), ("b.png", 200), ("c.png", 300)] {
+            db.upsert_photo(&sample_photo(root, &format!("/photos/{name}"), captured))
+                .unwrap();
+        }
+        let filter = PhotoTextFilter::default();
+        assert_eq!(db.count_photos_text(&filter).unwrap(), 3);
+        let page = db.search_photos_text(&filter, 1, 1).unwrap();
+        assert_eq!(page.len(), 1);
+        assert_eq!(page[0].file_name, "b.png");
+    }
+
+    #[test]
+    fn text_search_applies_tag_favorite_and_date_filters() {
+        let db = Db::open_in_memory().unwrap();
+        let root = db.add_root("/photos", "reference").unwrap();
+        let old = db
+            .upsert_photo(&sample_photo(root, "/photos/old.png", 100))
+            .unwrap();
+        let new = db
+            .upsert_photo(&sample_photo(root, "/photos/new.png", 300))
+            .unwrap();
+        db.set_photo_tags(old, &["beach".to_string()]).unwrap();
+        db.set_favorite(new, true).unwrap();
+
+        let tag_filter = PhotoTextFilter {
+            tag: Some("beach".to_string()),
+            ..PhotoTextFilter::default()
+        };
+        let rows = db.search_photos_text(&tag_filter, 10, 0).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, old);
+
+        let favorite_filter = PhotoTextFilter {
+            favorite: true,
+            from_utc: Some(200),
+            ..PhotoTextFilter::default()
+        };
+        let rows = db.search_photos_text(&favorite_filter, 10, 0).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, new);
+    }
+
+    #[test]
+    fn worlds_with_photo_counts_group_visible_photos_and_skip_missing() {
+        let db = Db::open_in_memory().unwrap();
+        let root = db.add_root("/photos", "reference").unwrap();
+        let a = db
+            .upsert_photo(&sample_photo(root, "/photos/a.png", 100))
+            .unwrap();
+        let b = db
+            .upsert_photo(&sample_photo(root, "/photos/b.png", 200))
+            .unwrap();
+        let c = db
+            .upsert_photo(&sample_photo(root, "/photos/c.png", 300))
+            .unwrap();
+        let missing = db
+            .upsert_photo(&sample_photo(root, "/photos/missing.png", 400))
+            .unwrap();
+        let world_a = db
+            .upsert_world("wrld_a", Some("World A"), Some("log"))
+            .unwrap();
+        let world_b = db
+            .upsert_world("wrld_b", Some("World B"), Some("log"))
+            .unwrap();
+        db.connection()
+            .execute(
+                "UPDATE worlds SET alias = 'Alias A' WHERE id = ?1",
+                params![world_a],
+            )
+            .unwrap();
+        for (photo_id, world_id, name) in [
+            (a, world_a, "World A"),
+            (b, world_a, "World A"),
+            (c, world_b, "World B"),
+            (missing, world_a, "World A"),
+        ] {
+            db.set_photo_context(&PhotoContext {
+                photo_id,
+                session_id: None,
+                world_id: Some(world_id),
+                world_name: Some(name.to_string()),
+                instance_id: None,
+                link_method: "log".to_string(),
+                confidence: 1.0,
+                author: None,
+                linked_at: "2026-11-09T00:00:00+00:00".to_string(),
+            })
+            .unwrap();
+        }
+        db.mark_missing(missing).unwrap();
+
+        let worlds = db.worlds_with_photo_counts().unwrap();
+        assert_eq!(
+            worlds,
+            vec![
+                WorldPhotoCount {
+                    world_id: Some("wrld_a".to_string()),
+                    name: "Alias A".to_string(),
+                    photo_count: 2,
+                },
+                WorldPhotoCount {
+                    world_id: Some("wrld_b".to_string()),
+                    name: "World B".to_string(),
+                    photo_count: 1,
+                },
+            ]
+        );
+
+        let stats = db.stats().unwrap();
+        assert_eq!(stats.photo_count, 3);
+        assert_eq!(stats.world_count, 2);
     }
 }
