@@ -348,12 +348,18 @@ fn render_header(app: &App, shared: &Rc<GalleryShared>, window: &Window) -> AnyE
         app.settings.ui_card_show_world,
         app.settings.ui_card_show_date || app.settings.ui_card_show_size,
     );
-    let first_visible = first_visible_photo(
-        list_scroll_top(&browser.scroll),
-        metrics.columns,
-        metrics.row_height,
-        total,
-    );
+    let first_visible = if app.settings.ui_photos_view_mode == PhotosViewMode::Sessions {
+        browser
+            .top_photo_index(session_scroll_top(&browser.session_scroll))
+            .unwrap_or(0)
+    } else {
+        first_visible_photo(
+            list_scroll_top(&browser.scroll),
+            metrics.columns,
+            metrics.row_height,
+            total,
+        )
+    };
     let (month, month_count) = if total == 0 {
         (tr!("gallery.no_photos"), 0)
     } else {
