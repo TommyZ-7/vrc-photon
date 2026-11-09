@@ -1259,6 +1259,8 @@ fn render_session_grid(
         );
     }
 
+    // Keep the driver alive just past the motion so the next render can drop
+    // the collapsed session's zero-height photo rows from the row model.
     let driver_duration = if driver_duration.is_zero() {
         Duration::ZERO
     } else {
