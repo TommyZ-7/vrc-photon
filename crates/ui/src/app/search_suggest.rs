@@ -67,6 +67,26 @@ pub(crate) fn focus_should_start(
     !state.is_some_and(|state| state.kind == kind && state.query == query)
 }
 
+/// Builds the state for a new query while keeping the previous candidates
+/// visible until its result arrives. Candidates only carry over between
+/// queries of the same field, so one field never shows another field's list.
+fn begin_suggestion_state(
+    previous: Option<&SuggestionState>,
+    kind: SuggestionKind,
+    query: String,
+) -> SuggestionState {
+    let previous = previous.filter(|state| state.kind == kind);
+    SuggestionState {
+        kind,
+        query,
+        items: previous
+            .map(|state| state.items.clone())
+            .unwrap_or_default(),
+        selected: previous.map(|state| state.selected).unwrap_or(0),
+        dismissed: false,
+    }
+}
+
 // gpui-kit 0.9 exposes no composition flag on `InputState`. Printable
 // composition keys are covered by `is_ime_in_progress`; arrow keys during
 // composition rely on the platform IME consuming them before GPUI sees them.
@@ -150,13 +170,11 @@ impl PhotoApp {
     ) {
         let request = self.suggestion_request.wrapping_add(1);
         self.suggestion_request = request;
-        self.suggestion = Some(SuggestionState {
+        self.suggestion = Some(begin_suggestion_state(
+            self.suggestion.as_ref(),
             kind,
-            query: query.clone(),
-            items: Vec::new(),
-            selected: 0,
-            dismissed: false,
-        });
+            query.clone(),
+        ));
         cx.notify();
         cx.spawn(async move |this, cx| {
             cx.background_executor().timer(SUGGESTION_DEBOUNCE).await;
@@ -263,6 +281,15 @@ impl PhotoApp {
         }
     }
 
+    /// Closes the popup when the filter panel scrolls, because the popup is
+    /// anchored to the input's cached bounds and would otherwise drift away
+    /// from its field.
+    pub(crate) fn close_suggestion_on_scroll(&mut self, cx: &mut Context<Self>) {
+        if self.suggestion.is_some() {
+            self.close_suggestion(cx);
+        }
+    }
+
     pub(crate) fn select_suggestion(
         &mut self,
         index: usize,
@@ -340,11 +367,12 @@ impl PhotoApp {
 #[cfg(test)]
 mod tests {
     use super::{
-        BlurAction, SuggestionKind, SuggestionState, blur_action, focus_should_start,
-        move_suggestion_selection, normalized_suggestion_query, suggestion_key_action_for_key,
-        suggestion_result_is_current,
+        BlurAction, SuggestionKind, SuggestionState, begin_suggestion_state, blur_action,
+        focus_should_start, move_suggestion_selection, normalized_suggestion_query,
+        suggestion_key_action_for_key, suggestion_result_is_current,
     };
     use crate::ui::search_suggest::SuggestionKeyAction;
+    use vrc_photon_core::model::SearchSuggestion;
 
     fn state(kind: SuggestionKind, query: &str, dismissed: bool) -> SuggestionState {
         SuggestionState {
@@ -354,6 +382,24 @@ mod tests {
             selected: 0,
             dismissed,
         }
+    }
+
+    fn with_items(
+        kind: SuggestionKind,
+        query: &str,
+        names: &[&str],
+        selected: usize,
+    ) -> SuggestionState {
+        let mut state = state(kind, query, false);
+        state.items = names
+            .iter()
+            .map(|name| SearchSuggestion {
+                name: (*name).into(),
+                photo_count: 1,
+            })
+            .collect();
+        state.selected = selected;
+        state
     }
 
     #[test]
@@ -420,5 +466,23 @@ mod tests {
     fn stale_results_are_rejected() {
         assert!(suggestion_result_is_current(7, 7));
         assert!(!suggestion_result_is_current(6, 7));
+    }
+
+    #[test]
+    fn pending_query_keeps_candidates_from_the_same_field() {
+        let previous = with_items(SuggestionKind::World, "夜", &["夜の街", "夜桜"], 1);
+        let next = begin_suggestion_state(Some(&previous), SuggestionKind::World, "夜桜".into());
+        assert_eq!(next.query, "夜桜");
+        assert_eq!(next.items, previous.items);
+        assert_eq!(next.selected, 1);
+        assert!(!next.dismissed);
+    }
+
+    #[test]
+    fn pending_query_starts_empty_when_the_field_changes() {
+        let previous = with_items(SuggestionKind::World, "夜", &["夜の街"], 0);
+        let next = begin_suggestion_state(Some(&previous), SuggestionKind::Player, "night".into());
+        assert!(next.items.is_empty());
+        assert_eq!(next.selected, 0);
     }
 }

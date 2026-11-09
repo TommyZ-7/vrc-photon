@@ -31,7 +31,7 @@ use crate::world_name::{
 
 /// Highest schema version this build understands. A database with a newer
 /// `user_version` was written by a future release and must not be opened.
-const SCHEMA_VERSION: i64 = 16;
+const SCHEMA_VERSION: i64 = 17;
 
 const SCHEMA_V1: &str = r#"
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -458,6 +458,9 @@ CREATE INDEX IF NOT EXISTS idx_photos_link_retry ON photos(link_next_retry_at)
     WHERE status IN ('present', 'replaced');
 "#;
 
+const SCHEMA_V17_CONTEXT_SESSION_INDEX: &str =
+    "CREATE INDEX IF NOT EXISTS idx_context_session ON photo_context(session_id);";
+
 /// Backoff applied after consecutive failed link attempts: one hour, six
 /// hours, one day, then weekly. Later attempts keep the weekly interval.
 const LINK_RETRY_BACKOFF_SECONDS: [i64; 4] = [3_600, 21_600, 86_400, 604_800];
@@ -655,6 +658,9 @@ impl Db {
         }
         if version < 16 {
             self.migrate_v16()?;
+        }
+        if version < 17 {
+            self.migrate_v17()?;
         }
         Ok(())
     }
@@ -1075,6 +1081,27 @@ impl Db {
             params![now_string()],
         )?;
         tx.pragma_update(None, "user_version", 16)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Adds the `photo_context.session_id` lookup index used by session
+    /// summaries. `IF NOT EXISTS` makes the step safe to retry after an
+    /// interrupted upgrade.
+    fn migrate_v17(&self) -> Result<()> {
+        let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
+        let version: i64 = tx.pragma_query_value(None, "user_version", |row| row.get(0))?;
+        if version >= 17 {
+            tx.commit()?;
+            return Ok(());
+        }
+
+        tx.execute_batch(SCHEMA_V17_CONTEXT_SESSION_INDEX)?;
+        tx.execute(
+            "INSERT OR REPLACE INTO schema_migrations(version, applied_at) VALUES (17, ?1)",
+            params![now_string()],
+        )?;
+        tx.pragma_update(None, "user_version", 17)?;
         tx.commit()?;
         Ok(())
     }
@@ -6465,7 +6492,7 @@ mod tests {
             .conn
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 16);
+        assert_eq!(version, 17);
     }
 
     #[test]
@@ -6511,7 +6538,7 @@ mod tests {
             .conn
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 16);
+        assert_eq!(version, 17);
         let author_columns: i64 = db
             .conn
             .query_row(
@@ -6563,7 +6590,7 @@ mod tests {
             }
             for handle in handles {
                 let opened = handle.join().unwrap();
-                assert_eq!(opened.unwrap().unwrap(), 16);
+                assert_eq!(opened.unwrap().unwrap(), 17);
             }
         }
     }
@@ -6575,7 +6602,7 @@ mod tests {
             .conn
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 16);
+        assert_eq!(version, 17);
         let has_output_dir: bool = db
             .conn
             .query_row(
@@ -6595,7 +6622,7 @@ mod tests {
             .connection()
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 16);
+        assert_eq!(version, 17);
         let table: i64 = db
             .connection()
             .query_row(
@@ -7671,7 +7698,7 @@ mod tests {
             .conn
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 16);
+        assert_eq!(version, 17);
 
         let recorded: i64 = db
             .conn
@@ -7714,7 +7741,7 @@ mod tests {
             .conn
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 16);
+        assert_eq!(version, 17);
         let retry_column: i64 = db
             .conn
             .query_row(
@@ -7781,7 +7808,7 @@ mod tests {
             .conn
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 16);
+        assert_eq!(version, 17);
 
         let jobs = db.list_jobs(10).unwrap();
         assert_eq!(jobs.len(), 1);
@@ -7814,7 +7841,7 @@ mod tests {
             .conn
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 16);
+        assert_eq!(version, 17);
         assert_eq!(db.list_jobs(10).unwrap()[0].retry_count, 2);
 
         let tables: i64 = db
@@ -9661,7 +9688,7 @@ mod tests {
             .conn
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 16);
+        assert_eq!(version, 17);
         let exists: bool = db
             .conn
             .query_row(
@@ -9693,7 +9720,7 @@ mod tests {
             .conn
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 16);
+        assert_eq!(version, 17);
         let table: i64 = db
             .conn
             .query_row(
@@ -9800,6 +9827,8 @@ mod tests {
                      id INTEGER PRIMARY KEY, started_at INTEGER NOT NULL, ended_at INTEGER);\
                  CREATE TABLE compression_jobs (\
                      id TEXT PRIMARY KEY, status TEXT NOT NULL, created_at TEXT NOT NULL);\
+                 CREATE TABLE photo_context (\
+                     photo_id INTEGER PRIMARY KEY, session_id INTEGER);\
                  INSERT INTO photos(id, abs_path) VALUES (42, '/photos/keep.png');\
                  PRAGMA user_version = 12;",
             )
@@ -9811,7 +9840,7 @@ mod tests {
             .connection()
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 16);
+        assert_eq!(version, 17);
         let abs_path: String = db
             .connection()
             .query_row("SELECT abs_path FROM photos WHERE id = 42", [], |row| {
@@ -9862,13 +9891,13 @@ mod tests {
     }
 
     #[test]
-    fn fresh_database_is_v16_and_has_the_link_retry_columns() {
+    fn fresh_database_is_v17_and_has_the_link_retry_columns() {
         let db = Db::open_in_memory().unwrap();
         let version: i64 = db
             .connection()
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 16);
+        assert_eq!(version, 17);
         for index in [
             "idx_jobs_claim",
             "idx_jobs_created",
@@ -9901,6 +9930,39 @@ mod tests {
     }
 
     #[test]
+    fn migration_v17_is_retryable() {
+        let db = Db::open_in_memory().unwrap();
+        db.connection()
+            .execute_batch(
+                "DROP INDEX IF EXISTS idx_context_session;\
+                 DELETE FROM schema_migrations WHERE version = 17;",
+            )
+            .unwrap();
+        db.connection()
+            .pragma_update(None, "user_version", 16)
+            .unwrap();
+
+        db.migrate_v17().unwrap();
+        db.migrate_v17().unwrap();
+
+        let version: i64 = db
+            .conn
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 17);
+        let exists: bool = db
+            .conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_master \
+                 WHERE type = 'index' AND name = 'idx_context_session')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(exists);
+    }
+
+    #[test]
     fn migration_v15_upgrades_a_v14_database_and_preserves_photos() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("library.db");
@@ -9912,6 +9974,8 @@ mod tests {
                  CREATE TABLE photos (\
                      id INTEGER PRIMARY KEY, abs_path TEXT NOT NULL, \
                      status TEXT NOT NULL DEFAULT 'present');\
+                 CREATE TABLE photo_context (\
+                     photo_id INTEGER PRIMARY KEY, session_id INTEGER);\
                  INSERT INTO photos(id, abs_path) VALUES (42, '/photos/keep.png');\
                  PRAGMA user_version = 14;",
             )
@@ -9924,7 +9988,7 @@ mod tests {
             .connection()
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 16);
+        assert_eq!(version, 17);
         let (attempts, next_retry, status): (i64, Option<i64>, String) = db
             .connection()
             .query_row(
@@ -10027,13 +10091,38 @@ mod tests {
     }
 
     #[test]
+    fn photo_context_session_id_has_an_index() {
+        let db = Db::open_in_memory().unwrap();
+        let version: i64 = db
+            .connection()
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, SCHEMA_VERSION);
+
+        let sql: Option<String> = db
+            .connection()
+            .query_row(
+                "SELECT sql FROM sqlite_master WHERE type = 'index' \
+                 AND name = 'idx_context_session'",
+                [],
+                |row| row.get(0),
+            )
+            .ok();
+        let sql = sql.expect("photo_context.session_id index");
+        assert!(
+            sql.to_lowercase().contains("on photo_context(session_id)"),
+            "{sql}"
+        );
+    }
+
+    #[test]
     fn schema_v16_adds_ai_tag_group_and_keeps_rows() {
         let db = Db::open_in_memory().unwrap();
         let version: i64 = db
             .connection()
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 16);
+        assert_eq!(version, 17);
         let columns: Vec<String> = db
             .connection()
             .prepare("SELECT name FROM pragma_table_info('ai_tag_definitions')")
@@ -10299,6 +10388,8 @@ mod tests {
                  CREATE TABLE photos (\
                      id INTEGER PRIMARY KEY, abs_path TEXT NOT NULL, \
                      status TEXT NOT NULL DEFAULT 'present');\
+                 CREATE TABLE photo_context (\
+                     photo_id INTEGER PRIMARY KEY, session_id INTEGER);\
                  PRAGMA user_version = 13;",
             )
             .unwrap();
@@ -10310,7 +10401,7 @@ mod tests {
             .connection()
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 16);
+        assert_eq!(version, 17);
         for index in [
             "idx_jobs_claim",
             "idx_jobs_created",
@@ -10366,29 +10457,30 @@ mod tests {
 
     #[test]
     fn open_rejects_a_database_from_a_newer_schema_version() {
+        let newer = SCHEMA_VERSION + 1;
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("library.db");
         let db = Db::open(&path).unwrap();
         db.connection()
-            .pragma_update(None, "user_version", 17)
+            .pragma_update(None, "user_version", newer)
             .unwrap();
         drop(db);
 
         match Db::open(&path) {
             Err(CoreError::Invalid(message)) => {
-                assert!(message.contains("17"), "{message}");
-                assert!(message.contains("16"), "{message}");
+                assert!(message.contains(&newer.to_string()), "{message}");
+                assert!(message.contains(&SCHEMA_VERSION.to_string()), "{message}");
             }
             Err(error) => panic!("expected a typed future-version error, got {error}"),
-            Ok(_) => panic!("expected Db::open to reject schema version 17"),
+            Ok(_) => panic!("expected Db::open to reject schema version {newer}"),
         }
         match Db::open_read_only(&path) {
             Err(CoreError::Invalid(message)) => {
-                assert!(message.contains("17"), "{message}");
-                assert!(message.contains("16"), "{message}");
+                assert!(message.contains(&newer.to_string()), "{message}");
+                assert!(message.contains(&SCHEMA_VERSION.to_string()), "{message}");
             }
             Err(error) => panic!("expected a typed future-version error, got {error}"),
-            Ok(_) => panic!("expected Db::open_read_only to reject schema version 17"),
+            Ok(_) => panic!("expected Db::open_read_only to reject schema version {newer}"),
         }
     }
 
