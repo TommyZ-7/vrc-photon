@@ -46,21 +46,13 @@ pub(crate) fn suggestion_popup_origin(
         below
     } else {
         let above = input.top() - height - px(ANCHOR_GAP);
-        if above < margin {
-            margin
-        } else {
-            above
-        }
+        if above < margin { margin } else { above }
     };
 
     let right_limit = viewport.width - margin;
     let x = if input.left() + input.size.width > right_limit {
         let clamped = right_limit - input.size.width;
-        if clamped < margin {
-            margin
-        } else {
-            clamped
-        }
+        if clamped < margin { margin } else { clamped }
     } else {
         input.left()
     };
@@ -87,21 +79,18 @@ impl PhotoApp {
                     .child(label),
             )
             .child(
-                div()
-                    .relative()
-                    .child(input.w_full())
-                    .child(
-                        canvas(
-                            move |bounds, _, _| {
-                                bounds_map.borrow_mut().insert(kind, bounds);
-                            },
-                            |_, _, _, _| {},
-                        )
-                        .absolute()
-                        .top_0()
-                        .left_0()
-                        .size_full(),
-                    ),
+                div().relative().child(input.w_full()).child(
+                    canvas(
+                        move |bounds, _, _| {
+                            bounds_map.borrow_mut().insert(kind, bounds);
+                        },
+                        |_, _, _, _| {},
+                    )
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .size_full(),
+                ),
             )
     }
 
@@ -164,11 +153,7 @@ impl PhotoApp {
                             .min_w_0()
                             .truncate()
                             .text_size(px(10.5))
-                            .text_color(rgb(if index == selected {
-                                p.text
-                            } else {
-                                p.muted
-                            }))
+                            .text_color(rgb(if index == selected { p.text } else { p.muted }))
                             .child(name),
                     )
                     .child(

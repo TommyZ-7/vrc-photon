@@ -20,8 +20,8 @@ use crate::model::{
     DeletionBlockers, DeletionCounts, DeletionJobSummary, DeletionReason, DeletionRequest,
     DeletionStatus, Derivative, JobStatusCounts, LibraryRoot, LibraryStats, MAX_JOB_RETRIES,
     MAX_PROFILE_NAME_CHARS, NewPhoto, Photo, PhotoContext, PhotoFilter, PhotoIndexEntry,
-    PhotoPlayer, PhotoSort, PhotoStatus, PhotoTextFilter, QueueStatus, SendCompletion,
-    SearchSuggestion, SendErrorCode, SendHistoryEntry, SendKind, SendOrigin, SendOutboxEntry,
+    PhotoPlayer, PhotoSort, PhotoStatus, PhotoTextFilter, QueueStatus, SearchSuggestion,
+    SendCompletion, SendErrorCode, SendHistoryEntry, SendKind, SendOrigin, SendOutboxEntry,
     SendSource, SendStatus, Session, SessionPlayer, World, WorldPhotoCount,
 };
 use crate::world_name::{
@@ -1295,12 +1295,7 @@ impl Db {
         );
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map(
-            params![
-                i64::from(prefer_english),
-                like,
-                limit as i64,
-                AI_PLUGIN_ID
-            ],
+            params![i64::from(prefer_english), like, limit as i64, AI_PLUGIN_ID],
             |row| {
                 Ok(SearchSuggestion {
                     name: row.get(0)?,
@@ -7822,36 +7817,16 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let root = db.add_root("/photos", "reference").unwrap();
         let a = db
-            .upsert_photo(&photo_at(
-                root,
-                "/photos/a.png",
-                1,
-                "2025-04-30 09:00:00",
-            ))
+            .upsert_photo(&photo_at(root, "/photos/a.png", 1, "2025-04-30 09:00:00"))
             .unwrap();
         let b = db
-            .upsert_photo(&photo_at(
-                root,
-                "/photos/b.png",
-                2,
-                "2025-04-30 09:00:00",
-            ))
+            .upsert_photo(&photo_at(root, "/photos/b.png", 2, "2025-04-30 09:00:00"))
             .unwrap();
         let c = db
-            .upsert_photo(&photo_at(
-                root,
-                "/photos/c.png",
-                3,
-                "2025-04-30 09:00:00",
-            ))
+            .upsert_photo(&photo_at(root, "/photos/c.png", 3, "2025-04-30 09:00:00"))
             .unwrap();
         let missing = db
-            .upsert_photo(&photo_at(
-                root,
-                "/photos/m.png",
-                4,
-                "2025-04-30 09:00:00",
-            ))
+            .upsert_photo(&photo_at(root, "/photos/m.png", 4, "2025-04-30 09:00:00"))
             .unwrap();
         for (photo_id, name) in [
             (a, "Sunset Pier"),
@@ -7885,28 +7860,13 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let root = db.add_root("/photos", "reference").unwrap();
         let a = db
-            .upsert_photo(&photo_at(
-                root,
-                "/photos/a.png",
-                1,
-                "2025-04-30 09:00:00",
-            ))
+            .upsert_photo(&photo_at(root, "/photos/a.png", 1, "2025-04-30 09:00:00"))
             .unwrap();
         let b = db
-            .upsert_photo(&photo_at(
-                root,
-                "/photos/b.png",
-                2,
-                "2025-04-30 09:00:00",
-            ))
+            .upsert_photo(&photo_at(root, "/photos/b.png", 2, "2025-04-30 09:00:00"))
             .unwrap();
         let c = db
-            .upsert_photo(&photo_at(
-                root,
-                "/photos/c.png",
-                3,
-                "2025-04-30 09:00:00",
-            ))
+            .upsert_photo(&photo_at(root, "/photos/c.png", 3, "2025-04-30 09:00:00"))
             .unwrap();
         db.set_photo_players(
             a,
@@ -8045,11 +8005,7 @@ mod tests {
                 tag: Some(query.into()),
                 ..Default::default()
             };
-            assert_eq!(
-                db.photo_index_text(&filter).unwrap().len(),
-                1,
-                "{query}"
-            );
+            assert_eq!(db.photo_index_text(&filter).unwrap().len(), 1, "{query}");
             assert_eq!(
                 db.search_photos_text(&filter, 10, 0).unwrap().len(),
                 1,

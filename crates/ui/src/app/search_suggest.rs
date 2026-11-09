@@ -50,10 +50,7 @@ pub(crate) fn focus_should_query(dismissed: bool) -> bool {
     !dismissed
 }
 
-fn suggestion_key_action_for_key(
-    key: &str,
-    ime_in_progress: bool,
-) -> Option<SuggestionKeyAction> {
+fn suggestion_key_action_for_key(key: &str, ime_in_progress: bool) -> Option<SuggestionKeyAction> {
     if ime_in_progress {
         return None;
     }
@@ -69,9 +66,7 @@ fn query_suggestions(
     match kind {
         SuggestionKind::World => db.world_name_suggestions(query, SUGGESTION_LIMIT),
         SuggestionKind::Player => db.player_name_suggestions(query, SUGGESTION_LIMIT),
-        SuggestionKind::Tag => {
-            db.tag_name_suggestions(query, SUGGESTION_LIMIT, prefer_english)
-        }
+        SuggestionKind::Tag => db.tag_name_suggestions(query, SUGGESTION_LIMIT, prefer_english),
     }
 }
 
@@ -98,13 +93,15 @@ impl PhotoApp {
             InputEvent::Change => self.on_suggestion_input_changed(kind, cx),
             InputEvent::Focus => {
                 let Some(query) =
-                    normalized_suggestion_query(&self.suggestion_input_value(kind, &**cx))
+                    normalized_suggestion_query(&self.suggestion_input_value(kind, cx))
                 else {
                     self.close_suggestion(cx);
                     return;
                 };
                 let reuse = self.suggestion.as_ref().is_some_and(|state| {
-                    state.kind == kind && state.query == query && !state.dismissed
+                    state.kind == kind
+                        && state.query == query
+                        && focus_should_query(state.dismissed)
                 });
                 if !reuse {
                     self.begin_suggestion_query(kind, query, cx);
@@ -116,7 +113,7 @@ impl PhotoApp {
     }
 
     fn on_suggestion_input_changed(&mut self, kind: SuggestionKind, cx: &mut Context<Self>) {
-        let Some(query) = normalized_suggestion_query(&self.suggestion_input_value(kind, &**cx))
+        let Some(query) = normalized_suggestion_query(&self.suggestion_input_value(kind, cx))
         else {
             self.close_suggestion(cx);
             return;
@@ -189,8 +186,7 @@ impl PhotoApp {
                 match result {
                     Ok(items) => this.apply_suggestion_result(request, Ok(items), cx),
                     Err(_) => {
-                        let fallback =
-                            query_suggestions(&this.db, kind, &query, prefer_english);
+                        let fallback = query_suggestions(&this.db, kind, &query, prefer_english);
                         this.apply_suggestion_result(request, fallback, cx);
                     }
                 }
@@ -291,8 +287,8 @@ impl PhotoApp {
         let kind = state.kind;
         let focused = self
             .suggestion_input(kind)
-            .read(&**cx)
-            .focus_handle(&**cx)
+            .read(cx)
+            .focus_handle(cx)
             .is_focused(window);
         if !focused {
             return false;
