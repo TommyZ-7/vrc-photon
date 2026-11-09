@@ -1,6 +1,6 @@
 # セッション単位のグループ表示 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Photos 画面に表示モード「セッション」を追加し、VRChat のワールド参加回ごとに写真を見出し付きでグループ表示する。
 
@@ -11,6 +11,8 @@
 **Spec:** `docs/superpowers/specs/2026-11-09-session-groups-design.md`
 
 **Mock:** `docs/ui-session-groups-mockup.html`
+
+> **Status:** 実装完了（2026-11-09、PR #464）。
 
 ## Global Constraints
 
@@ -86,7 +88,7 @@
   - `PhotoIndexEntry { id, captured_at_utc, captured_month, captured_day, session_id }`
   - `PHOTO_DAY` 定数（`YYYYMMDD`、不明は 0）
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `crates/core/src/db.rs` の `mod tests` に追加する。
 
@@ -143,13 +145,13 @@ fn photo_index_day_falls_back_to_utc_when_local_time_is_invalid() {
 
 `photo_at` は既存ヘルパー。`now_string()` は既存のものでよい。無ければ `"2025-01-01T00:00:00Z".to_string()` を使う。
 
-- [ ] **Step 2: Run the tests and verify they fail**
+- [x] **Step 2: Run the tests and verify they fail**
 
 Run: `cargo test -p vrc-photon-core photo_index_includes_session_id_and_local_capture_day photo_index_day_falls_back_to_utc_when_local_time_is_invalid`
 
 Expected: FAIL with "no field `session_id`" / "no field `captured_day`".
 
-- [ ] **Step 3: Implement the model and SQL**
+- [x] **Step 3: Implement the model and SQL**
 
 `crates/core/src/model.rs`:
 
@@ -186,13 +188,13 @@ const PHOTO_DAY: &str = "COALESCE(\
 - `crates/ui/src/state/test_support.rs` の `index_entry` を
   `captured_day: month * 100 + 1, session_id: None` で更新する。
 
-- [ ] **Step 4: Run the tests and verify they pass**
+- [x] **Step 4: Run the tests and verify they pass**
 
 Run: `cargo test -p vrc-photon-core photo_index`
 
 Expected: PASS。既存の `photo_index_orders_newest_first_and_uses_local_month` なども通る。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/core/src/model.rs crates/core/src/db.rs crates/ui/src/state/test_support.rs
@@ -214,7 +216,7 @@ git commit -m "feat(core): include session and local day in the photo index"
   - `pub struct SessionSummary { session: Session, world_name: Option<String>, world_external_id: Option<String>, photo_count: i64, players: Vec<String>, cover_photo: Option<Photo> }`
   - `Db::session_summaries(&self, ids: &[i64]) -> Result<Vec<SessionSummary>>`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```rust
 #[test]
@@ -297,13 +299,13 @@ fn session_summaries_deduplicate_ids_and_accept_many_ids() {
 }
 ```
 
-- [ ] **Step 2: Run the tests and verify they fail**
+- [x] **Step 2: Run the tests and verify they fail**
 
 Run: `cargo test -p vrc-photon-core session_summaries`
 
 Expected: FAIL with "no method named `session_summaries`".
 
-- [ ] **Step 3: Implement `SessionSummary` and `session_summaries`**
+- [x] **Step 3: Implement `SessionSummary` and `session_summaries`**
 
 `crates/core/src/model.rs`:
 
@@ -356,13 +358,13 @@ pub struct SessionSummary {
    各セッションの先頭だけを採用し、`photos_by_ids` で `Photo` を引いて `cover_photo` に入れる。
 6. セッション ID ごとに `players` / `photo_count` / `cover_photo` を割り当て、`started_at, id` 順で返す。
 
-- [ ] **Step 4: Run the tests and verify they pass**
+- [x] **Step 4: Run the tests and verify they pass**
 
 Run: `cargo test -p vrc-photon-core session_summaries`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/core/src/model.rs crates/core/src/db.rs
@@ -407,7 +409,7 @@ git commit -m "feat(core): add session summaries for grouped browsing"
   }
   ```
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `session_rows.rs` の `mod tests` に、`index_entry` を拡張したローカルヘルパーを置く。
 
@@ -497,13 +499,13 @@ fn offsets_and_top_photo_index_round_trip_across_headers() {
 
 `SessionRow` に `kind(&self) -> SessionRowKind` を用意するか、テスト用に `SessionRowKind` を Copy にして `row.kind` を直接比較する。実装しやすい方でよい。
 
-- [ ] **Step 2: Run the tests and verify they fail**
+- [x] **Step 2: Run the tests and verify they fail**
 
 Run: `cargo test -p vrc-photon-ui session_rows`
 
 Expected: FAIL with "unresolved module" / "no method named `build`".
 
-- [ ] **Step 3: Implement the row model**
+- [x] **Step 3: Implement the row model**
 
 - 連続する `session_id` をまとめる。`session_id == None` は `captured_day` で分割する。
 - `columns.max(1)` ごとに写真行を切る。写真行の `count` は `min(columns, 残り)`。
@@ -524,13 +526,13 @@ Expected: FAIL with "unresolved module" / "no method named `build`".
   Photos 行だけを続ける（決定事項 Q6）。
 - `captured_day == 0` の未紐付け区間は `DateLabel { day: 0, .. }` にまとめる。
 
-- [ ] **Step 4: Run the tests and verify they pass**
+- [x] **Step 4: Run the tests and verify they pass**
 
 Run: `cargo test -p vrc-photon-ui session_rows`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/ui/src/state/session_rows.rs crates/ui/src/state/mod.rs
@@ -561,7 +563,7 @@ git commit -m "feat(ui): add the session row model"
   - `PhotoBrowser::toggle_session_collapsed(id) -> bool`
   - `PhotoBrowser::top_photo_index(scroll_top) -> Option<usize>`（セッションモード用）
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```rust
 #[test]
@@ -603,13 +605,13 @@ fn replace_index_clears_session_state() {
 
 `summary(7)` は `SessionSummary` のテストフィクスチャ。`Session { id: 7, ... }` を埋める。
 
-- [ ] **Step 2: Run the tests and verify they fail**
+- [x] **Step 2: Run the tests and verify they fail**
 
 Run: `cargo test -p vrc-photon-ui session_rows_rebuild_only_when_the_key_changes session_summaries_ignore_stale_generations_and_do_not_replan replace_index_clears_session_state`
 
 Expected: FAIL with "no method named `ensure_session_rows`".
 
-- [ ] **Step 3: Implement the session state**
+- [x] **Step 3: Implement the session state**
 
 - `PhotoBrowser::new` で `session_scroll: VirtualListScrollHandle::new()` を初期化する。
 - `replace_index` で `session_rows = None`, `session_summaries.clear()`, pending/failed clear,
@@ -626,13 +628,13 @@ Expected: FAIL with "no method named `ensure_session_rows`".
 - `toggle_session_collapsed`: `collapsed_sessions` を反転し、`session_rows = None` にして `true` を返す。
   存在しないセッション ID でも状態だけ持ってよい。
 
-- [ ] **Step 4: Run the tests and verify they pass**
+- [x] **Step 4: Run the tests and verify they pass**
 
 Run: `cargo test -p vrc-photon-ui state::photo_browser`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/ui/src/state/photo_browser.rs
@@ -664,7 +666,7 @@ git commit -m "feat(ui): cache session rows and summaries in the photo browser"
   - `App::scroll_to_photo(search, id, strategy)`
   - `next_view_mode(mode: PhotosViewMode) -> PhotosViewMode`（純粋ヘルパー）
 
-- [ ] **Step 1: Write the failing settings tests**
+- [x] **Step 1: Write the failing settings tests**
 
 ```rust
 #[test]
@@ -689,13 +691,13 @@ fn unknown_photos_view_mode_falls_back_to_timeline() {
 }
 ```
 
-- [ ] **Step 2: Run the tests and verify they fail**
+- [x] **Step 2: Run the tests and verify they fail**
 
 Run: `cargo test -p vrc-photon-core photos_view_mode`
 
 Expected: FAIL with "no field `ui_photos_view_mode`".
 
-- [ ] **Step 3: Implement `PhotosViewMode` and settings**
+- [x] **Step 3: Implement `PhotosViewMode` and settings**
 
 - `PhotosViewMode` を `CardSize` の近くに追加する。
 - `AppSettings` に `#[serde(default, deserialize_with = "deserialize_photos_view_mode")]`
@@ -704,7 +706,7 @@ Expected: FAIL with "no field `ui_photos_view_mode`".
   `serde_json::from_value(value).unwrap_or_default()` する（`CardSize` と同じ）。
 - `Default` 実装に `Timeline` を追加する。
 
-- [ ] **Step 4: Write the failing App tests**
+- [x] **Step 4: Write the failing App tests**
 
 `app/session.rs` の `mod tests` に、モード切替の保存とアンカー計算の純粋部分を置く。
 
@@ -721,7 +723,7 @@ App 全体を起動するテストは既存の test_support に合わせて追�
 難しければ、`next_view_mode` と `mode_label` の純粋テストだけに留め、モード切替の
 動作は手動確認項目に回す。
 
-- [ ] **Step 5: Implement App wiring**
+- [x] **Step 5: Implement App wiring**
 
 - `crates/ui/src/app.rs` に `mod session;` を追加し、`App` の初期化で
   `settings.ui_photos_view_mode` を読む（既存の `AppSettings` から自動的に入る）。
@@ -749,13 +751,13 @@ App 全体を起動するテストは既存の test_support に合わせて追�
   `SESSION_DATE_LABEL_ROW_HEIGHT: f32 = 30.0` を追加する
   （行間は `CARD_ROW_GAP` を足して `SessionRows` に渡す）。
 
-- [ ] **Step 6: Run the tests and verify they pass**
+- [x] **Step 6: Run the tests and verify they pass**
 
 Run: `cargo test -p vrc-photon-core photos_view_mode && cargo test -p vrc-photon-ui app::session`
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add crates/core/src/settings.rs crates/ui/src/app.rs crates/ui/src/app/session.rs crates/ui/src/app/lifecycle.rs crates/ui/src/app/photos.rs crates/ui/src/ui/theme.rs
@@ -778,7 +780,7 @@ git commit -m "feat(ui): wire the photos view mode and session summaries"
   - `render_session_date_label(...)`
   - `session_player_summary(players: &[String]) -> String`（純粋関数）
 
-- [ ] **Step 1: Write the failing pure tests**
+- [x] **Step 1: Write the failing pure tests**
 
 ```rust
 #[test]
@@ -813,13 +815,13 @@ fn session_time_label_handles_ongoing_and_cross_midnight() {
 `ts` はテスト用に `NaiveDate::from_ymd_opt(...).and_hms_opt(...)` から
 `FixedOffset` で epoch 秒に変換するローカルヘルパー。
 
-- [ ] **Step 2: Run the tests and verify they fail**
+- [x] **Step 2: Run the tests and verify they fail**
 
 Run: `cargo test -p vrc-photon-ui session_player_summary_keeps_three_names_and_counts_the_rest session_time_label_handles_ongoing_and_cross_midnight`
 
 Expected: FAIL with "cannot find function".
 
-- [ ] **Step 3: Implement the header helpers and mode toggle**
+- [x] **Step 3: Implement the header helpers and mode toggle**
 
 - `ui/gallery.rs` に `session_player_summary` と `session_time_label` を追加する。
   `session_time_label` は `chrono::FixedOffset` / `TimeZone` を使い、
@@ -834,7 +836,7 @@ Expected: FAIL with "cannot find function".
   - 既存のフィルター・並び表示は残す。
 - セッションモードでは `render_grid` の代わりに `render_session_grid` を呼ぶ。
 
-- [ ] **Step 4: Implement `render_session_grid`**
+- [x] **Step 4: Implement `render_session_grid`**
 
 1. `library_grid_metrics` で columns / card_width / image_height / row_height を求める。
 2. `browser.ensure_session_rows(columns, row_height, header_height + CARD_ROW_GAP, date_height + CARD_ROW_GAP)`
@@ -857,7 +859,7 @@ Expected: FAIL with "cannot find function".
 8. 写真が 0 件なら既存の空状態を返す。写真があるがセッションが 0 件なら
    日付ラベル付きの写真行だけになる。
 
-- [ ] **Step 5: Implement `render_session_header`**
+- [x] **Step 5: Implement `render_session_header`**
 
 - 高さ `SESSION_HEADER_ROW_HEIGHT`、幅 full、`h_flex`。
 - カバー: 104×58、`rounded(8)`。サムネイルがあれば `img`、なければ
@@ -874,20 +876,20 @@ Expected: FAIL with "cannot find function".
   カバーは色プレースホルダーにする。
 - 要約失敗時は `tr!("session.summary_failed")` を出す。
 
-- [ ] **Step 6: Implement `render_session_date_label`**
+- [x] **Step 6: Implement `render_session_date_label`**
 
 - 高さ `SESSION_DATE_LABEL_ROW_HEIGHT`、`h_flex`、左右にダッシュ線。
 - 日付 `11/7`（`captured_day` から `month/day` を復元）と
   `tr_args!("session.unlinked_date", date = ..., count = ...)`。
 - `day == 0` は `tr!("date.unknown_day")`。
 
-- [ ] **Step 7: Run the tests and verify they pass**
+- [x] **Step 7: Run the tests and verify they pass**
 
 Run: `cargo test -p vrc-photon-ui session_player_summary session_time_label`
 
 Expected: PASS.
 
-- [ ] **Step 8: Manual smoke test**
+- [x] **Step 8: Manual smoke test**
 
 Run: `cargo run -p vrc-photon-ui --bin vrc-photon -- --demo --demo-reset`
 
@@ -897,7 +899,7 @@ Run: `cargo run -p vrc-photon-ui --bin vrc-photon -- --demo --demo-reset`
 - 折りたたみが動く。
 - スクロールしても行の高さが変わらない。
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add crates/ui/src/ui/gallery.rs
@@ -920,7 +922,7 @@ git commit -m "feat(ui): render session groups in the photo gallery"
   - `RailList`（または同等の enum）
   - `session_rail_scroll_offset(rows, photo_index, max_offset) -> f32`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```rust
 #[test]
@@ -937,13 +939,13 @@ fn session_rail_jump_uses_session_row_offsets() {
 }
 ```
 
-- [ ] **Step 2: Run the test and verify it fails**
+- [x] **Step 2: Run the test and verify it fails**
 
 Run: `cargo test -p vrc-photon-ui session_rail_jump_uses_session_row_offsets`
 
 Expected: FAIL.
 
-- [ ] **Step 3: Implement `RailList`**
+- [x] **Step 3: Implement `RailList`**
 
 `ui/year_rail.rs` の `YearRail` のフィールドを次のように抽象化する。
 
@@ -972,13 +974,13 @@ pub(crate) enum RailList {
   セッションモードは `Sessions` にする。
 - 既存の `year_rail` テストを `RailList` 経由に更新する。
 
-- [ ] **Step 4: Run the tests and verify they pass**
+- [x] **Step 4: Run the tests and verify they pass**
 
 Run: `cargo test -p vrc-photon-ui year_rail`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/ui/src/ui/year_rail.rs crates/ui/src/state/year_rail.rs crates/ui/src/ui/gallery.rs
@@ -999,7 +1001,7 @@ git commit -m "feat(ui): map the year rail to session rows"
 - Consumes: 既存の `demo_fixture_at`, `DEMO_WORLDS`, `DEMO_NAMES`, `db.create_session`。
 - Produces: セッションモードで表示できるデモ用セッション。
 
-- [ ] **Step 1: Add i18n keys**
+- [x] **Step 1: Add i18n keys**
 
 `ja.yml` / `en.yml` に追加する。
 
@@ -1025,13 +1027,13 @@ date.unknown_day: "日付不明"
 
 `tr_args!` を使うキーを `crates/i18n/tests/placeholders.rs` の `CALL_SITES` に追加する。
 
-- [ ] **Step 2: Run the i18n tests**
+- [x] **Step 2: Run the i18n tests**
 
 Run: `cargo test -p vrc-photon-i18n`
 
 Expected: PASS。`source_keys` が `tr!` / `tr_args!` のキーをカタログで解決できる。
 
-- [ ] **Step 3: Add demo sessions**
+- [x] **Step 3: Add demo sessions**
 
 `demo_fixture.rs` に `session` フィールドを追加するか、`demo.rs` のシード時に
 連続するリンク済み写真をグループ化してセッションを作る。
@@ -1048,7 +1050,7 @@ Expected: PASS。`source_keys` が `tr!` / `tr_args!` のキーをカタログ�
 これにより `--demo` でセッションモードを確認できる。デモ DB の再生成は
 `--demo-reset` で行う。
 
-- [ ] **Step 4: Add a demo test**
+- [x] **Step 4: Add a demo test**
 
 ```rust
 #[test]
@@ -1065,13 +1067,13 @@ fn demo_seed_creates_sessions_with_players() {
 
 既存のデモテストのセットアップに合わせてヘルパー名を調整する。
 
-- [ ] **Step 5: Run the tests**
+- [x] **Step 5: Run the tests**
 
 Run: `cargo test -p vrc-photon-ui demo && cargo test -p vrc-photon-i18n`
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add crates/i18n/locales/ja.yml crates/i18n/locales/en.yml crates/i18n/tests/placeholders.rs crates/ui/src/app/demo.rs crates/ui/src/app/demo_fixture.rs
@@ -1085,7 +1087,7 @@ git commit -m "feat(demo): seed sessions and add session i18n"
 **Files:**
 - No production changes. QA notes may be added to `docs/ui.md` if needed.
 
-- [ ] **Step 1: Run the local verification**
+- [x] **Step 1: Run the local verification**
 
 ```bash
 cargo fmt --all -- --check
@@ -1093,13 +1095,13 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-- [ ] **Step 2: Run the app with demo data**
+- [x] **Step 2: Run the app with demo data**
 
 ```bash
 cargo run -p vrc-photon-ui --bin vrc-photon -- --demo --demo-reset
 ```
 
-- [ ] **Step 3: Check the UI at 1280×820 and 1440×900**
+- [x] **Step 3: Check the UI at 1280×820 and 1440×900**
 
 - 時系列 → セッション → 時系列の切替で先頭写真が飛ばない。
 - セッション見出しのワールド名・時刻・枚数・同席者が正しい。
@@ -1110,12 +1112,12 @@ cargo run -p vrc-photon-ui --bin vrc-photon -- --demo --demo-reset
 - カードサイズ変更・再読込・再起動後のモード復元。
 - 検索結果画面が従来どおり。
 
-- [ ] **Step 4: Capture screenshots (if the environment supports it)**
+- [x] **Step 4: Capture screenshots (if the environment supports it)**
 
 Use the `gnome-wayland-visual-qa` skill for this machine if needed. Attach
 1280×820 and 1440×900 screenshots to the PR or the review message.
 
-- [ ] **Step 5: Commit QA fixes**
+- [x] **Step 5: Commit QA fixes**
 
 ```bash
 git add -A
@@ -1131,7 +1133,7 @@ git commit -m "fix(ui): polish session group layout"
 **Files:**
 - No code changes.
 
-- [ ] **Step 1: Push the branch and open a PR**
+- [x] **Step 1: Push the branch and open a PR**
 
 ```bash
 git push -u origin feat/452-session-groups
@@ -1139,11 +1141,11 @@ gh pr create --title "feat: 写真をセッション単位でグループ表示�
   --body "Closes #452" --label enhancement
 ```
 
-- [ ] **Step 2: Watch CI**
+- [x] **Step 2: Watch CI**
 
 Follow the `ci-watch` skill. Do not merge while CI is red.
 
-- [ ] **Step 3: Merge and clean up**
+- [x] **Step 3: Merge and clean up**
 
 ```bash
 gh pr merge <n> --merge
@@ -1152,7 +1154,7 @@ git branch -d feat/452-session-groups
 git push origin --delete feat/452-session-groups
 ```
 
-- [ ] **Step 4: Update the plan checkboxes**
+- [x] **Step 4: Update the plan checkboxes**
 
 `docs/superpowers/plans/2026-11-09-session-groups.md` の完了項目を `- [x]` に更新する
 （AGENTS.md §4）。
