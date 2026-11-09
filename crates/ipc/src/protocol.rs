@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 
 pub use vrc_photon_ai_protocol::{ModelState, PluginInstallStatus, TaggingJobStatus, TaggingStage};
 
+use crate::library::{LibraryStats, PhotoDetail, PhotoSearch, WorldSummary};
+
 /// Client identity sent during the handshake.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ClientInfo {
@@ -32,6 +34,28 @@ pub enum Request {
     },
     /// Delete the whole thumbnail cache and reset the daemon's byte ledger.
     ClearThumbnailCache,
+    /// Read-only photo search for external clients such as the MCP server.
+    SearchPhotos {
+        world: Option<String>,
+        player: Option<String>,
+        /// Manual tag substring.
+        tag: Option<String>,
+        /// Applied AI tag keys, matched with OR.
+        ai_tags: Vec<String>,
+        from_utc: Option<i64>,
+        to_utc: Option<i64>,
+        favorite: bool,
+        limit: u32,
+        offset: u32,
+    },
+    /// Read-only full metadata for one photo.
+    GetPhoto {
+        id: i64,
+    },
+    /// Read-only list of worlds represented in the library.
+    ListWorlds,
+    /// Read-only library totals.
+    LibraryStats,
     Shutdown,
     Subscribe,
     /// Nudges the daemon's tagging worker.
@@ -93,6 +117,18 @@ pub enum Response {
         removed_bytes: u64,
         remaining_files: u64,
         remaining_bytes: u64,
+    },
+    Photos {
+        result: PhotoSearch,
+    },
+    Photo {
+        photo: PhotoDetail,
+    },
+    Worlds {
+        worlds: Vec<WorldSummary>,
+    },
+    LibraryStats {
+        stats: LibraryStats,
     },
     Ok,
     Error {
@@ -579,5 +615,107 @@ mod tests {
         let snapshot: StatusSnapshot = serde_json::from_str(json).unwrap();
         assert_eq!(snapshot.pending_tagging_jobs, 0);
         assert!(!snapshot.tagging_ready);
+    }
+
+    #[test]
+    fn library_requests_round_trip_with_their_wire_tags() {
+        let search = RequestEnvelope {
+            id: 2,
+            request: Request::SearchPhotos {
+                world: Some("World".into()),
+                player: Some("Alice".into()),
+                tag: Some("beach".into()),
+                ai_tags: vec!["sea".into()],
+                from_utc: Some(100),
+                to_utc: Some(200),
+                favorite: true,
+                limit: 50,
+                offset: 10,
+            },
+        };
+        let json = serde_json::to_string(&search).unwrap();
+        assert!(json.contains("\"type\":\"search_photos\""));
+        assert_eq!(
+            serde_json::from_str::<RequestEnvelope>(&json).unwrap(),
+            search
+        );
+
+        let get = RequestEnvelope {
+            id: 2,
+            request: Request::GetPhoto { id: 42 },
+        };
+        let json = serde_json::to_string(&get).unwrap();
+        assert_eq!(json, r#"{"id":2,"request":{"type":"get_photo","id":42}}"#);
+        assert_eq!(serde_json::from_str::<RequestEnvelope>(&json).unwrap(), get);
+    }
+
+    #[test]
+    fn library_responses_round_trip_with_their_wire_tags() {
+        let search = ServerMessage::Response {
+            id: 2,
+            response: Response::Photos {
+                result: PhotoSearch {
+                    photos: Vec::new(),
+                    total: 3,
+                    limit: 50,
+                    offset: 0,
+                },
+            },
+        };
+        let json = serde_json::to_string(&search).unwrap();
+        assert!(json.contains("\"type\":\"photos\""));
+        assert_eq!(
+            serde_json::from_str::<ServerMessage>(&json).unwrap(),
+            search
+        );
+
+        let detail = ServerMessage::Response {
+            id: 2,
+            response: Response::Photo {
+                photo: PhotoDetail::default(),
+            },
+        };
+        let json = serde_json::to_string(&detail).unwrap();
+        assert!(json.contains("\"type\":\"photo\""));
+        assert_eq!(
+            serde_json::from_str::<ServerMessage>(&json).unwrap(),
+            detail
+        );
+
+        let worlds = ServerMessage::Response {
+            id: 2,
+            response: Response::Worlds {
+                worlds: vec![WorldSummary {
+                    world_id: Some("wrld_1".into()),
+                    name: "World".into(),
+                    photo_count: 2,
+                }],
+            },
+        };
+        let json = serde_json::to_string(&worlds).unwrap();
+        assert!(json.contains("\"type\":\"worlds\""));
+        assert_eq!(
+            serde_json::from_str::<ServerMessage>(&json).unwrap(),
+            worlds
+        );
+
+        let stats = ServerMessage::Response {
+            id: 2,
+            response: Response::LibraryStats {
+                stats: LibraryStats {
+                    photo_count: 3,
+                    total_bytes: 100,
+                    world_count: 1,
+                    compressed_count: 2,
+                    derivative_bytes: 40,
+                },
+            },
+        };
+        let json = serde_json::to_string(&stats).unwrap();
+        assert!(json.contains("\"type\":\"library_stats\""));
+        assert_eq!(
+            serde_json::from_str::<ServerMessage>(&json).unwrap(),
+            stats
+        );
     }
 }
