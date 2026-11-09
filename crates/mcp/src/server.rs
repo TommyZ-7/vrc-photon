@@ -611,6 +611,59 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn get_photo_image_prefers_the_display_derivative() {
+        let images = tempfile::tempdir().unwrap();
+        let original = images.path().join("original.png");
+        let derivative = images.path().join("display.png");
+        write_test_png(&original, 800, 1200);
+        write_test_png(&derivative, 1200, 600);
+
+        let preview = FakeDaemon::start(vec![Response::Photo {
+            photo: Box::new(photo_detail(&derivative, &original)),
+        }]);
+        let server = PhotoNMcp::new(preview.client());
+        let result = server
+            .get_photo_image(Parameters(GetPhotoImageParams {
+                id: 7,
+                original: false,
+            }))
+            .await
+            .unwrap();
+        match &result.content[0] {
+            ContentBlock::Image(content) => {
+                let bytes = base64::engine::general_purpose::STANDARD
+                    .decode(&content.data)
+                    .unwrap();
+                let decoded = image::load_from_memory(&bytes).unwrap();
+                assert_eq!((decoded.width(), decoded.height()), (1024, 512));
+            }
+            other => panic!("unexpected content: {other:?}"),
+        }
+
+        let original_bytes = std::fs::read(&original).unwrap();
+        let full = FakeDaemon::start(vec![Response::Photo {
+            photo: Box::new(photo_detail(&derivative, &original)),
+        }]);
+        let server = PhotoNMcp::new(full.client());
+        let result = server
+            .get_photo_image(Parameters(GetPhotoImageParams {
+                id: 7,
+                original: true,
+            }))
+            .await
+            .unwrap();
+        match &result.content[0] {
+            ContentBlock::Image(content) => {
+                let bytes = base64::engine::general_purpose::STANDARD
+                    .decode(&content.data)
+                    .unwrap();
+                assert_eq!(bytes, original_bytes);
+            }
+            other => panic!("unexpected content: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
     async fn get_photo_image_original_returns_the_unchanged_file() {
         let images = tempfile::tempdir().unwrap();
         let source = images.path().join("photo.png");
