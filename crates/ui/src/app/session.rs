@@ -65,7 +65,7 @@ impl App {
 
     /// Returns the photo at the top-left of the current viewport for the
     /// active grid. Search always uses the timeline geometry.
-    pub(crate) fn capture_top_photo(&self, search: bool) -> Option<i64> {
+    pub(crate) fn capture_top_photo(&mut self, search: bool) -> Option<i64> {
         if search || self.settings.ui_photos_view_mode == PhotosViewMode::Timeline {
             let browser = if search {
                 self.search_view.borrow()
@@ -79,8 +79,19 @@ impl App {
                 browser.row_height,
             );
         }
-        let browser = self.library.borrow();
-        let index = browser.top_photo_index(session_scroll_top(&browser.session_scroll))?;
+        let (columns, row_height) = {
+            let browser = self.library.borrow();
+            (browser.columns.max(1), browser.row_height)
+        };
+        let mut browser = self.library.borrow_mut();
+        browser.settle_all_session_collapses();
+        let rows = browser.ensure_session_rows(
+            columns,
+            row_height,
+            SESSION_HEADER_ROW_HEIGHT + CARD_ROW_GAP,
+            SESSION_DATE_LABEL_ROW_HEIGHT + CARD_ROW_GAP,
+        );
+        let index = rows.top_photo_index(session_scroll_top(&browser.session_scroll))?;
         browser.index.entries.get(index).map(|entry| entry.id)
     }
 
@@ -106,6 +117,7 @@ impl App {
             (browser.columns.max(1), browser.row_height)
         };
         let mut browser = self.library.borrow_mut();
+        browser.settle_all_session_collapses();
         let rows = browser.ensure_session_rows(
             columns,
             row_height,
@@ -190,13 +202,17 @@ impl App {
         } else {
             browser.settle_session_collapse(session_id);
         }
-        let rows = browser.ensure_session_rows(
+        let layout = browser.session_layout(
             columns,
             row_height,
             SESSION_HEADER_ROW_HEIGHT + CARD_ROW_GAP,
             SESSION_DATE_LABEL_ROW_HEIGHT + CARD_ROW_GAP,
+            Instant::now(),
         );
-        let offset = rows.offset_for_session(session_id).unwrap_or(old_offset);
+        let offset = layout
+            .rows
+            .offset_for_session_with_heights(session_id, &layout.heights)
+            .unwrap_or(old_offset);
         set_session_scroll_offset(&browser, offset);
         drop(browser);
         cx.notify();

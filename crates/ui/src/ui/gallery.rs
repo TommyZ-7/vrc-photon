@@ -1251,6 +1251,7 @@ fn render_session_grid(
                     RailList::Sessions {
                         scroll: scroll.clone(),
                         rows: rail_rows,
+                        browser: shared.browser.clone(),
                     },
                     rail_drag,
                     rail_hover,

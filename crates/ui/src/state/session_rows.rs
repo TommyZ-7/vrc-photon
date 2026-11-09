@@ -256,6 +256,17 @@ impl SessionRows {
             .map(|row| self.origins[*row])
     }
 
+    /// Header offset using a caller-supplied height vector, so scrolling can
+    /// follow the same animated geometry the virtual list is painting.
+    pub(crate) fn offset_for_session_with_heights(
+        &self,
+        session_id: i64,
+        heights: &[f32],
+    ) -> Option<f32> {
+        let row = *self.header_rows.get(&session_id)?;
+        Some(heights.get(..row)?.iter().sum())
+    }
+
     /// Offset for anchoring `photo_index` at the top of the viewport. When
     /// the photo starts a session or date-label run, keep that context row
     /// visible; otherwise anchor to the photo row itself.
@@ -669,5 +680,30 @@ mod tests {
             rows.heights_with_collapse(&HashMap::from([(7, 2.0)])),
             vec![40.0, 0.0]
         );
+    }
+
+    #[test]
+    fn session_offset_can_use_animated_heights() {
+        let entries = vec![
+            entry(6, 20261109, Some(7)),
+            entry(5, 20261109, Some(7)),
+            entry(4, 20261108, Some(8)),
+            entry(3, 20261108, Some(8)),
+        ];
+        let rows = SessionRows::build(
+            &entries,
+            2,
+            200.0,
+            92.0,
+            46.0,
+            &HashSet::new(),
+            &HashSet::new(),
+        );
+        let animated = rows.heights_with_collapse(&HashMap::from([(7, 0.5)]));
+        assert_eq!(
+            rows.offset_for_session_with_heights(8, &animated),
+            Some(192.0)
+        );
+        assert_eq!(rows.offset_for_session_with_heights(99, &animated), None);
     }
 }
