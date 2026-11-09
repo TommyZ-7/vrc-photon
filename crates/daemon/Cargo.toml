@@ -24,7 +24,6 @@ interprocess.workspace = true
 mimalloc.workspace = true
 notify = "8"
 serde_json.workspace = true
-single-instance = "0.3"
 thiserror.workspace = true
 trash = "5"
 tracing.workspace = true

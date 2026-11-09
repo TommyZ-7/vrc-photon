@@ -77,7 +77,7 @@ fn main() -> Result<()> {
         .unwrap_or_else(|| PathBuf::from("vrc-photon.db"));
     let maintenance = args.once || args.compress_pending;
     let instance_name = vrc_photon_core::instance::instance_name("daemon", &db_path);
-    let instance = match single_instance::SingleInstance::new(&instance_name) {
+    let instance = match vrc_photon_core::instance::InstanceGuard::new(&instance_name) {
         Ok(instance) if instance.is_single() => Some(instance),
         Ok(_) if maintenance => {
             tracing::info!(

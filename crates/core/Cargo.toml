@@ -35,3 +35,6 @@ tempfile = "3"
 
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true
+
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+single-instance = "0.3"
