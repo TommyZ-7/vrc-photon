@@ -64,7 +64,7 @@
   - `Db::world_name_suggestions(&self, query: &str, limit: usize) -> Result<Vec<SearchSuggestion>>`
   - `Db::player_name_suggestions(&self, query: &str, limit: usize) -> Result<Vec<SearchSuggestion>>`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add these tests to `mod tests` in `crates/core/src/db.rs`. Use the existing
 `photo_at`, `set_photo_context`, `set_photo_players`, and `PhotoPlayer`
@@ -161,12 +161,12 @@ fn set_context(db: &Db, photo_id: i64, world_name: Option<&str>) {
 }
 ```
 
-- [ ] **Step 2: Run the tests and verify they fail**
+- [x] **Step 2: Run the tests and verify they fail**
 
 Run: `cargo test -p vrc-photon-core world_suggestions_match_partial_names_with_visible_counts player_suggestions_group_names_and_count_distinct_photos suggestions_escape_like_metacharacters_and_honor_the_limit`
 Expected: FAIL with "no method named `world_name_suggestions`".
 
-- [ ] **Step 3: Implement the model and queries**
+- [x] **Step 3: Implement the model and queries**
 
 Add to `crates/core/src/model.rs`:
 
@@ -195,12 +195,12 @@ Implementation rules:
 - Exclude `NULL` and empty names.
 - Use `ORDER BY photo_count DESC, name COLLATE NOCASE ASC`.
 
-- [ ] **Step 4: Run the tests and verify they pass**
+- [x] **Step 4: Run the tests and verify they pass**
 
 Run: `cargo test -p vrc-photon-core world_suggestions player_suggestions suggestions_escape_like`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/core/src/model.rs crates/core/src/db.rs
@@ -219,7 +219,7 @@ git commit -m "feat(core): add world and player search suggestions"
 - Consumes: `SearchSuggestion`, `AI_PLUGIN_ID`, `install_test_catalog`, `seed_photo`, `set_photo_tags`, `seed_ai_tag`。
 - Produces: `Db::tag_name_suggestions(&self, query: &str, limit: usize, prefer_english: bool) -> Result<Vec<SearchSuggestion>>`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```rust
 #[test]
@@ -273,24 +273,24 @@ fn seed_photo_at(db: &Db, path: &str) -> i64 {
 }
 ```
 
-- [ ] **Step 2: Run the tests and verify they fail**
+- [x] **Step 2: Run the tests and verify they fail**
 
 Run: `cargo test -p vrc-photon-core tag_suggestions`
 Expected: FAIL with "no method named `tag_name_suggestions`".
 
-- [ ] **Step 3: Implement `tag_name_suggestions`**
+- [x] **Step 3: Implement `tag_name_suggestions`**
 
 Use the CTE from the spec. Bind `prefer_english` as an integer boolean in
 the AI-name `CASE`, bind the LIKE pattern, and bind `limit as i64`.
 `GROUP BY name` must be exact so same-name rows merge; `ORDER BY
 photo_count DESC, name COLLATE NOCASE ASC`.
 
-- [ ] **Step 4: Run the tests and verify they pass**
+- [x] **Step 4: Run the tests and verify they pass**
 
 Run: `cargo test -p vrc-photon-core tag_suggestions`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/core/src/db.rs
@@ -312,7 +312,7 @@ git commit -m "feat(core): add tag suggestions across manual and AI tags"
 - Consumes: 既存の `build_text_filter`, `escape_like`, `AI_PLUGIN_ID`。
 - Produces: `PhotoTextFilter.tag` が手動タグと適用済み AI タグ名の両方に一致する。
 
-- [ ] **Step 1: Write the failing core tests**
+- [x] **Step 1: Write the failing core tests**
 
 ```rust
 #[test]
@@ -352,12 +352,12 @@ fn ai_tag_text_search_escapes_like_metacharacters() {
 }
 ```
 
-- [ ] **Step 2: Run the tests and verify they fail**
+- [x] **Step 2: Run the tests and verify they fail**
 
 Run: `cargo test -p vrc-photon-core tag_text_filter_matches_applied_ai_tag_names_and_keys ai_tag_text_search_escapes_like_metacharacters`
 Expected: FAIL; the AI-tag queries return 0 photos.
 
-- [ ] **Step 3: Extend the tag clause in `build_text_filter`**
+- [x] **Step 3: Extend the tag clause in `build_text_filter`**
 
 Replace the single manual-tag `EXISTS` with the OR form from the spec:
 
@@ -381,7 +381,7 @@ Replace the single manual-tag `EXISTS` with the OR form from the spec:
 Bind `AI_PLUGIN_ID` once and the escaped LIKE pattern three times. Keep the
 existing manual-tag placeholder first.
 
-- [ ] **Step 4: Update the MCP-facing text and test**
+- [x] **Step 4: Update the MCP-facing text and test**
 
 Change the `tag` doc to "Manual tag or applied AI tag name/key substring."
 and the tool description to "manual or AI tag". In
@@ -389,12 +389,12 @@ and the tool description to "manual or AI tag". In
 to a Japanese AI tag name (e.g. `"海"`) and keep asserting it is forwarded
 unchanged.
 
-- [ ] **Step 5: Run the tests and verify they pass**
+- [x] **Step 5: Run the tests and verify they pass**
 
 Run: `cargo test -p vrc-photon-core tag_text_filter ai_tag_text_search && cargo test -p vrc-photon-mcp search_photos_clamps_limits_and_forwards_filters`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add crates/core/src/db.rs crates/mcp/src/server.rs
@@ -421,7 +421,7 @@ git commit -m "feat(core): match applied AI tags in tag text search"
   - `App` fields: `suggestion`, `suggestion_request`, `suggestion_bounds`,
     `_search_suggestion_subscriptions`
 
-- [ ] **Step 1: Write the failing helper tests**
+- [x] **Step 1: Write the failing helper tests**
 
 ```rust
 #[test]
@@ -451,12 +451,12 @@ fn dismissed_state_suppresses_focus_until_the_next_change() {
 }
 ```
 
-- [ ] **Step 2: Run the tests and verify they fail**
+- [x] **Step 2: Run the tests and verify they fail**
 
 Run: `cargo test -p vrc-photon-ui search_suggest`
 Expected: FAIL; the module and helpers do not exist.
 
-- [ ] **Step 3: Implement the state and helpers**
+- [x] **Step 3: Implement the state and helpers**
 
 Add `pub(crate) mod search_suggest;` to `crates/ui/src/app.rs`. In the new
 module:
@@ -501,12 +501,12 @@ let world_suggestion_subscription = cx.subscribe(&world_input, |this, _, event: 
 
 Repeat for player and tag; store all three in the Vec.
 
-- [ ] **Step 4: Run the tests and verify they pass**
+- [x] **Step 4: Run the tests and verify they pass**
 
 Run: `cargo test -p vrc-photon-ui search_suggest`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/ui/src/app.rs crates/ui/src/app/search_suggest.rs
@@ -532,7 +532,7 @@ git commit -m "feat(ui): add search suggestion state and async queries"
   - `App::suggestion_popup`, `App::suggestion_field`, `App::handle_suggestion_key`
   - `App` field: `_suggestion_keys`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```rust
 #[test]
@@ -559,12 +559,12 @@ fn suggestion_keys_map_to_actions() {
 }
 ```
 
-- [ ] **Step 2: Run the tests and verify they fail**
+- [x] **Step 2: Run the tests and verify they fail**
 
 Run: `cargo test -p vrc-photon-ui search_suggest::tests`
 Expected: FAIL; the module and functions do not exist.
 
-- [ ] **Step 3: Implement the popup and field wrappers**
+- [x] **Step 3: Implement the popup and field wrappers**
 
 - Add `pub(crate) mod search_suggest;` to `crates/ui/src/ui.rs`.
 - `suggestion_popup_origin`: popup height = `item_count * 27 + 8`; below =
@@ -604,12 +604,12 @@ let suggestion_keys = cx.intercept_keystrokes(move |event, window, cx| {
 });
 ```
 
-- [ ] **Step 4: Run the tests and verify they pass**
+- [x] **Step 4: Run the tests and verify they pass**
 
 Run: `cargo test -p vrc-photon-ui search_suggest`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/ui/src/ui.rs crates/ui/src/ui/search.rs crates/ui/src/ui/search_suggest.rs crates/ui/src/app/search_suggest.rs
@@ -631,7 +631,7 @@ git commit -m "feat(ui): render search suggestions and handle keyboard selection
 - Consumes: `has_tag_filter`, `ai_filter_is_active`, `close_suggestion`。
 - Produces: 検索実行・クリア・画面遷移で候補が閉じ、AI タグ更新がタグ欄だけの検索も更新する。
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```rust
 #[test]
@@ -651,12 +651,12 @@ fn ai_tag_edits_refresh_tag_text_only_searches() {
 }
 ```
 
-- [ ] **Step 2: Run the test and verify it fails**
+- [x] **Step 2: Run the test and verify it fails**
 
 Run: `cargo test -p vrc-photon-ui ai_tag_edits_refresh_tag_text_only_searches`
 Expected: FAIL; `ai_edit_refreshes_search` does not exist.
 
-- [ ] **Step 3: Implement the lifecycle changes**
+- [x] **Step 3: Implement the lifecycle changes**
 
 - Add `fn ai_edit_refreshes_search(filter: &PhotoTextFilter) -> bool { ai_filter_is_active(filter) || has_tag_filter(filter) }`.
 - Use it in `refresh_search_after_ai_tag_edit`.
@@ -667,12 +667,12 @@ Expected: FAIL; `ai_edit_refreshes_search` does not exist.
 - Change both i18n values to "選択したタグのいずれかに一致（OR）。タグ欄とは別条件です。"
   and "Matches any selected tag (OR). Separate from the tag field."
 
-- [ ] **Step 4: Run the test and verify it passes**
+- [x] **Step 4: Run the test and verify it passes**
 
 Run: `cargo test -p vrc-photon-ui ai_tag_edits_refresh_tag_text_only_searches`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/ui/src/app/search.rs crates/ui/src/app/lifecycle.rs crates/i18n/locales/ja.yml crates/i18n/locales/en.yml
@@ -686,22 +686,22 @@ git commit -m "feat(ui): close suggestions on search lifecycle and refresh AI ta
 **Files:**
 - No source changes expected.
 
-- [ ] **Step 1: Run rustfmt**
+- [x] **Step 1: Run rustfmt**
 
 Run: `cargo fmt --all -- --check`
 Expected: exit 0.
 
-- [ ] **Step 2: Run clippy**
+- [x] **Step 2: Run clippy**
 
 Run: `cargo clippy --workspace --all-targets -- -D warnings`
 Expected: exit 0.
 
-- [ ] **Step 3: Run the workspace tests**
+- [x] **Step 3: Run the workspace tests**
 
 Run: `cargo test --workspace`
 Expected: all tests pass.
 
-- [ ] **Step 4: Build the UI and launch the demo**
+- [x] **Step 4: Build the UI and launch the demo**
 
 Run: `cargo build -p vrc-photo-ui`
 Then launch the demo with the GNOME XWayland capture script (from the main
@@ -714,6 +714,6 @@ fields. Confirm:
 - the popup flips above near the window bottom and closes on outside click;
 - selecting a tag and running Search matches manual and AI tags.
 
-- [ ] **Step 5: Commit only if verification changed tracked files**
+- [x] **Step 5: Commit only if verification changed tracked files**
 
 If no files changed, skip. Otherwise commit the fixes with a `fix:` prefix.
