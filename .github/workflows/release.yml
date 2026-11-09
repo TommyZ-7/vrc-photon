@@ -174,14 +174,31 @@ jobs:
               || { echo "missing $notice in pacman package"; exit 1; }
           done
 
-          helper="usr/bin/vrc-photon-updater"
-          dpkg-deb --contents "$deb" | grep "$helper\$" >/dev/null \
-            || { echo "missing $helper in deb"; exit 1; }
-          test -f "squashfs-root/$helper" \
-            || { echo "missing $helper in AppImage"; exit 1; }
-          tar -tzf "$pacman" | grep "$helper\$" >/dev/null \
-            || { echo "missing $helper in pacman package"; exit 1; }
-          echo "third-party notices and update helper verified"
+          for binary in vrc-photon-updater vrc-photon-mcp; do
+            path="usr/bin/$binary"
+            dpkg-deb --contents "$deb" | grep "$path\$" >/dev/null \
+              || { echo "missing $path in deb"; exit 1; }
+            test -f "squashfs-root/$path" \
+              || { echo "missing $path in AppImage"; exit 1; }
+            tar -tzf "$pacman" | grep "$path\$" >/dev/null \
+              || { echo "missing $path in pacman package"; exit 1; }
+          done
+          echo "third-party notices and bundled binaries verified"
+
+      - name: Smoke-test the packaged MCP server
+        run: |
+          set -euo pipefail
+          mcp="squashfs-root/usr/bin/vrc-photon-mcp"
+          test -x "$mcp"
+          {
+            printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"release-smoke","version":"0"}}}'
+            printf '%s\n' '{"jsonrpc":"2.0","method":"notifications/initialized"}'
+            printf '%s\n' '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
+          } | timeout 10 "$mcp" > /tmp/mcp-smoke.jsonl 2>/tmp/mcp-smoke.err
+          cat /tmp/mcp-smoke.jsonl
+          grep -q '"serverInfo"' /tmp/mcp-smoke.jsonl
+          grep -q '"library_stats"' /tmp/mcp-smoke.jsonl
+          echo "packaged MCP server responded with library_stats"
 
       - name: Verify systemd user unit
         run: |
@@ -267,7 +284,7 @@ jobs:
       - name: List artifacts
         run: dir dist
 
-      - name: Verify update helper in the installer
+      - name: Verify bundled binaries in the installer
         shell: pwsh
         run: |
           $installer = Get-ChildItem dist\*-setup.exe | Select-Object -First 1
@@ -275,10 +292,12 @@ jobs:
           $sevenZip = Join-Path $env:ProgramFiles "7-Zip\7z.exe"
           if (-not (Test-Path $sevenZip)) { throw "7-Zip not found" }
           $listing = & $sevenZip l $installer.FullName
-          if (-not ($listing | Select-String -Quiet 'vrc-photon-updater.exe')) {
-            throw "vrc-photon-updater.exe is missing from $($installer.Name)"
+          foreach ($binary in @('vrc-photon-updater.exe', 'vrc-photon-mcp.exe')) {
+            if (-not ($listing | Select-String -Quiet ([regex]::Escape($binary)))) {
+              throw "$binary is missing from $($installer.Name)"
+            }
           }
-          Write-Host "update helper found in $($installer.Name)"
+          Write-Host "update helper and MCP server found in $($installer.Name)"
 
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@v4
