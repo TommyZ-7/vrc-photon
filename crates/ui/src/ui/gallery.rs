@@ -14,6 +14,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Datelike, TimeZone, Timelike};
 use gpui_kit::base::v_virtual_list;
@@ -27,7 +28,7 @@ use vrc_photon_core::model::{Photo, SessionSummary};
 use vrc_photon_core::settings::PhotosViewMode;
 use vrc_photon_i18n::{tr, tr_args};
 
-use crate::app::{App, CardBoundsMap, Screen, retain_recent_bounds};
+use crate::app::{App, CardBoundsMap, Screen, effective_motion_fps, retain_recent_bounds};
 use crate::state::photo_browser::{
     FailedPage, PAGE_SIZE, PageFailure, PhotoBrowser, anchor_photo_id, first_visible_photo,
     list_scroll_top, row_for_photo, session_scroll_top, set_session_scroll_offset, visible_month,
@@ -242,6 +243,7 @@ impl Render for GalleryView {
             return div().into_any_element();
         };
         let app = app_entity.read(cx);
+        let motion_fps = effective_motion_fps(app.settings.ui_max_fps, window.refresh_interval(cx));
         let frame = self.shared.bounds_epoch.get().wrapping_add(1);
         self.shared.bounds_epoch.set(frame);
         retain_recent_bounds(&mut self.shared.bounds.borrow_mut(), frame);
@@ -251,7 +253,7 @@ impl Render for GalleryView {
         } else {
             let header = render_header(app, &self.shared, window);
             let grid = if app.settings.ui_photos_view_mode == PhotosViewMode::Sessions {
-                render_session_grid(app, &self.shared, frame, window)
+                render_session_grid(app, &self.shared, frame, window, motion_fps)
             } else {
                 render_grid(app, &self.shared, frame, window)
             };
@@ -905,6 +907,7 @@ fn render_session_grid(
     shared: &Rc<GalleryShared>,
     frame: u64,
     window: &mut Window,
+    motion_fps: f32,
 ) -> AnyElement {
     let p = app.palette;
     let width = f32::from(content_viewport(window).width);
@@ -917,7 +920,21 @@ fn render_session_grid(
         app.settings.ui_card_show_date || app.settings.ui_card_show_size,
     );
 
-    let (scroll, columns, rows, generation, index, total, labels, rail_drag, rail_hover) = {
+    let now = Instant::now();
+    let (
+        scroll,
+        columns,
+        rows,
+        generation,
+        index,
+        total,
+        labels,
+        rail_drag,
+        rail_hover,
+        animated_heights,
+        driver_duration,
+        driver_epoch,
+    ) = {
         let mut browser = shared.browser.borrow_mut();
         let pending = browser.pending_anchor.take();
         let layout_changed = metrics.columns != browser.columns
@@ -934,12 +951,14 @@ fn render_session_grid(
         });
         browser.columns = metrics.columns;
         browser.row_height = metrics.row_height;
-        let rows = browser.ensure_session_rows(
+        let layout = browser.session_layout(
             metrics.columns,
             metrics.row_height,
             SESSION_HEADER_ROW_HEIGHT + CARD_ROW_GAP,
             SESSION_DATE_LABEL_ROW_HEIGHT + CARD_ROW_GAP,
+            now,
         );
+        let rows = layout.rows.clone();
         if let Some(id) = anchor
             && let Some(position) = browser.index.row_of_id(id)
             && let Some(offset) = rows.anchor_offset_for_photo(position)
@@ -965,6 +984,9 @@ fn render_session_grid(
             labels,
             browser.rail_drag.clone(),
             browser.rail_hover.clone(),
+            layout.heights,
+            layout.driver_duration,
+            layout.driver_epoch,
         )
     };
 
@@ -975,8 +997,9 @@ fn render_session_grid(
     let Some(app_entity) = shared.app.upgrade() else {
         return div().into_any_element();
     };
+    let animated_heights = Rc::new(animated_heights);
     let item_sizes: Rc<Vec<VirtualRowSize<Pixels>>> = Rc::new(
-        rows.heights()
+        animated_heights
             .iter()
             .map(|height| virtual_row_size(px(0.), px(*height)))
             .collect(),
@@ -987,6 +1010,7 @@ fn render_session_grid(
     let list_rows = rows;
     let list_index = index.clone();
     let list_columns = columns;
+    let list_heights = animated_heights.clone();
     let grid_gap = GRID_GAP;
     let list = v_virtual_list(
         app_entity,
@@ -1056,13 +1080,29 @@ fn render_session_grid(
                             let start = first_photo;
                             let end = (first_photo + count).min(list_index.total);
                             missing_pages.extend(browser.plan_pages(start, end, 2));
+                            let full_height = list_rows
+                                .heights()
+                                .get(row_index)
+                                .copied()
+                                .unwrap_or(metrics.row_height);
+                            let row_height =
+                                list_heights.get(row_index).copied().unwrap_or(full_height);
+                            let opacity = if full_height > 0.0 {
+                                (row_height / full_height).clamp(0.0, 1.0)
+                            } else {
+                                1.0
+                            };
                             let mut line = h_flex()
-                                .h(px(metrics.row_height))
+                                .h(px(row_height))
+                                .opacity(opacity)
                                 .w_full()
                                 .min_w_0()
                                 .items_start()
                                 .gap(px(grid_gap))
                                 .pr(px(RAIL_WIDTH));
+                            if row_height + 0.01 < full_height {
+                                line = line.overflow_hidden();
+                            }
                             let mut column = 0;
                             let mut photo_index = start;
                             while column < list_columns {
@@ -1219,6 +1259,19 @@ fn render_session_grid(
         );
     }
 
+    let driver_duration = if driver_duration.is_zero() {
+        Duration::ZERO
+    } else {
+        driver_duration + Duration::from_millis(50)
+    };
+    let driver = div().size(px(0.)).with_animation(
+        ("session-collapse-driver", driver_epoch),
+        Animation::new(driver_duration)
+            .with_easing(ease_motion)
+            .with_max_fps(motion_fps),
+        |el, _| el,
+    );
+
     v_flex()
         .flex_1()
         .min_w_0()
@@ -1230,6 +1283,7 @@ fn render_session_grid(
         .pt(px(GALLERY_PAD_TOP))
         .pb(px(GALLERY_PAD_BOTTOM))
         .child(wrapper)
+        .child(driver)
         .into_any_element()
 }
 
