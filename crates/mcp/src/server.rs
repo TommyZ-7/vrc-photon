@@ -1,11 +1,19 @@
 //! MCP tool surface for the read-only VRC PhotoN library API.
 
+use std::path::Path;
+
+use base64::Engine as _;
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
-use rmcp::model::{CallToolResult, Implementation, ServerCapabilities, ServerConfig};
+use rmcp::model::{
+    CallToolResult, ContentBlock, Implementation, ServerCapabilities, ServerConfig,
+};
 use rmcp::{ErrorData, ServerHandler, schemars, tool, tool_handler, tool_router};
 use serde::Deserialize;
 use serde_json::json;
+use vrc_photon_core::error::CoreError;
+use vrc_photon_core::photo_image::{PhotoImage, render_photo_image};
+
 use crate::client::{DaemonClient, DaemonError, SearchPhotosQuery};
 
 const DEFAULT_LIMIT: u32 = 50;
@@ -55,6 +63,15 @@ pub struct GetPhotoParams {
     pub id: i64,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct GetPhotoImageParams {
+    /// Photo ID returned by search_photos.
+    pub id: i64,
+    /// Return the original file bytes instead of a 1024px JPEG preview.
+    #[serde(default)]
+    pub original: bool,
+}
+
 #[tool_router]
 impl PhotoNMcp {
     pub fn new(client: DaemonClient) -> Self {
@@ -102,6 +119,43 @@ impl PhotoNMcp {
         match call_daemon(move || client.get_photo(params.id)).await {
             Ok(photo) => structured(photo),
             Err(error) => Ok(tool_error(error)),
+        }
+    }
+
+    #[tool(
+        description = "Return a photo image. By default a preview is rendered as a JPEG with a 1024px longest edge from the display file; set original=true to return the original file bytes unchanged."
+    )]
+    async fn get_photo_image(
+        &self,
+        Parameters(params): Parameters<GetPhotoImageParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let client = self.client.clone();
+        let id = params.id;
+        let original = params.original;
+        let result = tokio::task::spawn_blocking(move || -> Result<PhotoImage, ImageToolError> {
+            let photo = client.get_photo(id).map_err(ImageToolError::Daemon)?;
+            let path = if original {
+                photo.original_path
+            } else {
+                photo.path
+            };
+            render_photo_image(Path::new(&path), original).map_err(ImageToolError::Image)
+        })
+        .await;
+        match result {
+            Ok(Ok(image)) => {
+                let data = base64::engine::general_purpose::STANDARD.encode(image.bytes);
+                Ok(CallToolResult::success(vec![ContentBlock::image(
+                    data,
+                    image.mime_type,
+                )]))
+            }
+            Ok(Err(ImageToolError::Daemon(error))) => Ok(tool_error(error)),
+            Ok(Err(ImageToolError::Image(error))) => Ok(image_error(error)),
+            Err(error) => Err(ErrorData::internal_error(
+                format!("MCP worker failed: {error}"),
+                None,
+            )),
         }
     }
 
@@ -164,6 +218,18 @@ fn tool_error(error: DaemonError) -> CallToolResult {
     }))
 }
 
+fn image_error(error: CoreError) -> CallToolResult {
+    CallToolResult::structured_error(json!({
+        "error": "image_unavailable",
+        "message": error.to_string(),
+    }))
+}
+
+enum ImageToolError {
+    Daemon(DaemonError),
+    Image(CoreError),
+}
+
 fn parse_timestamp(value: Option<&str>, field: &str) -> Result<Option<i64>, ErrorData> {
     let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) else {
         return Ok(None);
@@ -187,6 +253,8 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use std::thread::{self, JoinHandle};
     use std::time::Duration;
+
+    use image::{ImageFormat, Rgba, RgbaImage};
 
     use vrc_photon_ipc::server::Listener;
     use vrc_photon_ipc::{
@@ -311,6 +379,25 @@ mod tests {
             total: 1,
             limit: 50,
             offset: 0,
+        }
+    }
+
+    fn write_test_png(path: &Path, width: u32, height: u32) {
+        let image = RgbaImage::from_pixel(width, height, Rgba([10, 20, 30, 255]));
+        image.save_with_format(path, ImageFormat::Png).unwrap();
+    }
+
+    fn photo_detail(display_path: &Path, original_path: &Path) -> PhotoDetail {
+        PhotoDetail {
+            id: 7,
+            path: display_path.to_string_lossy().to_string(),
+            original_path: original_path.to_string_lossy().to_string(),
+            file_name: "photo.png".to_string(),
+            width: 1200,
+            height: 800,
+            file_size: 10,
+            status: "present".to_string(),
+            ..PhotoDetail::default()
         }
     }
 
@@ -493,11 +580,119 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tool_router_lists_the_four_read_tools() {
+    async fn get_photo_image_defaults_to_a_1024px_jpeg_preview() {
+        let images = tempfile::tempdir().unwrap();
+        let source = images.path().join("photo.png");
+        write_test_png(&source, 1200, 800);
+        let daemon = FakeDaemon::start(vec![Response::Photo {
+            photo: photo_detail(&source, &source),
+        }]);
+        let server = PhotoNMcp::new(daemon.client());
+
+        let result = server
+            .get_photo_image(Parameters(GetPhotoImageParams {
+                id: 7,
+                original: false,
+            }))
+            .await
+            .unwrap();
+        assert_eq!(result.is_error, Some(false));
+        match &result.content[0] {
+            ContentBlock::Image(content) => {
+                assert_eq!(content.mime_type, "image/jpeg");
+                let bytes = base64::engine::general_purpose::STANDARD
+                    .decode(&content.data)
+                    .unwrap();
+                let decoded = image::load_from_memory(&bytes).unwrap();
+                assert_eq!(decoded.width().max(decoded.height()), 1024);
+            }
+            other => panic!("unexpected content: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn get_photo_image_original_returns_the_unchanged_file() {
+        let images = tempfile::tempdir().unwrap();
+        let source = images.path().join("photo.png");
+        write_test_png(&source, 1200, 800);
+        let expected = std::fs::read(&source).unwrap();
+        let daemon = FakeDaemon::start(vec![Response::Photo {
+            photo: photo_detail(&source, &source),
+        }]);
+        let server = PhotoNMcp::new(daemon.client());
+
+        let result = server
+            .get_photo_image(Parameters(GetPhotoImageParams {
+                id: 7,
+                original: true,
+            }))
+            .await
+            .unwrap();
+        assert_eq!(result.is_error, Some(false));
+        match &result.content[0] {
+            ContentBlock::Image(content) => {
+                assert_eq!(content.mime_type, "image/png");
+                let bytes = base64::engine::general_purpose::STANDARD
+                    .decode(&content.data)
+                    .unwrap();
+                assert_eq!(bytes, expected);
+            }
+            other => panic!("unexpected content: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn get_photo_image_reports_missing_files_and_photos_as_tool_errors() {
+        let images = tempfile::tempdir().unwrap();
+        let missing = images.path().join("missing.png");
+        let daemon = FakeDaemon::start(vec![Response::Photo {
+            photo: photo_detail(&missing, &missing),
+        }]);
+        let server = PhotoNMcp::new(daemon.client());
+        let result = server
+            .get_photo_image(Parameters(GetPhotoImageParams {
+                id: 7,
+                original: false,
+            }))
+            .await
+            .unwrap();
+        assert_eq!(result.is_error, Some(true));
+        assert_eq!(
+            result.structured_content.unwrap()["error"],
+            "image_unavailable"
+        );
+
+        let missing = FakeDaemon::start(vec![Response::Error {
+            code: vrc_photon_ipc::ErrorCode::NotFound,
+            message: "photo not found: 8".to_string(),
+        }]);
+        let server = PhotoNMcp::new(missing.client());
+        let result = server
+            .get_photo_image(Parameters(GetPhotoImageParams {
+                id: 8,
+                original: false,
+            }))
+            .await
+            .unwrap();
+        assert_eq!(result.is_error, Some(true));
+        assert_eq!(
+            result.structured_content.unwrap()["error"],
+            "photo_not_found"
+        );
+    }
+
+    #[tokio::test]
+    async fn tool_router_lists_all_five_tools() {
         let daemon = FakeDaemon::start(Vec::new());
         let server = PhotoNMcp::new(daemon.client());
         let names = tool_router_names(&server);
-        for expected in ["search_photos", "get_photo", "list_worlds", "library_stats"] {
+        for expected in [
+            "search_photos",
+            "get_photo",
+            "list_worlds",
+            "library_stats",
+            "get_photo_image",
+        ] {
             assert!(names.contains(&expected.to_string()), "{names:?}");
         }
     }
