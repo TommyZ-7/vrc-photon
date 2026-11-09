@@ -1,6 +1,6 @@
-//! Integrations & automation screen: automatic compression, AI tagging
-//! runtime settings, and clipboard settings, with Discord in the same card
-//! stack (#142).
+//! Integrations & automation screen: a master list of Discord, automatic
+//! compression, AI tagging, and clipboard, with the selected item's settings
+//! in the detail pane (#142, #448).
 
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::checkbox::Checkbox;
@@ -13,6 +13,7 @@ use vrc_photon_ai_protocol::{TaggingJobStatus, TaggingStage};
 use vrc_photon_i18n::{tr, tr_args};
 
 use crate::app::App;
+use crate::app::IntegrationsSection;
 use crate::app::Screen;
 use crate::app::ai::{
     AiErrorKind, active_job_photo_label, ai_error_summary_in, backend_options,
@@ -39,32 +40,93 @@ enum AiToggle {
     Backlog,
 }
 
+fn on_off_label(enabled: bool) -> String {
+    if enabled {
+        tr!("integrations.summary.enabled")
+    } else {
+        tr!("integrations.summary.disabled")
+    }
+}
+
+/// One-line Discord state for the master list.
+pub(crate) fn discord_summary(configured: bool, destination: &str) -> String {
+    let state = if configured {
+        tr!("integrations.discord.webhook.configured")
+    } else {
+        tr!("integrations.discord.webhook.missing_short")
+    };
+    tr_args!(
+        "integrations.summary.discord",
+        state = state,
+        destination = destination
+    )
+}
+
+/// One-line automatic compression state for the master list.
+pub(crate) fn auto_compression_summary(enabled: bool, profile_count: usize) -> String {
+    tr_args!(
+        "integrations.summary.auto",
+        state = on_off_label(enabled),
+        count = profile_count
+    )
+}
+
+/// One-line AI tagging state for the master list.
+pub(crate) fn ai_tagging_summary(enabled: bool, running: i64, waiting: i64) -> String {
+    tr_args!(
+        "integrations.summary.ai",
+        state = on_off_label(enabled),
+        running = running,
+        waiting = waiting
+    )
+}
+
+/// One-line clipboard state for the master list.
+pub(crate) fn clipboard_summary(enabled: bool, profile: Option<&str>) -> String {
+    let state = on_off_label(enabled);
+    match profile {
+        Some(name) => tr_args!("integrations.summary.clipboard", state = state, name = name),
+        None => tr_args!("integrations.summary.clipboard_empty", state = state),
+    }
+}
+
 impl App {
     pub(crate) fn integrations_screen(
         &mut self,
         window: &Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        h_flex()
+        let viewport = content_viewport(window);
+        let stacked = integrations_stacks(f32::from(viewport.width), self.sidebar_collapsed);
+        let selected = self.integrations_selected;
+
+        let list = self.integrations_list(selected, stacked, cx);
+
+        let detail_body = v_flex()
+            .id("integrations-detail")
+            .flex_1()
+            .min_w_0()
+            .min_h_0()
+            .overflow_y_scroll()
+            .track_scroll(&self.integrations_scroll)
+            .gap(px(CARD_GAP));
+        let detail_body = match selected {
+            IntegrationsSection::Discord => detail_body
+                .child(self.discord_card(window, cx))
+                .child(self.send_history_card(window, cx)),
+            IntegrationsSection::AutoCompression => {
+                detail_body.child(self.auto_compression_card(window, cx))
+            }
+            IntegrationsSection::AiTagging => detail_body.child(self.ai_tagging_card(window, cx)),
+            IntegrationsSection::Clipboard => detail_body.child(self.clipboard_card(window, cx)),
+        };
+        let detail = h_flex()
             .relative()
             .flex_1()
+            .min_w_0()
             .min_h_0()
             .items_stretch()
-            .child(
-                v_flex()
-                    .id("integrations-sections")
-                    .flex_1()
-                    .min_w_0()
-                    .min_h_0()
-                    .overflow_y_scroll()
-                    .track_scroll(&self.integrations_scroll)
-                    .gap(px(CARD_GAP))
-                    .child(self.discord_card(window, cx))
-                    .child(self.auto_compression_card(window, cx))
-                    .child(self.ai_tagging_card(window, cx))
-                    .child(self.clipboard_card(window, cx))
-                    .child(self.send_history_card(window, cx)),
-            )
+            .child(detail_body)
             .child(
                 div()
                     .absolute()
@@ -73,7 +135,150 @@ impl App {
                     .bottom_0()
                     .w(px(8.))
                     .child(Scrollbar::vertical(&self.integrations_scroll)),
-            )
+            );
+
+        if stacked {
+            v_flex()
+                .flex_1()
+                .min_h_0()
+                .gap(px(CARD_GAP))
+                .child(list)
+                .child(detail)
+                .into_any_element()
+        } else {
+            h_flex()
+                .flex_1()
+                .min_h_0()
+                .items_stretch()
+                .gap(px(INTEGRATIONS_PANE_GAP))
+                .child(list)
+                .child(detail)
+                .into_any_element()
+        }
+    }
+
+    /// Master list of the four integration sections. Each row carries the
+    /// same title as its detail card, a status dot, and a one-line summary.
+    fn integrations_list(
+        &self,
+        selected: IntegrationsSection,
+        stacked: bool,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let p = self.palette;
+        let auto_profiles = self
+            .profiles
+            .iter()
+            .filter(|profile| profile.enabled && profile.auto_enabled)
+            .count();
+        let clipboard_profile = self
+            .profiles
+            .iter()
+            .find(|profile| profile.clipboard && profile.enabled)
+            .map(|profile| profile.name.as_str());
+        let running = self.ai.job_counts.pending + self.ai.job_counts.processing;
+        let configured = self.discord_url.is_some();
+
+        let items = [
+            (
+                IntegrationsSection::Discord,
+                "integrations-list-discord",
+                tr!("integrations.discord.title"),
+                discord_summary(configured, &self.settings.discord_destination),
+                configured,
+            ),
+            (
+                IntegrationsSection::AutoCompression,
+                "integrations-list-auto",
+                tr!("integrations.auto.title"),
+                auto_compression_summary(self.settings.auto_compress, auto_profiles),
+                self.settings.auto_compress,
+            ),
+            (
+                IntegrationsSection::AiTagging,
+                "integrations-list-ai",
+                tr!("integrations.ai.title"),
+                ai_tagging_summary(
+                    self.settings.ai_tagging_enabled,
+                    running,
+                    self.ai.job_counts.waiting,
+                ),
+                self.settings.ai_tagging_enabled,
+            ),
+            (
+                IntegrationsSection::Clipboard,
+                "integrations-list-clipboard",
+                tr!("integrations.clipboard.title"),
+                clipboard_summary(self.settings.clipboard_enabled, clipboard_profile),
+                self.settings.clipboard_enabled,
+            ),
+        ];
+
+        v_flex()
+            .id("integrations-list")
+            .flex_shrink_0()
+            .gap(px(4.))
+            .when(!stacked, |this| {
+                this.w(px(INTEGRATIONS_LIST_WIDTH))
+                    .pr(px(12.))
+                    .border_r_1()
+                    .border_color(rgba(p.highlight))
+            })
+            .when(stacked, |this| {
+                this.pb(px(12.))
+                    .border_b_1()
+                    .border_color(rgba(p.highlight))
+            })
+            .children(items.into_iter().map(|(section, id, name, summary, on)| {
+                let active = section == selected;
+                v_flex()
+                    .id(SharedString::from(id))
+                    .gap(px(3.))
+                    .p(px(11.))
+                    .rounded(px(9.))
+                    .border_1()
+                    .border_color(if active {
+                        rgba(with_alpha(p.accent, 0x66))
+                    } else {
+                        rgba(0x00000000)
+                    })
+                    .when(active, |this| this.bg(rgb(p.accent_soft)))
+                    .cursor_pointer()
+                    .when(!active, |this| this.hover(|this| this.bg(rgb(p.panel_2))))
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.integrations_selected = section;
+                        this.integrations_scroll.set_offset(point(px(0.), px(0.)));
+                        cx.notify();
+                    }))
+                    .child(
+                        h_flex()
+                            .items_center()
+                            .gap(px(8.))
+                            .child(div().size(px(8.)).rounded_full().bg(rgb(if on {
+                                p.green
+                            } else {
+                                p.muted_2
+                            })))
+                            .child(
+                                div()
+                                    .text_size(px(13.))
+                                    .font_semibold()
+                                    .text_color(rgb(p.text))
+                                    .child(name),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .w_full()
+                            .min_w_0()
+                            .truncate()
+                            .text_size(px(11.))
+                            .text_color(rgb(p.muted_2))
+                            .child(summary),
+                    )
+                    .into_any_element()
+            }))
+            .into_any_element()
     }
 
     fn auto_compression_card(&mut self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
@@ -848,8 +1053,40 @@ pub(crate) fn ai_stage_label(stage: Option<TaggingStage>) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::ai_stage_label;
+    use super::{
+        ai_stage_label, ai_tagging_summary, auto_compression_summary, clipboard_summary,
+        discord_summary,
+    };
     use vrc_photon_ai_protocol::TaggingStage;
+
+    #[test]
+    fn section_summaries_follow_the_existing_card_values() {
+        assert_eq!(
+            discord_summary(true, "VRChat写真部"),
+            "設定済み ・ 送信先：VRChat写真部"
+        );
+        assert_eq!(
+            discord_summary(false, "Discord"),
+            "未設定 ・ 送信先：Discord"
+        );
+        assert_eq!(
+            auto_compression_summary(true, 2),
+            "有効 ・ 対象プロファイル 2 件"
+        );
+        assert_eq!(
+            auto_compression_summary(false, 0),
+            "無効 ・ 対象プロファイル 0 件"
+        );
+        assert_eq!(
+            ai_tagging_summary(true, 1, 12),
+            "有効 ・ 実行中 1 件 / 待機 12 件"
+        );
+        assert_eq!(
+            clipboard_summary(true, Some("標準")),
+            "有効 ・ プロファイル：標準"
+        );
+        assert_eq!(clipboard_summary(false, None), "無効 ・ プロファイル未選択");
+    }
 
     #[test]
     fn atmosphere_stage_has_a_label() {
