@@ -47,10 +47,10 @@ pub fn render_photo_image(path: &Path, original: bool) -> Result<PhotoImage> {
 /// Resolves the MIME type from the extension first and the file signature
 /// second, so a misnamed or extensionless file still gets a usable type.
 fn mime_type_for(path: &Path, bytes: &[u8]) -> Option<&'static str> {
-    if let Some(extension) = path.extension().and_then(|extension| extension.to_str()) {
-        if let Some(mime_type) = mime_type_from_extension(extension) {
-            return Some(mime_type);
-        }
+    if let Some(extension) = path.extension().and_then(|extension| extension.to_str())
+        && let Some(mime_type) = mime_type_from_extension(extension)
+    {
+        return Some(mime_type);
     }
     mime_type_from_magic(bytes)
 }
@@ -89,8 +89,7 @@ fn mime_type_from_magic(bytes: &[u8]) -> Option<&'static str> {
     // ISO BMFF container signature for JPEG XL (00 00 00 0C 'JXL ' ...),
     // or the bare codestream signature.
     if bytes.starts_with(&[0xFF, 0x0A])
-        || (bytes.get(4..8) == Some(&b"JXL "[..])
-            && bytes.get(0..4) == Some(&[0, 0, 0, 0x0C][..]))
+        || (bytes.get(4..8) == Some(&b"JXL "[..]) && bytes.get(0..4) == Some(&[0, 0, 0, 0x0C][..]))
     {
         return Some("image/jxl");
     }

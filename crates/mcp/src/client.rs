@@ -75,7 +75,7 @@ impl DaemonClient {
 
     pub fn get_photo(&self, id: i64) -> Result<PhotoDetail, DaemonError> {
         match self.request(Request::GetPhoto { id })? {
-            Response::Photo { photo } => Ok(photo),
+            Response::Photo { photo } => Ok(*photo),
             other => Err(unexpected(&other)),
         }
     }

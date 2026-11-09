@@ -35,8 +35,12 @@ async fn main() -> Result<()> {
         .data_dir
         .or_else(vrc_photon_core::data_dir)
         .context("cannot resolve the VRC PhotoN data directory")?;
-    let endpoint = Endpoint::for_data_dir(&data_dir)
-        .with_context(|| format!("cannot resolve the daemon endpoint in {}", data_dir.display()))?;
+    let endpoint = Endpoint::for_data_dir(&data_dir).with_context(|| {
+        format!(
+            "cannot resolve the daemon endpoint in {}",
+            data_dir.display()
+        )
+    })?;
     let server = PhotoNMcp::new(DaemonClient::new(endpoint, Duration::from_secs(10)));
 
     let service = server

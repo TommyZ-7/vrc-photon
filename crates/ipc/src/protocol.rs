@@ -122,7 +122,7 @@ pub enum Response {
         result: PhotoSearch,
     },
     Photo {
-        photo: PhotoDetail,
+        photo: Box<PhotoDetail>,
     },
     Worlds {
         worlds: Vec<WorldSummary>,
@@ -672,7 +672,7 @@ mod tests {
         let detail = ServerMessage::Response {
             id: 2,
             response: Response::Photo {
-                photo: PhotoDetail::default(),
+                photo: Box::new(PhotoDetail::default()),
             },
         };
         let json = serde_json::to_string(&detail).unwrap();
@@ -713,9 +713,6 @@ mod tests {
         };
         let json = serde_json::to_string(&stats).unwrap();
         assert!(json.contains("\"type\":\"library_stats\""));
-        assert_eq!(
-            serde_json::from_str::<ServerMessage>(&json).unwrap(),
-            stats
-        );
+        assert_eq!(serde_json::from_str::<ServerMessage>(&json).unwrap(), stats);
     }
 }

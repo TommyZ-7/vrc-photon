@@ -429,7 +429,8 @@ fn handle_connection(
                 offset,
             } => {
                 let response = library_search_response(
-                    &control, world, player, tag, ai_tags, from_utc, to_utc, favorite, limit, offset,
+                    &control, world, player, tag, ai_tags, from_utc, to_utc, favorite, limit,
+                    offset,
                 );
                 write_response(reader.get_mut(), id, response)?;
             }
@@ -711,7 +712,9 @@ fn library_photo_response(control: &IpcControl, photo_id: i64) -> Response {
         photo_detail(&db, &photo).map(Some)
     })();
     match result {
-        Ok(Some(photo)) => Response::Photo { photo },
+        Ok(Some(photo)) => Response::Photo {
+            photo: Box::new(photo),
+        },
         Ok(None) => Response::Error {
             code: ErrorCode::NotFound,
             message: format!("photo not found: {photo_id}"),

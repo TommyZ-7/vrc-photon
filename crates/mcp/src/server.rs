@@ -5,9 +5,7 @@ use std::path::Path;
 use base64::Engine as _;
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
-use rmcp::model::{
-    CallToolResult, ContentBlock, Implementation, ServerCapabilities, ServerConfig,
-};
+use rmcp::model::{CallToolResult, ContentBlock, Implementation, ServerCapabilities, ServerConfig};
 use rmcp::{ErrorData, ServerHandler, schemars, tool, tool_handler, tool_router};
 use serde::Deserialize;
 use serde_json::json;
@@ -286,10 +284,11 @@ mod tests {
                     match listener.accept() {
                         Ok(stream) => {
                             let mut reader = BufReader::new(stream);
-                            let Some(hello) =
-                                vrc_photon_ipc::framing::read_message::<_, RequestEnvelope>(&mut reader)
-                                    .unwrap()
-                            else {
+                            let Some(hello) = vrc_photon_ipc::framing::read_message::<
+                                _,
+                                RequestEnvelope,
+                            >(&mut reader)
+                            .unwrap() else {
                                 continue;
                             };
                             vrc_photon_ipc::framing::write_message(
@@ -305,10 +304,11 @@ mod tests {
                                 },
                             )
                             .unwrap();
-                            let Some(envelope) =
-                                vrc_photon_ipc::framing::read_message::<_, RequestEnvelope>(&mut reader)
-                                    .unwrap()
-                            else {
+                            let Some(envelope) = vrc_photon_ipc::framing::read_message::<
+                                _,
+                                RequestEnvelope,
+                            >(&mut reader)
+                            .unwrap() else {
                                 continue;
                             };
                             thread_requests.lock().unwrap().push(envelope.request);
@@ -487,7 +487,7 @@ mod tests {
     #[tokio::test]
     async fn get_photo_returns_metadata_and_maps_not_found_to_a_tool_error() {
         let daemon = FakeDaemon::start(vec![Response::Photo {
-            photo: PhotoDetail {
+            photo: Box::new(PhotoDetail {
                 id: 7,
                 path: "/photos/a.png".to_string(),
                 original_path: "/photos/a.png".to_string(),
@@ -499,7 +499,7 @@ mod tests {
                 is_favorite: true,
                 status: "present".to_string(),
                 ..PhotoDetail::default()
-            },
+            }),
         }]);
         let server = PhotoNMcp::new(daemon.client());
 
@@ -585,7 +585,7 @@ mod tests {
         let source = images.path().join("photo.png");
         write_test_png(&source, 1200, 800);
         let daemon = FakeDaemon::start(vec![Response::Photo {
-            photo: photo_detail(&source, &source),
+            photo: Box::new(photo_detail(&source, &source)),
         }]);
         let server = PhotoNMcp::new(daemon.client());
 
@@ -617,7 +617,7 @@ mod tests {
         write_test_png(&source, 1200, 800);
         let expected = std::fs::read(&source).unwrap();
         let daemon = FakeDaemon::start(vec![Response::Photo {
-            photo: photo_detail(&source, &source),
+            photo: Box::new(photo_detail(&source, &source)),
         }]);
         let server = PhotoNMcp::new(daemon.client());
 
@@ -646,7 +646,7 @@ mod tests {
         let images = tempfile::tempdir().unwrap();
         let missing = images.path().join("missing.png");
         let daemon = FakeDaemon::start(vec![Response::Photo {
-            photo: photo_detail(&missing, &missing),
+            photo: Box::new(photo_detail(&missing, &missing)),
         }]);
         let server = PhotoNMcp::new(daemon.client());
         let result = server
