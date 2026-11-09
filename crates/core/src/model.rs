@@ -613,6 +613,17 @@ pub struct SessionPlayer {
     pub left_at: Option<i64>,
 }
 
+/// One session with the metadata the grouped photo grid displays.
+#[derive(Debug, Clone)]
+pub struct SessionSummary {
+    pub session: Session,
+    pub world_name: Option<String>,
+    pub world_external_id: Option<String>,
+    pub photo_count: i64,
+    pub players: Vec<String>,
+    pub cover_photo: Option<Photo>,
+}
+
 /// Maximum number of user retries per compression job.
 pub const MAX_JOB_RETRIES: i64 = 3;
 
