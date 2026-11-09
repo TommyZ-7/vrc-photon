@@ -21,8 +21,8 @@ use crate::model::{
     DeletionStatus, Derivative, JobStatusCounts, LibraryRoot, LibraryStats, MAX_JOB_RETRIES,
     MAX_PROFILE_NAME_CHARS, NewPhoto, Photo, PhotoContext, PhotoFilter, PhotoIndexEntry,
     PhotoPlayer, PhotoSort, PhotoStatus, PhotoTextFilter, QueueStatus, SendCompletion,
-    SendErrorCode, SendHistoryEntry, SendKind, SendOrigin, SendOutboxEntry, SendSource, SendStatus,
-    Session, SessionPlayer, World, WorldPhotoCount,
+    SearchSuggestion, SendErrorCode, SendHistoryEntry, SendKind, SendOrigin, SendOutboxEntry,
+    SendSource, SendStatus, Session, SessionPlayer, World, WorldPhotoCount,
 };
 use crate::world_name::{
     NOT_FOUND_RETRY_SECONDS, REQUEST_INTERVAL_SECONDS, WorldNameFailure, WorldNameLookup,
@@ -1198,6 +1198,64 @@ impl Db {
         values.push(Value::Integer(clamp_limit(limit)));
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map(params_from_iter(values), row_to_photo_index)?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// World-name autocomplete candidates ordered by photo count.
+    pub fn world_name_suggestions(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<SearchSuggestion>> {
+        let query = query.trim();
+        if query.is_empty() {
+            return Ok(Vec::new());
+        }
+        let like = format!("%{}%", escape_like(query));
+        let sql = format!(
+            "SELECT c.world_name AS name, COUNT(DISTINCT p.id) AS photo_count \
+             FROM photo_context c JOIN photos p ON p.id = c.photo_id \
+             WHERE {VISIBLE_STATUS} AND c.world_name IS NOT NULL AND c.world_name <> '' \
+               AND c.world_name LIKE ? ESCAPE '\\' \
+             GROUP BY c.world_name \
+             ORDER BY photo_count DESC, name COLLATE NOCASE ASC LIMIT ?"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(params![like, limit as i64], |row| {
+            Ok(SearchSuggestion {
+                name: row.get(0)?,
+                photo_count: row.get(1)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Player display-name autocomplete candidates ordered by photo count.
+    pub fn player_name_suggestions(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<SearchSuggestion>> {
+        let query = query.trim();
+        if query.is_empty() {
+            return Ok(Vec::new());
+        }
+        let like = format!("%{}%", escape_like(query));
+        let sql = format!(
+            "SELECT pp.display_name AS name, COUNT(DISTINCT pp.photo_id) AS photo_count \
+             FROM photo_players pp JOIN photos p ON p.id = pp.photo_id \
+             WHERE {VISIBLE_STATUS} AND pp.display_name IS NOT NULL AND pp.display_name <> '' \
+               AND pp.display_name LIKE ? ESCAPE '\\' \
+             GROUP BY pp.display_name \
+             ORDER BY photo_count DESC, name COLLATE NOCASE ASC LIMIT ?"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(params![like, limit as i64], |row| {
+            Ok(SearchSuggestion {
+                name: row.get(0)?,
+                photo_count: row.get(1)?,
+            })
+        })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
@@ -7679,6 +7737,175 @@ mod tests {
         }
         let entries = db.photo_index_text(&PhotoTextFilter::default()).unwrap();
         assert_eq!(entries.len(), 305);
+    }
+
+    fn set_context(db: &Db, photo_id: i64, world_name: Option<&str>) {
+        db.set_photo_context(&PhotoContext {
+            photo_id,
+            session_id: None,
+            world_id: None,
+            world_name: world_name.map(str::to_string),
+            instance_id: None,
+            link_method: "manual".to_string(),
+            confidence: 1.0,
+            author: None,
+            linked_at: now_string(),
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn world_suggestions_match_partial_names_with_visible_counts() {
+        let db = Db::open_in_memory().unwrap();
+        let root = db.add_root("/photos", "reference").unwrap();
+        let a = db
+            .upsert_photo(&photo_at(
+                root,
+                "/photos/a.png",
+                1,
+                "2025-04-30 09:00:00",
+            ))
+            .unwrap();
+        let b = db
+            .upsert_photo(&photo_at(
+                root,
+                "/photos/b.png",
+                2,
+                "2025-04-30 09:00:00",
+            ))
+            .unwrap();
+        let c = db
+            .upsert_photo(&photo_at(
+                root,
+                "/photos/c.png",
+                3,
+                "2025-04-30 09:00:00",
+            ))
+            .unwrap();
+        let missing = db
+            .upsert_photo(&photo_at(
+                root,
+                "/photos/m.png",
+                4,
+                "2025-04-30 09:00:00",
+            ))
+            .unwrap();
+        for (photo_id, name) in [
+            (a, "Sunset Pier"),
+            (b, "Sunset Pier"),
+            (c, "Sunset Bar"),
+            (missing, "Sunset Missing"),
+        ] {
+            set_context(&db, photo_id, Some(name));
+        }
+        db.mark_missing(missing).unwrap();
+
+        let rows = db.world_name_suggestions("sun", 10).unwrap();
+        assert_eq!(
+            rows,
+            vec![
+                SearchSuggestion {
+                    name: "Sunset Pier".into(),
+                    photo_count: 2,
+                },
+                SearchSuggestion {
+                    name: "Sunset Bar".into(),
+                    photo_count: 1,
+                },
+            ]
+        );
+        assert!(db.world_name_suggestions("  ", 10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn player_suggestions_group_names_and_count_distinct_photos() {
+        let db = Db::open_in_memory().unwrap();
+        let root = db.add_root("/photos", "reference").unwrap();
+        let a = db
+            .upsert_photo(&photo_at(
+                root,
+                "/photos/a.png",
+                1,
+                "2025-04-30 09:00:00",
+            ))
+            .unwrap();
+        let b = db
+            .upsert_photo(&photo_at(
+                root,
+                "/photos/b.png",
+                2,
+                "2025-04-30 09:00:00",
+            ))
+            .unwrap();
+        let c = db
+            .upsert_photo(&photo_at(
+                root,
+                "/photos/c.png",
+                3,
+                "2025-04-30 09:00:00",
+            ))
+            .unwrap();
+        db.set_photo_players(
+            a,
+            &[PhotoPlayer {
+                user_id: "usr_1".into(),
+                display_name: "Mio".into(),
+            }],
+        )
+        .unwrap();
+        db.set_photo_players(
+            b,
+            &[PhotoPlayer {
+                user_id: "usr_2".into(),
+                display_name: "Mio".into(),
+            }],
+        )
+        .unwrap();
+        db.set_photo_players(
+            c,
+            &[PhotoPlayer {
+                user_id: "usr_3".into(),
+                display_name: "Mika".into(),
+            }],
+        )
+        .unwrap();
+
+        let rows = db.player_name_suggestions("mi", 10).unwrap();
+        assert_eq!(
+            rows,
+            vec![
+                SearchSuggestion {
+                    name: "Mio".into(),
+                    photo_count: 2,
+                },
+                SearchSuggestion {
+                    name: "Mika".into(),
+                    photo_count: 1,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn suggestions_escape_like_metacharacters_and_honor_the_limit() {
+        let db = Db::open_in_memory().unwrap();
+        let root = db.add_root("/photos", "reference").unwrap();
+        for (index, name) in ["100%_World", "100XWorld", "Percent"].iter().enumerate() {
+            let photo = db
+                .upsert_photo(&photo_at(
+                    root,
+                    &format!("/photos/{index}.png"),
+                    index as i64,
+                    "2025-04-30 09:00:00",
+                ))
+                .unwrap();
+            set_context(&db, photo, Some(name));
+        }
+
+        let rows = db.world_name_suggestions("100%", 10).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].name, "100%_World");
+        assert_eq!(db.world_name_suggestions("o", 1).unwrap().len(), 1);
     }
 
     #[test]

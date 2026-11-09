@@ -876,6 +876,13 @@ pub struct AiPhotoFilter {
     pub people_count: Option<u32>,
 }
 
+/// One autocomplete candidate for the search screen.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SearchSuggestion {
+    pub name: String,
+    pub photo_count: i64,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct PhotoTextFilter {
     pub world: Option<String>,
