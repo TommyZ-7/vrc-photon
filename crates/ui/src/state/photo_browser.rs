@@ -34,6 +34,13 @@ pub(crate) fn session_scroll_top(handle: &VirtualListScrollHandle) -> f32 {
     (-f32::from(offset)).max(0.0)
 }
 
+/// Sets the session list offset, clamped to the current scrollable range.
+pub(crate) fn set_session_scroll_offset(browser: &PhotoBrowser, offset: f32) {
+    let max = f32::from(browser.session_scroll.base_handle().max_offset().y).max(0.0);
+    let y = (-offset).clamp(-max, 0.0);
+    browser.session_scroll.set_offset(point(px(0.), px(y)));
+}
+
 /// Ordered snapshot of the library: only IDs and capture timestamps, so the
 /// full 100k-entry list stays cheap while photo rows load in pages.
 pub(crate) struct PhotoIndex {

@@ -8,9 +8,12 @@ use vrc_photon_core::model::SessionSummary;
 use vrc_photon_core::settings::PhotosViewMode;
 
 use crate::app::App;
-use crate::state::photo_browser::{anchor_photo_id, list_scroll_top, session_scroll_top};
+use crate::state::photo_browser::{
+    anchor_photo_id, list_scroll_top, session_scroll_top, set_session_scroll_offset,
+};
 use crate::ui::theme::{CARD_ROW_GAP, SESSION_DATE_LABEL_ROW_HEIGHT, SESSION_HEADER_ROW_HEIGHT};
 
+#[cfg(test)]
 pub(crate) fn next_view_mode(mode: PhotosViewMode) -> PhotosViewMode {
     match mode {
         PhotosViewMode::Timeline => PhotosViewMode::Sessions,
@@ -70,8 +73,7 @@ impl App {
             );
         }
         let browser = self.library.borrow();
-        let rows = browser.session_rows.as_ref()?;
-        let index = rows.top_photo_index(session_scroll_top(&browser.session_scroll))?;
+        let index = browser.top_photo_index(session_scroll_top(&browser.session_scroll))?;
         browser.index.entries.get(index).map(|entry| entry.id)
     }
 
@@ -258,12 +260,6 @@ impl App {
             .fail_session_summaries(generation, ids);
         cx.notify();
     }
-}
-
-fn set_session_scroll_offset(browser: &crate::state::photo_browser::PhotoBrowser, offset: f32) {
-    let max = f32::from(browser.session_scroll.base_handle().max_offset().y).max(0.0);
-    let y = (-offset).clamp(-max, 0.0);
-    browser.session_scroll.set_offset(point(px(0.), px(y)));
 }
 
 #[cfg(test)]
