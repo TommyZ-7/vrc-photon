@@ -4,6 +4,7 @@
 //! UI can run without a real VRChat library. `open_database` also owns the
 //! fallback to an in-memory library when the configured database cannot open.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Local, Utc};
@@ -280,6 +281,65 @@ fn demo_image(index: usize) -> image::RgbaImage {
     image
 }
 
+/// Creates demo sessions from chronologically adjacent linked photos.
+///
+/// The fixture returns months newest-first, so group in capture order. A
+/// session is a run of the same world with at most two hours between photos.
+fn seed_demo_sessions(
+    db: &Db,
+    fixture: &[demo_fixture::DemoPhoto],
+    world_ids: &[i64],
+) -> Result<Vec<Option<i64>>, vrc_photon_core::CoreError> {
+    let mut order: Vec<usize> = (0..fixture.len()).collect();
+    order.sort_by_key(|index| fixture[*index].captured_at.utc);
+    let mut sessions = vec![None; fixture.len()];
+    let mut position = 0;
+    while position < order.len() {
+        let start_index = order[position];
+        let Some(world_index) = fixture[start_index].world else {
+            position += 1;
+            continue;
+        };
+        let mut end = position + 1;
+        while end < order.len() {
+            let previous = &fixture[order[end - 1]];
+            let next = &fixture[order[end]];
+            let same_world = next.world == Some(world_index);
+            let close = next.captured_at.utc - previous.captured_at.utc <= 2 * 60 * 60;
+            if !same_world || !close {
+                break;
+            }
+            end += 1;
+        }
+        let first = &fixture[order[position]];
+        let last = &fixture[order[end - 1]];
+        let started_at = first.captured_at.utc - 5 * 60;
+        let ended_at = last.captured_at.utc + 5 * 60;
+        let instance_id = format!("{}~region(jp)", 12000 + start_index);
+        let session_id = db.create_session(
+            "demo.txt",
+            started_at,
+            world_ids[world_index],
+            Some(instance_id.as_str()),
+        )?;
+        db.close_session(session_id, ended_at)?;
+        let mut players: BTreeMap<String, String> = BTreeMap::new();
+        for index in &order[position..end] {
+            for player in &fixture[*index].players {
+                players.insert(player.user_id.clone(), player.display_name.clone());
+            }
+        }
+        for (user_id, display_name) in players {
+            db.upsert_session_player(session_id, &user_id, &display_name, started_at)?;
+        }
+        for index in &order[position..end] {
+            sessions[*index] = Some(session_id);
+        }
+        position = end;
+    }
+    Ok(sessions)
+}
+
 fn seed_demo(db: &Db, photo_dir: &Path, now: DateTime<Local>) -> Result<(), String> {
     std::fs::create_dir_all(photo_dir)
         .map_err(|error| format!("{}: {error}", photo_dir.display()))?;
@@ -331,10 +391,9 @@ fn seed_demo(db: &Db, photo_dir: &Path, now: DateTime<Local>) -> Result<(), Stri
             )?);
         }
 
-        for (index, photo) in demo_fixture::demo_fixture_at(now.naive_local())
-            .into_iter()
-            .enumerate()
-        {
+        let fixture = demo_fixture::demo_fixture_at(now.naive_local());
+        let session_for_index = seed_demo_sessions(db, &fixture, &world_ids)?;
+        for (index, photo) in fixture.into_iter().enumerate() {
             let variant = photo.palette % pool_images.len();
             let file_name = format!("VRChat_demo_{index:03}.png");
             let file_path = photo_dir.join(&file_name);
@@ -365,7 +424,7 @@ fn seed_demo(db: &Db, photo_dir: &Path, now: DateTime<Local>) -> Result<(), Stri
             if let Some(world_index) = photo.world {
                 db.set_photo_context(&PhotoContext {
                     photo_id: id,
-                    session_id: None,
+                    session_id: session_for_index[index],
                     world_id: Some(world_ids[world_index]),
                     world_name: Some(DEMO_WORLDS[world_index].to_string()),
                     instance_id: Some(format!("{}~region(jp)", 12000 + index)),
@@ -754,5 +813,30 @@ mod tests {
             let expected_tags: BTreeSet<String> = expected.tags.iter().cloned().collect();
             assert_eq!(tags, expected_tags, "tags of {file_name}");
         }
+    }
+
+    #[test]
+    fn seed_demo_creates_sessions_with_players() {
+        let temp = tempfile::tempdir().unwrap();
+        let photo_dir = temp.path().join("photos");
+        let db = Db::open_in_memory().unwrap();
+        let reference = NaiveDate::from_ymd_opt(2026, 11, 2).unwrap();
+        seed_demo(&db, &photo_dir, moment(reference)).unwrap();
+
+        let entries = db.photo_index(PhotoSort::Newest).unwrap();
+        assert!(entries.iter().any(|entry| entry.session_id.is_none()));
+        let ids: Vec<i64> = entries
+            .iter()
+            .filter_map(|entry| entry.session_id)
+            .collect();
+        assert!(!ids.is_empty());
+        let summaries = db.session_summaries(&ids).unwrap();
+        assert!(summaries.iter().any(|summary| !summary.players.is_empty()));
+        assert!(summaries.iter().all(|summary| summary.photo_count > 0));
+        assert!(
+            summaries
+                .iter()
+                .all(|summary| summary.session.ended_at.is_some())
+        );
     }
 }
