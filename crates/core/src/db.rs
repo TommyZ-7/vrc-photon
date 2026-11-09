@@ -5844,10 +5844,21 @@ fn build_text_filter(filter: &PhotoTextFilter) -> (String, Vec<Value>) {
     {
         let like = format!("%{}%", escape_like(query));
         clauses.push(
-            "EXISTS (SELECT 1 FROM photo_tags pt JOIN tags t ON t.id = pt.tag_id \
-             WHERE pt.photo_id = p.id AND t.name LIKE ? ESCAPE '\\')"
+            "(EXISTS (SELECT 1 FROM photo_tags pt JOIN tags t ON t.id = pt.tag_id \
+             WHERE pt.photo_id = p.id AND t.name LIKE ? ESCAPE '\\') \
+             OR EXISTS (SELECT 1 FROM photo_ai_tags at \
+             JOIN ai_tag_definitions d \
+               ON d.plugin_id = at.plugin_id AND d.tag_key = at.tag_key \
+             WHERE at.photo_id = p.id AND at.applied = 1 AND at.plugin_id = ? \
+               AND (d.name LIKE ? ESCAPE '\\' \
+                    OR COALESCE(d.name_en, d.name) LIKE ? ESCAPE '\\' \
+                    OR d.tag_key LIKE ? ESCAPE '\\')))"
                 .to_string(),
         );
+        values.push(Value::Text(like.clone()));
+        values.push(Value::Text(AI_PLUGIN_ID.to_string()));
+        values.push(Value::Text(like.clone()));
+        values.push(Value::Text(like.clone()));
         values.push(Value::Text(like));
     }
 
@@ -8020,6 +8031,59 @@ mod tests {
                 photo_count: 2,
             }]
         );
+    }
+
+    #[test]
+    fn tag_text_filter_matches_applied_ai_tag_names_and_keys() {
+        let db = Db::open_in_memory().unwrap();
+        install_test_catalog(&db);
+        let photo = seed_photo(&db);
+        seed_ai_tag(&db, photo, AI_PLUGIN, "sea", 0.97, true);
+
+        for query in ["海", "Sea", "sea"] {
+            let filter = PhotoTextFilter {
+                tag: Some(query.into()),
+                ..Default::default()
+            };
+            assert_eq!(
+                db.photo_index_text(&filter).unwrap().len(),
+                1,
+                "{query}"
+            );
+            assert_eq!(
+                db.search_photos_text(&filter, 10, 0).unwrap().len(),
+                1,
+                "{query}"
+            );
+        }
+
+        let unapplied = seed_photo_at(&db, "/photos/unapplied.png");
+        seed_ai_tag(&db, unapplied, AI_PLUGIN, "park", 0.97, false);
+        let filter = PhotoTextFilter {
+            tag: Some("公園".into()),
+            ..Default::default()
+        };
+        assert!(db.photo_index_text(&filter).unwrap().is_empty());
+    }
+
+    #[test]
+    fn ai_tag_text_search_escapes_like_metacharacters() {
+        let db = Db::open_in_memory().unwrap();
+        let catalog = Catalog {
+            version: "2026-11-03.1".into(),
+            outdoor: vec![tag("percent", "100%_tag", Some("100%_tag"), 0.5)],
+            indoor: Vec::new(),
+            atmosphere: Vec::new(),
+        };
+        db.sync_ai_catalog(AI_PLUGIN, &catalog).unwrap();
+        let photo = seed_photo(&db);
+        seed_ai_tag(&db, photo, AI_PLUGIN, "percent", 0.97, true);
+
+        let filter = PhotoTextFilter {
+            tag: Some("100%".into()),
+            ..Default::default()
+        };
+        assert_eq!(db.photo_index_text(&filter).unwrap().len(), 1);
     }
 
     #[test]
