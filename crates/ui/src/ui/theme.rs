@@ -36,6 +36,11 @@ pub(crate) const WORKSPACE_GAP: f32 = 10.0;
 pub(crate) const CARD_GAP: f32 = 12.0;
 /// Gap between the library gallery and the inspector column.
 pub(crate) const INSPECTOR_GAP: f32 = 8.0;
+/// Master list of the Integrations screen, and the smallest detail column it
+/// may sit beside before the two panes stack.
+pub(crate) const INTEGRATIONS_LIST_WIDTH: f32 = 252.0;
+pub(crate) const INTEGRATIONS_DETAIL_MIN_WIDTH: f32 = 620.0;
+pub(crate) const INTEGRATIONS_PANE_GAP: f32 = 16.0;
 pub(crate) const GALLERY_HEADER_HEIGHT: f32 = 42.0;
 /// Fixed content heights for the mixed session rows. The row model adds
 /// [`CARD_ROW_GAP`] when it hands these to the virtual list.
@@ -253,6 +258,19 @@ pub(crate) fn sidebar_width(collapsed: bool) -> f32 {
     } else {
         SIDEBAR_EXPANDED
     }
+}
+
+/// Width available to the Integrations two panes after the shell padding,
+/// sidebar, and workspace gap.
+pub(crate) fn integrations_available_width(window_width: f32, sidebar_collapsed: bool) -> f32 {
+    (window_width - WORKSPACE_PAD * 2.0 - sidebar_width(sidebar_collapsed) - WORKSPACE_GAP).max(0.0)
+}
+
+/// The list (252 px), the smallest usable detail (620 px), and their gap
+/// (16 px) do not fit: stack the list above the detail instead.
+pub(crate) fn integrations_stacks(window_width: f32, sidebar_collapsed: bool) -> bool {
+    integrations_available_width(window_width, sidebar_collapsed)
+        < INTEGRATIONS_LIST_WIDTH + INTEGRATIONS_DETAIL_MIN_WIDTH + INTEGRATIONS_PANE_GAP
 }
 
 /// Label width for a sidebar collapsed-progress of `0.0..=1.0`.
@@ -623,6 +641,15 @@ mod tests {
         assert_eq!(converted.origin, point(px(281.), px(208.)));
         assert_eq!(converted.size, card.size);
         assert_eq!(content_bounds(card, Edges::default()), card);
+    }
+
+    #[test]
+    fn integrations_switches_to_the_stacked_layout_at_narrow_widths() {
+        assert_eq!(integrations_available_width(1080.0, false), 804.0);
+        assert_eq!(integrations_available_width(1080.0, true), 964.0);
+        assert!(integrations_stacks(1080.0, false));
+        assert!(!integrations_stacks(1080.0, true));
+        assert!(!integrations_stacks(1280.0, false));
     }
 
     #[test]

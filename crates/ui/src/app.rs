@@ -117,6 +117,18 @@ impl Screen {
     }
 }
 
+/// Selected row of the Integrations master list. Kept on `App` so leaving the
+/// screen and returning restores the same detail pane; it is intentionally not
+/// persisted across restarts.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum IntegrationsSection {
+    #[default]
+    Discord,
+    AutoCompression,
+    AiTagging,
+    Clipboard,
+}
+
 pub struct App {
     pub(crate) db: Db,
     pub(crate) screen: Screen,
@@ -133,6 +145,7 @@ pub struct App {
     /// scrollbar.
     pub(crate) settings_scroll: ScrollHandle,
     pub(crate) integrations_scroll: ScrollHandle,
+    pub(crate) integrations_selected: IntegrationsSection,
     pub(crate) ribbon_collapsed: bool,
     /// 0 = expanded, 1 = collapsed.
     pub(crate) ribbon_motion: ToggleMotion,
@@ -976,6 +989,7 @@ impl App {
             screen_direction: 1.0,
             settings_scroll: ScrollHandle::new(),
             integrations_scroll: ScrollHandle::new(),
+            integrations_selected: IntegrationsSection::default(),
             ribbon_collapsed: initial_settings.ui_ribbon_collapsed,
             ribbon_motion: ToggleMotion::settled(if initial_settings.ui_ribbon_collapsed {
                 1.0
@@ -1464,8 +1478,9 @@ impl Render for App {
 #[cfg(test)]
 mod tests {
     use super::{
-        Screen, ai_overlay_open, any_overlay_open, effective_motion_fps, global_shortcut_blocked,
-        retain_recent_bounds, should_notify_library_error, should_render_shell,
+        IntegrationsSection, Screen, ai_overlay_open, any_overlay_open, effective_motion_fps,
+        global_shortcut_blocked, retain_recent_bounds, should_notify_library_error,
+        should_render_shell,
     };
     use crate::ui::notifications::{FailureNotice, failure_transition};
     use gpui_kit::{Bounds, point, px, size};
@@ -1489,6 +1504,11 @@ mod tests {
         assert_eq!(Screen::Photos.title_in("en"), "Photos");
         assert_eq!(Screen::Integrations.title_in("ja"), "連携・自動");
         assert_eq!(Screen::Settings.title_in("en"), "Settings");
+    }
+
+    #[test]
+    fn integrations_default_to_discord() {
+        assert_eq!(IntegrationsSection::default(), IntegrationsSection::Discord);
     }
 
     #[test]
