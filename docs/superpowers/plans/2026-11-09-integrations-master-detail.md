@@ -628,14 +628,14 @@ git commit -m "fix(ui): polish integrations master-detail layout"
 **Files:**
 - Modify: `docs/ui.md`（§2.10）
 
-- [ ] **Step 1: 新しい main から docs ブランチを作る**
+- [x] **Step 1: 新しい main から docs ブランチを作る**
 
 ```bash
 REPO=$(basename "$(git rev-parse --show-toplevel)")
 git worktree add ../${REPO}-448-docs -b docs/448-integrations-master-detail
 ```
 
-- [ ] **Step 2: §2.10 の冒頭を差し替える**
+- [x] **Step 2: §2.10 の冒頭を差し替える**
 
 ```markdown
 ページ見出しは置かない。左に項目一覧、右に選択中項目の詳細を置く
@@ -650,7 +650,7 @@ AI タグ付けカードは、有効化 / 自動 / バックログのスイッ�
 キャンセル、バックログ開始、設定への導線を表示する。状態バッジは表示しない。
 ```
 
-- [ ] **Step 3: コミットして docs PR を作る**
+- [x] **Step 3: コミットして docs PR を作る**
 
 ```bash
 git add docs/ui.md
