@@ -48,19 +48,25 @@ Release ワークフローが `makepkg` で追加生成する。
 
 | 形式 | 例 | 内容 |
 |---|---|---|
-| Debian | `vrc-photon_0.1.0_amd64.deb` | `/usr/bin` にUI・デーモン・更新ヘルパー、desktop entry、アイコン、systemdユーザーunit、polkit policy |
-| AppImage | `vrc-photon_0.1.0_x86_64.AppImage` | UI・デーモン・更新ヘルパーを同梱した単一ファイル（polkit policy は含まない） |
-| pacman（手動 / AUR 用） | `vrc-photon_0.1.0_x86_64.tar.gz` + `PKGBUILD` | Arch Linux向け。更新ヘルパー、systemdユーザーunit、polkit policyを含む |
+| Debian | `vrc-photon_0.1.0_amd64.deb` | `/usr/bin` にUI・デーモン・更新ヘルパー・MCPサーバー、desktop entry、アイコン、systemdユーザーunit、polkit policy |
+| AppImage | `vrc-photon_0.1.0_x86_64.AppImage` | UI・デーモン・更新ヘルパー・MCPサーバーを同梱した単一ファイル（polkit policy は含まない） |
+| pacman（手動 / AUR 用） | `vrc-photon_0.1.0_x86_64.tar.gz` + `PKGBUILD` | Arch Linux向け。更新ヘルパー・MCPサーバー、systemdユーザーunit、polkit policyを含む |
 | pacman（`pacman -U` 用） | `vrc-photon-0.1.0-1-x86_64.pkg.tar.zst` | Releaseワークフローが `makepkg` で追加生成する実パッケージ。アプリ内更新はこれを使う |
-| NSIS | `vrc-photon_0.1.0_x64-setup.exe` | Windowsインストーラ（UI・デーモン・更新ヘルパー） |
+| NSIS | `vrc-photon_0.1.0_x64-setup.exe` | Windowsインストーラ（UI・デーモン・更新ヘルパー・MCPサーバー） |
+
+AppImage に同梱した MCP サーバーを MCP クライアントから使う場合は、
+`./vrc-photon_<version>_x86_64.AppImage --appimage-extract` で展開し、
+`squashfs-root/usr/bin/vrc-photon-mcp` を実行する。deb / pacman / NSIS では
+`vrc-photon-mcp`（Windows は `vrc-photon-mcp.exe`）が他のバイナリと同じ場所に
+インストールされる。
 
 `Packager.toml` の設定:
 
 - `productName = "VRC PhotoN"`
 - `identifier = "com.tommyz.vrc-photon"`
 - `formats = ["deb", "appimage", "pacman"]`（Windowsジョブは `-f nsis` で上書き）
-- `beforePackagingCommand = "cargo build --release -p vrc-photon-ui -p vrc-photon-daemon -p vrc-photon-update"`
-- `[[binaries]]`: `vrc-photon`（main）、`vrc-photon-daemon`、`vrc-photon-updater`
+- `beforePackagingCommand = "cargo build --release -p vrc-photon-ui -p vrc-photon-daemon -p vrc-photon-update -p vrc-photon-mcp"`
+- `[[binaries]]`: `vrc-photon`（main）、`vrc-photon-daemon`、`vrc-photon-updater`、`vrc-photon-mcp`
 - `binariesDir = "target/release"` / `outDir = "dist"`
 - アイコン: `packaging/icons/icon.png`（512px）
 - `resources = ["LICENSE", "packaging/licenses/LICENSE-LUCIDE"]`
@@ -150,7 +156,11 @@ ls -lh dist
   `LC_ALL=C pacman -Qip` の出力から `Name: vrc-photon`、
   `Version: <version>-1`、`Architecture: x86_64` を検証する
 - `Verify third-party notices`: deb / AppImage / pacman（`.tar.gz`）に
-  `LICENSE` と `LICENSE-LUCIDE` が含まれることを検査する
+  `LICENSE` と `LICENSE-LUCIDE` が含まれること、および
+  `usr/bin/vrc-photon-updater` と `usr/bin/vrc-photon-mcp` が含まれることを検査する
+- `Smoke-test the packaged MCP server`: AppImage から展開した
+  `vrc-photon-mcp` に `initialize` と `tools/list` を送り、
+  `library_stats` が返ることを検査する
 - `Verify systemd user unit`: deb / pacman に unit が入り、`ExecStart` が
   `/usr/bin/vrc-photon-daemon` であることを検査する
 - `Verify polkit policy`: deb / pacman（`.pkg.tar.zst`）の両方に
@@ -158,6 +168,8 @@ ls -lh dist
   `org.freedesktop.policykit.exec.path` が `/usr/bin/vrc-photon-updater` で
   あることを検査する
 - Windowsランナー: `cargo packager --release -f nsis`（NSISは自動取得）
+- Windows の `Verify bundled binaries in the installer`: NSIS に
+  `vrc-photon-updater.exe` と `vrc-photon-mcp.exe` が含まれることを検査する
 - 両ジョブの `dist/*` をworkflow artifactとして保存
 - タグ時のみ `publish` ジョブが両artifactをまとめて `gh release create/upload` で公開
 - `publish` ジョブはタグと `Cargo.toml` / `Packager.toml` のバージョン一致を確認し、
@@ -199,6 +211,7 @@ Required check名を変更した場合は、GitHubのbranch protectionも更新�
 - [ ] アイコンとdesktop entryが入っている
 - [ ] パッケージ生成物に `LICENSE` と `LICENSE-LUCIDE` が入っている
 - [ ] パッケージ生成物に `vrc-photon-updater` が入っている
+- [ ] パッケージ生成物に `vrc-photon-mcp`（Windows は `vrc-photon-mcp.exe`）が入っている
 - [ ] deb / pacman に `usr/share/polkit-1/actions/com.tommyz.vrc-photon.update.policy` が入り、`exec.path` が `/usr/bin/vrc-photon-updater` である
 - [ ] `dist/*.pkg.tar.zst` が存在し、`LC_ALL=C pacman -Qip` で `Name: vrc-photon`、`Version: <version>-1`、`Architecture: x86_64` を返す
 - [ ] `latest.json` の `system_packages` が pacman / deb の2件で、両方に署名済みURL・サイズ・SHA-256・署名がある

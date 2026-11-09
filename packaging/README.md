@@ -14,6 +14,17 @@ cargo packager --release
 The config lives in `Packager.toml`. The release workflow runs the same command
 on tag pushes and uploads every file in `dist/` to the GitHub Release.
 
+All artifacts include the UI, daemon, update helper, and MCP server:
+
+- `vrc-photon`
+- `vrc-photon-daemon`
+- `vrc-photon-updater`
+- `vrc-photon-mcp`
+
+The AppImage stores them inside the image. To use the MCP server with an
+AppImage, extract it first with `--appimage-extract` and point the MCP
+client at `squashfs-root/usr/bin/vrc-photon-mcp`.
+
 ## License notices
 
 `Packager.toml` bundles these files through `resources`:
