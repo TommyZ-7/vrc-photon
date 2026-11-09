@@ -655,9 +655,7 @@ impl App {
             let Some(app) = suggestion_entity.upgrade() else {
                 return;
             };
-            let handled = app.update(cx, |app, cx| {
-                app.handle_suggestion_key(event, window, cx)
-            });
+            let handled = app.update(cx, |app, cx| app.handle_suggestion_key(event, window, cx));
             if handled {
                 cx.stop_propagation();
             }
