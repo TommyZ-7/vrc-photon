@@ -1,90 +1,101 @@
+**English** | [日本語](README.ja.md)
+
 <p align="center">
   <img src="packaging/icons/icon.png" width="96" alt="VRC PhotoN">
 </p>
 
 # VRC PhotoN
 
-VRChatの写真を、撮ったときのワールド・一緒にいたプレイヤー・日時とあわせて管理するデスクトップアプリです。
+<p align="center">
+  <a href="https://github.com/TommyZ-7/vrc-photon/releases"><img src="https://img.shields.io/github/v/release/TommyZ-7/vrc-photon" alt="Release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/TommyZ-7/vrc-photon" alt="License"></a>
+  <img src="https://img.shields.io/github/languages/top/TommyZ-7/vrc-photon" alt="Top language">
+  <img src="https://img.shields.io/github/languages/count/TommyZ-7/vrc-photon" alt="Languages">
+</p>
 
-VRChatのスクリーンショットは、ファイル名だけでは中身が分かりません。VRC PhotoNは写真フォルダを監視し、VRChatの出力ログとPNGのXMPメタデータから「いつ、どこで、誰と撮ったか」を読み取って写真に紐付けます。記録はすべて手元のSQLiteに保存され、写真やログが外部に送信されることはありません。
+A desktop app for organizing your VRChat photos together with the world they were taken in, the players you were with, and when they were taken.
 
-<!-- TODO: 実画面のスクリーンショットを docs/images/main.png に置き、下の行を有効化する
-![メイン画面](docs/images/main.png)
+VRChat screenshots tell you nothing from their file names alone. VRC PhotoN watches your photo folder and reads "when, where, and who with" from VRChat's output logs and the PNG XMP metadata, and links that context to each photo. All records are stored in a local SQLite database; your photos and logs are never sent anywhere.
+
+<!-- TODO: Place a screenshot of the actual app at docs/images/main.png and enable the line below
+![Main screen](docs/images/main.png)
 -->
 
-## できること
+## Features
 
-**探す**
+**Find**
 
-- 写真一覧は仮想スクロールで、大量の写真でも一息にスクロールできます
-- ワールド名、プレイヤー名、タグ、日時、お気に入りで検索できます
-- 写真ごとにワールドと同接プレイヤーをログから自動で紐付けます。ログが無い写真はXMPメタデータで補います
+- The photo grid uses virtual scrolling, so even large libraries scroll in one go
+- Search by world name, player name, tags, date and time, and favorites
+- Each photo is automatically linked to its world and the players present from the logs. Photos without logs fall back to XMP metadata
 
-**圧縮する**
+**Compress**
 
-- JPEG / WebP / AVIF / JPEG XL への変換とリサイズができます
-- プロファイルを作っておけば、取り込み時の自動圧縮も、選んだ写真の一括圧縮も同じ設定で回せます
-- 元画像を残すか、置き換える（OSのゴミ箱へ送る）かは実行ごとに選べます
+- Convert to JPEG / WebP / AVIF / JPEG XL, with resizing
+- Create profiles once, and the same settings drive both automatic compression on import and batch compression of selected photos
+- For each run, choose whether to keep the originals or replace them (sent to the OS trash)
 
-**その他**
+**And more**
 
-- 写真の詳細で、プレビュー、ワールド、インスタンス、同接プレイヤー、タグ、メモ、圧縮履歴を確認・編集できます
-- Discord Webhookへ写真を送れます（任意設定で、初期状態はオフ）
-- トレイ常駐と自動起動に対応し、署名付きの自動アップデートがあります
-- UIは日本語と英語に対応しています
+- The photo details view shows the preview, world, instance, players present, tags, notes, and compression history, and lets you edit them
+- Send photos to a Discord webhook (optional, off by default)
+- System tray residency and autostart, with signed automatic updates
+- The UI is available in Japanese and English
 
-**AIタグ付け（有償プラグイン）**
+**AI tagging (paid plugin)**
 
-人物の有無と人数、場所、雰囲気をローカル推論でタグ付けするプラグインを別売しています。推論は手元のPCで完結します。導入方法と動作要件は [AIタグ付けのドキュメント](docs/ai-tagging/README.md) を参照してください。
+A separately sold plugin tags photos by the presence and number of people, the location, and the atmosphere, all inferred locally. Inference runs entirely on your own PC. See the [AI tagging documentation](docs/ai-tagging/README.md) (in Japanese) for installation and system requirements.
 
-## インストール
+## Installation
 
-[Releases](https://github.com/TommyZ-7/vrc-photon/releases) から、使っている環境のファイルをダウンロードしてください。
+Download the file for your platform from [Releases](https://github.com/TommyZ-7/vrc-photon/releases).
 
-| 環境 | ファイル |
+| Platform | File |
 |---|---|
-| Windows | `vrc-photon_<バージョン>_x64-setup.exe` |
-| Debian / Ubuntu | `vrc-photon_<バージョン>_amd64.deb` |
-| Arch系 | `vrc-photon-<バージョン>-1-x86_64.pkg.tar.zst` |
-| その他のLinux | `vrc-photon_<バージョン>_x86_64.AppImage`、または `.tar.gz` |
+| Windows | `vrc-photon_<version>_x64-setup.exe` |
+| Debian / Ubuntu | `vrc-photon_<version>_amd64.deb` |
+| Arch-based | `vrc-photon-<version>-1-x86_64.pkg.tar.zst` |
+| Other Linux | `vrc-photon_<version>_x86_64.AppImage`, or `.tar.gz` |
 
-写真フォルダとログフォルダは初回起動時に自動で検出されます。検出できない環境では、デーモンの起動時に `--photo-dir` と `--log-dir` で指定してください。
+The photo folder and the log folder are detected automatically on first launch. On systems where detection fails, specify them when starting the daemon with `--photo-dir` and `--log-dir`.
 
-## 仕組み
+## How it works
 
-UIとデーモンの2プロセス構成です。デーモンがフォルダ監視、ログ解析、圧縮、サムネイル生成を担当し、UIは表示と操作を担当します。両者は同じSQLiteデータベース（`library.db`）を共有し、即時の操作にはローカルIPCを使います。
+Two processes: a UI and a daemon. The daemon watches folders, parses logs, compresses, and generates thumbnails; the UI handles display and interaction. Both share the same SQLite database (`library.db`) and use local IPC for immediate operations.
 
 ```text
 crates/
-  core/     DB、写真索引、ログ解析、XMP、紐付け、圧縮、サムネイル
-  ipc/      ローカルIPCのプロトコルとトランスポート
-  daemon/   監視、自動圧縮、トレイ、自動起動、IPCサーバー
-  ui/       GPUI製のUI、IPCクライアント
+  core/     Database, photo indexing, log parsing, XMP, linking, compression, thumbnails
+  ipc/      Local IPC protocol and transport
+  daemon/   Watching, automatic compression, tray, autostart, IPC server
+  ui/       GPUI-based UI, IPC client
 ```
 
-詳しい構成は [docs/architecture.md](docs/architecture.md) にあります。
+See [docs/architecture.md](docs/architecture.md) for the full picture.
 
-## ソースからビルド
+## Building from source
 
-前提はRust stableのほか、プラットフォームごとにいくつか要ります（Linuxは `libxkbcommon-dev`、`libwayland-dev`、`libvulkan-dev` など。JPEG XLのビルドには CMake / Ninja / C++コンパイラ）。詳細は [docs/development.md](docs/development.md) を参照してください。
+You need Rust stable plus a few platform-specific packages (on Linux, `libxkbcommon-dev`, `libwayland-dev`, `libvulkan-dev`, and so on; building JPEG XL requires CMake / Ninja / a C++ compiler). See [docs/development.md](docs/development.md) for details.
 
 ```bash
 cargo build -p vrc-photon-ui
 cargo build -p vrc-photon-daemon
 ```
 
-サンプルデータでUIだけ試す場合は `cargo run -p vrc-photon-ui -- --demo` が使えます。
+To try just the UI with sample data, use `cargo run -p vrc-photon-ui -- --demo`.
 
-## ドキュメント
+## Documentation
 
-- [ドキュメント索引](docs/README.md)
-- [アーキテクチャ](docs/architecture.md)
-- [開発環境の構築](docs/development.md)
-- [リリースとパッケージ](docs/release.md)
-- [AIタグ付けプラグイン](docs/ai-tagging/README.md)
-- [ロードマップ](docs/roadmap.md)
-- [コントリビューション](CONTRIBUTING.md)
+Documentation is currently written in Japanese.
 
-## ライセンス
+- [Documentation index](docs/README.md)
+- [Architecture](docs/architecture.md)
+- [Development setup](docs/development.md)
+- [Release and packaging](docs/release.md)
+- [AI tagging plugin](docs/ai-tagging/README.md)
+- [Roadmap](docs/roadmap.md)
+- [Contributing](CONTRIBUTING.md)
 
-本体は GPL-3.0-or-later です。AIタグ付けプラグインは、本体とは別のライセンスで提供しています。
+## License
+
+The app itself is GPL-3.0-or-later. The AI tagging plugin is provided under a separate license.
