@@ -38,7 +38,7 @@ use crate::state::viewer::ViewerOpenSource;
 use crate::state::year_rail::format_captured_month;
 use crate::ui::components::{card_header, chip, glass_panel, photo_scene_key, photo_world_label};
 use crate::ui::theme::*;
-use crate::ui::year_rail::{YearRail, YearRailLabels};
+use crate::ui::year_rail::{RailList, YearRail, YearRailLabels};
 
 pub(crate) struct GalleryShared {
     pub(crate) app: WeakEntity<App>,
@@ -838,9 +838,11 @@ fn render_grid(
                     },
                     labels,
                     index,
-                    scroll,
-                    columns,
-                    row_height,
+                    RailList::Timeline {
+                        scroll: scroll.clone(),
+                        columns,
+                        row_height,
+                    },
                     rail_drag,
                     rail_hover,
                     p,
@@ -878,7 +880,7 @@ fn render_session_grid(
         app.settings.ui_card_show_date || app.settings.ui_card_show_size,
     );
 
-    let (scroll, columns, rows, generation, index, total) = {
+    let (scroll, columns, rows, generation, index, total, labels, rail_drag, rail_hover) = {
         let mut browser = shared.browser.borrow_mut();
         let pending = browser.pending_anchor.take();
         let layout_changed = metrics.columns != browser.columns
@@ -907,6 +909,15 @@ fn render_session_grid(
         {
             set_session_scroll_offset(&browser, offset);
         }
+        let labels = if browser.labels.is_none() || browser.labels_generation != browser.generation
+        {
+            let labels = Arc::new(YearRailLabels::build(&browser.index, window, &p));
+            browser.labels = Some(labels.clone());
+            browser.labels_generation = browser.generation;
+            labels
+        } else {
+            browser.labels.clone().expect("year rail labels")
+        };
         (
             browser.session_scroll.clone(),
             browser.columns,
@@ -914,6 +925,9 @@ fn render_session_grid(
             browser.generation,
             browser.index.clone(),
             browser.index.total,
+            labels,
+            browser.rail_drag.clone(),
+            browser.rail_hover.clone(),
         )
     };
 
@@ -932,8 +946,9 @@ fn render_session_grid(
     );
     let card_strings_key = CardStringsKey::new(app, generation);
     let list_shared = shared.clone();
+    let rail_rows = rows.clone();
     let list_rows = rows;
-    let list_index = index;
+    let list_index = index.clone();
     let list_columns = columns;
     let grid_gap = GRID_GAP;
     let list = v_virtual_list(
@@ -1108,7 +1123,7 @@ fn render_session_grid(
     .min_w_0()
     .min_h_0();
 
-    let wrapper = v_flex()
+    let mut wrapper = v_flex()
         .id("session-grid")
         .relative()
         .flex_1()
@@ -1119,6 +1134,28 @@ fn render_session_grid(
         .key_context("photo_grid")
         .tab_stop(true)
         .child(list);
+    if total > 0 {
+        wrapper = wrapper.child(
+            div()
+                .absolute()
+                .right_0()
+                .top_0()
+                .bottom_0()
+                .w(px(RAIL_WIDTH))
+                .child(YearRail::new(
+                    "session-year-rail",
+                    labels,
+                    index,
+                    RailList::Sessions {
+                        scroll: scroll.clone(),
+                        rows: rail_rows,
+                    },
+                    rail_drag,
+                    rail_hover,
+                    p,
+                )),
+        );
+    }
 
     v_flex()
         .flex_1()
@@ -1269,7 +1306,8 @@ fn render_session_header(
         .h(px(SESSION_HEADER_ROW_HEIGHT))
         .items_center()
         .gap(px(13.))
-        .px(px(14.))
+        .pl(px(14.))
+        .pr(px(RAIL_WIDTH + 14.))
         .rounded(px(12.))
         .border_1()
         .border_color(rgba(p.line_soft))
@@ -1306,6 +1344,7 @@ fn render_session_date_label(app: &App, day: i32, photo_count: usize) -> AnyElem
         .w_full()
         .items_center()
         .gap(px(10.))
+        .pr(px(RAIL_WIDTH))
         .child(line())
         .child(
             div()
