@@ -214,22 +214,8 @@ impl App {
             ),
         ];
 
-        v_flex()
-            .id("integrations-list")
-            .flex_shrink_0()
-            .gap(px(4.))
-            .when(!stacked, |this| {
-                this.w(px(INTEGRATIONS_LIST_WIDTH))
-                    .pr(px(12.))
-                    .border_r_1()
-                    .border_color(rgba(p.highlight))
-            })
-            .when(stacked, |this| {
-                this.pb(px(12.))
-                    .border_b_1()
-                    .border_color(rgba(p.highlight))
-            })
-            .children(items.into_iter().map(|(section, id, name, summary, on)| {
+        let rows = v_flex().gap(px(4.)).children(items.into_iter().map(
+            |(section, id, name, summary, on)| {
                 let active = section == selected;
                 v_flex()
                     .id(SharedString::from(id))
@@ -277,7 +263,17 @@ impl App {
                             .child(summary),
                     )
                     .into_any_element()
-            }))
+            },
+        ));
+
+        glass_panel(&p)
+            .id("integrations-list")
+            .flex_shrink_0()
+            .p(px(8.))
+            .rounded(px(17.))
+            .when(!stacked, |this| this.w(px(INTEGRATIONS_LIST_WIDTH)))
+            .when(stacked, |this| this.w_full())
+            .child(rows)
             .into_any_element()
     }
 

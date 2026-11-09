@@ -3,7 +3,7 @@
 //! The pure geometry and bucket maths live in [`crate::state::year_rail`];
 //! this module owns the element, its label cache, and pointer handling.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -12,7 +12,7 @@ use gpui_kit::base::VirtualListScrollHandle;
 use gpui_kit::*;
 
 use crate::state::photo_browser::{
-    PhotoIndex, first_visible_photo, list_scroll_top, session_scroll_top,
+    PhotoBrowser, PhotoIndex, first_visible_photo, list_scroll_top, session_scroll_top,
 };
 use crate::state::session_rows::SessionRows;
 use crate::state::year_rail::{
@@ -103,6 +103,7 @@ pub(crate) enum RailList {
     Sessions {
         scroll: VirtualListScrollHandle,
         rows: Arc<SessionRows>,
+        browser: Rc<RefCell<PhotoBrowser>>,
     },
 }
 
@@ -242,6 +243,11 @@ impl YearRail {
             .map(|(_, row)| row)
             .unwrap_or_else(|| rail_row_at(local_y, total, height))
             .min(total - 1);
+        if let RailList::Sessions { browser, .. } = &self.list {
+            // The offset uses the settled row model. If a collapse is still
+            // moving, restore the target photo once it settles.
+            browser.borrow_mut().set_pending_photo_anchor(photo_row);
+        }
         let max_offset = self.list.max_offset();
         let offset = self.list.scroll_offset_for_photo(photo_row, max_offset);
         self.list.set_offset(offset);
