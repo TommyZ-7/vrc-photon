@@ -765,37 +765,37 @@
   </section>
 
   <section class="section">
-    <div class="section-label"><h2>判断ポイント</h2><span>実装前に確認したい項目（推奨案つき）</span></div>
+    <div class="section-label"><h2>決定事項</h2><span>2026-11-09 にすべて推奨案どおりで確定</span></div>
     <div class="decision-grid">
       <div class="decision">
         <h3>1. 検索結果への適用</h3>
         <p>検索条件で切り取られた集合ではセッションの区切りが不完全になりやすい。初版は Photos 画面のみとし、検索結果は時系列のままにする。</p>
-        <span class="rec">推奨: Photos のみ</span>
+        <span class="rec">決定: Photos のみ</span>
       </div>
       <div class="decision">
         <h3>2. 見出しの折りたたみ</h3>
         <p>長いセッションを飛ばす用途が明確なため初版に含める。状態は保存せず、画面を離れると展開に戻る。</p>
-        <span class="rec">推奨: 初版に含める</span>
+        <span class="rec">決定: 初版に含める</span>
       </div>
       <div class="decision">
         <h3>3. モードの保持</h3>
         <p>Photos の表示設定としてアプリ設定に保存し、再起動後もセッションモードで開く。設定画面には項目を追加しない。</p>
-        <span class="rec">推奨: 保存する</span>
+        <span class="rec">決定: 保存する</span>
       </div>
       <div class="decision">
         <h3>4. XMP のみの写真の帰属</h3>
         <p>photo_context.session_id の有無を厳密に使い、撮影時刻が重なるセッションへは寄せない。誤った帰属を作らない。</p>
-        <span class="rec">推奨: 寄せない</span>
+        <span class="rec">決定: 寄せない</span>
       </div>
       <div class="decision">
         <h3>5. 年レール</h3>
         <p>時系列モードと同じ年レールをセッションモードでも表示し、見出し行を含む行モデルに合わせて位置を計算する。</p>
-        <span class="rec">推奨: 表示する</span>
+        <span class="rec">決定: 表示する</span>
       </div>
       <div class="decision">
         <h3>6. セッションが分断された場合</h3>
         <p>同じ session_id の写真が未紐付け写真などで分断された場合は、分断ごとに同じ見出しを繰り返さず、最初の見出しの後は写真行だけを続ける。実データでは通常発生しない。</p>
-        <span class="rec">推奨: 見出しは最初の1回</span>
+        <span class="rec">決定: 見出しは最初の1回</span>
       </div>
     </div>
   </section>

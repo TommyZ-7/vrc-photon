@@ -36,16 +36,16 @@
 
 ---
 
-## 決定待ち（実装前に回答を得る）
+## 決定事項（2026-11-09 確定）
 
-- [ ] **Q1. 検索結果への適用**: Photos のみ（推奨） / 検索結果にも適用
-- [ ] **Q2. 見出しの折りたたみ**: 初版に含める（推奨、状態は保存しない） / 含めない
-- [ ] **Q3. モードの保持**: アプリ設定に保存（推奨） / 起動ごとに時系列
-- [ ] **Q4. XMP のみの写真の帰属**: 寄せない（推奨） / 時刻の重なりで寄せる
-- [ ] **Q5. 年レール**: セッションモードでも表示（推奨） / 隠す
-- [ ] **Q6. セッションが分断された場合**: 見出しは最初の 1 回（推奨） / 分断ごとに繰り返す
+- [x] **Q1. 検索結果への適用**: Photos のみ（初版）。検索結果は時系列のまま。
+- [x] **Q2. 見出しの折りたたみ**: 初版に含める。状態は保存しない。
+- [x] **Q3. モードの保持**: アプリ設定に保存し、再起動後も復元する。
+- [x] **Q4. XMP のみの写真の帰属**: `session_id` の有無だけで判定し、寄せない。
+- [x] **Q5. 年レール**: セッションモードでも表示し、行モデルに合わせる。
+- [x] **Q6. セッションが分断された場合**: 見出しは最初の 1 回だけ。
 
-回答が推奨案と異なる場合、該当タスク（Q1: Task 6、Q2: Task 3/5/6、Q3: Task 5、Q4: Task 3、Q5: Task 7、Q6: Task 3）を読み替える。
+モック `docs/ui-session-groups-mockup.html` は承認済み。
 
 ---
 
@@ -521,7 +521,7 @@ Expected: FAIL with "unresolved module" / "no method named `build`".
 - `offset_for_photo(photo_index)`: `photo_rows` を二分探索し、その行の `origins[row]`。
 - `offset_for_session(session_id)`: Header 行の `origins[row]`。
 - 同じ `session_id` が分断された場合は、最初の Header の後は Header を追加せず、
-  Photos 行だけを続ける（Q6 の推奨案）。
+  Photos 行だけを続ける（決定事項 Q6）。
 - `captured_day == 0` の未紐付け区間は `DateLabel { day: 0, .. }` にまとめる。
 
 - [ ] **Step 4: Run the tests and verify they pass**
