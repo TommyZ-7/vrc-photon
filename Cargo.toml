@@ -11,6 +11,7 @@ members = [
     "crates/daemon",
     "crates/i18n",
     "crates/ipc",
+    "crates/mcp",
     "crates/ui",
     "crates/update",
     "crates/release-tool",

@@ -251,7 +251,7 @@ fn encode(image: &DynamicImage, profile: &CompressionProfile) -> Result<Vec<u8>>
     }
 }
 
-fn encode_jpeg(image: &DynamicImage, quality: u8) -> Result<Vec<u8>> {
+pub(crate) fn encode_jpeg(image: &DynamicImage, quality: u8) -> Result<Vec<u8>> {
     let mut output = Vec::new();
     let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut output, quality);
     match image {
