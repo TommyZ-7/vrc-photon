@@ -217,9 +217,7 @@ impl App {
             let background_ids = ids.clone();
             let result = cx
                 .background_executor()
-                .spawn(async move {
-                    reader.query(|db| db.session_summaries(&background_ids))
-                })
+                .spawn(async move { reader.query(|db| db.session_summaries(&background_ids)) })
                 .await;
             this.update(cx, |this, cx| match result {
                 Ok(summaries) => this.apply_session_summaries(generation, &ids, summaries, cx),

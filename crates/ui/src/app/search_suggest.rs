@@ -212,9 +212,8 @@ impl PhotoApp {
             let result = cx
                 .background_executor()
                 .spawn(async move {
-                    reader.query(|db| {
-                        query_suggestions(db, kind, &background_query, prefer_english)
-                    })
+                    reader
+                        .query(|db| query_suggestions(db, kind, &background_query, prefer_english))
                 })
                 .await;
             this.update(cx, |this, cx| {
