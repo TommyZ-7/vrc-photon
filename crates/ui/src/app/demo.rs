@@ -24,7 +24,7 @@ pub(crate) struct DemoAssets {
 }
 
 /// Bump whenever the fixture layout changes so existing demo roots rebuild.
-const DEMO_DATA_VERSION: u32 = 2;
+const DEMO_DATA_VERSION: u32 = 3;
 const DEMO_VERSION_FILE: &str = "demo.version";
 
 fn demo_data_is_current(root: &Path) -> bool {

@@ -1171,6 +1171,7 @@ fn render_session_grid(
         .into_any_element()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_session_header(
     app: &App,
     shared: &GalleryShared,

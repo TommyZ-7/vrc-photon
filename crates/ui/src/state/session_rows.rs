@@ -432,7 +432,7 @@ mod tests {
     #[test]
     fn offsets_and_top_photo_index_round_trip_across_headers() {
         let entries: Vec<_> = (0..10)
-            .map(|index| entry(10 - index, 20261109, Some((index / 2) as i64)))
+            .map(|index| entry(10 - index, 20261109, Some(index / 2)))
             .collect();
         let rows = SessionRows::build(&entries, 2, 200.0, 92.0, 46.0, &HashSet::new());
         for photo in (0..10).step_by(2) {
