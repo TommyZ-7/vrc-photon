@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VRC PhotoN 連携・自動 画面デザイン案</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background:#07090d; color:#dbe4ee; font-family:"Noto Sans CJK JP","Hiragino Sans",system-ui,sans-serif; padding:20px 12px 40px; }
+  .pagehead { max-width:1180px; margin:0 auto 14px; }
+  .pagehead h1 { font-size:17px; font-weight:700; letter-spacing:.02em; }
+  .pagehead p { font-size:12.5px; color:#8fa1b5; margin-top:4px; }
+  .tabs { max-width:1180px; margin:0 auto 12px; display:flex; gap:8px; flex-wrap:wrap; }
+  .tab { appearance:none; border:1px solid #263242; background:#101722; color:#aebdd0; padding:8px 16px; border-radius:999px; font-size:13px; cursor:pointer; font-family:inherit; }
+  .tab.active { background:#299bd5; border-color:#299bd5; color:#fff; font-weight:700; }
+  .caption { max-width:1180px; margin:14px auto 0; background:#0d131c; border:1px solid #223046; border-radius:12px; padding:14px 18px; font-size:13px; line-height:1.75; display:none; }
+  .caption.show { display:block; }
+  .caption b { color:#7cc4ea; }
+  .caption .cols { display:grid; grid-template-columns:repeat(3,1fr); gap:4px 22px; margin-top:6px; }
+  .caption .k { color:#8fa1b5; font-size:11.5px; display:block; }
+  /* ===== app window ===== */
+  .win { max-width:1180px; margin:0 auto; background:#0b0f16; border:1px solid #223046; border-radius:14px; overflow:hidden; box-shadow:0 18px 50px rgba(0,0,0,.55); display:none; }
+  .win.show { display:flex; flex-direction:column; height:780px; }
+  .titlebar { height:44px; flex:none; display:flex; align-items:center; gap:10px; padding:0 14px; background:#0e141f; border-bottom:1px solid #1c2839; }
+  .glyph { color:#299bd5; font-size:19px; font-weight:700; }
+  .titlebar .app { font-size:13.5px; font-weight:700; }
+  .titlebar .sp { flex:1; }
+  .titlebar .st { font-size:11.5px; color:#8fa1b5; }
+  .titlebar .dot { width:8px; height:8px; border-radius:50%; background:#43c465; display:inline-block; margin-right:5px; vertical-align:1px; }
+  .body { flex:1; display:flex; min-height:0; }
+  .side { width:196px; flex:none; background:#0d1219; border-right:1px solid #1c2839; padding:14px 10px; }
+  .nav { display:flex; align-items:center; gap:9px; padding:8px 10px; border-radius:8px; font-size:13px; color:#aebdd0; margin-bottom:2px; }
+  .nav .ic { width:16px; text-align:center; font-size:13px; }
+  .nav.active { background:rgba(41,155,213,.16); color:#eaf4fb; font-weight:700; }
+  .nav.active .ic { color:#299bd5; }
+  .main { flex:1; min-width:0; overflow:hidden; padding:18px 20px; background:#0b0f16; }
+  .main.scroll { overflow-y:auto; }
+  .h1 { font-size:16px; font-weight:700; margin-bottom:2px; }
+  .hsub { font-size:12px; color:#8fa1b5; margin-bottom:14px; }
+  /* ===== components ===== */
+  .card { background:rgba(255,255,255,.035); border:1px solid #223046; border-radius:12px; padding:14px 16px; }
+  .card + .card { margin-top:14px; }
+  .chead { display:flex; align-items:center; gap:9px; margin-bottom:4px; }
+  .chead .t { font-size:14px; font-weight:700; }
+  .chead .sp { flex:1; }
+  .pill { font-size:10.5px; padding:2px 9px; border-radius:999px; border:1px solid #2c4258; color:#aebdd0; white-space:nowrap; }
+  .pill.on { background:rgba(67,196,101,.14); border-color:rgba(67,196,101,.45); color:#7ed491; }
+  .pill.blue { background:rgba(41,155,213,.13); border-color:rgba(41,155,213,.45); color:#7cc4ea; }
+  .pill.warn { background:rgba(224,175,55,.12); border-color:rgba(224,175,55,.4); color:#e8c96a; }
+  .hint { font-size:11.5px; color:#8fa1b5; line-height:1.6; }
+  .warn { font-size:11.5px; color:#e8c96a; background:rgba(224,175,55,.08); border:1px solid rgba(224,175,55,.3); border-radius:8px; padding:7px 10px; line-height:1.6; margin-top:8px; }
+  .row { display:flex; align-items:center; gap:10px; padding:8px 0; border-top:1px solid rgba(255,255,255,.05); }
+  .row:first-of-type { border-top:none; }
+  .row .lab { font-size:12.5px; }
+  .row .lab small { display:block; color:#8fa1b5; font-size:11px; margin-top:1px; }
+  .row .sp { flex:1; }
+  .sw { width:36px; height:20px; border-radius:999px; background:#2a3a4f; position:relative; flex:none; }
+  .sw::after { content:""; position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%; background:#93a7bd; }
+  .sw.on { background:#299bd5; }
+  .sw.on::after { left:18px; background:#fff; }
+  .btn { font-size:12px; padding:5px 12px; border-radius:7px; border:1px solid #2c4258; background:#16202f; color:#dbe4ee; white-space:nowrap; font-family:inherit; }
+  .btn.pri { background:#299bd5; border-color:#299bd5; color:#fff; font-weight:700; }
+  .btn.danger { color:#e88; border-color:rgba(220,90,90,.4); }
+  .input { background:#0a0e14; border:1px solid #2c4258; border-radius:7px; padding:6px 10px; font-size:12px; color:#aebdd0; min-width:0; }
+  .sel { background:#0a0e14; border:1px solid #2c4258; border-radius:7px; padding:5px 9px; font-size:12px; color:#dbe4ee; white-space:nowrap; }
+  .chk { display:flex; align-items:center; gap:7px; font-size:12.5px; padding:4px 0; }
+  .box { width:15px; height:15px; border-radius:4px; border:1px solid #2c4258; background:#0a0e14; flex:none; position:relative; }
+  .box.on { background:#299bd5; border-color:#299bd5; }
+  .box.on::after { content:"✓"; position:absolute; inset:0; color:#fff; font-size:11px; line-height:14px; text-align:center; }
+  .radio { width:15px; height:15px; border-radius:50%; border:1px solid #2c4258; flex:none; position:relative; }
+  .radio.on { border-color:#299bd5; }
+  .radio.on::after { content:""; position:absolute; inset:3px; border-radius:50%; background:#299bd5; }
+  .stats { display:flex; gap:10px; margin:8px 0 2px; }
+  .stat { flex:1; background:rgba(255,255,255,.03); border:1px solid #223046; border-radius:9px; padding:8px 6px; text-align:center; }
+  .stat .n { font-size:17px; font-weight:700; }
+  .stat .l { font-size:10.5px; color:#8fa1b5; margin-top:1px; }
+  .job { display:flex; align-items:center; gap:9px; font-size:12px; padding:7px 9px; background:rgba(255,255,255,.03); border:1px solid #223046; border-radius:8px; margin-top:7px; }
+  .job .ph { width:30px; height:22px; border-radius:4px; background:linear-gradient(135deg,#274b63,#16283a); flex:none; }
+  .stage { color:#7cc4ea; font-size:11px; }
+  .hist { display:flex; align-items:center; gap:9px; font-size:12px; padding:7px 0; border-top:1px solid rgba(255,255,255,.05); }
+  .hist:first-of-type { border-top:none; }
+  .ok { color:#7ed491; } .ng { color:#e88; }
+  .more { text-align:center; color:#5f7288; font-size:11.5px; padding:10px 0 2px; }
+  /* ===== proposal layouts ===== */
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; align-items:start; }
+  .grid2 .card + .card { margin-top:14px; }
+  .md { display:flex; gap:0; height:100%; }
+  .md-list { width:252px; flex:none; border-right:1px solid #1c2839; padding:4px 12px 4px 0; margin-right:16px; }
+  .md-item { padding:10px 11px; border-radius:9px; margin-bottom:4px; border:1px solid transparent; }
+  .md-item.sel { background:rgba(41,155,213,.12); border-color:rgba(41,155,213,.4); }
+  .md-item .nm { font-size:13px; font-weight:700; display:flex; align-items:center; gap:8px; }
+  .sdot { width:8px; height:8px; border-radius:50%; background:#43c465; flex:none; }
+  .sdot.off { background:#5f7288; } .sdot.warn { background:#e0af37; }
+  .md-item .sm { font-size:11px; color:#8fa1b5; margin-top:3px; line-height:1.55; }
+  .md-detail { flex:1; min-width:0; overflow-y:auto; padding-right:2px; }
+  .tiles { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; margin-bottom:14px; }
+  .tile { background:rgba(255,255,255,.035); border:1px solid #223046; border-radius:10px; padding:10px 12px; }
+  .tile .nm { font-size:12px; font-weight:700; display:flex; gap:7px; align-items:center; }
+  .tile .v { font-size:12.5px; margin-top:5px; }
+  .tile .s { font-size:10.5px; color:#8fa1b5; margin-top:2px; line-height:1.5; }
+  .acc { border:1px solid #223046; border-radius:12px; overflow:hidden; }
+  .acc + .acc { margin-top:10px; }
+  .acc-h { display:flex; align-items:center; gap:10px; padding:12px 16px; background:rgba(255,255,255,.035); font-size:13.5px; }
+  .acc-h .sum { font-size:11.5px; color:#8fa1b5; }
+  .acc-h .chev { color:#8fa1b5; }
+  .acc-b { padding:6px 16px 14px; border-top:1px solid #223046; }
+  .form2 { display:grid; grid-template-columns:1fr 1fr; gap:2px 26px; }
+</style>
+</head>
+<body>
+<div class="pagehead">
+  <h1>VRC PhotoN「連携・自動」画面 デザイン改善案モック</h1>
+  <p>現行は5つのカード（Discord連携／自動圧縮／AIタグ付け／クリップボード／送信履歴）が1カラムに縦積み。タブで案を切り替えてご覧ください。数値・文言は実画面に即したサンプルです。</p>
+</div>
+<div class="tabs">
+  <button class="tab" data-p="cur">現行</button>
+  <button class="tab" data-p="a">案A：2カラムグリッド</button>
+  <button class="tab" data-p="b">案B：マスター・ディテール</button>
+  <button class="tab" data-p="c">案C：サマリ＋アコーディオン</button>
+</div>
+
+<!-- ================= 現行 ================= -->
+<section class="win" id="win-cur">
+  <div class="titlebar"><span class="glyph">✳</span><span class="app">VRC PhotoN</span><span class="sp"></span><span class="st"><span class="dot"></span>デーモン接続中 ・ 写真 3,757枚</span></div>
+  <div class="body">
+    <aside class="side">
+      <div class="nav"><span class="ic">▦</span>写真</div>
+      <div class="nav"><span class="ic">⇊</span>圧縮</div>
+      <div class="nav"><span class="ic">⌕</span>検索</div>
+      <div class="nav"><span class="ic">▤</span>ダッシュボード</div>
+      <div class="nav active"><span class="ic">⇄</span>連携・自動</div>
+      <div class="nav"><span class="ic">⚙</span>設定</div>
+    </aside>
+    <div class="main scroll">
+      <div class="h1">連携・自動</div><div class="hsub">外部連携と自動処理の設定</div>
+      <div class="card">
+        <div class="chead"><span class="t">Discord 連携</span><span class="sp"></span><span class="pill on">設定済み</span></div>
+        <div class="hint">写真を Discord の Webhook へ送信します</div>
+        <div class="warn">非公開インスタンスで撮影した写真も送信対象になります。Webhook の投稿先を確認してください。</div>
+        <div class="row"><span class="lab">Webhook URL<small>送信先名：VRChat写真部</small></span><span class="sp"></span><span class="input" style="width:230px">https://discord.com/api/webhooks/••••••</span><button class="btn">変更</button><button class="btn danger">削除</button><button class="btn">テスト送信</button></div>
+        <div class="row"><span class="lab">原画を優先<small>20 MiB を超える原画は連携用プロファイルの出力へフォールバックします</small></span><span class="sp"></span><span class="sw on"></span></div>
+        <div class="row"><span class="lab">プレイヤー名を含める<small>埋め込みに参加プレイヤー名を追加します（既定はオフ）</small></span><span class="sp"></span><span class="sw"></span></div>
+        <div class="row"><span class="lab">連携用プロファイル<small>Discord へ送る画像の圧縮に使うプロファイルを1つ選びます</small></span><span class="sp"></span><span class="sel">Discord用 ▾</span></div>
+      </div>
+      <div class="card">
+        <div class="chead"><span class="t">自動圧縮</span><span class="sp"></span><span class="sw on"></span></div>
+        <div class="hint">新しい写真を自動で圧縮します</div>
+        <div style="margin-top:6px"><div class="hint" style="margin-bottom:2px">対象プロファイル（チェックしたプロファイルで自動圧縮のジョブを投入します）</div>
+        <div class="chk"><span class="box on"></span>標準</div><div class="chk"><span class="box on"></span>軽量</div><div class="chk"><span class="box"></span>Discord用</div></div>
+      </div>
+      <div class="card">
+        <div class="chead"><span class="t">AIタグ付け</span><span class="sp"></span><span class="pill blue">準備完了</span></div>
+        <div class="hint">ローカル推論で人数・場所・シーンタグを生成します</div>
+        <div class="row"><span class="lab">有効化<small>AIタグ付けジョブの実行を許可します</small></span><span class="sp"></span><span class="sw on"></span></div>
+        <div class="row"><span class="lab">自動<small>新しい写真を自動で処理します</small></span><span class="sp"></span><span class="sw on"></span></div>
+        <div class="row"><span class="lab">バックエンド<small>自動は probe の結果から最適なバックエンドを選びます</small></span><span class="sp"></span><span class="sel">自動 ▾</span></div>
+        <div class="stats"><div class="stat"><div class="n">12</div><div class="l">待機</div></div><div class="stat"><div class="n">1</div><div class="l">実行中</div></div><div class="stat"><div class="n">0</div><div class="l">失敗</div></div></div>
+        <div class="job"><span class="ph"></span><span>VRChat_2026-11-08_23-41-05.png</span><span class="stage">人数の推定中</span><span class="sp" style="flex:1"></span><button class="btn">キャンセル</button></div>
+        <div class="row"><span class="lab">バックログ<small>待機中の写真を実行キューへ移します</small></span><span class="sp"></span><button class="btn pri">バックログを開始</button></div>
+      </div>
+      <div class="card">
+        <div class="chead"><span class="t">クリップボード</span><span class="sp"></span><span class="sw on"></span></div>
+        <div class="hint">選択した1枚をクリップボードへ圧縮コピーします</div>
+        <div style="margin-top:6px"><div class="hint" style="margin-bottom:2px">クリップボード圧縮に使うプロファイルを1つ選びます</div>
+        <div class="chk"><span class="radio on"></span>標準</div><div class="chk"><span class="radio"></span>軽量</div></div>
+      </div>
+      <div class="card">
+        <div class="chead"><span class="t">送信履歴</span></div>
+        <div class="hist"><span>11/08 23:41</span><span>VRChat_2026-11-08_23-40-12.png</span><span style="flex:1"></span><span class="ok">成功</span></div>
+        <div class="hist"><span>11/08 23:12</span><span>VRChat_2026-11-08_23-11-48.png</span><span style="flex:1"></span><span class="ok">成功</span></div>
+        <div class="hist"><span>11/08 22:58</span><span>VRChat_2026-11-08_22-57-31.png</span><span style="flex:1"></span><span class="ng">失敗</span></div>
+      </div>
+      <div class="more">― 1カラムに全カードが縦積み。目的の項目まで長いスクロールが必要 ―</div>
+    </div>
+  </div>
+</section>
+<div class="caption" id="cap-cur"><b>現行</b>：5カードを1カラムに縦積みした構成。画面幅を使えておらず、AIタグ付けのジョブ確認や Discord 設定の変更のたびに長いスクロールが発生します。</div>
+
+<!-- ================= 案A ================= -->
+<section class="win" id="win-a">
+  <div class="titlebar"><span class="glyph">✳</span><span class="app">VRC PhotoN</span><span class="sp"></span><span class="st"><span class="dot"></span>デーモン接続中 ・ 写真 3,757枚</span></div>
+  <div class="body">
+    <aside class="side">
+      <div class="nav"><span class="ic">▦</span>写真</div>
+      <div class="nav"><span class="ic">⇊</span>圧縮</div>
+      <div class="nav"><span class="ic">⌕</span>検索</div>
+      <div class="nav"><span class="ic">▤</span>ダッシュボード</div>
+      <div class="nav active"><span class="ic">⇄</span>連携・自動</div>
+      <div class="nav"><span class="ic">⚙</span>設定</div>
+    </aside>
+    <div class="main scroll">
+      <div class="h1">連携・自動</div><div class="hsub">外部連携と自動処理の設定</div>
+      <div class="grid2">
+        <div>
+          <div class="card">
+            <div class="chead"><span class="t">Discord 連携</span><span class="sp"></span><span class="pill on">設定済み</span></div>
+            <div class="hint">写真を Discord の Webhook へ送信します</div>
+            <div class="warn">非公開インスタンスで撮影した写真も送信対象になります。Webhook の投稿先を確認してください。</div>
+            <div class="row"><span class="lab">送信先：VRChat写真部</span><span class="sp"></span><button class="btn">変更</button><button class="btn">テスト送信</button></div>
+            <div class="row"><span class="lab">原画を優先<small>20 MiB 超は連携用プロファイルへフォールバック</small></span><span class="sp"></span><span class="sw on"></span></div>
+            <div class="row"><span class="lab">プレイヤー名を含める</span><span class="sp"></span><span class="sw"></span></div>
+            <div class="row"><span class="lab">連携用プロファイル</span><span class="sp"></span><span class="sel">Discord用 ▾</span></div>
+          </div>
+          <div class="card">
+            <div class="chead"><span class="t">AIタグ付け</span><span class="sp"></span><span class="pill blue">実行中 1件</span></div>
+            <div class="hint">ローカル推論で人数・場所・シーンタグを生成します</div>
+            <div class="row"><span class="lab">有効化</span><span class="sp"></span><span class="sw on"></span></div>
+            <div class="row"><span class="lab">自動（新しい写真を処理）</span><span class="sp"></span><span class="sw on"></span></div>
+            <div class="row"><span class="lab">バックエンド</span><span class="sp"></span><span class="sel">自動 ▾</span></div>
+            <div class="stats"><div class="stat"><div class="n">12</div><div class="l">待機</div></div><div class="stat"><div class="n">1</div><div class="l">実行中</div></div><div class="stat"><div class="n">0</div><div class="l">失敗</div></div></div>
+            <div class="job"><span class="ph"></span><span>…11-08_23-41-05.png</span><span class="stage">人数の推定中</span><span style="flex:1"></span><button class="btn">キャンセル</button></div>
+            <div class="row"><span class="lab">バックログ<small>待機中を実行キューへ移します</small></span><span class="sp"></span><button class="btn pri">バックログを開始</button></div>
+          </div>
+        </div>
+        <div>
+          <div class="card">
+            <div class="chead"><span class="t">自動圧縮</span><span class="sp"></span><span class="pill on">有効</span><span class="sw on"></span></div>
+            <div class="hint">新しい写真を自動で圧縮します</div>
+            <div style="margin-top:6px"><div class="hint" style="margin-bottom:2px">対象プロファイル</div>
+            <div class="chk"><span class="box on"></span>標準</div><div class="chk"><span class="box on"></span>軽量</div><div class="chk"><span class="box"></span>Discord用</div></div>
+          </div>
+          <div class="card">
+            <div class="chead"><span class="t">クリップボード</span><span class="sp"></span><span class="pill on">有効</span><span class="sw on"></span></div>
+            <div class="hint">選択した1枚をクリップボードへ圧縮コピーします</div>
+            <div style="margin-top:6px"><div class="hint" style="margin-bottom:2px">使用プロファイル</div>
+            <div class="chk"><span class="radio on"></span>標準</div><div class="chk"><span class="radio"></span>軽量</div></div>
+          </div>
+          <div class="card">
+            <div class="chead"><span class="t">送信履歴</span><span class="sp"></span><span class="pill">直近 3件</span></div>
+            <div class="hist"><span>11/08 23:41</span><span>…23-40-12.png</span><span style="flex:1"></span><span class="ok">成功</span></div>
+            <div class="hist"><span>11/08 23:12</span><span>…23-11-48.png</span><span style="flex:1"></span><span class="ok">成功</span></div>
+            <div class="hist"><span>11/08 22:58</span><span>…22-57-31.png</span><span style="flex:1"></span><span class="ng">失敗</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+<div class="caption" id="cap-a"><b>案A：2カラムグリッド</b> ― 現行のカードをそのまま2列に配置し直し、各カードのヘッダーに状態ピル（有効／設定済み／実行中）を追加。
+  <div class="cols">
+    <div><span class="k">長所</span>画面の高さがほぼ半分になり、全項目がほぼ1画面に収まる。横幅を活かせる</div>
+    <div><span class="k">短所</span>カードの高さが左右で揃わず段差が出る。ウィンドウが狭い場合は1カラムへの折り返しが要る</div>
+    <div><span class="k">実装規模</span>小。既存カード部品の配置変更が中心で、状態ピルの追加程度</div>
+  </div>
+</div>
+
+<!-- ================= 案B ================= -->
+<section class="win" id="win-b">
+  <div class="titlebar"><span class="glyph">✳</span><span class="app">VRC PhotoN</span><span class="sp"></span><span class="st"><span class="dot"></span>デーモン接続中 ・ 写真 3,757枚</span></div>
+  <div class="body">
+    <aside class="side">
+      <div class="nav"><span class="ic">▦</span>写真</div>
+      <div class="nav"><span class="ic">⇊</span>圧縮</div>
+      <div class="nav"><span class="ic">⌕</span>検索</div>
+      <div class="nav"><span class="ic">▤</span>ダッシュボード</div>
+      <div class="nav active"><span class="ic">⇄</span>連携・自動</div>
+      <div class="nav"><span class="ic">⚙</span>設定</div>
+    </aside>
+    <div class="main">
+      <div class="h1">連携・自動</div><div class="hsub">左の一覧で状態を確認し、選択した項目を右で設定します</div>
+      <div class="md">
+        <div class="md-list">
+          <div class="md-item"><div class="nm"><span class="sdot"></span>Discord 連携</div><div class="sm">設定済み ・ 送信先：VRChat写真部</div></div>
+          <div class="md-item"><div class="nm"><span class="sdot"></span>自動圧縮</div><div class="sm">有効 ・ 対象プロファイル 2件</div></div>
+          <div class="md-item sel"><div class="nm"><span class="sdot"></span>AIタグ付け</div><div class="sm">有効 ・ 実行中 1件 / 待機 12件</div></div>
+          <div class="md-item"><div class="nm"><span class="sdot"></span>クリップボード</div><div class="sm">有効 ・ プロファイル：標準</div></div>
+          <div class="md-item"><div class="nm"><span class="sdot warn"></span>送信履歴</div><div class="sm">直近に失敗 1件（11/08 22:58）</div></div>
+        </div>
+        <div class="md-detail">
+          <div class="card" style="margin-top:0">
+            <div class="chead"><span class="t">AIタグ付け</span><span class="sp"></span><span class="pill blue">準備完了（Vulkan）</span></div>
+            <div class="hint">ローカル推論で人数・場所・シーンタグを生成します。プラグインとモデルの準備は設定画面で行います。</div>
+            <div class="row"><span class="lab">有効化<small>AIタグ付けジョブの実行を許可します</small></span><span class="sp"></span><span class="sw on"></span></div>
+            <div class="row"><span class="lab">自動<small>新しい写真を自動で処理します</small></span><span class="sp"></span><span class="sw on"></span></div>
+            <div class="row"><span class="lab">バックエンド<small>自動は probe の結果から最適なバックエンドを選びます</small></span><span class="sp"></span><span class="sel">自動 ▾</span></div>
+            <div class="row"><span class="lab">タグ別閾値<small>タグごとに「付ける / 付けない」の確率しきい値を調整します</small></span><span class="sp"></span><button class="btn">タグ別閾値を開く</button></div>
+          </div>
+          <div class="card">
+            <div class="chead"><span class="t">ジョブ</span><span class="sp"></span><button class="btn pri">バックログを開始</button></div>
+            <div class="stats"><div class="stat"><div class="n">12</div><div class="l">待機</div></div><div class="stat"><div class="n">1</div><div class="l">実行中</div></div><div class="stat"><div class="n">0</div><div class="l">失敗</div></div></div>
+            <div class="job"><span class="ph"></span><span>VRChat_2026-11-08_23-41-05.png</span><span class="stage">人数の推定中</span><span style="flex:1"></span><button class="btn">キャンセル</button></div>
+            <div class="job"><span class="ph"></span><span>VRChat_2026-11-08_23-39-52.png</span><span class="stage">開始待ち</span><span style="flex:1"></span><button class="btn">キャンセル</button></div>
+            <div class="more">実行中のジョブは最大3件まで表示します</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+<div class="caption" id="cap-b"><b>案B：マスター・ディテール</b> ― 左の一覧で全連携の状態を一覧し（状態ドット＋1行サマリ）、右ペインで選択中の項目だけを詳しく設定・操作。
+  <div class="cols">
+    <div><span class="k">長所</span>1つの作業に集中でき、スクロールがほぼ消える。状態の見落とし（履歴の失敗など）にも気づきやすい</div>
+    <div><span class="k">短所</span>項目をまたいだ同時確認はできない。選択状態の保持など画面の作りが最も変わる</div>
+    <div><span class="k">実装規模</span>中〜大。一覧＋詳細の2ペイン構成への組み替えが必要</div>
+  </div>
+</div>
+
+<!-- ================= 案C ================= -->
+<section class="win" id="win-c">
+  <div class="titlebar"><span class="glyph">✳</span><span class="app">VRC PhotoN</span><span class="sp"></span><span class="st"><span class="dot"></span>デーモン接続中 ・ 写真 3,757枚</span></div>
+  <div class="body">
+    <aside class="side">
+      <div class="nav"><span class="ic">▦</span>写真</div>
+      <div class="nav"><span class="ic">⇊</span>圧縮</div>
+      <div class="nav"><span class="ic">⌕</span>検索</div>
+      <div class="nav"><span class="ic">▤</span>ダッシュボード</div>
+      <div class="nav active"><span class="ic">⇄</span>連携・自動</div>
+      <div class="nav"><span class="ic">⚙</span>設定</div>
+    </aside>
+    <div class="main scroll">
+      <div class="h1">連携・自動</div><div class="hsub">外部連携と自動処理の設定</div>
+      <div class="tiles">
+        <div class="tile"><div class="nm"><span class="sdot"></span>Discord 連携</div><div class="v">設定済み</div><div class="s">送信先：VRChat写真部</div></div>
+        <div class="tile"><div class="nm"><span class="sdot"></span>自動圧縮</div><div class="v">有効</div><div class="s">対象プロファイル 2件</div></div>
+        <div class="tile"><div class="nm"><span class="sdot"></span>AIタグ付け</div><div class="v">実行中 1件</div><div class="s">待機 12件 ・ 失敗 0件</div></div>
+        <div class="tile"><div class="nm"><span class="sdot"></span>クリップボード</div><div class="v">有効</div><div class="s">プロファイル：標準</div></div>
+        <div class="tile"><div class="nm"><span class="sdot warn"></span>送信履歴</div><div class="v">失敗 1件</div><div class="s">直近：11/08 22:58</div></div>
+      </div>
+      <div class="acc">
+        <div class="acc-h"><span class="sdot"></span><b>Discord 連携</b><span class="sum">設定済み ・ 原画を優先 ・ プロファイル：Discord用</span><span style="flex:1"></span><span class="chev">▴</span></div>
+        <div class="acc-b">
+          <div class="warn" style="margin:6px 0 4px">非公開インスタンスで撮影した写真も送信対象になります。Webhook の投稿先を確認してください。</div>
+          <div class="form2">
+            <div class="row"><span class="lab">Webhook URL<small>送信先名：VRChat写真部</small></span><span class="sp"></span><button class="btn">変更</button><button class="btn">テスト送信</button></div>
+            <div class="row"><span class="lab">連携用プロファイル</span><span class="sp"></span><span class="sel">Discord用 ▾</span></div>
+            <div class="row"><span class="lab">原画を優先<small>20 MiB 超は連携用プロファイルへフォールバック</small></span><span class="sp"></span><span class="sw on"></span></div>
+            <div class="row"><span class="lab">プレイヤー名を含める</span><span class="sp"></span><span class="sw"></span></div>
+          </div>
+        </div>
+      </div>
+      <div class="acc"><div class="acc-h"><span class="sdot"></span><b>自動圧縮</b><span class="sum">有効 ・ 対象：標準、軽量</span><span style="flex:1"></span><span class="chev">▾</span></div></div>
+      <div class="acc"><div class="acc-h"><span class="sdot"></span><b>AIタグ付け</b><span class="sum">有効 ・ 自動オン ・ 待機 12件 / 実行中 1件（人数の推定中）</span><span style="flex:1"></span><button class="btn pri">バックログを開始</button><span class="chev">▾</span></div></div>
+      <div class="acc"><div class="acc-h"><span class="sdot"></span><b>クリップボード</b><span class="sum">有効 ・ プロファイル：標準</span><span style="flex:1"></span><span class="chev">▾</span></div></div>
+      <div class="acc"><div class="acc-h"><span class="sdot warn"></span><b>送信履歴</b><span class="sum">直近3件：成功 2件 ・ 失敗 1件</span><span style="flex:1"></span><span class="chev">▾</span></div></div>
+      <div class="more">― 閉じた項目は1行に畳まれ、開いた項目だけが編集領域を持つ ―</div>
+    </div>
+  </div>
+</section>
+<div class="caption" id="cap-c"><b>案C：サマリ＋アコーディオン</b> ― 上部のタイルで全連携の状態を一望し、下の項目は既定で1行に畳む。開いた項目だけが編集領域を持ち、AIタグ付けのような頻用操作（バックログ開始）は畳んだままの行にもボタンを残す。
+  <div class="cols">
+    <div><span class="k">長所</span>状態確認が最速で、画面が最も短い。現行の1カラムの感覚を引き継ぐため違和感が小さい</div>
+    <div><span class="k">短所</span>設定変更には毎回「開く」操作が1つ増える。複数項目の同時編集には向かない</div>
+    <div><span class="k">実装規模</span>中。折りたたみ状態の管理とサマリ行の追加が中心</div>
+  </div>
+</div>
+
+<script>
+  const tabs = document.querySelectorAll('.tab');
+  function show(p) {
+    tabs.forEach(t => t.classList.toggle('active', t.dataset.p === p));
+    document.querySelectorAll('.win').forEach(w => w.classList.toggle('show', w.id === 'win-' + p));
+    document.querySelectorAll('.caption').forEach(c => c.classList.toggle('show', c.id === 'cap-' + p));
+  }
+  tabs.forEach(t => t.addEventListener('click', () => show(t.dataset.p)));
+  show(new URLSearchParams(location.search).get('p') || 'a');
+</script>
+</body>
+</html>
