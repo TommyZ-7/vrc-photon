@@ -40,5 +40,7 @@ pub(crate) fn index_entry(id: i64, month: i32) -> PhotoIndexEntry {
         id,
         captured_at_utc: id,
         captured_month: month,
+        captured_day: month * 100 + 1,
+        session_id: None,
     }
 }

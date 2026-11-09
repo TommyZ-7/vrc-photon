@@ -513,6 +513,13 @@ const PHOTO_MONTH: &str = "COALESCE(\
     CAST(strftime('%Y%m', p.captured_at_utc, 'unixepoch') AS INTEGER), \
     0)";
 
+/// Local capture day as YYYYMMDD, falling back to the UTC capture time and
+/// finally to 0 when neither can be parsed.
+const PHOTO_DAY: &str = "COALESCE(\
+    CAST(strftime('%Y%m%d', p.captured_at_local) AS INTEGER), \
+    CAST(strftime('%Y%m%d', p.captured_at_utc, 'unixepoch') AS INTEGER), \
+    0)";
+
 pub struct Db {
     conn: Connection,
     path: Option<PathBuf>,
@@ -1168,8 +1175,8 @@ impl Db {
     pub fn photo_index(&self, sort: PhotoSort) -> Result<Vec<PhotoIndexEntry>> {
         let order = photo_order(sort);
         let sql = format!(
-            "SELECT p.id, p.captured_at_utc, {PHOTO_MONTH}{PHOTO_FROM} \
-             WHERE {VISIBLE_STATUS} ORDER BY {order}"
+            "SELECT p.id, p.captured_at_utc, {PHOTO_MONTH}, {PHOTO_DAY}, c.session_id\
+             {PHOTO_FROM} WHERE {VISIBLE_STATUS} ORDER BY {order}"
         );
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map([], row_to_photo_index)?;
@@ -1192,7 +1199,8 @@ impl Db {
     ) -> Result<Vec<PhotoIndexEntry>> {
         let (where_sql, mut values) = build_text_filter(filter);
         let sql = format!(
-            "SELECT p.id, p.captured_at_utc, {PHOTO_MONTH}{PHOTO_FROM} WHERE {where_sql} \
+            "SELECT p.id, p.captured_at_utc, {PHOTO_MONTH}, {PHOTO_DAY}, c.session_id\
+             {PHOTO_FROM} WHERE {where_sql} \
              ORDER BY p.captured_at_utc DESC, p.id DESC LIMIT ?"
         );
         values.push(Value::Integer(clamp_limit(limit)));
@@ -5912,6 +5920,8 @@ fn row_to_photo_index(row: &Row<'_>) -> rusqlite::Result<PhotoIndexEntry> {
         id: row.get(0)?,
         captured_at_utc: row.get(1)?,
         captured_month: row.get(2)?,
+        captured_day: row.get(3)?,
+        session_id: row.get(4)?,
     })
 }
 
@@ -7778,6 +7788,69 @@ mod tests {
             .unwrap();
         let entries = db.photo_index(PhotoSort::Newest).unwrap();
         assert_eq!(entries[0].captured_month, 202505);
+    }
+
+    #[test]
+    fn photo_index_includes_session_id_and_local_capture_day() {
+        let db = Db::open_in_memory().unwrap();
+        let root = db.add_root("/photos", "reference").unwrap();
+        let world = db
+            .upsert_world("wrld_test", Some("Test World"), Some("log"))
+            .unwrap();
+        let session = db.create_session("log.txt", 100, world, None).unwrap();
+        let linked = db
+            .upsert_photo(&photo_at(
+                root,
+                "/photos/linked.png",
+                100,
+                "2025-04-30 23:41:00.000",
+            ))
+            .unwrap();
+        db.set_photo_context(&PhotoContext {
+            photo_id: linked,
+            session_id: Some(session),
+            world_id: Some(world),
+            world_name: Some("Test World".into()),
+            instance_id: None,
+            link_method: "log".into(),
+            confidence: 0.9,
+            author: None,
+            linked_at: now_string(),
+        })
+        .unwrap();
+        let unlinked = db
+            .upsert_photo(&photo_at(
+                root,
+                "/photos/unlinked.png",
+                99,
+                "2025-04-30 22:00:00.000",
+            ))
+            .unwrap();
+
+        let entries = db.photo_index(PhotoSort::Newest).unwrap();
+        let linked_entry = entries.iter().find(|entry| entry.id == linked).unwrap();
+        assert_eq!(linked_entry.session_id, Some(session));
+        assert_eq!(linked_entry.captured_day, 20250430);
+        let unlinked_entry = entries.iter().find(|entry| entry.id == unlinked).unwrap();
+        assert_eq!(unlinked_entry.session_id, None);
+        assert_eq!(unlinked_entry.captured_day, 20250430);
+    }
+
+    #[test]
+    fn photo_index_day_falls_back_to_utc_when_local_time_is_invalid() {
+        let db = Db::open_in_memory().unwrap();
+        let root = db.add_root("/photos", "reference").unwrap();
+        let id = db
+            .upsert_photo(&photo_at(root, "/photos/a.png", 0, "not-a-date"))
+            .unwrap();
+        // `photo_at` sets captured_at_utc to 0 => 1970-01-01 UTC.
+        let entry = db
+            .photo_index(PhotoSort::Newest)
+            .unwrap()
+            .into_iter()
+            .find(|entry| entry.id == id)
+            .unwrap();
+        assert_eq!(entry.captured_day, 19700101);
     }
 
     #[test]
