@@ -20,9 +20,9 @@ use crate::model::{
     DeletionBlockers, DeletionCounts, DeletionJobSummary, DeletionReason, DeletionRequest,
     DeletionStatus, Derivative, JobStatusCounts, LibraryRoot, LibraryStats, MAX_JOB_RETRIES,
     MAX_PROFILE_NAME_CHARS, NewPhoto, Photo, PhotoContext, PhotoFilter, PhotoIndexEntry,
-    PhotoPlayer, PhotoSort, PhotoStatus, PhotoTextFilter, QueueStatus, SendCompletion,
-    SendErrorCode, SendHistoryEntry, SendKind, SendOrigin, SendOutboxEntry, SendSource, SendStatus,
-    Session, SessionPlayer, World, WorldPhotoCount,
+    PhotoPlayer, PhotoSort, PhotoStatus, PhotoTextFilter, QueueStatus, SearchSuggestion,
+    SendCompletion, SendErrorCode, SendHistoryEntry, SendKind, SendOrigin, SendOutboxEntry,
+    SendSource, SendStatus, Session, SessionPlayer, World, WorldPhotoCount,
 };
 use crate::world_name::{
     NOT_FOUND_RETRY_SECONDS, REQUEST_INTERVAL_SECONDS, WorldNameFailure, WorldNameLookup,
@@ -1198,6 +1198,111 @@ impl Db {
         values.push(Value::Integer(clamp_limit(limit)));
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map(params_from_iter(values), row_to_photo_index)?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// World-name autocomplete candidates ordered by photo count.
+    pub fn world_name_suggestions(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<SearchSuggestion>> {
+        let query = query.trim();
+        if query.is_empty() {
+            return Ok(Vec::new());
+        }
+        let like = format!("%{}%", escape_like(query));
+        let sql = format!(
+            "SELECT c.world_name AS name, COUNT(DISTINCT p.id) AS photo_count \
+             FROM photo_context c JOIN photos p ON p.id = c.photo_id \
+             WHERE {VISIBLE_STATUS} AND c.world_name IS NOT NULL AND c.world_name <> '' \
+               AND c.world_name LIKE ? ESCAPE '\\' \
+             GROUP BY c.world_name \
+             ORDER BY photo_count DESC, name COLLATE NOCASE ASC LIMIT ?"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(params![like, limit as i64], |row| {
+            Ok(SearchSuggestion {
+                name: row.get(0)?,
+                photo_count: row.get(1)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Player display-name autocomplete candidates ordered by photo count.
+    pub fn player_name_suggestions(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<SearchSuggestion>> {
+        let query = query.trim();
+        if query.is_empty() {
+            return Ok(Vec::new());
+        }
+        let like = format!("%{}%", escape_like(query));
+        let sql = format!(
+            "SELECT pp.display_name AS name, COUNT(DISTINCT pp.photo_id) AS photo_count \
+             FROM photo_players pp JOIN photos p ON p.id = pp.photo_id \
+             WHERE {VISIBLE_STATUS} AND pp.display_name IS NOT NULL AND pp.display_name <> '' \
+               AND pp.display_name LIKE ? ESCAPE '\\' \
+             GROUP BY pp.display_name \
+             ORDER BY photo_count DESC, name COLLATE NOCASE ASC LIMIT ?"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(params![like, limit as i64], |row| {
+            Ok(SearchSuggestion {
+                name: row.get(0)?,
+                photo_count: row.get(1)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Tag-name autocomplete candidates from manual and applied AI tags.
+    ///
+    /// AI names follow the UI locale; `prefer_english` selects `name_en` when
+    /// available. Rows with the same display name merge, and a photo tagged
+    /// both manually and by the AI plugin is counted once.
+    pub fn tag_name_suggestions(
+        &self,
+        query: &str,
+        limit: usize,
+        prefer_english: bool,
+    ) -> Result<Vec<SearchSuggestion>> {
+        let query = query.trim();
+        if query.is_empty() {
+            return Ok(Vec::new());
+        }
+        let like = format!("%{}%", escape_like(query));
+        let sql = format!(
+            "WITH candidates(name, photo_id) AS ( \
+                 SELECT t.name, pt.photo_id \
+                 FROM tags t JOIN photo_tags pt ON pt.tag_id = t.id \
+                 UNION ALL \
+                 SELECT CASE WHEN ?1 THEN COALESCE(d.name_en, d.name) ELSE d.name END, \
+                        at.photo_id \
+                 FROM photo_ai_tags at \
+                 JOIN ai_tag_definitions d \
+                   ON d.plugin_id = at.plugin_id AND d.tag_key = at.tag_key \
+                 WHERE at.applied = 1 AND at.plugin_id = ?4 \
+             ) \
+             SELECT c.name AS name, COUNT(DISTINCT c.photo_id) AS photo_count \
+             FROM candidates c JOIN photos p ON p.id = c.photo_id \
+             WHERE {VISIBLE_STATUS} AND c.name <> '' AND c.name LIKE ?2 ESCAPE '\\' \
+             GROUP BY c.name \
+             ORDER BY photo_count DESC, c.name COLLATE NOCASE ASC LIMIT ?3"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(
+            params![i64::from(prefer_english), like, limit as i64, AI_PLUGIN_ID],
+            |row| {
+                Ok(SearchSuggestion {
+                    name: row.get(0)?,
+                    photo_count: row.get(1)?,
+                })
+            },
+        )?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
@@ -5734,10 +5839,21 @@ fn build_text_filter(filter: &PhotoTextFilter) -> (String, Vec<Value>) {
     {
         let like = format!("%{}%", escape_like(query));
         clauses.push(
-            "EXISTS (SELECT 1 FROM photo_tags pt JOIN tags t ON t.id = pt.tag_id \
-             WHERE pt.photo_id = p.id AND t.name LIKE ? ESCAPE '\\')"
+            "(EXISTS (SELECT 1 FROM photo_tags pt JOIN tags t ON t.id = pt.tag_id \
+             WHERE pt.photo_id = p.id AND t.name LIKE ? ESCAPE '\\') \
+             OR EXISTS (SELECT 1 FROM photo_ai_tags at \
+             JOIN ai_tag_definitions d \
+               ON d.plugin_id = at.plugin_id AND d.tag_key = at.tag_key \
+             WHERE at.photo_id = p.id AND at.applied = 1 AND at.plugin_id = ? \
+               AND (d.name LIKE ? ESCAPE '\\' \
+                    OR COALESCE(d.name_en, d.name) LIKE ? ESCAPE '\\' \
+                    OR d.tag_key LIKE ? ESCAPE '\\')))"
                 .to_string(),
         );
+        values.push(Value::Text(like.clone()));
+        values.push(Value::Text(AI_PLUGIN_ID.to_string()));
+        values.push(Value::Text(like.clone()));
+        values.push(Value::Text(like.clone()));
         values.push(Value::Text(like));
     }
 
@@ -7679,6 +7795,251 @@ mod tests {
         }
         let entries = db.photo_index_text(&PhotoTextFilter::default()).unwrap();
         assert_eq!(entries.len(), 305);
+    }
+
+    fn set_context(db: &Db, photo_id: i64, world_name: Option<&str>) {
+        db.set_photo_context(&PhotoContext {
+            photo_id,
+            session_id: None,
+            world_id: None,
+            world_name: world_name.map(str::to_string),
+            instance_id: None,
+            link_method: "manual".to_string(),
+            confidence: 1.0,
+            author: None,
+            linked_at: now_string(),
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn world_suggestions_match_partial_names_with_visible_counts() {
+        let db = Db::open_in_memory().unwrap();
+        let root = db.add_root("/photos", "reference").unwrap();
+        let a = db
+            .upsert_photo(&photo_at(root, "/photos/a.png", 1, "2025-04-30 09:00:00"))
+            .unwrap();
+        let b = db
+            .upsert_photo(&photo_at(root, "/photos/b.png", 2, "2025-04-30 09:00:00"))
+            .unwrap();
+        let c = db
+            .upsert_photo(&photo_at(root, "/photos/c.png", 3, "2025-04-30 09:00:00"))
+            .unwrap();
+        let missing = db
+            .upsert_photo(&photo_at(root, "/photos/m.png", 4, "2025-04-30 09:00:00"))
+            .unwrap();
+        for (photo_id, name) in [
+            (a, "Sunset Pier"),
+            (b, "Sunset Pier"),
+            (c, "Sunset Bar"),
+            (missing, "Sunset Missing"),
+        ] {
+            set_context(&db, photo_id, Some(name));
+        }
+        db.mark_missing(missing).unwrap();
+
+        let rows = db.world_name_suggestions("sun", 10).unwrap();
+        assert_eq!(
+            rows,
+            vec![
+                SearchSuggestion {
+                    name: "Sunset Pier".into(),
+                    photo_count: 2,
+                },
+                SearchSuggestion {
+                    name: "Sunset Bar".into(),
+                    photo_count: 1,
+                },
+            ]
+        );
+        assert!(db.world_name_suggestions("  ", 10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn player_suggestions_group_names_and_count_distinct_photos() {
+        let db = Db::open_in_memory().unwrap();
+        let root = db.add_root("/photos", "reference").unwrap();
+        let a = db
+            .upsert_photo(&photo_at(root, "/photos/a.png", 1, "2025-04-30 09:00:00"))
+            .unwrap();
+        let b = db
+            .upsert_photo(&photo_at(root, "/photos/b.png", 2, "2025-04-30 09:00:00"))
+            .unwrap();
+        let c = db
+            .upsert_photo(&photo_at(root, "/photos/c.png", 3, "2025-04-30 09:00:00"))
+            .unwrap();
+        db.set_photo_players(
+            a,
+            &[PhotoPlayer {
+                user_id: "usr_1".into(),
+                display_name: "Mio".into(),
+            }],
+        )
+        .unwrap();
+        db.set_photo_players(
+            b,
+            &[PhotoPlayer {
+                user_id: "usr_2".into(),
+                display_name: "Mio".into(),
+            }],
+        )
+        .unwrap();
+        db.set_photo_players(
+            c,
+            &[PhotoPlayer {
+                user_id: "usr_3".into(),
+                display_name: "Mika".into(),
+            }],
+        )
+        .unwrap();
+
+        let rows = db.player_name_suggestions("mi", 10).unwrap();
+        assert_eq!(
+            rows,
+            vec![
+                SearchSuggestion {
+                    name: "Mio".into(),
+                    photo_count: 2,
+                },
+                SearchSuggestion {
+                    name: "Mika".into(),
+                    photo_count: 1,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn suggestions_escape_like_metacharacters_and_honor_the_limit() {
+        let db = Db::open_in_memory().unwrap();
+        let root = db.add_root("/photos", "reference").unwrap();
+        for (index, name) in ["100%_World", "100XWorld", "Percent"].iter().enumerate() {
+            let photo = db
+                .upsert_photo(&photo_at(
+                    root,
+                    &format!("/photos/{index}.png"),
+                    index as i64,
+                    "2025-04-30 09:00:00",
+                ))
+                .unwrap();
+            set_context(&db, photo, Some(name));
+        }
+
+        let rows = db.world_name_suggestions("100%", 10).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].name, "100%_World");
+        assert_eq!(db.world_name_suggestions("o", 1).unwrap().len(), 1);
+    }
+
+    fn seed_photo_at(db: &Db, path: &str) -> i64 {
+        let root = db.add_root("/photos", "reference").unwrap();
+        db.upsert_photo(&sample_photo(root, path, 1_700_000_000))
+            .unwrap()
+    }
+
+    #[test]
+    fn tag_suggestions_merge_manual_and_applied_ai_tags() {
+        let db = Db::open_in_memory().unwrap();
+        install_test_catalog(&db);
+        let a = seed_photo(&db);
+        let b = seed_photo_at(&db, "/photos/b.png");
+        let c = seed_photo_at(&db, "/photos/c.png");
+        db.set_photo_tags(a, &["夜景".into()]).unwrap();
+        db.set_photo_tags(b, &["夜景".into()]).unwrap();
+        seed_ai_tag(&db, c, AI_PLUGIN, "sea", 0.97, true);
+        seed_ai_tag(&db, c, AI_PLUGIN, "park", 0.97, false);
+
+        assert_eq!(
+            db.tag_name_suggestions("夜", 10, false).unwrap(),
+            vec![SearchSuggestion {
+                name: "夜景".into(),
+                photo_count: 2,
+            }]
+        );
+        assert_eq!(
+            db.tag_name_suggestions("海", 10, false).unwrap(),
+            vec![SearchSuggestion {
+                name: "海".into(),
+                photo_count: 1,
+            }]
+        );
+        assert_eq!(
+            db.tag_name_suggestions("Sea", 10, true).unwrap(),
+            vec![SearchSuggestion {
+                name: "Sea".into(),
+                photo_count: 1,
+            }]
+        );
+        assert!(db.tag_name_suggestions("公", 10, false).unwrap().is_empty());
+    }
+
+    #[test]
+    fn tag_suggestions_merge_same_name_and_skip_unapplied() {
+        let db = Db::open_in_memory().unwrap();
+        install_test_catalog(&db);
+        let a = seed_photo(&db);
+        let b = seed_photo_at(&db, "/photos/b.png");
+        db.set_photo_tags(a, &["海".into()]).unwrap();
+        seed_ai_tag(&db, a, AI_PLUGIN, "sea", 0.97, true);
+        seed_ai_tag(&db, b, AI_PLUGIN, "sea", 0.97, true);
+
+        let rows = db.tag_name_suggestions("海", 10, false).unwrap();
+        assert_eq!(
+            rows,
+            vec![SearchSuggestion {
+                name: "海".into(),
+                photo_count: 2,
+            }]
+        );
+    }
+
+    #[test]
+    fn tag_text_filter_matches_applied_ai_tag_names_and_keys() {
+        let db = Db::open_in_memory().unwrap();
+        install_test_catalog(&db);
+        let photo = seed_photo(&db);
+        seed_ai_tag(&db, photo, AI_PLUGIN, "sea", 0.97, true);
+
+        for query in ["海", "Sea", "sea"] {
+            let filter = PhotoTextFilter {
+                tag: Some(query.into()),
+                ..Default::default()
+            };
+            assert_eq!(db.photo_index_text(&filter).unwrap().len(), 1, "{query}");
+            assert_eq!(
+                db.search_photos_text(&filter, 10, 0).unwrap().len(),
+                1,
+                "{query}"
+            );
+        }
+
+        let unapplied = seed_photo_at(&db, "/photos/unapplied.png");
+        seed_ai_tag(&db, unapplied, AI_PLUGIN, "park", 0.97, false);
+        let filter = PhotoTextFilter {
+            tag: Some("公園".into()),
+            ..Default::default()
+        };
+        assert!(db.photo_index_text(&filter).unwrap().is_empty());
+    }
+
+    #[test]
+    fn ai_tag_text_search_escapes_like_metacharacters() {
+        let db = Db::open_in_memory().unwrap();
+        let catalog = Catalog {
+            version: "2026-11-03.1".into(),
+            outdoor: vec![tag("percent", "100%_tag", Some("100%_tag"), 0.5)],
+            indoor: Vec::new(),
+            atmosphere: Vec::new(),
+        };
+        db.sync_ai_catalog(AI_PLUGIN, &catalog).unwrap();
+        let photo = seed_photo(&db);
+        seed_ai_tag(&db, photo, AI_PLUGIN, "percent", 0.97, true);
+
+        let filter = PhotoTextFilter {
+            tag: Some("100%".into()),
+            ..Default::default()
+        };
+        assert_eq!(db.photo_index_text(&filter).unwrap().len(), 1);
     }
 
     #[test]

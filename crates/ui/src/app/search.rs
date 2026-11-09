@@ -34,6 +34,14 @@ pub(crate) fn ai_filter_is_active(filter: &PhotoTextFilter) -> bool {
     !filter.ai.tags.is_empty() || filter.ai.people_count.is_some()
 }
 
+/// Whether an AI tagging change can alter this applied search.
+///
+/// The tag text now also matches applied AI tag names, so a tag-only filter
+/// must refresh when thresholds or tagging results change.
+pub(crate) fn ai_edit_refreshes_search(filter: &PhotoTextFilter) -> bool {
+    ai_filter_is_active(filter) || has_tag_filter(filter)
+}
+
 /// When a tag or AI-tag edit should refresh the applied search.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum FilterRefreshAction {
@@ -81,6 +89,7 @@ pub(crate) fn build_ai_filter(tags: Vec<String>, people_input: &str) -> AiPhotoF
 
 impl App {
     pub(crate) fn run_search(&mut self, cx: &mut Context<Self>) {
+        self.close_suggestion(cx);
         // Build the filter before the in-flight guard: favorite/date/AI edits
         // made while a query runs must replace the draft immediately.
         let world = self.world_input.read(cx).value().to_string();
@@ -234,6 +243,7 @@ impl App {
     }
 
     pub(crate) fn clear_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.close_suggestion(cx);
         if !self.selected_ids.is_empty() {
             self.clear_selection(cx);
         }
@@ -262,7 +272,7 @@ impl App {
     }
 
     pub(crate) fn refresh_search_after_ai_tag_edit(&mut self, cx: &mut Context<Self>) {
-        self.refresh_search_after_filter(ai_filter_is_active, cx);
+        self.refresh_search_after_filter(ai_edit_refreshes_search, cx);
     }
 
     fn refresh_search_after_filter(
@@ -327,8 +337,8 @@ pub(crate) const DEFAULT_SEARCH_DAYS: Option<i64> = None;
 #[cfg(test)]
 mod tests {
     use super::{
-        FilterRefreshAction, ai_filter_is_active, build_ai_filter, filter_refresh_action,
-        has_tag_filter, parse_people_count, take_requested_search_anchor,
+        FilterRefreshAction, ai_edit_refreshes_search, ai_filter_is_active, build_ai_filter,
+        filter_refresh_action, has_tag_filter, parse_people_count, take_requested_search_anchor,
     };
     use crate::app::Screen;
     use vrc_photon_core::model::{AiPhotoFilter, PhotoTextFilter};
@@ -377,6 +387,25 @@ mod tests {
                 tags: Vec::new(),
                 people_count: Some(0),
             },
+            ..Default::default()
+        }));
+    }
+
+    #[test]
+    fn ai_tag_edits_refresh_tag_text_only_searches() {
+        assert!(ai_edit_refreshes_search(&PhotoTextFilter {
+            tag: Some("海".into()),
+            ..Default::default()
+        }));
+        assert!(ai_edit_refreshes_search(&PhotoTextFilter {
+            ai: AiPhotoFilter {
+                tags: vec!["sea".into()],
+                people_count: None,
+            },
+            ..Default::default()
+        }));
+        assert!(!ai_edit_refreshes_search(&PhotoTextFilter {
+            world: Some("Sunset".into()),
             ..Default::default()
         }));
     }

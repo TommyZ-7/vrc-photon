@@ -945,6 +945,7 @@ impl App {
     /// dirty while another screen was mounted.
     pub(crate) fn switch_screen(&mut self, screen: Screen, cx: &mut Context<Self>) {
         if self.screen != screen {
+            self.close_suggestion(cx);
             self.nav_previous = self.screen;
             self.nav_epoch = self.nav_epoch.wrapping_add(1);
             self.screen_direction = screen_direction(self.screen, screen);

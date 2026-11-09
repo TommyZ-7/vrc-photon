@@ -15,6 +15,7 @@ pub(crate) mod lifecycle;
 pub(crate) mod live;
 pub(crate) mod photos;
 pub(crate) mod search;
+pub(crate) mod search_suggest;
 pub(crate) mod tag_edit;
 pub(crate) mod viewer;
 
@@ -381,6 +382,12 @@ pub struct App {
     pub(crate) search_days: Option<i64>,
     pub(crate) search_ai_tags: Vec<String>,
     pub(crate) search_people_input: Entity<InputState>,
+    pub(crate) suggestion: Option<search_suggest::SuggestionState>,
+    pub(crate) suggestion_request: u64,
+    pub(crate) suggestion_bounds:
+        Rc<RefCell<HashMap<search_suggest::SuggestionKind, Bounds<Pixels>>>>,
+    pub(crate) _search_suggestion_subscriptions: Vec<Subscription>,
+    pub(crate) _suggestion_keys: Subscription,
     pub(crate) daemon_shutdown_armed: bool,
     pub(crate) pending_toasts: Vec<ToastSpec>,
     pub(crate) toast_flush_scheduled: bool,
@@ -631,6 +638,28 @@ impl App {
         let player_input =
             cx.new(|cx| InputState::new(window, cx).placeholder(tr!("input.player")));
         let tag_input = cx.new(|cx| InputState::new(window, cx).placeholder(tr!("input.tag")));
+        let world_suggestion_subscription =
+            cx.subscribe(&world_input, |this, _, event: &InputEvent, cx| {
+                this.on_suggestion_event(search_suggest::SuggestionKind::World, event, cx);
+            });
+        let player_suggestion_subscription =
+            cx.subscribe(&player_input, |this, _, event: &InputEvent, cx| {
+                this.on_suggestion_event(search_suggest::SuggestionKind::Player, event, cx);
+            });
+        let tag_suggestion_subscription =
+            cx.subscribe(&tag_input, |this, _, event: &InputEvent, cx| {
+                this.on_suggestion_event(search_suggest::SuggestionKind::Tag, event, cx);
+            });
+        let suggestion_entity = cx.entity().downgrade();
+        let suggestion_keys = cx.intercept_keystrokes(move |event, window, cx| {
+            let Some(app) = suggestion_entity.upgrade() else {
+                return;
+            };
+            let handled = app.update(cx, |app, cx| app.handle_suggestion_key(event, window, cx));
+            if handled {
+                cx.stop_propagation();
+            }
+        });
         let search_people_input = cx
             .new(|cx| InputState::new(window, cx).placeholder(tr!("search.ai.people_placeholder")));
         let ai_tag_picker_query = cx.new(|cx| {
@@ -1167,6 +1196,15 @@ impl App {
             search_days: crate::app::search::DEFAULT_SEARCH_DAYS,
             search_ai_tags: Vec::new(),
             search_people_input,
+            suggestion: None,
+            suggestion_request: 0,
+            suggestion_bounds: Rc::new(RefCell::new(HashMap::new())),
+            _search_suggestion_subscriptions: vec![
+                world_suggestion_subscription,
+                player_suggestion_subscription,
+                tag_suggestion_subscription,
+            ],
+            _suggestion_keys: suggestion_keys,
             daemon_shutdown_armed: false,
             pending_toasts: Vec::new(),
             toast_flush_scheduled: false,

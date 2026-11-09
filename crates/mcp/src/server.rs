@@ -32,7 +32,7 @@ pub struct SearchPhotosParams {
     /// Player display name or user ID substring.
     #[serde(default)]
     pub player: Option<String>,
-    /// Manual tag substring.
+    /// Manual tag or applied AI tag name/key substring.
     #[serde(default)]
     pub tag: Option<String>,
     /// Applied AI tag keys, matched with OR.
@@ -80,7 +80,7 @@ impl PhotoNMcp {
     }
 
     #[tool(
-        description = "Search the VRC PhotoN library by world, player, manual tag, AI tag, capture time, or favorite. Returns IDs, display paths, capture times, worlds, and players."
+        description = "Search the VRC PhotoN library by world, player, manual or AI tag, capture time, or favorite. Returns IDs, display paths, capture times, worlds, and players."
     )]
     async fn search_photos(
         &self,
@@ -421,7 +421,7 @@ mod tests {
             .search_photos(Parameters(SearchPhotosParams {
                 world: Some(" World ".to_string()),
                 player: None,
-                tag: Some("beach".to_string()),
+                tag: Some("海".to_string()),
                 ai_tags: vec!["sea".to_string()],
                 captured_from: Some("2026-11-09T00:00:00Z".to_string()),
                 captured_to: Some("2026-11-09T23:59:59Z".to_string()),
@@ -451,7 +451,7 @@ mod tests {
                 ..
             } => {
                 assert_eq!(world.as_deref(), Some(" World "));
-                assert_eq!(tag.as_deref(), Some("beach"));
+                assert_eq!(tag.as_deref(), Some("海"));
                 assert_eq!(ai_tags, &vec!["sea".to_string()]);
                 assert_eq!(from_utc, &Some(1_794_182_400));
                 assert_eq!(to_utc, &Some(1_794_268_799));

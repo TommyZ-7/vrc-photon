@@ -16,6 +16,7 @@ pub(crate) mod library;
 pub(crate) mod notifications;
 pub(crate) mod palette;
 pub(crate) mod search;
+pub(crate) mod search_suggest;
 pub(crate) mod settings;
 pub(crate) mod shell;
 pub(crate) mod tag_edit;
