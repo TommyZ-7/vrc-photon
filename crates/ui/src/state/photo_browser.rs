@@ -449,6 +449,7 @@ impl PhotoBrowser {
             header_height,
             date_label_height,
             &self.collapsed_sessions,
+            &HashSet::new(),
         ));
         self.session_rows_key = Some(key);
         self.session_rows = Some(rows.clone());

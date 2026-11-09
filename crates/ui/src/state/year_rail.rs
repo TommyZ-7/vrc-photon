@@ -542,14 +542,22 @@ mod tests {
             session_entry(8, 20261108, Some(2)),
             session_entry(7, 20261108, Some(2)),
         ];
-        let rows = SessionRows::build(&entries, 2, 200.0, 92.0, 46.0, &HashSet::new());
+        let rows = SessionRows::build(
+            &entries,
+            2,
+            200.0,
+            92.0,
+            46.0,
+            &HashSet::new(),
+            &HashSet::new(),
+        );
         let offset = rows.offset_for_photo(2).unwrap();
         assert_eq!(session_rail_scroll_offset(&rows, 2, 10_000.0), -offset);
         assert_eq!(session_rail_scroll_offset(&rows, 2, offset), -offset);
         assert_eq!(session_rail_scroll_offset(&rows, 99, 10_000.0), 0.0);
 
         let collapsed = HashSet::from([1]);
-        let rows = SessionRows::build(&entries, 2, 200.0, 92.0, 46.0, &collapsed);
+        let rows = SessionRows::build(&entries, 2, 200.0, 92.0, 46.0, &collapsed, &HashSet::new());
         assert_eq!(
             session_rail_scroll_offset(&rows, 1, 10_000.0),
             -rows.offset_for_session(1).unwrap()

@@ -5,6 +5,7 @@
 //! rendering and loading stay in the UI and browser layers.
 
 use std::collections::{HashMap, HashSet};
+use std::ops::Range;
 
 use vrc_photon_core::model::PhotoIndexEntry;
 
@@ -58,6 +59,9 @@ pub(crate) struct SessionRows {
     leading_rows: HashMap<usize, usize>,
     /// Photo range hidden by each collapsed session, with its header row.
     hidden_session_ranges: Vec<(usize, usize, usize)>,
+    /// Row ranges carrying each session's photos. A session that is split by
+    /// unlinked photos has more than one range.
+    session_photo_rows: HashMap<i64, Vec<Range<usize>>>,
     photo_count: usize,
 }
 
@@ -69,6 +73,7 @@ impl SessionRows {
         header_height: f32,
         date_label_height: f32,
         collapsed: &HashSet<i64>,
+        animating: &HashSet<i64>,
     ) -> Self {
         let columns = columns.max(1);
         let mut total_counts: HashMap<i64, usize> = HashMap::new();
@@ -85,6 +90,7 @@ impl SessionRows {
         let mut header_rows = HashMap::new();
         let mut leading_rows = HashMap::new();
         let mut hidden_session_ranges = Vec::new();
+        let mut session_photo_rows: HashMap<i64, Vec<Range<usize>>> = HashMap::new();
         let mut seen_sessions = HashSet::new();
         let mut index = 0;
 
@@ -112,11 +118,12 @@ impl SessionRows {
                     header_rows.insert(session_id, row);
                     leading_rows.insert(start, row);
                 }
-                if is_collapsed {
+                if is_collapsed && !animating.contains(&session_id) {
                     if let Some(header_row) = header_rows.get(&session_id) {
                         hidden_session_ranges.push((start, index, *header_row));
                     }
                 } else {
+                    let first_row = rows.len();
                     push_photo_rows(
                         &mut rows,
                         &mut heights,
@@ -127,6 +134,13 @@ impl SessionRows {
                         columns,
                         photo_row_height,
                     );
+                    let end_row = rows.len();
+                    if first_row < end_row {
+                        session_photo_rows
+                            .entry(session_id)
+                            .or_default()
+                            .push(first_row..end_row);
+                    }
                 }
             } else {
                 let start = index;
@@ -181,6 +195,7 @@ impl SessionRows {
             header_rows,
             leading_rows,
             hidden_session_ranges,
+            session_photo_rows,
             photo_count: entries.len(),
         }
     }
@@ -191,6 +206,27 @@ impl SessionRows {
 
     pub(crate) fn heights(&self) -> &[f32] {
         &self.heights
+    }
+
+    /// Row heights after applying per-session collapse progress. `0.0` leaves
+    /// the session expanded and `1.0` collapses its photo rows to zero.
+    pub(crate) fn heights_with_collapse(&self, factors: &HashMap<i64, f32>) -> Vec<f32> {
+        if factors.is_empty() {
+            return self.heights.clone();
+        }
+        let mut heights = self.heights.clone();
+        for (session_id, factor) in factors {
+            let Some(ranges) = self.session_photo_rows.get(session_id) else {
+                continue;
+            };
+            let visible = 1.0 - factor.clamp(0.0, 1.0);
+            for range in ranges {
+                for height in &mut heights[range.clone()] {
+                    *height *= visible;
+                }
+            }
+        }
+        heights
     }
 
     /// Photo shown at the top of the viewport for a non-negative scroll
@@ -285,7 +321,7 @@ fn push_photo_rows(
 #[cfg(test)]
 mod tests {
     use super::{SessionRowKind, SessionRows};
-    use std::collections::HashSet;
+    use std::collections::{HashMap, HashSet};
     use vrc_photon_core::model::PhotoIndexEntry;
 
     fn entry(id: i64, day: i32, session: Option<i64>) -> PhotoIndexEntry {
@@ -306,7 +342,15 @@ mod tests {
             entry(3, 20261108, Some(8)),
             entry(2, 20261108, Some(8)),
         ];
-        let rows = SessionRows::build(&entries, 2, 200.0, 92.0, 46.0, &HashSet::new());
+        let rows = SessionRows::build(
+            &entries,
+            2,
+            200.0,
+            92.0,
+            46.0,
+            &HashSet::new(),
+            &HashSet::new(),
+        );
         assert_eq!(
             rows.rows().iter().map(|row| row.kind()).collect::<Vec<_>>(),
             vec![
@@ -342,7 +386,15 @@ mod tests {
             entry(3, 20261108, None),
             entry(2, 20261108, Some(3)),
         ];
-        let rows = SessionRows::build(&entries, 2, 200.0, 92.0, 46.0, &HashSet::new());
+        let rows = SessionRows::build(
+            &entries,
+            2,
+            200.0,
+            92.0,
+            46.0,
+            &HashSet::new(),
+            &HashSet::new(),
+        );
         assert_eq!(
             rows.rows().iter().map(|row| row.kind()).collect::<Vec<_>>(),
             vec![
@@ -383,7 +435,7 @@ mod tests {
             entry(2, 20261108, Some(8)),
         ];
         let collapsed = HashSet::from([7]);
-        let rows = SessionRows::build(&entries, 2, 200.0, 92.0, 46.0, &collapsed);
+        let rows = SessionRows::build(&entries, 2, 200.0, 92.0, 46.0, &collapsed, &HashSet::new());
         assert_eq!(
             rows.rows().iter().map(|row| row.kind()).collect::<Vec<_>>(),
             vec![
@@ -417,7 +469,15 @@ mod tests {
             entry(2, 20261109, None),
             entry(1, 20261109, Some(7)),
         ];
-        let rows = SessionRows::build(&entries, 2, 200.0, 92.0, 46.0, &HashSet::new());
+        let rows = SessionRows::build(
+            &entries,
+            2,
+            200.0,
+            92.0,
+            46.0,
+            &HashSet::new(),
+            &HashSet::new(),
+        );
         assert_eq!(
             rows.rows().iter().map(|row| row.kind()).collect::<Vec<_>>(),
             vec![
@@ -451,7 +511,15 @@ mod tests {
         let entries: Vec<_> = (0..10)
             .map(|index| entry(10 - index, 20261109, Some(index / 2)))
             .collect();
-        let rows = SessionRows::build(&entries, 2, 200.0, 92.0, 46.0, &HashSet::new());
+        let rows = SessionRows::build(
+            &entries,
+            2,
+            200.0,
+            92.0,
+            46.0,
+            &HashSet::new(),
+            &HashSet::new(),
+        );
         for photo in (0..10).step_by(2) {
             let offset = rows.offset_for_photo(photo).unwrap();
             assert_eq!(rows.top_photo_index(offset), Some(photo));
@@ -470,7 +538,15 @@ mod tests {
             entry(2, 20261109, None),
             entry(1, 20261109, None),
         ];
-        let rows = SessionRows::build(&entries, 2, 200.0, 92.0, 46.0, &HashSet::new());
+        let rows = SessionRows::build(
+            &entries,
+            2,
+            200.0,
+            92.0,
+            46.0,
+            &HashSet::new(),
+            &HashSet::new(),
+        );
         assert_eq!(rows.anchor_offset_for_photo(0), rows.offset_for_session(7));
         assert_eq!(rows.anchor_offset_for_photo(1), rows.offset_for_photo(1));
         assert!(rows.anchor_offset_for_photo(2).unwrap() < rows.offset_for_photo(2).unwrap());
@@ -480,10 +556,118 @@ mod tests {
     #[test]
     fn row_lookup_handles_unknown_and_out_of_range_photos() {
         let entries = vec![entry(1, 20261109, Some(1))];
-        let rows = SessionRows::build(&entries, 2, 200.0, 92.0, 46.0, &HashSet::new());
+        let rows = SessionRows::build(
+            &entries,
+            2,
+            200.0,
+            92.0,
+            46.0,
+            &HashSet::new(),
+            &HashSet::new(),
+        );
         assert_eq!(rows.row_for_photo(0), Some(1));
         assert_eq!(rows.row_for_photo(1), None);
         assert_eq!(rows.offset_for_session(99), None);
         assert_eq!(rows.offset_for_photo(99), None);
+    }
+
+    #[test]
+    fn an_animating_collapsed_session_keeps_its_photo_rows() {
+        let entries = vec![entry(4, 20261109, Some(7)), entry(3, 20261109, Some(7))];
+        let rows = SessionRows::build(
+            &entries,
+            2,
+            200.0,
+            92.0,
+            46.0,
+            &HashSet::from([7]),
+            &HashSet::from([7]),
+        );
+        assert_eq!(
+            rows.rows().iter().map(|row| row.kind()).collect::<Vec<_>>(),
+            vec![
+                SessionRowKind::Header {
+                    session_id: 7,
+                    photo_count: 2,
+                    collapsed: true
+                },
+                SessionRowKind::Photos {
+                    first_photo: 0,
+                    count: 2
+                },
+            ]
+        );
+        assert_eq!(rows.offset_for_photo(0), Some(92.0));
+    }
+
+    #[test]
+    fn heights_with_collapse_scales_only_the_matching_session_rows() {
+        let entries = vec![
+            entry(6, 20261109, Some(7)),
+            entry(5, 20261109, Some(7)),
+            entry(4, 20261108, Some(8)),
+            entry(3, 20261108, Some(8)),
+        ];
+        let rows = SessionRows::build(
+            &entries,
+            2,
+            200.0,
+            92.0,
+            46.0,
+            &HashSet::new(),
+            &HashSet::new(),
+        );
+        let heights = rows.heights_with_collapse(&HashMap::from([(7, 0.5)]));
+        assert_eq!(heights, vec![92.0, 100.0, 92.0, 200.0]);
+
+        let collapsed = rows.heights_with_collapse(&HashMap::from([(7, 1.0)]));
+        assert_eq!(collapsed, vec![92.0, 0.0, 92.0, 200.0]);
+
+        let expanded = rows.heights_with_collapse(&HashMap::from([(7, 0.0)]));
+        assert_eq!(expanded, rows.heights());
+    }
+
+    #[test]
+    fn a_split_session_scales_every_photo_range() {
+        let entries = vec![
+            entry(4, 20261109, Some(7)),
+            entry(3, 20261109, Some(7)),
+            entry(2, 20261109, None),
+            entry(1, 20261109, Some(7)),
+        ];
+        let rows = SessionRows::build(
+            &entries,
+            1,
+            100.0,
+            40.0,
+            20.0,
+            &HashSet::new(),
+            &HashSet::new(),
+        );
+        let heights = rows.heights_with_collapse(&HashMap::from([(7, 0.25)]));
+        // Header 40, first run 2 photos, date label 20, unlinked photo 1,
+        // split session photo 1.
+        assert_eq!(heights, vec![40.0, 75.0, 75.0, 20.0, 100.0, 75.0]);
+    }
+
+    #[test]
+    fn heights_with_collapse_ignores_unknown_sessions_and_clamps() {
+        let rows = SessionRows::build(
+            &[entry(1, 20261109, Some(7))],
+            1,
+            100.0,
+            40.0,
+            20.0,
+            &HashSet::new(),
+            &HashSet::new(),
+        );
+        assert_eq!(
+            rows.heights_with_collapse(&HashMap::from([(99, 0.5)])),
+            rows.heights()
+        );
+        assert_eq!(
+            rows.heights_with_collapse(&HashMap::from([(7, 2.0)])),
+            vec![40.0, 0.0]
+        );
     }
 }

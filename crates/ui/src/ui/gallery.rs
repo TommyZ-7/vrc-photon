@@ -1922,7 +1922,15 @@ mod tests {
         let entries: Vec<_> = (0..4)
             .map(|id| session_entry(4 - id, 20261109, None))
             .collect();
-        let rows = SessionRows::build(&entries, 2, 200.0, 92.0, 46.0, &HashSet::new());
+        let rows = SessionRows::build(
+            &entries,
+            2,
+            200.0,
+            92.0,
+            46.0,
+            &HashSet::new(),
+            &HashSet::new(),
+        );
         let failed = [failed_page(0, PageFailure::ReadError)];
         let panels =
             session_error_panels(rows.rows(), 0..rows.rows().len(), entries.len(), 2, &failed);
