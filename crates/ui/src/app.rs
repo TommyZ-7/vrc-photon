@@ -80,6 +80,10 @@ use crate::ui::theme::{
 };
 use crate::update_view;
 
+// The UI is built against the GPUI Fast backend; fail the build if the
+// `gpui-fast` feature is ever dropped from the `gpui-kit` dependency.
+const _: () = assert!(gpui_kit::GPUI_FAST);
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum SidebarStatusTab {
     Compression,
