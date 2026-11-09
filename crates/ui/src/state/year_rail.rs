@@ -240,10 +240,13 @@ pub(crate) fn rail_scroll_offset(
 pub(crate) fn session_rail_scroll_offset(
     rows: &SessionRows,
     photo_index: usize,
-    max_offset: f32,
+    _max_offset: f32,
 ) -> f32 {
-    let offset = rows.offset_for_photo(photo_index).unwrap_or(0.0);
-    (-offset).clamp(-max_offset.max(0.0), 0.0)
+    let offset = rows
+        .offset_for_photo(photo_index)
+        .or_else(|| rows.anchor_offset_for_photo(photo_index))
+        .unwrap_or(0.0);
+    -offset
 }
 
 pub(crate) fn rail_text_run(len: usize, color: u32) -> TextRun {
@@ -544,6 +547,13 @@ mod tests {
         assert_eq!(session_rail_scroll_offset(&rows, 2, 10_000.0), -offset);
         assert_eq!(session_rail_scroll_offset(&rows, 2, offset), -offset);
         assert_eq!(session_rail_scroll_offset(&rows, 99, 10_000.0), 0.0);
+
+        let collapsed = HashSet::from([1]);
+        let rows = SessionRows::build(&entries, 2, 200.0, 92.0, 46.0, &collapsed);
+        assert_eq!(
+            session_rail_scroll_offset(&rows, 1, 10_000.0),
+            -rows.offset_for_session(1).unwrap()
+        );
     }
 
     #[test]

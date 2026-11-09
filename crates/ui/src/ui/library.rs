@@ -996,7 +996,16 @@ impl App {
             cx,
             move |this, _, cx| {
                 match this.db.set_favorite(id, !favorite) {
-                    Ok(()) => this.load_selected_meta(id),
+                    Ok(()) => {
+                        if let Ok(Some(context)) = this.db.photo_context(id)
+                            && let Some(session_id) = context.session_id
+                        {
+                            this.library
+                                .borrow_mut()
+                                .invalidate_session_summary(session_id);
+                        }
+                        this.load_selected_meta(id);
+                    }
                     Err(error) => {
                         tracing::warn!(%error, photo_id = id, "cannot update favorite");
                         this.toast_error(tr_args!("photos.favorite.error", error = error), cx);

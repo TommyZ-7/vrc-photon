@@ -1097,8 +1097,14 @@ impl App {
                 None
             }
         };
-        self.library.borrow_mut().remove_photos(removed);
-        self.search_view.borrow_mut().remove_photos(removed);
+        let library_anchor = self.capture_top_photo(false);
+        let search_anchor = self.capture_top_photo(true);
+        self.library
+            .borrow_mut()
+            .remove_photos_with_anchor(removed, library_anchor);
+        self.search_view
+            .borrow_mut()
+            .remove_photos_with_anchor(removed, search_anchor);
         if promoted {
             // Kept cards now display the promoted derivative.
             self.library.borrow_mut().invalidate_pages();

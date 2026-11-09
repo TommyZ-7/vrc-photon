@@ -284,7 +284,7 @@ fn demo_image(index: usize) -> image::RgbaImage {
 /// Creates demo sessions from chronologically adjacent linked photos.
 ///
 /// The fixture returns months newest-first, so group in capture order. A
-/// session is a run of the same world with at most two hours between photos.
+/// session is a run of the same world with at most four hours between photos.
 fn seed_demo_sessions(
     db: &Db,
     fixture: &[demo_fixture::DemoPhoto],

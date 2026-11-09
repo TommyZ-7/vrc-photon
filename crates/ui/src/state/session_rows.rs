@@ -56,6 +56,8 @@ pub(crate) struct SessionRows {
     /// First photo of each header or date-label row. Anchoring to one of
     /// these photos keeps its context row visible.
     leading_rows: HashMap<usize, usize>,
+    /// Photo range hidden by each collapsed session, with its header row.
+    hidden_session_ranges: Vec<(usize, usize, usize)>,
     photo_count: usize,
 }
 
@@ -82,6 +84,7 @@ impl SessionRows {
         let mut row_photo_start = Vec::new();
         let mut header_rows = HashMap::new();
         let mut leading_rows = HashMap::new();
+        let mut hidden_session_ranges = Vec::new();
         let mut seen_sessions = HashSet::new();
         let mut index = 0;
 
@@ -109,7 +112,11 @@ impl SessionRows {
                     header_rows.insert(session_id, row);
                     leading_rows.insert(start, row);
                 }
-                if !is_collapsed {
+                if is_collapsed {
+                    if let Some(header_row) = header_rows.get(&session_id) {
+                        hidden_session_ranges.push((start, index, *header_row));
+                    }
+                } else {
                     push_photo_rows(
                         &mut rows,
                         &mut heights,
@@ -173,6 +180,7 @@ impl SessionRows {
             row_photo_start,
             header_rows,
             leading_rows,
+            hidden_session_ranges,
             photo_count: entries.len(),
         }
     }
@@ -219,7 +227,14 @@ impl SessionRows {
         if let Some(row) = self.leading_rows.get(&photo_index) {
             return Some(self.origins[*row]);
         }
-        self.offset_for_photo(photo_index)
+        if let Some(offset) = self.offset_for_photo(photo_index) {
+            return Some(offset);
+        }
+        let index = self
+            .hidden_session_ranges
+            .partition_point(|(start, _, _)| *start <= photo_index);
+        let (_, end, row) = self.hidden_session_ranges.get(index.checked_sub(1)?)?;
+        (photo_index < *end).then_some(self.origins[*row])
     }
 
     pub(crate) fn row_for_photo(&self, photo_index: usize) -> Option<usize> {
@@ -390,6 +405,8 @@ mod tests {
         );
         assert!(rows.offset_for_photo(0).is_none());
         assert!(rows.offset_for_photo(1).is_none());
+        assert_eq!(rows.anchor_offset_for_photo(0), rows.offset_for_session(7));
+        assert_eq!(rows.anchor_offset_for_photo(1), rows.offset_for_session(7));
     }
 
     #[test]

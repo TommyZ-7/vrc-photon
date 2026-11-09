@@ -32,7 +32,7 @@ use crate::state::photo_browser::{
     FailedPage, PAGE_SIZE, PageFailure, PhotoBrowser, anchor_photo_id, first_visible_photo,
     list_scroll_top, row_for_photo, session_scroll_top, set_session_scroll_offset, visible_month,
 };
-use crate::state::session_rows::SessionRowKind;
+use crate::state::session_rows::{SessionRow, SessionRowKind};
 use crate::state::thumbnail::ThumbnailCache;
 use crate::state::viewer::ViewerOpenSource;
 use crate::state::year_rail::format_captured_month;
@@ -512,6 +512,37 @@ pub(crate) fn page_error_panels(
     panels
 }
 
+/// One error panel per failed page across a mixed session row range.
+fn session_error_panels(
+    rows: &[SessionRow],
+    range: std::ops::Range<usize>,
+    total: usize,
+    columns: usize,
+    failed_pages: &[FailedPage],
+) -> HashMap<usize, PageErrorPanel> {
+    let mut photo_start = usize::MAX;
+    let mut photo_end = 0;
+    for row in rows.get(range).unwrap_or(&[]) {
+        if let SessionRowKind::Photos { first_photo, count } = row.kind() {
+            photo_start = photo_start.min(first_photo);
+            photo_end = photo_end.max(first_photo + count);
+        }
+    }
+    if photo_start >= photo_end {
+        return HashMap::new();
+    }
+    page_error_panels(
+        photo_start,
+        photo_end.min(total),
+        total,
+        columns,
+        failed_pages,
+    )
+    .into_iter()
+    .map(|panel| (panel.photo_index, panel))
+    .collect()
+}
+
 fn render_grid(
     app: &App,
     shared: &Rc<GalleryShared>,
@@ -968,6 +999,30 @@ fn render_session_grid(
             let mut missing_thumbnails: Vec<Arc<Photo>> = Vec::new();
             {
                 let mut browser = list_shared.browser.borrow_mut();
+                let mut visible_start = usize::MAX;
+                let mut visible_end = 0;
+                for row_index in range.clone() {
+                    if let Some(row) = list_rows.rows().get(row_index)
+                        && let SessionRowKind::Photos { first_photo, count } = row.kind()
+                    {
+                        visible_start = visible_start.min(first_photo);
+                        visible_end = visible_end.max(first_photo + count);
+                    }
+                }
+                let failed_pages = if visible_start < visible_end {
+                    browser
+                        .pages
+                        .failed_pages_in_range(visible_start, visible_end)
+                } else {
+                    Vec::new()
+                };
+                let error_panels = session_error_panels(
+                    list_rows.rows(),
+                    range.clone(),
+                    list_index.total,
+                    list_columns,
+                    &failed_pages,
+                );
                 for row_index in range {
                     let Some(row) = list_rows.rows().get(row_index) else {
                         continue;
@@ -1001,17 +1056,6 @@ fn render_session_grid(
                             let start = first_photo;
                             let end = (first_photo + count).min(list_index.total);
                             missing_pages.extend(browser.plan_pages(start, end, 2));
-                            let failed_pages = browser.pages.failed_pages_in_range(start, end);
-                            let error_panels: HashMap<usize, PageErrorPanel> = page_error_panels(
-                                start,
-                                end,
-                                list_index.total,
-                                list_columns,
-                                &failed_pages,
-                            )
-                            .into_iter()
-                            .map(|panel| (panel.photo_index, panel))
-                            .collect();
                             let mut line = h_flex()
                                 .h(px(metrics.row_height))
                                 .w_full()
@@ -1073,7 +1117,9 @@ fn render_session_grid(
                     }
                 }
                 if !missing_summaries.is_empty() {
-                    let planned = browser.plan_session_summaries(missing_summaries, 2);
+                    // One background query per visible batch instead of two
+                    // IDs per frame. The core query caps the list at 256.
+                    let planned = browser.plan_session_summaries(missing_summaries, 32);
                     if !planned.is_empty() {
                         let app_weak = list_shared.app.clone();
                         cx.defer(move |cx| {
@@ -1300,6 +1346,11 @@ fn render_session_header(
         .label(if collapsed { "▸" } else { "▾" })
         .small()
         .ghost()
+        .tooltip(if collapsed {
+            tr!("session.expand")
+        } else {
+            tr!("session.collapse")
+        })
         .on_click(move |_, _, cx| {
             if let Some(app_entity) = app_weak.upgrade() {
                 app_entity.update(cx, |app, cx| {
@@ -1827,10 +1878,14 @@ fn grid_placeholder(palette: &Palette, image_height: f32, card_width: Option<f32
 mod tests {
     use super::{
         CardStringsCache, CardStringsKey, FailedPage, PAGE_SIZE, PageFailure, error_span,
-        filter_chips, page_error_panels, session_player_summary, session_time_label,
+        filter_chips, page_error_panels, session_error_panels, session_player_summary,
+        session_time_label,
     };
+    use crate::state::session_rows::SessionRows;
     use crate::state::test_support::test_photo;
     use chrono::{FixedOffset, TimeZone};
+    use std::collections::HashSet;
+    use vrc_photon_core::model::PhotoIndexEntry;
     use vrc_photon_i18n::MISSING;
 
     fn ts(year: i32, month: u32, day: u32, hour: u32, minute: u32) -> i64 {
@@ -1840,6 +1895,29 @@ mod tests {
             .single()
             .unwrap()
             .timestamp()
+    }
+
+    fn session_entry(id: i64, day: i32, session: Option<i64>) -> PhotoIndexEntry {
+        PhotoIndexEntry {
+            id,
+            captured_at_utc: id,
+            captured_month: day / 100,
+            captured_day: day,
+            session_id: session,
+        }
+    }
+
+    #[test]
+    fn session_error_panels_render_once_per_failed_page() {
+        let entries: Vec<_> = (0..4)
+            .map(|id| session_entry(4 - id, 20261109, None))
+            .collect();
+        let rows = SessionRows::build(&entries, 2, 200.0, 92.0, 46.0, &HashSet::new());
+        let failed = [failed_page(0, PageFailure::ReadError)];
+        let panels =
+            session_error_panels(rows.rows(), 0..rows.rows().len(), entries.len(), 2, &failed);
+        assert_eq!(panels.len(), 1);
+        assert!(panels.contains_key(&0));
     }
 
     #[test]

@@ -903,7 +903,9 @@ impl App {
 
         self.library_error = None;
         self.library_dirty = false;
-        if let Some(id) = anchor {
+        let anchor_present =
+            anchor.is_some_and(|id| self.library.borrow().index.row_of_id(id).is_some());
+        if let Some(id) = anchor.filter(|_| anchor_present) {
             self.scroll_to_photo(false, id, ScrollStrategy::Top);
         } else {
             self.scroll_grid_to_top(false);
@@ -947,6 +949,9 @@ impl App {
             && matches!(screen, Screen::Photos | Screen::Search)
         {
             self.clear_selection(cx);
+        }
+        if self.screen == Screen::Photos && screen != Screen::Photos {
+            self.library.borrow_mut().clear_collapsed_sessions();
         }
         self.screen = screen;
         if screen == Screen::Settings {

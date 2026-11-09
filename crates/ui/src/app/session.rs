@@ -208,7 +208,7 @@ impl App {
 
         let Some(path) = self.db.path().map(std::path::Path::to_path_buf) else {
             match self.db.session_summaries(&ids) {
-                Ok(summaries) => self.apply_session_summaries(generation, summaries, cx),
+                Ok(summaries) => self.apply_session_summaries(generation, &ids, summaries, cx),
                 Err(error) => self.fail_session_summary_load(generation, &ids, error, cx),
             }
             return;
@@ -224,9 +224,9 @@ impl App {
                 })
                 .await;
             this.update(cx, |this, cx| match result {
-                Ok(summaries) => this.apply_session_summaries(generation, summaries, cx),
+                Ok(summaries) => this.apply_session_summaries(generation, &ids, summaries, cx),
                 Err(_) => match this.db.session_summaries(&ids) {
-                    Ok(summaries) => this.apply_session_summaries(generation, summaries, cx),
+                    Ok(summaries) => this.apply_session_summaries(generation, &ids, summaries, cx),
                     Err(error) => this.fail_session_summary_load(generation, &ids, error, cx),
                 },
             })
@@ -238,12 +238,13 @@ impl App {
     fn apply_session_summaries(
         &mut self,
         generation: u64,
+        requested: &[i64],
         summaries: Vec<SessionSummary>,
         cx: &mut Context<Self>,
     ) {
         self.library
             .borrow_mut()
-            .insert_session_summaries(generation, summaries);
+            .insert_session_summaries(generation, requested, summaries);
         cx.notify();
     }
 
