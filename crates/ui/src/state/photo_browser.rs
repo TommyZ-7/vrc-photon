@@ -749,7 +749,11 @@ impl PhotoBrowser {
     /// Clears the ephemeral collapsed-session set (for example when leaving
     /// the Photos screen).
     pub(crate) fn clear_collapsed_sessions(&mut self) {
-        if self.collapsed_sessions.is_empty() && self.session_collapse_motions.is_empty() {
+        if self.collapsed_sessions.is_empty()
+            && self.session_collapse_motions.is_empty()
+            && self.pending_session_anchor.is_none()
+            && self.pending_photo_anchor.is_none()
+        {
             return;
         }
         self.collapsed_sessions.clear();
