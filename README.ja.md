@@ -1,10 +1,8 @@
 [English](README.md) | **日本語**
 
 <p align="center">
-  <img src="packaging/icons/icon.png" width="96" alt="VRC PhotoN">
+  <img src="docs/images/vrc-photon-social.png" alt="VRC PhotoN">
 </p>
-
-# VRC PhotoN
 
 <p align="center">
   <a href="https://github.com/TommyZ-7/vrc-photon/releases"><img src="https://img.shields.io/github/v/release/TommyZ-7/vrc-photon" alt="Release"></a>
@@ -17,9 +15,6 @@ VRChatの写真を、撮ったときのワールド・一緒にいたプレイ�
 
 VRChatのスクリーンショットは、ファイル名だけでは中身が分かりません。VRC PhotoNは写真フォルダを監視し、VRChatの出力ログとPNGのXMPメタデータから「いつ、どこで、誰と撮ったか」を読み取って写真に紐付けます。記録はすべて手元のSQLiteに保存され、写真やログが外部に送信されることはありません。
 
-<p align="center">
-  <img src="docs/images/vrc-photon-social.png" alt="VRC PhotoN">
-</p>
 
 <!-- TODO: 実画面のスクリーンショットを docs/images/main.png に置き、下の行を有効化する
 ![メイン画面](docs/images/main.png)
