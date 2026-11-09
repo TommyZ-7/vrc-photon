@@ -4,13 +4,11 @@
 //! Rendering stays in `ui::search`; these methods only touch App fields and the
 //! search result index.
 
-use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
 
 use chrono::Utc;
 use gpui_kit::*;
-use vrc_photon_core::db::Db;
 use vrc_photon_core::model::{AiPhotoFilter, PhotoIndexEntry, PhotoTextFilter};
 use vrc_photon_i18n::tr_args;
 
@@ -133,8 +131,8 @@ impl App {
         self.search_request = self.search_request.wrapping_add(1);
         let generation = self.search_request;
 
-        let Some(path) = self.db.path().map(Path::to_path_buf) else {
-            // In-memory demo/fallback databases have no second handle to open.
+        let Some(reader) = self.background_reader.clone() else {
+            // In-memory demo/fallback databases have no reusable reader.
             let result = self.db.photo_index_text(&filter);
             self.apply_search_result(generation, result, cx);
             return;
@@ -148,8 +146,7 @@ impl App {
                 .background_executor()
                 .spawn(async move {
                     let search_start = Instant::now();
-                    let result = Db::open_read_only(path)
-                        .and_then(|db| db.photo_index_text(&background_filter));
+                    let result = reader.query(|db| db.photo_index_text(&background_filter));
                     log_timing("search photo_index_text", search_start);
                     result
                 })

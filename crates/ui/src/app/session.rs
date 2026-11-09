@@ -2,7 +2,6 @@
 //! loading, collapse state, and mode-aware scroll anchors.
 
 use gpui_kit::*;
-use vrc_photon_core::db::Db;
 use vrc_photon_core::error::CoreError;
 use vrc_photon_core::model::SessionSummary;
 use vrc_photon_core::settings::PhotosViewMode;
@@ -206,7 +205,7 @@ impl App {
             return;
         }
 
-        let Some(path) = self.db.path().map(std::path::Path::to_path_buf) else {
+        let Some(reader) = self.background_reader.clone() else {
             match self.db.session_summaries(&ids) {
                 Ok(summaries) => self.apply_session_summaries(generation, &ids, summaries, cx),
                 Err(error) => self.fail_session_summary_load(generation, &ids, error, cx),
@@ -218,10 +217,7 @@ impl App {
             let background_ids = ids.clone();
             let result = cx
                 .background_executor()
-                .spawn(async move {
-                    Db::open_read_only(path.as_path())
-                        .and_then(|db| db.session_summaries(&background_ids))
-                })
+                .spawn(async move { reader.query(|db| db.session_summaries(&background_ids)) })
                 .await;
             this.update(cx, |this, cx| match result {
                 Ok(summaries) => this.apply_session_summaries(generation, &ids, summaries, cx),
