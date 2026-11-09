@@ -387,6 +387,7 @@ pub struct App {
     pub(crate) suggestion_bounds:
         Rc<RefCell<HashMap<search_suggest::SuggestionKind, Bounds<Pixels>>>>,
     pub(crate) _search_suggestion_subscriptions: Vec<Subscription>,
+    pub(crate) _suggestion_keys: Subscription,
     pub(crate) daemon_shutdown_armed: bool,
     pub(crate) pending_toasts: Vec<ToastSpec>,
     pub(crate) toast_flush_scheduled: bool,
@@ -649,6 +650,18 @@ impl App {
             cx.subscribe(&tag_input, |this, _, event: &InputEvent, cx| {
                 this.on_suggestion_event(search_suggest::SuggestionKind::Tag, event, cx);
             });
+        let suggestion_entity = cx.entity().downgrade();
+        let suggestion_keys = cx.intercept_keystrokes(move |event, window, cx| {
+            let Some(app) = suggestion_entity.upgrade() else {
+                return;
+            };
+            let handled = app.update(cx, |app, cx| {
+                app.handle_suggestion_key(event, window, cx)
+            });
+            if handled {
+                cx.stop_propagation();
+            }
+        });
         let search_people_input = cx
             .new(|cx| InputState::new(window, cx).placeholder(tr!("search.ai.people_placeholder")));
         let ai_tag_picker_query = cx.new(|cx| {
@@ -1193,6 +1206,7 @@ impl App {
                 player_suggestion_subscription,
                 tag_suggestion_subscription,
             ],
+            _suggestion_keys: suggestion_keys,
             daemon_shutdown_armed: false,
             pending_toasts: Vec::new(),
             toast_flush_scheduled: false,

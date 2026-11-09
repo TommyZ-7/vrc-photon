@@ -16,6 +16,7 @@ use vrc_photon_i18n::{tr, tr_args};
 
 use crate::app::App;
 use crate::app::ai::ai_tag_display_name;
+use crate::app::search_suggest::SuggestionKind;
 use crate::ui::components::{card_header, glass_panel};
 use crate::ui::theme::*;
 
@@ -25,7 +26,7 @@ impl App {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let filters = self.search_filter_panel(cx);
+        let filters = self.search_filter_panel(window, cx);
         let results = self.search_results_card(window, cx);
         h_flex()
             .flex_1()
@@ -97,7 +98,7 @@ impl App {
         card.child(self.search_gallery.clone()).into_any_element()
     }
 
-    fn search_filter_panel(&mut self, cx: &mut Context<Self>) -> AnyElement {
+    fn search_filter_panel(&mut self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let p = self.palette;
         let ai_filter = self.ai_tag_filter_group(cx);
         let ai_people = self.has_ai_search().then(|| {
@@ -138,9 +139,21 @@ impl App {
                     .text_color(rgb(p.muted_2))
                     .child(tr!("search.filter_logic")),
             )
-            .child(self.filter_field(tr!("search.world"), Input::new(&self.world_input)))
-            .child(self.filter_field(tr!("search.player"), Input::new(&self.player_input)))
-            .child(self.filter_field(tr!("search.tag"), Input::new(&self.tag_input)))
+            .child(self.suggestion_field(
+                SuggestionKind::World,
+                tr!("search.world"),
+                Input::new(&self.world_input),
+            ))
+            .child(self.suggestion_field(
+                SuggestionKind::Player,
+                tr!("search.player"),
+                Input::new(&self.player_input),
+            ))
+            .child(self.suggestion_field(
+                SuggestionKind::Tag,
+                tr!("search.tag"),
+                Input::new(&self.tag_input),
+            ))
             .child(ai_filter)
             .when_some(ai_people, |this, people| this.child(people))
             .child(
@@ -206,6 +219,9 @@ impl App {
                             ),
                     ),
             )
+            .when_some(self.suggestion_popup(window, cx), |this, popup| {
+                this.child(popup)
+            })
             .into_any_element()
     }
 

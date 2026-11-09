@@ -9,6 +9,7 @@ use vrc_photon_core::db::Db;
 use vrc_photon_core::model::SearchSuggestion;
 
 use crate::app::{App as PhotoApp, Screen};
+use crate::ui::search_suggest::{SuggestionKeyAction, suggestion_key_action};
 
 pub(crate) const SUGGESTION_LIMIT: usize = 10;
 pub(crate) const SUGGESTION_DEBOUNCE: Duration = Duration::from_millis(120);
@@ -47,6 +48,16 @@ pub(crate) fn suggestion_result_is_current(result: u64, current: u64) -> bool {
 
 pub(crate) fn focus_should_query(dismissed: bool) -> bool {
     !dismissed
+}
+
+fn suggestion_key_action_for_key(
+    key: &str,
+    ime_in_progress: bool,
+) -> Option<SuggestionKeyAction> {
+    if ime_in_progress {
+        return None;
+    }
+    suggestion_key_action(key)
 }
 
 fn query_suggestions(
@@ -255,14 +266,81 @@ impl PhotoApp {
         window.focus(&input.read(cx).focus_handle(cx), cx);
         cx.notify();
     }
+
+    pub(crate) fn handle_suggestion_key(
+        &mut self,
+        event: &KeystrokeEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if self.screen != Screen::Search {
+            return false;
+        }
+        let Some(action) = suggestion_key_action_for_key(
+            &event.keystroke.key,
+            event.keystroke.is_ime_in_progress(),
+        ) else {
+            return false;
+        };
+        let Some(state) = self.suggestion.as_ref() else {
+            return false;
+        };
+        if state.dismissed || state.items.is_empty() {
+            return false;
+        }
+        let kind = state.kind;
+        let focused = self
+            .suggestion_input(kind)
+            .read(&**cx)
+            .focus_handle(&**cx)
+            .is_focused(window);
+        if !focused {
+            return false;
+        }
+
+        match action {
+            SuggestionKeyAction::Previous | SuggestionKeyAction::Next => {
+                let delta = if action == SuggestionKeyAction::Previous {
+                    -1
+                } else {
+                    1
+                };
+                let state = self.suggestion.as_mut().unwrap();
+                state.selected =
+                    move_suggestion_selection(state.selected, state.items.len(), delta);
+                cx.notify();
+                true
+            }
+            SuggestionKeyAction::Confirm => {
+                let index = self.suggestion.as_ref().unwrap().selected;
+                self.select_suggestion(index, window, cx);
+                true
+            }
+            SuggestionKeyAction::Dismiss => {
+                self.dismiss_suggestion(cx);
+                true
+            }
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
         focus_should_query, move_suggestion_selection, normalized_suggestion_query,
-        suggestion_result_is_current,
+        suggestion_key_action_for_key, suggestion_result_is_current,
     };
+    use crate::ui::search_suggest::SuggestionKeyAction;
+
+    #[test]
+    fn ime_keystrokes_are_not_intercepted() {
+        assert_eq!(suggestion_key_action_for_key("enter", true), None);
+        assert_eq!(
+            suggestion_key_action_for_key("enter", false),
+            Some(SuggestionKeyAction::Confirm)
+        );
+        assert_eq!(suggestion_key_action_for_key("up", true), None);
+    }
 
     #[test]
     fn selection_clamps_at_both_ends() {
