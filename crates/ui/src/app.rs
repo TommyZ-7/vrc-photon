@@ -1,6 +1,7 @@
 pub(crate) mod ai;
 pub(crate) mod ai_tag_picker;
 pub(crate) mod ai_thresholds;
+pub(crate) mod background_read;
 pub(crate) mod cli;
 pub(crate) mod compression;
 pub(crate) mod context_menu;
@@ -46,6 +47,7 @@ use vrc_photon_core::thumbnail::ThumbnailCacheUsage;
 use vrc_photon_i18n::{tr, tr_args};
 use vrc_photon_ipc::Endpoint;
 
+use crate::app::background_read::BackgroundReader;
 use crate::app::cli::{log_timing, process_start, timing_enabled};
 use crate::app::compression::{ManualCompressionDialog, profile_name_update};
 use crate::app::daemon::start_daemon;
@@ -131,6 +133,9 @@ pub(crate) enum IntegrationsSection {
 
 pub struct App {
     pub(crate) db: Db,
+    /// Reusable read-only connection for background UI queries. `None` when
+    /// the UI runs on an in-memory demo database.
+    pub(crate) background_reader: Option<Arc<BackgroundReader>>,
     pub(crate) screen: Screen,
     pub(crate) sidebar_collapsed: bool,
     pub(crate) sidebar_status_tab: SidebarStatusTab,
@@ -973,8 +978,10 @@ impl App {
                 cx,
             )
         });
+        let background_reader = BackgroundReader::for_database(&db);
         let mut app = Self {
             db,
+            background_reader,
             screen: Screen::Photos,
             sidebar_collapsed: initial_settings.ui_sidebar_collapsed,
             sidebar_status_tab: SidebarStatusTab::Compression,
