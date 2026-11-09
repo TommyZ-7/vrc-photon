@@ -143,16 +143,19 @@ impl App {
                 SuggestionKind::World,
                 tr!("search.world"),
                 Input::new(&self.world_input),
+                cx,
             ))
             .child(self.suggestion_field(
                 SuggestionKind::Player,
                 tr!("search.player"),
                 Input::new(&self.player_input),
+                cx,
             ))
             .child(self.suggestion_field(
                 SuggestionKind::Tag,
                 tr!("search.tag"),
                 Input::new(&self.tag_input),
+                cx,
             ))
             .child(ai_filter)
             .when_some(ai_people, |this, people| this.child(people))

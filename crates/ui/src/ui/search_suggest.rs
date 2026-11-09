@@ -21,7 +21,6 @@ pub(crate) enum SuggestionKeyAction {
     Previous,
     Next,
     Confirm,
-    Dismiss,
 }
 
 pub(crate) fn suggestion_key_action(key: &str) -> Option<SuggestionKeyAction> {
@@ -29,7 +28,6 @@ pub(crate) fn suggestion_key_action(key: &str) -> Option<SuggestionKeyAction> {
         "up" => Some(SuggestionKeyAction::Previous),
         "down" => Some(SuggestionKeyAction::Next),
         "enter" => Some(SuggestionKeyAction::Confirm),
-        "escape" => Some(SuggestionKeyAction::Dismiss),
         _ => None,
     }
 }
@@ -66,12 +64,20 @@ impl PhotoApp {
         kind: SuggestionKind,
         label: impl Into<String>,
         input: Input,
+        cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let p = self.palette;
         let label: String = label.into();
         let bounds_map = self.suggestion_bounds.clone();
         v_flex()
             .gap(px(6.))
+            .on_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
+                // Escape is left to the input so an active IME composition is
+                // cancelled by the input before the popup is dismissed.
+                if event.keystroke.key == "escape" {
+                    this.dismiss_suggestion(cx);
+                }
+            }))
             .child(
                 div()
                     .text_size(px(10.))
@@ -236,10 +242,11 @@ mod tests {
             suggestion_key_action("enter"),
             Some(SuggestionKeyAction::Confirm)
         );
-        assert_eq!(
-            suggestion_key_action("escape"),
-            Some(SuggestionKeyAction::Dismiss)
-        );
         assert_eq!(suggestion_key_action("a"), None);
+    }
+
+    #[test]
+    fn escape_is_left_to_the_input_and_ime() {
+        assert_eq!(suggestion_key_action("escape"), None);
     }
 }

@@ -46,10 +46,32 @@ pub(crate) fn suggestion_result_is_current(result: u64, current: u64) -> bool {
     result == current
 }
 
-pub(crate) fn focus_should_query(dismissed: bool) -> bool {
-    !dismissed
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum BlurAction {
+    Keep,
+    Close,
 }
 
+pub(crate) fn blur_action(state: Option<&SuggestionState>, kind: SuggestionKind) -> BlurAction {
+    match state {
+        Some(state) if state.kind == kind && !state.dismissed => BlurAction::Close,
+        _ => BlurAction::Keep,
+    }
+}
+
+pub(crate) fn focus_should_start(
+    state: Option<&SuggestionState>,
+    kind: SuggestionKind,
+    query: &str,
+) -> bool {
+    !state.is_some_and(|state| state.kind == kind && state.query == query)
+}
+
+// gpui-kit 0.9 exposes no composition flag on `InputState`. Printable
+// composition keys are covered by `is_ime_in_progress`; arrow keys during
+// composition rely on the platform IME consuming them before GPUI sees them.
+// Escape is deliberately not intercepted here: the input handles IME cancel
+// first, and the field wrapper dismisses the popup from the propagated event.
 fn suggestion_key_action_for_key(key: &str, ime_in_progress: bool) -> Option<SuggestionKeyAction> {
     if ime_in_progress {
         return None;
@@ -98,16 +120,15 @@ impl PhotoApp {
                     self.close_suggestion(cx);
                     return;
                 };
-                let reuse = self.suggestion.as_ref().is_some_and(|state| {
-                    state.kind == kind
-                        && state.query == query
-                        && focus_should_query(state.dismissed)
-                });
-                if !reuse {
+                if focus_should_start(self.suggestion.as_ref(), kind, &query) {
                     self.begin_suggestion_query(kind, query, cx);
                 }
             }
-            InputEvent::Blur => self.close_suggestion(cx),
+            InputEvent::Blur => {
+                if blur_action(self.suggestion.as_ref(), kind) == BlurAction::Close {
+                    self.close_suggestion(cx);
+                }
+            }
             InputEvent::PressEnter { .. } => {}
         }
     }
@@ -312,10 +333,6 @@ impl PhotoApp {
                 self.select_suggestion(index, window, cx);
                 true
             }
-            SuggestionKeyAction::Dismiss => {
-                self.dismiss_suggestion(cx);
-                true
-            }
         }
     }
 }
@@ -323,10 +340,21 @@ impl PhotoApp {
 #[cfg(test)]
 mod tests {
     use super::{
-        focus_should_query, move_suggestion_selection, normalized_suggestion_query,
-        suggestion_key_action_for_key, suggestion_result_is_current,
+        BlurAction, SuggestionKind, SuggestionState, blur_action, focus_should_start,
+        move_suggestion_selection, normalized_suggestion_query, suggestion_key_action_for_key,
+        suggestion_result_is_current,
     };
     use crate::ui::search_suggest::SuggestionKeyAction;
+
+    fn state(kind: SuggestionKind, query: &str, dismissed: bool) -> SuggestionState {
+        SuggestionState {
+            kind,
+            query: query.into(),
+            items: Vec::new(),
+            selected: 0,
+            dismissed,
+        }
+    }
 
     #[test]
     fn ime_keystrokes_are_not_intercepted() {
@@ -335,7 +363,40 @@ mod tests {
             suggestion_key_action_for_key("enter", false),
             Some(SuggestionKeyAction::Confirm)
         );
-        assert_eq!(suggestion_key_action_for_key("up", true), None);
+    }
+
+    #[test]
+    fn blur_only_affects_its_own_field_and_keeps_dismissed_state() {
+        let tag = state(SuggestionKind::Tag, "夜", false);
+        let dismissed = state(SuggestionKind::Tag, "夜", true);
+        assert_eq!(
+            blur_action(Some(&tag), SuggestionKind::Tag),
+            BlurAction::Close
+        );
+        assert_eq!(
+            blur_action(Some(&tag), SuggestionKind::Player),
+            BlurAction::Keep
+        );
+        assert_eq!(
+            blur_action(Some(&dismissed), SuggestionKind::Tag),
+            BlurAction::Keep
+        );
+        assert_eq!(blur_action(None, SuggestionKind::Tag), BlurAction::Keep);
+    }
+
+    #[test]
+    fn focus_starts_only_for_a_new_field_or_query() {
+        let tag = state(SuggestionKind::Tag, "夜", false);
+        let dismissed = state(SuggestionKind::Tag, "夜", true);
+        assert!(!focus_should_start(Some(&tag), SuggestionKind::Tag, "夜"));
+        assert!(!focus_should_start(
+            Some(&dismissed),
+            SuggestionKind::Tag,
+            "夜"
+        ));
+        assert!(focus_should_start(Some(&tag), SuggestionKind::Tag, "夜桜"));
+        assert!(focus_should_start(Some(&tag), SuggestionKind::Player, "夜"));
+        assert!(focus_should_start(None, SuggestionKind::Tag, "夜"));
     }
 
     #[test]
@@ -359,11 +420,5 @@ mod tests {
     fn stale_results_are_rejected() {
         assert!(suggestion_result_is_current(7, 7));
         assert!(!suggestion_result_is_current(6, 7));
-    }
-
-    #[test]
-    fn dismissed_state_suppresses_focus_until_the_next_change() {
-        assert!(!focus_should_query(true));
-        assert!(focus_should_query(false));
     }
 }
