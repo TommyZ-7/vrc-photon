@@ -1,6 +1,8 @@
 //! Photos view-mode wiring: timeline/session switching, session summary
 //! loading, collapse state, and mode-aware scroll anchors.
 
+use std::time::{Duration, Instant};
+
 use gpui_kit::*;
 use vrc_photon_core::error::CoreError;
 use vrc_photon_core::model::SessionSummary;
@@ -10,7 +12,9 @@ use crate::app::App;
 use crate::state::photo_browser::{
     anchor_photo_id, list_scroll_top, session_scroll_top, set_session_scroll_offset,
 };
-use crate::ui::theme::{CARD_ROW_GAP, SESSION_DATE_LABEL_ROW_HEIGHT, SESSION_HEADER_ROW_HEIGHT};
+use crate::ui::theme::{
+    CARD_ROW_GAP, MOTION_BASE, SESSION_DATE_LABEL_ROW_HEIGHT, SESSION_HEADER_ROW_HEIGHT,
+};
 
 #[cfg(test)]
 pub(crate) fn next_view_mode(mode: PhotosViewMode) -> PhotosViewMode {
@@ -18,6 +22,10 @@ pub(crate) fn next_view_mode(mode: PhotosViewMode) -> PhotosViewMode {
         PhotosViewMode::Timeline => PhotosViewMode::Sessions,
         PhotosViewMode::Sessions => PhotosViewMode::Timeline,
     }
+}
+
+fn collapse_motion_duration(reduce_motion: bool) -> Option<Duration> {
+    (!reduce_motion).then_some(MOTION_BASE)
 }
 
 impl App {
@@ -157,9 +165,10 @@ impl App {
             .collapsed_sessions
             .contains(&session_id);
         if collapsed {
-            self.library
-                .borrow_mut()
-                .toggle_session_collapsed(session_id);
+            let mut browser = self.library.borrow_mut();
+            browser.toggle_session_collapsed(session_id);
+            browser.settle_session_collapse(session_id);
+            drop(browser);
             self.ensure_library_session_rows();
         }
     }
@@ -175,7 +184,12 @@ impl App {
             (browser.columns.max(1), browser.row_height, offset)
         };
         let mut browser = self.library.borrow_mut();
-        browser.toggle_session_collapsed(session_id);
+        let collapsed = browser.toggle_session_collapsed(session_id);
+        if let Some(duration) = collapse_motion_duration(cx.reduce_motion()) {
+            browser.animate_session_collapse(session_id, collapsed, duration, Instant::now());
+        } else {
+            browser.settle_session_collapse(session_id);
+        }
         let rows = browser.ensure_session_rows(
             columns,
             row_height,
@@ -261,7 +275,8 @@ impl App {
 
 #[cfg(test)]
 mod tests {
-    use super::next_view_mode;
+    use super::{collapse_motion_duration, next_view_mode};
+    use crate::ui::theme::MOTION_BASE;
     use vrc_photon_core::settings::PhotosViewMode;
 
     #[test]
@@ -274,5 +289,11 @@ mod tests {
             next_view_mode(PhotosViewMode::Sessions),
             PhotosViewMode::Timeline
         );
+    }
+
+    #[test]
+    fn reduce_motion_skips_the_collapse_animation() {
+        assert_eq!(collapse_motion_duration(true), None);
+        assert_eq!(collapse_motion_duration(false), Some(MOTION_BASE));
     }
 }
