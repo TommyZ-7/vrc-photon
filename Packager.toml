@@ -15,7 +15,7 @@ resources = [
 category = "Photography"
 outDir = "dist"
 binariesDir = "target/release"
-beforePackagingCommand = "cargo build --release -p vrc-photon-ui -p vrc-photon-daemon -p vrc-photon-update"
+beforePackagingCommand = "cargo build --release -p vrc-photon-ui -p vrc-photon-daemon -p vrc-photon-update -p vrc-photon-mcp"
 formats = ["deb", "appimage", "pacman"]
 icons = ["packaging/icons/icon.png"]
 
@@ -28,6 +28,9 @@ path = "vrc-photon-daemon"
 
 [[binaries]]
 path = "vrc-photon-updater"
+
+[[binaries]]
+path = "vrc-photon-mcp"
 
 [linux]
 generateDesktopEntry = true
