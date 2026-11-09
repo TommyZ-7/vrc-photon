@@ -37,6 +37,10 @@ pub(crate) const CARD_GAP: f32 = 12.0;
 /// Gap between the library gallery and the inspector column.
 pub(crate) const INSPECTOR_GAP: f32 = 8.0;
 pub(crate) const GALLERY_HEADER_HEIGHT: f32 = 42.0;
+/// Fixed content heights for the mixed session rows. The row model adds
+/// [`CARD_ROW_GAP`] when it hands these to the virtual list.
+pub(crate) const SESSION_HEADER_ROW_HEIGHT: f32 = 78.0;
+pub(crate) const SESSION_DATE_LABEL_ROW_HEIGHT: f32 = 30.0;
 pub(crate) const GALLERY_PAD_X: f32 = 12.0;
 pub(crate) const GALLERY_PAD_TOP: f32 = 10.0;
 pub(crate) const GALLERY_PAD_BOTTOM: f32 = 12.0;

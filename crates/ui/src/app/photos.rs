@@ -22,7 +22,7 @@ use vrc_photon_ipc::Request as IpcRequest;
 use crate::app::cli::log_timing;
 use crate::app::demo::demo_thumb_path;
 use crate::app::{App, Screen};
-use crate::state::photo_browser::{PhotoBrowser, plan_page_retry, row_for_photo};
+use crate::state::photo_browser::{PhotoBrowser, plan_page_retry};
 use crate::state::preview::{
     preview_cache_dir, preview_key, should_apply_preview, should_request_preview,
 };
@@ -589,9 +589,7 @@ impl App {
 
     /// Returns the active grid to its first row without clearing selection.
     pub(crate) fn scroll_grid_to_first_page(&mut self, search: bool, cx: &mut Context<Self>) {
-        self.browser_mut(search)
-            .scroll
-            .scroll_to_item_strict(0, ScrollStrategy::Top);
+        self.scroll_grid_to_top(search);
         cx.notify();
     }
 
@@ -738,11 +736,8 @@ impl App {
             return;
         }
         self.select_photo(target, cx);
-        let browser = self.library.borrow();
-        let row = row_for_photo(&browser.index, target, browser.columns);
-        browser
-            .scroll
-            .scroll_to_item_strict(row, ScrollStrategy::Nearest);
+        self.reveal_photo_session(target);
+        self.scroll_to_photo(false, target, ScrollStrategy::Nearest);
     }
 
     pub(crate) fn trash_selected(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -1102,8 +1097,14 @@ impl App {
                 None
             }
         };
-        self.library.borrow_mut().remove_photos(removed);
-        self.search_view.borrow_mut().remove_photos(removed);
+        let library_anchor = self.capture_top_photo(false);
+        let search_anchor = self.capture_top_photo(true);
+        self.library
+            .borrow_mut()
+            .remove_photos_with_anchor(removed, library_anchor);
+        self.search_view
+            .borrow_mut()
+            .remove_photos_with_anchor(removed, search_anchor);
         if promoted {
             // Kept cards now display the promoted derivative.
             self.library.borrow_mut().invalidate_pages();

@@ -15,25 +15,30 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 
+use chrono::{DateTime, Datelike, TimeZone, Timelike};
+use gpui_kit::base::v_virtual_list;
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::popover::Popover;
 use gpui_kit::component::*;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
-use vrc_photon_core::model::Photo;
+use gpui_kit::{Size as VirtualRowSize, size as virtual_row_size};
+use vrc_photon_core::model::{Photo, SessionSummary};
+use vrc_photon_core::settings::PhotosViewMode;
 use vrc_photon_i18n::{tr, tr_args};
 
 use crate::app::{App, CardBoundsMap, Screen, retain_recent_bounds};
 use crate::state::photo_browser::{
     FailedPage, PAGE_SIZE, PageFailure, PhotoBrowser, anchor_photo_id, first_visible_photo,
-    list_scroll_top, row_for_photo, visible_month,
+    list_scroll_top, row_for_photo, session_scroll_top, set_session_scroll_offset, visible_month,
 };
+use crate::state::session_rows::{SessionRow, SessionRowKind};
 use crate::state::thumbnail::ThumbnailCache;
 use crate::state::viewer::ViewerOpenSource;
 use crate::state::year_rail::format_captured_month;
 use crate::ui::components::{card_header, chip, glass_panel, photo_scene_key, photo_world_label};
 use crate::ui::theme::*;
-use crate::ui::year_rail::{YearRail, YearRailLabels};
+use crate::ui::year_rail::{RailList, YearRail, YearRailLabels};
 
 pub(crate) struct GalleryShared {
     pub(crate) app: WeakEntity<App>,
@@ -130,6 +135,67 @@ impl CardStringsCache {
     }
 }
 
+/// Player list for a session header: first three names plus the remainder.
+pub(crate) fn session_player_summary(players: &[String]) -> String {
+    let separator = tr!("session.player_separator");
+    match players.len() {
+        0 => tr!("session.players.none"),
+        1..=3 => tr_args!("session.players", names = players.join(&separator)),
+        _ => {
+            let names = players[..3].join(&separator);
+            tr_args!(
+                "session.players.more",
+                names = names,
+                count = players.len() - 3
+            )
+        }
+    }
+}
+
+/// Local time range for a session header.
+pub(crate) fn session_time_label<Tz: TimeZone>(
+    started_at: i64,
+    ended_at: Option<i64>,
+    tz: &Tz,
+) -> String {
+    let Some(start) = tz.timestamp_opt(started_at, 0).single() else {
+        return tr!("date.unknown");
+    };
+    let start_text = format_session_moment(&start);
+    let Some(end) = ended_at.and_then(|timestamp| tz.timestamp_opt(timestamp, 0).single()) else {
+        return format!("{start_text} –");
+    };
+    if end.date_naive() == start.date_naive() {
+        format!("{start_text} – {:02}:{:02}", end.hour(), end.minute())
+    } else {
+        format!(
+            "{start_text} – {}/{} {}:{:02}",
+            end.month(),
+            end.day(),
+            end.hour(),
+            end.minute()
+        )
+    }
+}
+
+fn format_session_moment<Tz: TimeZone>(moment: &DateTime<Tz>) -> String {
+    format!(
+        "{}/{} {}:{:02}",
+        moment.month(),
+        moment.day(),
+        moment.hour(),
+        moment.minute()
+    )
+}
+
+fn format_session_day(day: i32) -> String {
+    if day <= 0 {
+        tr!("date.unknown_day")
+    } else {
+        format!("{}/{}", (day / 100) % 100, day % 100)
+    }
+}
+
 pub(crate) struct GalleryView {
     shared: Rc<GalleryShared>,
     _observe: Subscription,
@@ -184,7 +250,11 @@ impl Render for GalleryView {
             render_grid(app, &self.shared, frame, window)
         } else {
             let header = render_header(app, &self.shared, window);
-            let grid = render_grid(app, &self.shared, frame, window);
+            let grid = if app.settings.ui_photos_view_mode == PhotosViewMode::Sessions {
+                render_session_grid(app, &self.shared, frame, window)
+            } else {
+                render_grid(app, &self.shared, frame, window)
+            };
             render_panel(app, header, grid)
         }
     }
@@ -214,6 +284,56 @@ fn render_panel(app: &App, header: AnyElement, grid: AnyElement) -> AnyElement {
         .into_any_element()
 }
 
+fn view_mode_toggle(app: &App, app_entity: WeakEntity<App>) -> AnyElement {
+    let p = app.palette;
+    let current = app.settings.ui_photos_view_mode;
+    let timeline = view_mode_button(
+        "photos-view-mode-timeline",
+        tr!("session.mode.timeline"),
+        current == PhotosViewMode::Timeline,
+        app_entity.clone(),
+        PhotosViewMode::Timeline,
+    );
+    let sessions = view_mode_button(
+        "photos-view-mode-sessions",
+        tr!("session.mode.sessions"),
+        current == PhotosViewMode::Sessions,
+        app_entity,
+        PhotosViewMode::Sessions,
+    );
+    h_flex()
+        .items_center()
+        .gap(px(2.))
+        .p(px(2.))
+        .rounded(px(8.))
+        .border_1()
+        .border_color(rgba(p.line_soft))
+        .bg(rgb(p.panel_deep))
+        .child(timeline)
+        .child(sessions)
+        .into_any_element()
+}
+
+fn view_mode_button(
+    id: &'static str,
+    label: String,
+    active: bool,
+    app_entity: WeakEntity<App>,
+    mode: PhotosViewMode,
+) -> Button {
+    let button = Button::new(SharedString::from(id)).label(label).small();
+    let button = if active {
+        button.primary()
+    } else {
+        button.ghost()
+    };
+    button.on_click(move |_, _, cx| {
+        if let Some(app_entity) = app_entity.upgrade() {
+            app_entity.update(cx, |app, cx| app.set_photos_view_mode(mode, cx));
+        }
+    })
+}
+
 fn render_header(app: &App, shared: &Rc<GalleryShared>, window: &Window) -> AnyElement {
     let p = app.palette;
     let browser = shared.browser.borrow();
@@ -228,12 +348,18 @@ fn render_header(app: &App, shared: &Rc<GalleryShared>, window: &Window) -> AnyE
         app.settings.ui_card_show_world,
         app.settings.ui_card_show_date || app.settings.ui_card_show_size,
     );
-    let first_visible = first_visible_photo(
-        list_scroll_top(&browser.scroll),
-        metrics.columns,
-        metrics.row_height,
-        total,
-    );
+    let first_visible = if app.settings.ui_photos_view_mode == PhotosViewMode::Sessions {
+        browser
+            .top_photo_index(session_scroll_top(&browser.session_scroll))
+            .unwrap_or(0)
+    } else {
+        first_visible_photo(
+            list_scroll_top(&browser.scroll),
+            metrics.columns,
+            metrics.row_height,
+            total,
+        )
+    };
     let (month, month_count) = if total == 0 {
         (tr!("gallery.no_photos"), 0)
     } else {
@@ -269,6 +395,7 @@ fn render_header(app: &App, shared: &Rc<GalleryShared>, window: &Window) -> AnyE
                 ),
         )
         .child(div().flex_1())
+        .child(view_mode_toggle(app, shared.app.clone()))
         .child(filter_popover(&p))
         .child(
             div()
@@ -383,6 +510,37 @@ pub(crate) fn page_error_panels(
     }
     panels.sort_unstable_by_key(|panel| panel.photo_index);
     panels
+}
+
+/// One error panel per failed page across a mixed session row range.
+fn session_error_panels(
+    rows: &[SessionRow],
+    range: std::ops::Range<usize>,
+    total: usize,
+    columns: usize,
+    failed_pages: &[FailedPage],
+) -> HashMap<usize, PageErrorPanel> {
+    let mut photo_start = usize::MAX;
+    let mut photo_end = 0;
+    for row in rows.get(range).unwrap_or(&[]) {
+        if let SessionRowKind::Photos { first_photo, count } = row.kind() {
+            photo_start = photo_start.min(first_photo);
+            photo_end = photo_end.max(first_photo + count);
+        }
+    }
+    if photo_start >= photo_end {
+        return HashMap::new();
+    }
+    page_error_panels(
+        photo_start,
+        photo_end.min(total),
+        total,
+        columns,
+        failed_pages,
+    )
+    .into_iter()
+    .map(|panel| (panel.photo_index, panel))
+    .collect()
 }
 
 fn render_grid(
@@ -717,9 +875,11 @@ fn render_grid(
                     },
                     labels,
                     index,
-                    scroll,
-                    columns,
-                    row_height,
+                    RailList::Timeline {
+                        scroll: scroll.clone(),
+                        columns,
+                        row_height,
+                    },
                     rail_drag,
                     rail_hover,
                     p,
@@ -737,6 +897,525 @@ fn render_grid(
         .pt(px(GALLERY_PAD_TOP))
         .pb(px(GALLERY_PAD_BOTTOM))
         .child(grid)
+        .into_any_element()
+}
+
+fn render_session_grid(
+    app: &App,
+    shared: &Rc<GalleryShared>,
+    frame: u64,
+    window: &mut Window,
+) -> AnyElement {
+    let p = app.palette;
+    let width = f32::from(content_viewport(window).width);
+    let metrics = library_grid_metrics(
+        width,
+        app.sidebar_collapsed,
+        app.inspector_collapsed,
+        app.settings.ui_card_size,
+        app.settings.ui_card_show_world,
+        app.settings.ui_card_show_date || app.settings.ui_card_show_size,
+    );
+
+    let (scroll, columns, rows, generation, index, total, labels, rail_drag, rail_hover) = {
+        let mut browser = shared.browser.borrow_mut();
+        let pending = browser.pending_anchor.take();
+        let layout_changed = metrics.columns != browser.columns
+            || (metrics.row_height - browser.row_height).abs() > 0.5;
+        let anchor = pending.or_else(|| {
+            layout_changed
+                .then(|| {
+                    let rows = browser.session_rows.as_ref()?;
+                    let index =
+                        rows.top_photo_index(session_scroll_top(&browser.session_scroll))?;
+                    browser.index.entries.get(index).map(|entry| entry.id)
+                })
+                .flatten()
+        });
+        browser.columns = metrics.columns;
+        browser.row_height = metrics.row_height;
+        let rows = browser.ensure_session_rows(
+            metrics.columns,
+            metrics.row_height,
+            SESSION_HEADER_ROW_HEIGHT + CARD_ROW_GAP,
+            SESSION_DATE_LABEL_ROW_HEIGHT + CARD_ROW_GAP,
+        );
+        if let Some(id) = anchor
+            && let Some(position) = browser.index.row_of_id(id)
+            && let Some(offset) = rows.anchor_offset_for_photo(position)
+        {
+            set_session_scroll_offset(&browser, offset);
+        }
+        let labels = if browser.labels.is_none() || browser.labels_generation != browser.generation
+        {
+            let labels = Arc::new(YearRailLabels::build(&browser.index, window, &p));
+            browser.labels = Some(labels.clone());
+            browser.labels_generation = browser.generation;
+            labels
+        } else {
+            browser.labels.clone().expect("year rail labels")
+        };
+        (
+            browser.session_scroll.clone(),
+            browser.columns,
+            rows,
+            browser.generation,
+            browser.index.clone(),
+            browser.index.total,
+            labels,
+            browser.rail_drag.clone(),
+            browser.rail_hover.clone(),
+        )
+    };
+
+    if total == 0 {
+        return render_grid(app, shared, frame, window);
+    }
+
+    let Some(app_entity) = shared.app.upgrade() else {
+        return div().into_any_element();
+    };
+    let item_sizes: Rc<Vec<VirtualRowSize<Pixels>>> = Rc::new(
+        rows.heights()
+            .iter()
+            .map(|height| virtual_row_size(px(0.), px(*height)))
+            .collect(),
+    );
+    let card_strings_key = CardStringsKey::new(app, generation);
+    let list_shared = shared.clone();
+    let rail_rows = rows.clone();
+    let list_rows = rows;
+    let list_index = index.clone();
+    let list_columns = columns;
+    let grid_gap = GRID_GAP;
+    let list = v_virtual_list(
+        app_entity,
+        "session-photo-grid",
+        item_sizes,
+        move |app, range, _window, cx| {
+            let mut rendered = Vec::with_capacity(range.len());
+            let mut missing_pages = Vec::new();
+            let mut missing_summaries = Vec::new();
+            let mut missing_thumbnails: Vec<Arc<Photo>> = Vec::new();
+            {
+                let mut browser = list_shared.browser.borrow_mut();
+                let mut visible_start = usize::MAX;
+                let mut visible_end = 0;
+                for row_index in range.clone() {
+                    if let Some(row) = list_rows.rows().get(row_index)
+                        && let SessionRowKind::Photos { first_photo, count } = row.kind()
+                    {
+                        visible_start = visible_start.min(first_photo);
+                        visible_end = visible_end.max(first_photo + count);
+                    }
+                }
+                let failed_pages = if visible_start < visible_end {
+                    browser
+                        .pages
+                        .failed_pages_in_range(visible_start, visible_end)
+                } else {
+                    Vec::new()
+                };
+                let error_panels = session_error_panels(
+                    list_rows.rows(),
+                    range.clone(),
+                    list_index.total,
+                    list_columns,
+                    &failed_pages,
+                );
+                for row_index in range {
+                    let Some(row) = list_rows.rows().get(row_index) else {
+                        continue;
+                    };
+                    match row.kind() {
+                        SessionRowKind::Header {
+                            session_id,
+                            photo_count,
+                            collapsed,
+                        } => {
+                            let summary = browser.session_summary(session_id);
+                            let failed = browser.session_summary_failed.contains(&session_id);
+                            if summary.is_none() && !failed {
+                                missing_summaries.push(session_id);
+                            }
+                            rendered.push(render_session_header(
+                                app,
+                                list_shared.as_ref(),
+                                session_id,
+                                photo_count,
+                                collapsed,
+                                summary.as_deref(),
+                                failed,
+                                &mut missing_thumbnails,
+                            ));
+                        }
+                        SessionRowKind::DateLabel { day, photo_count } => {
+                            rendered.push(render_session_date_label(app, day, photo_count));
+                        }
+                        SessionRowKind::Photos { first_photo, count } => {
+                            let start = first_photo;
+                            let end = (first_photo + count).min(list_index.total);
+                            missing_pages.extend(browser.plan_pages(start, end, 2));
+                            let mut line = h_flex()
+                                .h(px(metrics.row_height))
+                                .w_full()
+                                .min_w_0()
+                                .items_start()
+                                .gap(px(grid_gap))
+                                .pr(px(RAIL_WIDTH));
+                            let mut column = 0;
+                            let mut photo_index = start;
+                            while column < list_columns {
+                                if photo_index >= end {
+                                    line = line.child(div().flex_1());
+                                    column += 1;
+                                    continue;
+                                }
+                                match browser.photo_at(photo_index) {
+                                    Some(photo) => {
+                                        line = line.child(render_card(
+                                            app,
+                                            list_shared.as_ref(),
+                                            frame,
+                                            &photo,
+                                            &metrics,
+                                            &card_strings_key,
+                                            &mut missing_thumbnails,
+                                        ));
+                                        column += 1;
+                                        photo_index += 1;
+                                    }
+                                    None => {
+                                        if let Some(panel) = error_panels.get(&photo_index) {
+                                            let mut panel = *panel;
+                                            panel.span = panel.span.min(end - photo_index);
+                                            line = line.child(render_page_error(
+                                                app,
+                                                list_shared.as_ref(),
+                                                panel,
+                                                generation,
+                                                list_index.total,
+                                                &metrics,
+                                                grid_gap,
+                                            ));
+                                            column += panel.span;
+                                            photo_index += panel.span;
+                                        } else {
+                                            line = line.child(grid_placeholder(
+                                                &p,
+                                                metrics.image_height,
+                                                Some(metrics.card_width),
+                                            ));
+                                            column += 1;
+                                            photo_index += 1;
+                                        }
+                                    }
+                                }
+                            }
+                            rendered.push(line.into_any_element());
+                        }
+                    }
+                }
+                if !missing_summaries.is_empty() {
+                    // One background query per visible batch instead of two
+                    // IDs per frame. The core query caps the list at 256.
+                    let planned = browser.plan_session_summaries(missing_summaries, 32);
+                    if !planned.is_empty() {
+                        let app_weak = list_shared.app.clone();
+                        cx.defer(move |cx| {
+                            if let Some(app_entity) = app_weak.upgrade() {
+                                app_entity.update(cx, |app, cx| {
+                                    app.load_session_summaries(false, generation, planned, cx);
+                                });
+                            }
+                        });
+                    }
+                }
+            }
+
+            if !missing_pages.is_empty() {
+                let app = list_shared.app.clone();
+                cx.defer(move |cx| {
+                    if let Some(app_entity) = app.upgrade() {
+                        app_entity.update(cx, |app, cx| {
+                            app.load_pages(false, generation, missing_pages, cx);
+                        });
+                    }
+                });
+            }
+            if !missing_thumbnails.is_empty() {
+                let app = list_shared.app.clone();
+                cx.defer(move |cx| {
+                    if let Some(app_entity) = app.upgrade() {
+                        app_entity.update(cx, |app, cx| {
+                            for photo in missing_thumbnails {
+                                app.request_thumbnail(photo.as_ref(), cx);
+                            }
+                        });
+                    }
+                });
+            }
+            let access_refreshes = list_shared.thumbnails.borrow_mut().take_access_refreshes();
+            if !access_refreshes.is_empty() {
+                let app = list_shared.app.clone();
+                cx.defer(move |cx| {
+                    if let Some(app_entity) = app.upgrade() {
+                        app_entity.update(cx, |app, cx| {
+                            app.refresh_thumbnail_access(access_refreshes, cx);
+                        });
+                    }
+                });
+            }
+            rendered
+        },
+    )
+    .track_scroll(&scroll)
+    .flex_1()
+    .w_full()
+    .min_w_0()
+    .min_h_0();
+
+    let mut wrapper = v_flex()
+        .id("session-grid")
+        .relative()
+        .flex_1()
+        .w_full()
+        .min_w_0()
+        .min_h_0()
+        .track_focus(&app.photo_grid_focus)
+        .key_context("photo_grid")
+        .tab_stop(true)
+        .child(list);
+    if total > 0 {
+        wrapper = wrapper.child(
+            div()
+                .absolute()
+                .right_0()
+                .top_0()
+                .bottom_0()
+                .w(px(RAIL_WIDTH))
+                .child(YearRail::new(
+                    "session-year-rail",
+                    labels,
+                    index,
+                    RailList::Sessions {
+                        scroll: scroll.clone(),
+                        rows: rail_rows,
+                    },
+                    rail_drag,
+                    rail_hover,
+                    p,
+                )),
+        );
+    }
+
+    v_flex()
+        .flex_1()
+        .min_w_0()
+        .min_h_0()
+        .h_full()
+        .items_stretch()
+        .pl(px(GALLERY_PAD_X))
+        .pr(px(GALLERY_PAD_X))
+        .pt(px(GALLERY_PAD_TOP))
+        .pb(px(GALLERY_PAD_BOTTOM))
+        .child(wrapper)
+        .into_any_element()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_session_header(
+    app: &App,
+    shared: &GalleryShared,
+    session_id: i64,
+    photo_count: usize,
+    collapsed: bool,
+    summary: Option<&SessionSummary>,
+    failed: bool,
+    missing_thumbnails: &mut Vec<Arc<Photo>>,
+) -> AnyElement {
+    let p = app.palette;
+    let (world_name, count, time, players, ongoing, cover) = if let Some(summary) = summary {
+        (
+            summary
+                .world_name
+                .clone()
+                .filter(|name| !name.is_empty())
+                .unwrap_or_else(|| tr!("session.unknown_world")),
+            summary.photo_count,
+            session_time_label(
+                summary.session.started_at,
+                summary.session.ended_at,
+                &chrono::Local,
+            ),
+            session_player_summary(&summary.players),
+            summary.session.ended_at.is_none(),
+            summary.cover_photo.as_ref(),
+        )
+    } else {
+        (
+            if failed {
+                tr!("session.summary_failed")
+            } else {
+                tr!("session.loading")
+            },
+            photo_count as i64,
+            String::new(),
+            String::new(),
+            false,
+            None,
+        )
+    };
+
+    let (cover_color, cover_image) = if let Some(photo) = cover {
+        let image = shared.thumbnails.borrow_mut().get(photo.id);
+        if image.is_none() {
+            missing_thumbnails.push(Arc::new(photo.clone()));
+        }
+        let color = shared
+            .thumbnails
+            .borrow()
+            .color(photo.id)
+            .unwrap_or_else(|| p.scene_color(photo_scene_key(photo)));
+        (color, image)
+    } else {
+        (p.panel_deep, None)
+    };
+
+    let mut cover_el = div()
+        .w(px(104.))
+        .h(px(58.))
+        .flex_shrink_0()
+        .rounded(px(8.))
+        .overflow_hidden()
+        .border_1()
+        .border_color(rgba(p.line_soft))
+        .bg(rgb(cover_color));
+    if let Some(image) = cover_image {
+        cover_el = cover_el.child(
+            gpui_kit::img(image)
+                .object_fit(ObjectFit::Cover)
+                .size_full()
+                .rounded(px(8.)),
+        );
+    }
+
+    let mut meta = h_flex()
+        .min_w_0()
+        .items_center()
+        .gap(px(14.))
+        .overflow_hidden()
+        .text_size(px(10.))
+        .text_color(rgb(p.muted));
+    if !time.is_empty() {
+        meta = meta.child(
+            div()
+                .flex_shrink_0()
+                .whitespace_nowrap()
+                .font_family("monospace")
+                .child(time),
+        );
+    }
+    meta = meta.child(
+        div()
+            .flex_shrink_0()
+            .whitespace_nowrap()
+            .child(tr_args!("session.photo_count", count = format_count(count))),
+    );
+    if !players.is_empty() {
+        meta = meta.child(div().min_w_0().truncate().child(players));
+    }
+
+    let body = v_flex()
+        .min_w_0()
+        .flex_1()
+        .gap(px(4.))
+        .child(
+            div()
+                .min_w_0()
+                .truncate()
+                .text_size(px(13.))
+                .font_semibold()
+                .text_color(rgb(p.text))
+                .child(world_name),
+        )
+        .child(meta);
+
+    let app_weak = shared.app.clone();
+    let toggle = Button::new(SharedString::from(format!("session-toggle-{session_id}")))
+        .label(if collapsed { "▸" } else { "▾" })
+        .small()
+        .ghost()
+        .tooltip(if collapsed {
+            tr!("session.expand")
+        } else {
+            tr!("session.collapse")
+        })
+        .on_click(move |_, _, cx| {
+            if let Some(app_entity) = app_weak.upgrade() {
+                app_entity.update(cx, |app, cx| {
+                    app.toggle_session_collapsed(session_id, cx);
+                });
+            }
+        });
+
+    let mut header = h_flex()
+        .w_full()
+        .h(px(SESSION_HEADER_ROW_HEIGHT))
+        .items_center()
+        .gap(px(13.))
+        .pl(px(14.))
+        .pr(px(RAIL_WIDTH + 14.))
+        .rounded(px(12.))
+        .border_1()
+        .border_color(rgba(p.line_soft))
+        .bg(rgb(p.panel_inner))
+        .child(cover_el)
+        .child(body);
+    if ongoing {
+        header = header.child(
+            h_flex()
+                .flex_shrink_0()
+                .items_center()
+                .gap(px(5.))
+                .px(px(8.))
+                .py(px(2.))
+                .rounded_full()
+                .bg(rgba(with_alpha(p.green, 0x1a)))
+                .border_1()
+                .border_color(rgba(with_alpha(p.green, 0x33)))
+                .text_size(px(9.))
+                .font_semibold()
+                .text_color(rgb(p.green))
+                .child(div().w(px(5.)).h(px(5.)).rounded_full().bg(rgb(p.green)))
+                .child(tr!("session.ongoing")),
+        );
+    }
+    header.child(toggle).into_any_element()
+}
+
+fn render_session_date_label(app: &App, day: i32, photo_count: usize) -> AnyElement {
+    let p = app.palette;
+    let line = || div().h(px(1.)).flex_1().bg(rgba(p.line_soft));
+    h_flex()
+        .h(px(SESSION_DATE_LABEL_ROW_HEIGHT))
+        .w_full()
+        .items_center()
+        .gap(px(10.))
+        .pr(px(RAIL_WIDTH))
+        .child(line())
+        .child(
+            div()
+                .whitespace_nowrap()
+                .text_size(px(10.))
+                .text_color(rgb(p.muted_2))
+                .child(tr_args!(
+                    "session.unlinked_date",
+                    date = format_session_day(day),
+                    count = format_count(photo_count as i64)
+                )),
+        )
+        .child(line())
         .into_any_element()
 }
 
@@ -1199,10 +1878,86 @@ fn grid_placeholder(palette: &Palette, image_height: f32, card_width: Option<f32
 mod tests {
     use super::{
         CardStringsCache, CardStringsKey, FailedPage, PAGE_SIZE, PageFailure, error_span,
-        filter_chips, page_error_panels,
+        filter_chips, page_error_panels, session_error_panels, session_player_summary,
+        session_time_label,
     };
+    use crate::state::session_rows::SessionRows;
     use crate::state::test_support::test_photo;
+    use chrono::{FixedOffset, TimeZone};
+    use std::collections::HashSet;
+    use vrc_photon_core::model::PhotoIndexEntry;
     use vrc_photon_i18n::MISSING;
+
+    fn ts(year: i32, month: u32, day: u32, hour: u32, minute: u32) -> i64 {
+        FixedOffset::east_opt(9 * 3600)
+            .unwrap()
+            .with_ymd_and_hms(year, month, day, hour, minute, 0)
+            .single()
+            .unwrap()
+            .timestamp()
+    }
+
+    fn session_entry(id: i64, day: i32, session: Option<i64>) -> PhotoIndexEntry {
+        PhotoIndexEntry {
+            id,
+            captured_at_utc: id,
+            captured_month: day / 100,
+            captured_day: day,
+            session_id: session,
+        }
+    }
+
+    #[test]
+    fn session_error_panels_render_once_per_failed_page() {
+        let entries: Vec<_> = (0..4)
+            .map(|id| session_entry(4 - id, 20261109, None))
+            .collect();
+        let rows = SessionRows::build(&entries, 2, 200.0, 92.0, 46.0, &HashSet::new());
+        let failed = [failed_page(0, PageFailure::ReadError)];
+        let panels =
+            session_error_panels(rows.rows(), 0..rows.rows().len(), entries.len(), 2, &failed);
+        assert_eq!(panels.len(), 1);
+        assert!(panels.contains_key(&0));
+    }
+
+    #[test]
+    fn session_player_summary_keeps_three_names_and_counts_the_rest() {
+        assert_eq!(session_player_summary(&[]), "同席 なし（ソロ）");
+        assert_eq!(session_player_summary(&["Aoi".into()]), "同席 Aoi");
+        assert_eq!(
+            session_player_summary(&["Aoi".into(), "Ren".into()]),
+            "同席 Aoi、Ren"
+        );
+        assert_eq!(
+            session_player_summary(&["Aoi".into(), "Ren".into(), "Mika".into(), "Sora".into()]),
+            "同席 Aoi、Ren、Mika 他1名"
+        );
+    }
+
+    #[test]
+    fn session_time_label_handles_ongoing_and_cross_midnight() {
+        let offset = FixedOffset::east_opt(9 * 3600).unwrap();
+        assert_eq!(
+            session_time_label(ts(2026, 11, 9, 21, 14), None, &offset),
+            "11/9 21:14 –"
+        );
+        assert_eq!(
+            session_time_label(
+                ts(2026, 11, 8, 22, 3),
+                Some(ts(2026, 11, 8, 23, 47)),
+                &offset
+            ),
+            "11/8 22:03 – 23:47"
+        );
+        assert_eq!(
+            session_time_label(
+                ts(2026, 11, 7, 23, 41),
+                Some(ts(2026, 11, 8, 0, 26)),
+                &offset
+            ),
+            "11/7 23:41 – 11/8 0:26"
+        );
+    }
 
     fn failed_page(page: usize, failure: PageFailure) -> FailedPage {
         FailedPage {

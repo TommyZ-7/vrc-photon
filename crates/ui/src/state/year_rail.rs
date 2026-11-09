@@ -9,6 +9,8 @@ use std::collections::HashMap;
 use gpui_kit::{Bounds, Pixels, Point, TextRun, font, point, px, rgb, size};
 use vrc_photon_core::model::PhotoIndexEntry;
 
+use crate::state::session_rows::SessionRows;
+
 pub(crate) const RAIL_TOP_PAD: f32 = 24.0;
 pub(crate) const RAIL_TRACK_INSET: f32 = 6.0;
 pub(crate) const RAIL_LABEL_GAP: f32 = 16.0;
@@ -234,6 +236,19 @@ pub(crate) fn rail_scroll_offset(
     (-(grid_row as f32 * row_height)).clamp(-max_offset.max(0.0), 0.0)
 }
 
+/// Scroll offset for a photo row in the mixed session model.
+pub(crate) fn session_rail_scroll_offset(
+    rows: &SessionRows,
+    photo_index: usize,
+    _max_offset: f32,
+) -> f32 {
+    let offset = rows
+        .offset_for_photo(photo_index)
+        .or_else(|| rows.anchor_offset_for_photo(photo_index))
+        .unwrap_or(0.0);
+    -offset
+}
+
 pub(crate) fn rail_text_run(len: usize, color: u32) -> TextRun {
     TextRun {
         len,
@@ -247,9 +262,22 @@ pub(crate) fn rail_text_run(len: usize, color: u32) -> TextRun {
 mod tests {
     use super::*;
     use crate::state::photo_browser::{PhotoIndex, anchor_photo_id};
+    use crate::state::session_rows::SessionRows;
     use crate::state::test_support::index_entry;
     use crate::ui::theme::RAIL_WIDTH;
     use gpui_kit::{Bounds, point, px, size};
+    use std::collections::HashSet;
+    use vrc_photon_core::model::PhotoIndexEntry;
+
+    fn session_entry(id: i64, day: i32, session: Option<i64>) -> PhotoIndexEntry {
+        PhotoIndexEntry {
+            id,
+            captured_at_utc: id,
+            captured_month: day / 100,
+            captured_day: day,
+            session_id: session,
+        }
+    }
 
     /// Local row height so the rail maths is not tied to the old 196px grid.
     const TEST_ROW_HEIGHT: f32 = 180.0;
@@ -504,6 +532,28 @@ mod tests {
         assert_eq!(f32::from(pill.size.width), RAIL_PILL_WIDTH);
         assert_eq!(marker.center().y, pill.center().y);
         assert!(rail_track_hit_bounds(bounds).contains(&marker.center()));
+    }
+
+    #[test]
+    fn session_rail_jump_uses_session_row_offsets() {
+        let entries = vec![
+            session_entry(10, 20261109, Some(1)),
+            session_entry(9, 20261109, Some(1)),
+            session_entry(8, 20261108, Some(2)),
+            session_entry(7, 20261108, Some(2)),
+        ];
+        let rows = SessionRows::build(&entries, 2, 200.0, 92.0, 46.0, &HashSet::new());
+        let offset = rows.offset_for_photo(2).unwrap();
+        assert_eq!(session_rail_scroll_offset(&rows, 2, 10_000.0), -offset);
+        assert_eq!(session_rail_scroll_offset(&rows, 2, offset), -offset);
+        assert_eq!(session_rail_scroll_offset(&rows, 99, 10_000.0), 0.0);
+
+        let collapsed = HashSet::from([1]);
+        let rows = SessionRows::build(&entries, 2, 200.0, 92.0, 46.0, &collapsed);
+        assert_eq!(
+            session_rail_scroll_offset(&rows, 1, 10_000.0),
+            -rows.offset_for_session(1).unwrap()
+        );
     }
 
     #[test]

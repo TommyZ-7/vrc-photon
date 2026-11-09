@@ -8,14 +8,18 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 
+use gpui_kit::base::VirtualListScrollHandle;
 use gpui_kit::*;
 
-use crate::state::photo_browser::{PhotoIndex, first_visible_photo, list_scroll_top};
+use crate::state::photo_browser::{
+    PhotoIndex, first_visible_photo, list_scroll_top, session_scroll_top,
+};
+use crate::state::session_rows::SessionRows;
 use crate::state::year_rail::{
     RAIL_PILL_WIDTH, RAIL_TOP_PAD, RAIL_TRACK_INSET, for_each_visible_year, format_captured_month,
     rail_hover_hits, rail_label_hidden_by_pill, rail_marker_bounds, rail_pill_bounds,
     rail_press_allowed, rail_row_at, rail_scroll_offset, rail_text_run, rail_track_hit_bounds,
-    rail_y, visible_year_buckets,
+    rail_y, session_rail_scroll_offset, visible_year_buckets,
 };
 use crate::ui::theme::{Palette, with_alpha};
 
@@ -87,18 +91,94 @@ impl YearRailLabels {
     }
 }
 
+/// The scroll geometry the rail drives: the uniform timeline grid or the
+/// mixed session row model.
+#[derive(Clone)]
+pub(crate) enum RailList {
+    Timeline {
+        scroll: UniformListScrollHandle,
+        columns: usize,
+        row_height: f32,
+    },
+    Sessions {
+        scroll: VirtualListScrollHandle,
+        rows: Arc<SessionRows>,
+    },
+}
+
+impl RailList {
+    fn scroll_top(&self) -> f32 {
+        match self {
+            Self::Timeline { scroll, .. } => list_scroll_top(scroll),
+            Self::Sessions { scroll, .. } => session_scroll_top(scroll),
+        }
+    }
+
+    fn first_visible_photo(&self, total: usize) -> usize {
+        if total == 0 {
+            return 0;
+        }
+        match self {
+            Self::Timeline {
+                columns,
+                row_height,
+                ..
+            } => first_visible_photo(self.scroll_top(), *columns, *row_height, total),
+            Self::Sessions { rows, .. } => rows
+                .top_photo_index(self.scroll_top())
+                .unwrap_or(0)
+                .min(total - 1),
+        }
+    }
+
+    fn max_offset(&self) -> f32 {
+        match self {
+            Self::Timeline { scroll, .. } => {
+                f32::from(scroll.0.borrow().base_handle.max_offset().y)
+            }
+            Self::Sessions { scroll, .. } => f32::from(scroll.base_handle().max_offset().y),
+        }
+    }
+
+    fn scroll_offset_for_photo(&self, photo_index: usize, max_offset: f32) -> f32 {
+        match self {
+            Self::Timeline {
+                columns,
+                row_height,
+                ..
+            } => rail_scroll_offset(photo_index, *columns, *row_height, max_offset),
+            Self::Sessions { rows, .. } => {
+                session_rail_scroll_offset(rows, photo_index, max_offset)
+            }
+        }
+    }
+
+    fn set_offset(&self, offset: f32) {
+        match self {
+            Self::Timeline { scroll, .. } => {
+                scroll
+                    .0
+                    .borrow_mut()
+                    .base_handle
+                    .set_offset(point(px(0.), px(offset)));
+            }
+            Self::Sessions { scroll, .. } => {
+                scroll.set_offset(point(px(0.), px(offset)));
+            }
+        }
+    }
+}
+
 /// Google Photos-style year rail painted over the right edge of a grid.
 ///
-/// The list offset is read from the tracked [`UniformListScrollHandle`], and
-/// clicks/drags write the same handle, so the rail never touches the database.
+/// The list offset is read from the tracked list, and clicks/drags write the
+/// same handle, so the rail never touches the database.
 #[derive(Clone)]
 pub(crate) struct YearRail {
     id: &'static str,
     labels: Arc<YearRailLabels>,
     index: Arc<PhotoIndex>,
-    scroll: UniformListScrollHandle,
-    columns: usize,
-    row_height: f32,
+    list: RailList,
     drag_active: Rc<Cell<bool>>,
     hovered: Rc<Cell<bool>>,
     palette: Palette,
@@ -112,9 +192,7 @@ impl YearRail {
         id: &'static str,
         labels: Arc<YearRailLabels>,
         index: Arc<PhotoIndex>,
-        scroll: UniformListScrollHandle,
-        columns: usize,
-        row_height: f32,
+        list: RailList,
         drag_active: Rc<Cell<bool>>,
         hovered: Rc<Cell<bool>>,
         palette: Palette,
@@ -123,13 +201,15 @@ impl YearRail {
             id,
             labels,
             index,
-            scroll,
-            columns,
-            row_height,
+            list,
             drag_active,
             hovered,
             palette,
         }
+    }
+
+    fn first_visible_photo(&self) -> usize {
+        self.list.first_visible_photo(self.index.total)
     }
 
     /// Scrolls the grid to the row under `y`, snapping to a year label when
@@ -162,13 +242,9 @@ impl YearRail {
             .map(|(_, row)| row)
             .unwrap_or_else(|| rail_row_at(local_y, total, height))
             .min(total - 1);
-        let max_offset = f32::from(self.scroll.0.borrow().base_handle.max_offset().y);
-        let offset = rail_scroll_offset(photo_row, self.columns, self.row_height, max_offset);
-        self.scroll
-            .0
-            .borrow_mut()
-            .base_handle
-            .set_offset(point(px(0.), px(offset)));
+        let max_offset = self.list.max_offset();
+        let offset = self.list.scroll_offset_for_photo(photo_row, max_offset);
+        self.list.set_offset(offset);
         // The gallery month header and the morph's card bounds are computed
         // during `App::render`. Setting the offset repaints the list only, so
         // notify the containing view as well; otherwise a rail jump leaves the
@@ -231,12 +307,7 @@ impl Element for YearRail {
     ) -> Self::PrepaintState {
         let total = self.index.total;
         let height: f32 = bounds.size.height.into();
-        let first_visible = first_visible_photo(
-            list_scroll_top(&self.scroll),
-            self.columns.max(1),
-            self.row_height,
-            total,
-        );
+        let first_visible = self.first_visible_photo();
         let pill_y = rail_y(first_visible, total, height);
         let expanded = self.hovered.get() || self.drag_active.get();
 
@@ -295,9 +366,7 @@ impl Element for YearRail {
             );
         }
 
-        let scroll_top = list_scroll_top(&self.scroll);
-        let columns = self.columns.max(1);
-        let first_visible = first_visible_photo(scroll_top, columns, self.row_height, total);
+        let first_visible = self.first_visible_photo();
         let month = self
             .index
             .entries
@@ -398,12 +467,7 @@ impl Element for YearRail {
                 if !phase.bubble() || event.button != MouseButton::Left {
                     return;
                 }
-                let first_visible = first_visible_photo(
-                    list_scroll_top(&rail.scroll),
-                    rail.columns.max(1),
-                    rail.row_height,
-                    rail.index.total,
-                );
+                let first_visible = rail.first_visible_photo();
                 let pill_y = rail_y(first_visible, rail.index.total, height);
                 let expanded = rail.hovered.get() || rail.drag_active.get();
                 let interactive_hovered = gutter_hitbox.is_hovered(window)
@@ -436,12 +500,7 @@ impl Element for YearRail {
                         // Mouse-up can be swallowed by an overlay; stop
                         // dragging as soon as the left button is no longer
                         // held.
-                        let first_visible = first_visible_photo(
-                            list_scroll_top(&rail.scroll),
-                            rail.columns.max(1),
-                            rail.row_height,
-                            rail.index.total,
-                        );
+                        let first_visible = rail.first_visible_photo();
                         let pill_y = rail_y(first_visible, rail.index.total, height);
                         let expanded = rail.hovered.get() || rail.drag_active.get();
                         rail.drag_active.set(false);
@@ -460,12 +519,7 @@ impl Element for YearRail {
                 if !phase.bubble() {
                     return;
                 }
-                let first_visible = first_visible_photo(
-                    list_scroll_top(&rail.scroll),
-                    rail.columns.max(1),
-                    rail.row_height,
-                    rail.index.total,
-                );
+                let first_visible = rail.first_visible_photo();
                 let pill_y = rail_y(first_visible, rail.index.total, height);
                 let expanded = rail.hovered.get() || rail.drag_active.get();
                 let hovered = rail_hover_hits(event.position, bounds, pill_y, expanded);
@@ -482,12 +536,7 @@ impl Element for YearRail {
                 if !phase.bubble() {
                     return;
                 }
-                let first_visible = first_visible_photo(
-                    list_scroll_top(&rail.scroll),
-                    rail.columns.max(1),
-                    rail.row_height,
-                    rail.index.total,
-                );
+                let first_visible = rail.first_visible_photo();
                 let pill_y = rail_y(first_visible, rail.index.total, height);
                 let expanded = rail.hovered.get() || rail.drag_active.get();
                 let was_dragging = rail.drag_active.replace(false);

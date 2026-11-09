@@ -83,7 +83,9 @@ pub(crate) fn demo_fixture_at(now: NaiveDateTime) -> Vec<DemoPhoto> {
             }
             let captured_at = local_stamp(date, hour as u32, minute as u32);
 
-            let world = linked.then_some((months_ago + index_in_month) % DEMO_WORLDS.len());
+            // Keep a world for three consecutive photos so the demo has
+            // multi-photo sessions to group in session mode.
+            let world = linked.then_some((months_ago + index_in_month / 3) % DEMO_WORLDS.len());
             let players: Vec<PhotoPlayer> = if linked {
                 let player_count = 3 + (months_ago + index_in_month) % 5;
                 let first_name = (months_ago * 2 + index_in_month) % DEMO_NAMES.len();

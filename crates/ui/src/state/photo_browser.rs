@@ -10,10 +10,12 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use gpui_kit::{ScrollStrategy, UniformListScrollHandle};
+use gpui_kit::base::VirtualListScrollHandle;
+use gpui_kit::{ScrollStrategy, UniformListScrollHandle, point, px};
 use vrc_photon_core::error::CoreError;
-use vrc_photon_core::model::{Photo, PhotoIndexEntry};
+use vrc_photon_core::model::{Photo, PhotoIndexEntry, SessionSummary};
 
+use crate::state::session_rows::SessionRows;
 use crate::state::year_rail::{YearBucket, build_year_buckets};
 use crate::ui::year_rail::YearRailLabels;
 
@@ -24,6 +26,20 @@ pub(crate) const MAX_PAGES: usize = 24;
 pub(crate) fn list_scroll_top(handle: &UniformListScrollHandle) -> f32 {
     let offset = handle.0.borrow().base_handle.offset().y;
     (-f32::from(offset)).max(0.0)
+}
+
+/// Scroll distance from the top of a `v_virtual_list`, in pixels.
+pub(crate) fn session_scroll_top(handle: &VirtualListScrollHandle) -> f32 {
+    let offset = handle.base_handle().offset().y;
+    (-f32::from(offset)).max(0.0)
+}
+
+/// Sets the session list offset. The virtual list clamps it against the
+/// freshly laid-out content, so an offset requested before the first session
+/// render is not discarded by a zero `max_offset`.
+pub(crate) fn set_session_scroll_offset(browser: &PhotoBrowser, offset: f32) {
+    let y = (-offset).min(0.0);
+    browser.session_scroll.set_offset(point(px(0.), px(y)));
 }
 
 /// Ordered snapshot of the library: only IDs and capture timestamps, so the
@@ -318,6 +334,16 @@ impl PhotoPageCache {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
+struct SessionRowsKey {
+    generation: u64,
+    columns: usize,
+    photo_row_height: f32,
+    header_height: f32,
+    date_label_height: f32,
+    collapsed: Vec<i64>,
+}
+
 /// Snapshot plus page cache for one grid (library or search).
 pub(crate) struct PhotoBrowser {
     pub(crate) index: Arc<PhotoIndex>,
@@ -337,6 +363,14 @@ pub(crate) struct PhotoBrowser {
     pub(crate) rail_drag: Rc<Cell<bool>>,
     /// Whether the pointer is currently inside the rail gutter.
     pub(crate) rail_hover: Rc<Cell<bool>>,
+    /// Scroll handle for the mixed header/photo rows in session mode.
+    pub(crate) session_scroll: VirtualListScrollHandle,
+    pub(crate) session_rows: Option<Arc<SessionRows>>,
+    session_rows_key: Option<SessionRowsKey>,
+    pub(crate) collapsed_sessions: HashSet<i64>,
+    pub(crate) session_summaries: HashMap<i64, Arc<SessionSummary>>,
+    pub(crate) session_summary_pending: HashSet<i64>,
+    pub(crate) session_summary_failed: HashSet<i64>,
 }
 
 impl PhotoBrowser {
@@ -356,6 +390,13 @@ impl PhotoBrowser {
             labels: None,
             rail_drag: Rc::new(Cell::new(false)),
             rail_hover: Rc::new(Cell::new(false)),
+            session_scroll: VirtualListScrollHandle::new(),
+            session_rows: None,
+            session_rows_key: None,
+            collapsed_sessions: HashSet::new(),
+            session_summaries: HashMap::new(),
+            session_summary_pending: HashSet::new(),
+            session_summary_failed: HashSet::new(),
         }
     }
 
@@ -367,6 +408,141 @@ impl PhotoBrowser {
         self.pending_anchor = None;
         self.rail_drag.set(false);
         self.rail_hover.set(false);
+        self.session_rows = None;
+        self.session_rows_key = None;
+        self.collapsed_sessions.clear();
+        self.session_summaries.clear();
+        self.session_summary_pending.clear();
+        self.session_summary_failed.clear();
+        self.session_scroll.set_offset(point(px(0.), px(0.)));
+    }
+
+    /// Builds or reuses the mixed session row model for the current index,
+    /// layout, and collapsed set. The virtual list uses the returned heights
+    /// directly.
+    pub(crate) fn ensure_session_rows(
+        &mut self,
+        columns: usize,
+        photo_row_height: f32,
+        header_height: f32,
+        date_label_height: f32,
+    ) -> Arc<SessionRows> {
+        let mut collapsed: Vec<i64> = self.collapsed_sessions.iter().copied().collect();
+        collapsed.sort_unstable();
+        let key = SessionRowsKey {
+            generation: self.generation,
+            columns,
+            photo_row_height,
+            header_height,
+            date_label_height,
+            collapsed,
+        };
+        if self.session_rows_key.as_ref() == Some(&key)
+            && let Some(rows) = &self.session_rows
+        {
+            return rows.clone();
+        }
+        let rows = Arc::new(SessionRows::build(
+            &self.index.entries,
+            columns,
+            photo_row_height,
+            header_height,
+            date_label_height,
+            &self.collapsed_sessions,
+        ));
+        self.session_rows_key = Some(key);
+        self.session_rows = Some(rows.clone());
+        rows
+    }
+
+    pub(crate) fn top_photo_index(&self, scroll_top: f32) -> Option<usize> {
+        self.session_rows
+            .as_ref()
+            .and_then(|rows| rows.top_photo_index(scroll_top))
+    }
+
+    /// Marks up to `limit` uncached session IDs as pending and returns them.
+    pub(crate) fn plan_session_summaries(
+        &mut self,
+        ids: impl IntoIterator<Item = i64>,
+        limit: usize,
+    ) -> Vec<i64> {
+        let mut planned = Vec::new();
+        for id in ids {
+            if planned.len() >= limit {
+                break;
+            }
+            if self.session_summaries.contains_key(&id)
+                || self.session_summary_pending.contains(&id)
+                || self.session_summary_failed.contains(&id)
+                || planned.contains(&id)
+            {
+                continue;
+            }
+            planned.push(id);
+        }
+        for id in &planned {
+            self.session_summary_pending.insert(*id);
+        }
+        planned
+    }
+
+    pub(crate) fn insert_session_summaries(
+        &mut self,
+        generation: u64,
+        requested: &[i64],
+        summaries: Vec<SessionSummary>,
+    ) {
+        if generation != self.generation {
+            return;
+        }
+        let returned: HashSet<i64> = summaries.iter().map(|summary| summary.session.id).collect();
+        for id in requested {
+            self.session_summary_pending.remove(id);
+            if !returned.contains(id) {
+                self.session_summary_failed.insert(*id);
+            }
+        }
+        for summary in summaries {
+            self.session_summary_pending.remove(&summary.session.id);
+            self.session_summary_failed.remove(&summary.session.id);
+            self.session_summaries
+                .insert(summary.session.id, Arc::new(summary));
+        }
+    }
+
+    pub(crate) fn fail_session_summaries(&mut self, generation: u64, ids: &[i64]) {
+        if generation != self.generation {
+            return;
+        }
+        for id in ids {
+            self.session_summary_pending.remove(id);
+            self.session_summary_failed.insert(*id);
+        }
+    }
+
+    pub(crate) fn session_summary(&self, id: i64) -> Option<Arc<SessionSummary>> {
+        self.session_summaries.get(&id).cloned()
+    }
+
+    /// Drops one cached summary so a changed cover (for example after a
+    /// favorite toggle) is fetched again on the next render.
+    pub(crate) fn invalidate_session_summary(&mut self, session_id: i64) {
+        self.session_summaries.remove(&session_id);
+        self.session_summary_pending.remove(&session_id);
+        self.session_summary_failed.remove(&session_id);
+    }
+
+    pub(crate) fn toggle_session_collapsed(&mut self, id: i64) -> bool {
+        let collapsed = if self.collapsed_sessions.remove(&id) {
+            false
+        } else {
+            self.collapsed_sessions.insert(id);
+            true
+        };
+        self.session_rows = None;
+        self.session_rows_key = None;
+        collapsed
     }
 
     /// Drops the shaped year-rail labels so the next render rebuilds them in
@@ -381,6 +557,11 @@ impl PhotoBrowser {
     pub(crate) fn invalidate_pages(&mut self) {
         self.generation = self.generation.wrapping_add(1);
         self.pages.clear();
+        self.session_rows = None;
+        self.session_rows_key = None;
+        self.session_summaries.clear();
+        self.session_summary_pending.clear();
+        self.session_summary_failed.clear();
     }
 
     /// Removes a batch of photos with a single index rebuild and page-cache
@@ -401,6 +582,28 @@ impl PhotoBrowser {
         }
         self.replace_index(Arc::new(PhotoIndex::new(entries)));
         self.clamp_scroll_after_removal();
+    }
+
+    /// Removes photos and asks the next gallery render to restore `anchor`
+    /// when that photo is still present. `replace_index` clears the session
+    /// scroll, so deletion in session mode would otherwise jump to the top.
+    pub(crate) fn remove_photos_with_anchor(&mut self, ids: &HashSet<i64>, anchor: Option<i64>) {
+        let anchor = anchor.filter(|id| !ids.contains(id));
+        self.remove_photos(ids);
+        if self.pending_anchor.is_none() {
+            self.pending_anchor = anchor;
+        }
+    }
+
+    /// Clears the ephemeral collapsed-session set (for example when leaving
+    /// the Photos screen).
+    pub(crate) fn clear_collapsed_sessions(&mut self) {
+        if self.collapsed_sessions.is_empty() {
+            return;
+        }
+        self.collapsed_sessions.clear();
+        self.session_rows = None;
+        self.session_rows_key = None;
     }
 
     fn clamp_scroll_after_removal(&mut self) {
@@ -564,7 +767,26 @@ mod tests {
     use crate::ui::year_rail::YearRailLabels;
     use gpui_kit::{ScrollStrategy, UniformListScrollHandle, point, px};
     use vrc_photon_core::error::CoreError;
+    use vrc_photon_core::model::{Session, SessionSummary};
     use vrc_photon_core::settings::CardSize;
+
+    fn summary(id: i64) -> SessionSummary {
+        SessionSummary {
+            session: Session {
+                id,
+                log_file: "log.txt".to_string(),
+                started_at: id,
+                ended_at: Some(id + 10),
+                world_id: 1,
+                instance_id: None,
+            },
+            world_name: Some("Test World".to_string()),
+            world_external_id: Some("wrld_test".to_string()),
+            photo_count: 1,
+            players: Vec::new(),
+            cover_photo: None,
+        }
+    }
 
     /// Arbitrary non-196 row height so these tests prove the maths reads the
     /// supplied layout instead of a fixed constant.
@@ -1167,6 +1389,34 @@ mod tests {
     }
 
     #[test]
+    fn removing_photos_keeps_a_surviving_anchor_and_drops_a_removed_one() {
+        let entries = vec![
+            index_entry(1, 202601),
+            index_entry(2, 202601),
+            index_entry(3, 202512),
+        ];
+        let mut browser = PhotoBrowser::new(Arc::new(PhotoIndex::new(entries)), TEST_ROW_HEIGHT);
+        browser.remove_photos_with_anchor(&HashSet::from([1]), Some(2));
+        assert_eq!(browser.pending_anchor, Some(2));
+
+        let entries = vec![index_entry(1, 202601), index_entry(2, 202601)];
+        let mut browser = PhotoBrowser::new(Arc::new(PhotoIndex::new(entries)), TEST_ROW_HEIGHT);
+        browser.remove_photos_with_anchor(&HashSet::from([1]), Some(1));
+        assert_eq!(browser.pending_anchor, None);
+    }
+
+    #[test]
+    fn clearing_collapsed_sessions_invalidates_the_row_model() {
+        let index = Arc::new(PhotoIndex::new(vec![index_entry(1, 202601)]));
+        let mut browser = PhotoBrowser::new(index, TEST_ROW_HEIGHT);
+        browser.toggle_session_collapsed(7);
+        browser.ensure_session_rows(4, 200.0, 92.0, 46.0);
+        browser.clear_collapsed_sessions();
+        assert!(browser.collapsed_sessions.is_empty());
+        assert!(browser.session_rows.is_none());
+    }
+
+    #[test]
     fn removing_a_photo_clamps_a_scroll_past_the_last_row() {
         let entries = (1..=10).map(|id| index_entry(id, 202601)).collect();
         let mut browser = PhotoBrowser::new(Arc::new(PhotoIndex::new(entries)), TEST_ROW_HEIGHT);
@@ -1213,5 +1463,93 @@ mod tests {
             search_anchor_after_result(Some(1), &PhotoIndex::new(Vec::new())),
             None
         );
+    }
+
+    #[test]
+    fn session_offset_is_not_clamped_before_the_first_layout() {
+        let index = Arc::new(PhotoIndex::new(vec![index_entry(1, 202601)]));
+        let browser = PhotoBrowser::new(index, TEST_ROW_HEIGHT);
+        assert_eq!(browser.session_scroll.base_handle().max_offset().y, px(0.));
+        set_session_scroll_offset(&browser, 500.0);
+        assert_eq!(session_scroll_top(&browser.session_scroll), 500.0);
+    }
+
+    #[test]
+    fn session_rows_rebuild_only_when_the_key_changes() {
+        let index = Arc::new(PhotoIndex::new(vec![index_entry(1, 202601)]));
+        let mut browser = PhotoBrowser::new(index, TEST_ROW_HEIGHT);
+        let first = browser.ensure_session_rows(4, 200.0, 92.0, 46.0);
+        let second = browser.ensure_session_rows(4, 200.0, 92.0, 46.0);
+        assert!(Arc::ptr_eq(&first, &second));
+        assert_eq!(browser.top_photo_index(0.0), Some(0));
+        let changed = browser.ensure_session_rows(3, 200.0, 92.0, 46.0);
+        assert!(!Arc::ptr_eq(&first, &changed));
+        browser.toggle_session_collapsed(7);
+        let collapsed = browser.ensure_session_rows(3, 200.0, 92.0, 46.0);
+        assert!(!Arc::ptr_eq(&changed, &collapsed));
+    }
+
+    #[test]
+    fn session_summaries_ignore_stale_generations_and_do_not_replan() {
+        let index = Arc::new(PhotoIndex::new(Vec::new()));
+        let mut browser = PhotoBrowser::new(index, TEST_ROW_HEIGHT);
+        let generation = browser.generation;
+        let planned = browser.plan_session_summaries([7, 7, 8], 2);
+        assert_eq!(planned, vec![7, 8]);
+        assert!(browser.plan_session_summaries([7, 8], 2).is_empty());
+        browser.insert_session_summaries(generation + 1, &[7], vec![summary(7)]);
+        assert!(browser.session_summary(7).is_none());
+        browser.insert_session_summaries(generation, &[7], vec![summary(7)]);
+        assert!(browser.session_summary(7).is_some());
+        assert_eq!(browser.plan_session_summaries([9], 1), vec![9]);
+        browser.insert_session_summaries(generation, &[9], Vec::new());
+        assert!(browser.session_summary_failed.contains(&9));
+        assert!(!browser.session_summary_pending.contains(&9));
+        browser.fail_session_summaries(generation, &[8]);
+        assert!(browser.session_summary_failed.contains(&8));
+        assert!(!browser.session_summary_pending.contains(&8));
+        assert!(browser.plan_session_summaries([8], 2).is_empty());
+    }
+
+    #[test]
+    fn invalidating_one_session_summary_allows_a_reload() {
+        let index = Arc::new(PhotoIndex::new(Vec::new()));
+        let mut browser = PhotoBrowser::new(index, TEST_ROW_HEIGHT);
+        let generation = browser.generation;
+        browser.insert_session_summaries(generation, &[7], vec![summary(7)]);
+        assert!(browser.session_summary(7).is_some());
+        browser.invalidate_session_summary(7);
+        assert!(browser.session_summary(7).is_none());
+        assert_eq!(browser.plan_session_summaries([7], 1), vec![7]);
+    }
+
+    #[test]
+    fn invalidating_pages_clears_session_summary_state() {
+        let index = Arc::new(PhotoIndex::new(vec![index_entry(1, 202601)]));
+        let mut browser = PhotoBrowser::new(index, TEST_ROW_HEIGHT);
+        let generation = browser.generation;
+        browser.insert_session_summaries(generation, &[7], vec![summary(7)]);
+        browser.plan_session_summaries([8], 1);
+        browser.ensure_session_rows(4, 200.0, 92.0, 46.0);
+        browser.invalidate_pages();
+        assert!(browser.session_summaries.is_empty());
+        assert!(browser.session_summary_pending.is_empty());
+        assert!(browser.session_summary_failed.is_empty());
+        assert!(browser.session_rows.is_none());
+    }
+
+    #[test]
+    fn replace_index_clears_session_state() {
+        let index = Arc::new(PhotoIndex::new(vec![index_entry(1, 202601)]));
+        let mut browser = PhotoBrowser::new(index, TEST_ROW_HEIGHT);
+        browser.toggle_session_collapsed(7);
+        browser.ensure_session_rows(4, 200.0, 92.0, 46.0);
+        browser.plan_session_summaries([7], 1);
+        browser.replace_index(Arc::new(PhotoIndex::new(vec![index_entry(2, 202602)])));
+        assert!(browser.collapsed_sessions.is_empty());
+        assert!(browser.session_rows.is_none());
+        assert!(browser.session_summaries.is_empty());
+        assert!(browser.session_summary_pending.is_empty());
+        assert!(browser.session_summary_failed.is_empty());
     }
 }

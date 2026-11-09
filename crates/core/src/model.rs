@@ -613,6 +613,17 @@ pub struct SessionPlayer {
     pub left_at: Option<i64>,
 }
 
+/// One session with the metadata the grouped photo grid displays.
+#[derive(Debug, Clone)]
+pub struct SessionSummary {
+    pub session: Session,
+    pub world_name: Option<String>,
+    pub world_external_id: Option<String>,
+    pub photo_count: i64,
+    pub players: Vec<String>,
+    pub cover_photo: Option<Photo>,
+}
+
 /// Maximum number of user retries per compression job.
 pub const MAX_JOB_RETRIES: i64 = 3;
 
@@ -865,6 +876,10 @@ pub struct PhotoIndexEntry {
     pub captured_at_utc: i64,
     /// Local capture month encoded as YYYYMM, e.g. 202504.
     pub captured_month: i32,
+    /// Local capture day encoded as YYYYMMDD, or 0 when unknown.
+    pub captured_day: i32,
+    /// `photo_context.session_id`; `None` means unlinked.
+    pub session_id: Option<i64>,
 }
 
 /// AI tagging conditions shared by the text and typed photo filters.
