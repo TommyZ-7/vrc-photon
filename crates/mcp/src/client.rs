@@ -24,6 +24,7 @@ impl DaemonError {
     pub fn code(&self) -> &'static str {
         match self {
             Self::Unavailable => "daemon_unavailable",
+            Self::Message(message) if message.contains("photo not found") => "photo_not_found",
             Self::Message(_) => "daemon_error",
         }
     }
