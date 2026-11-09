@@ -316,12 +316,12 @@ Expected: すべて PASS。
 Run: `cargo test -p vrc-photon-mcp --test packaging`
 Expected: PASS。
 
-- [ ] **Step 3: ブランチを push して PR を作成する**
+- [x] **Step 3: ブランチを push して PR を作成する**
 
 PR には `bug` ラベルを付ける。`Packager.toml` と `.github/workflows/release.yml` の変更により
 Release ワークフローの bundle ジョブが自動で走る。
 
-- [ ] **Step 4: Release ワークフローの成果物を確認する**
+- [x] **Step 4: Release ワークフローの成果物を確認する**
 
 `ci-watch` スキルで `CI` と `Release` の両方を監視する。成功後、少なくとも
 `Verify third-party notices` と `Smoke-test the packaged MCP server` が
