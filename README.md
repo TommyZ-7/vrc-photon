@@ -17,6 +17,10 @@ A desktop app for organizing your VRChat photos together with the world they wer
 
 VRChat screenshots tell you nothing from their file names alone. VRC PhotoN watches your photo folder and reads "when, where, and who with" from VRChat's output logs and the PNG XMP metadata, and links that context to each photo. All records are stored in a local SQLite database; your photos and logs are never sent anywhere.
 
+<p align="center">
+  <img src="docs/images/vrc-photon-social.png" alt="VRC PhotoN">
+</p>
+
 <!-- TODO: Place a screenshot of the actual app at docs/images/main.png and enable the line below
 ![Main screen](docs/images/main.png)
 -->
