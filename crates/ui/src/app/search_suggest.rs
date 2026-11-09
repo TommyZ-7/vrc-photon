@@ -1,6 +1,5 @@
 //! Search-screen autocomplete state and background queries.
 
-use std::path::Path;
 use std::time::Duration;
 
 use gpui_kit::component::input::{InputEvent, InputState};
@@ -202,7 +201,7 @@ impl PhotoApp {
         cx: &mut Context<Self>,
     ) {
         let prefer_english = vrc_photon_i18n::current_locale().starts_with("en");
-        let Some(path) = self.db.path().map(Path::to_path_buf) else {
+        let Some(reader) = self.background_reader.clone() else {
             let result = query_suggestions(&self.db, kind, &query, prefer_english);
             self.apply_suggestion_result(request, result, cx);
             return;
@@ -213,8 +212,8 @@ impl PhotoApp {
             let result = cx
                 .background_executor()
                 .spawn(async move {
-                    Db::open_read_only(path).and_then(|db| {
-                        query_suggestions(&db, kind, &background_query, prefer_english)
+                    reader.query(|db| {
+                        query_suggestions(db, kind, &background_query, prefer_english)
                     })
                 })
                 .await;
