@@ -123,6 +123,9 @@ impl App {
             .min_h_0()
             .flex_shrink_0()
             .overflow_y_scrollbar()
+            .on_scroll(
+                cx.listener(|this, _: &ScrollEvent, _, cx| this.close_suggestion_on_scroll(cx)),
+            )
             .p(px(16.))
             .gap(px(14.))
             .rounded(px(17.))

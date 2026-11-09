@@ -1185,6 +1185,16 @@ fn render_session_grid(
         .track_focus(&app.photo_grid_focus)
         .key_context("photo_grid")
         .tab_stop(true)
+        .on_scroll({
+            let app = shared.app.clone();
+            move |_, window, cx| {
+                if let Some(app_entity) = app.upgrade() {
+                    app_entity.update(cx, |app, cx| {
+                        app.close_photo_context_menu_for_lifecycle(window, cx);
+                    });
+                }
+            }
+        })
         .child(list);
     if total > 0 {
         wrapper = wrapper.child(
