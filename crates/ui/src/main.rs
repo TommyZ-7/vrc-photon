@@ -56,7 +56,7 @@ fn main() {
     // activating the existing window is out of scope. The `--background`
     // supervisor returned above and never opens a window, so it does not take
     // this lock.
-    let _instance = match single_instance::SingleInstance::new(&instance_name) {
+    let _instance = match vrc_photon_core::instance::InstanceGuard::new(&instance_name) {
         Ok(instance) if instance.is_single() => instance,
         Ok(_) => {
             tracing::error!(
@@ -137,23 +137,4 @@ fn main() {
             .expect("open window");
             register_global_actions(cx, app);
         });
-}
-
-#[cfg(test)]
-mod tests {
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    #[test]
-    fn ui_single_instance_is_exclusive() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let name = format!("vrc-photon-test-ui-{}-{unique}", std::process::id());
-
-        let first = single_instance::SingleInstance::new(&name).unwrap();
-        assert!(first.is_single());
-        let second = single_instance::SingleInstance::new(&name).unwrap();
-        assert!(!second.is_single());
-    }
 }
