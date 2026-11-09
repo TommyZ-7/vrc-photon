@@ -540,6 +540,11 @@ impl PhotoBrowser {
     pub(crate) fn invalidate_pages(&mut self) {
         self.generation = self.generation.wrapping_add(1);
         self.pages.clear();
+        self.session_rows = None;
+        self.session_rows_key = None;
+        self.session_summaries.clear();
+        self.session_summary_pending.clear();
+        self.session_summary_failed.clear();
     }
 
     /// Removes a batch of photos with a single index rebuild and page-cache
@@ -1424,6 +1429,21 @@ mod tests {
         assert!(browser.session_summary_failed.contains(&8));
         assert!(!browser.session_summary_pending.contains(&8));
         assert!(browser.plan_session_summaries([8], 2).is_empty());
+    }
+
+    #[test]
+    fn invalidating_pages_clears_session_summary_state() {
+        let index = Arc::new(PhotoIndex::new(vec![index_entry(1, 202601)]));
+        let mut browser = PhotoBrowser::new(index, TEST_ROW_HEIGHT);
+        let generation = browser.generation;
+        browser.insert_session_summaries(generation, vec![summary(7)]);
+        browser.plan_session_summaries([8], 1);
+        browser.ensure_session_rows(4, 200.0, 92.0, 46.0);
+        browser.invalidate_pages();
+        assert!(browser.session_summaries.is_empty());
+        assert!(browser.session_summary_pending.is_empty());
+        assert!(browser.session_summary_failed.is_empty());
+        assert!(browser.session_rows.is_none());
     }
 
     #[test]
