@@ -10,11 +10,14 @@ use interprocess::TryClone as _;
 #[cfg(unix)]
 use interprocess::local_socket::traits::Stream as _;
 use vrc_photon_core::db::Db;
+use vrc_photon_core::error::CoreError;
+use vrc_photon_core::model::{AiPhotoFilter, Photo, PhotoTextFilter};
 use vrc_photon_ipc::framing;
 use vrc_photon_ipc::server::Listener;
 use vrc_photon_ipc::{
-    APP_VERSION, Endpoint, ErrorCode, Event, PROTOCOL_VERSION, Request, RequestEnvelope, Response,
-    ServerMessage, StatusSnapshot,
+    APP_VERSION, AiTagSummary, Endpoint, ErrorCode, Event, LibraryStats as IpcLibraryStats,
+    PROTOCOL_VERSION, PhotoDetail, PhotoSearch, PhotoSummary, PlayerSummary, Request,
+    RequestEnvelope, Response, ServerMessage, StatusSnapshot, WorldSummary,
 };
 
 use crate::DaemonStatus;
@@ -33,6 +36,11 @@ const EVENT_QUEUE_CAPACITY: usize = 256;
 /// client's eight in-flight request slots to avoid rejecting a busy UI's own
 /// requests.
 const MAX_IPC_CONNECTIONS: usize = 16;
+
+/// Upper bound for one read-only library page requested over IPC. MCP asks
+/// for at most 200; the daemon keeps a hard cap so a stray client cannot
+/// materialize a huge response.
+const MAX_LIBRARY_LIMIT: u32 = 500;
 
 /// How often an idle subscription receives a `StatusChanged` heartbeat. The
 /// client treats 30 seconds without any event as a disconnect, so two missed
@@ -409,6 +417,34 @@ fn handle_connection(
                 };
                 write_response(reader.get_mut(), id, response)?;
             }
+            Request::SearchPhotos {
+                world,
+                player,
+                tag,
+                ai_tags,
+                from_utc,
+                to_utc,
+                favorite,
+                limit,
+                offset,
+            } => {
+                let response = library_search_response(
+                    &control, world, player, tag, ai_tags, from_utc, to_utc, favorite, limit, offset,
+                );
+                write_response(reader.get_mut(), id, response)?;
+            }
+            Request::GetPhoto { id: photo_id } => {
+                let response = library_photo_response(&control, photo_id);
+                write_response(reader.get_mut(), id, response)?;
+            }
+            Request::ListWorlds => {
+                let response = library_worlds_response(&control);
+                write_response(reader.get_mut(), id, response)?;
+            }
+            Request::LibraryStats => {
+                let response = library_stats_response(&control);
+                write_response(reader.get_mut(), id, response)?;
+            }
             Request::Shutdown => {
                 // Clear the running flag before acknowledging so a client that
                 // observes `Ok` also observes a stopped daemon.
@@ -540,6 +576,193 @@ fn plugin_error_response(error: PluginError) -> Response {
     }
 }
 
+fn library_error(error: CoreError) -> Response {
+    Response::Error {
+        code: ErrorCode::InvalidRequest,
+        message: error.to_string(),
+    }
+}
+
+fn player_summaries(db: &Db, photo_id: i64) -> vrc_photon_core::Result<Vec<PlayerSummary>> {
+    Ok(db
+        .photo_players(photo_id)?
+        .into_iter()
+        .map(|player| PlayerSummary {
+            user_id: player.user_id,
+            display_name: player.display_name,
+        })
+        .collect())
+}
+
+fn photo_summary(db: &Db, photo: &Photo) -> vrc_photon_core::Result<PhotoSummary> {
+    Ok(PhotoSummary {
+        id: photo.id,
+        path: photo.effective_path().to_string(),
+        captured_at_utc: photo.captured_at_utc,
+        captured_at_local: photo.captured_at_local.clone(),
+        world_name: photo.world_name.clone(),
+        world_id: photo.world_id.clone(),
+        players: player_summaries(db, photo.id)?,
+    })
+}
+
+fn photo_detail(db: &Db, photo: &Photo) -> vrc_photon_core::Result<PhotoDetail> {
+    let ai = db.photo_ai(photo.id)?;
+    let (people_min, people_max, people_median) = ai
+        .as_ref()
+        .map(|ai| (ai.people_min, ai.people_max, ai.people_median))
+        .unwrap_or_default();
+    let ai_tags = db
+        .photo_ai_tags_with_names(photo.id)?
+        .into_iter()
+        .map(|tag| AiTagSummary {
+            tag_key: tag.tag_key,
+            name: tag.name,
+            name_en: tag.name_en,
+            probability: tag.probability,
+            applied: tag.applied,
+        })
+        .collect();
+    let (width, height) = photo.effective_dimensions();
+    Ok(PhotoDetail {
+        id: photo.id,
+        path: photo.effective_path().to_string(),
+        original_path: photo.abs_path.clone(),
+        file_name: photo.file_name.clone(),
+        captured_at_utc: photo.captured_at_utc,
+        captured_at_local: photo.captured_at_local.clone(),
+        width,
+        height,
+        file_size: photo.effective_file_size(),
+        world_name: photo.world_name.clone(),
+        world_id: photo.world_id.clone(),
+        instance_id: photo.instance_id.clone(),
+        players: player_summaries(db, photo.id)?,
+        tags: db.photo_tags(photo.id)?,
+        ai_tags,
+        people_min,
+        people_max,
+        people_median,
+        is_favorite: photo.is_favorite,
+        note: photo.note.clone(),
+        status: photo.status.as_str().to_string(),
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn library_search_response(
+    control: &IpcControl,
+    world: Option<String>,
+    player: Option<String>,
+    tag: Option<String>,
+    ai_tags: Vec<String>,
+    from_utc: Option<i64>,
+    to_utc: Option<i64>,
+    favorite: bool,
+    limit: u32,
+    offset: u32,
+) -> Response {
+    let limit = limit.clamp(1, MAX_LIBRARY_LIMIT);
+    let filter = PhotoTextFilter {
+        world,
+        player,
+        tag,
+        favorite,
+        from_utc,
+        to_utc,
+        ai: AiPhotoFilter {
+            tags: ai_tags,
+            people_count: None,
+        },
+    };
+    let result = (|| -> vrc_photon_core::Result<PhotoSearch> {
+        let db = control
+            .db
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let total = db.count_photos_text(&filter)?;
+        let rows = db.search_photos_text(&filter, i64::from(limit), i64::from(offset))?;
+        let photos = rows
+            .iter()
+            .map(|photo| photo_summary(&db, photo))
+            .collect::<vrc_photon_core::Result<Vec<_>>>()?;
+        Ok(PhotoSearch {
+            photos,
+            total,
+            limit,
+            offset,
+        })
+    })();
+    match result {
+        Ok(result) => Response::Photos { result },
+        Err(error) => library_error(error),
+    }
+}
+
+fn library_photo_response(control: &IpcControl, photo_id: i64) -> Response {
+    let result = (|| -> vrc_photon_core::Result<Option<PhotoDetail>> {
+        let db = control
+            .db
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let Some(photo) = db.photo_by_id(photo_id)? else {
+            return Ok(None);
+        };
+        photo_detail(&db, &photo).map(Some)
+    })();
+    match result {
+        Ok(Some(photo)) => Response::Photo { photo },
+        Ok(None) => Response::Error {
+            code: ErrorCode::NotFound,
+            message: format!("photo not found: {photo_id}"),
+        },
+        Err(error) => library_error(error),
+    }
+}
+
+fn library_worlds_response(control: &IpcControl) -> Response {
+    let result = (|| -> vrc_photon_core::Result<Vec<WorldSummary>> {
+        let db = control
+            .db
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        Ok(db
+            .worlds_with_photo_counts()?
+            .into_iter()
+            .map(|world| WorldSummary {
+                world_id: world.world_id,
+                name: world.name,
+                photo_count: world.photo_count,
+            })
+            .collect())
+    })();
+    match result {
+        Ok(worlds) => Response::Worlds { worlds },
+        Err(error) => library_error(error),
+    }
+}
+
+fn library_stats_response(control: &IpcControl) -> Response {
+    let result = (|| -> vrc_photon_core::Result<IpcLibraryStats> {
+        let db = control
+            .db
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let stats = db.stats()?;
+        Ok(IpcLibraryStats {
+            photo_count: stats.photo_count,
+            total_bytes: stats.total_bytes,
+            world_count: stats.world_count,
+            compressed_count: stats.compressed_count,
+            derivative_bytes: stats.derivative_bytes,
+        })
+    })();
+    match result {
+        Ok(stats) => Response::LibraryStats { stats },
+        Err(error) => library_error(error),
+    }
+}
+
 fn stream_events(
     reader: &mut BufReader<vrc_photon_ipc::server::Stream>,
     control: &IpcControl,
@@ -650,7 +873,7 @@ mod tests {
     use vrc_photon_ai_protocol::{ModelState, Probe, TaggingJobStatus};
     use vrc_photon_core::ai::PluginInstallation;
     use vrc_photon_core::db::Db;
-    use vrc_photon_core::model::NewPhoto;
+    use vrc_photon_core::model::{NewPhoto, PhotoContext, PhotoPlayer};
     use vrc_photon_ipc::client::{IpcError, Subscription, request};
     use vrc_photon_ipc::{Endpoint, Event, PluginInstallStatus, Request, Response};
 
@@ -722,6 +945,77 @@ mod tests {
             db,
         };
         (dir, endpoint, control)
+    }
+
+    fn seed_library(control: &IpcControl) -> (i64, i64) {
+        let db = control.db.lock().unwrap();
+        let root = db.add_root("/photos", "reference").unwrap();
+        let mut photos = Vec::new();
+        for (name, captured, size) in [("a.png", 100, 10), ("b.png", 200, 20)] {
+            photos.push(
+                db.upsert_photo(&NewPhoto {
+                    root_id: root,
+                    rel_path: name.to_string(),
+                    abs_path: format!("/photos/{name}"),
+                    file_name: name.to_string(),
+                    captured_at_utc: captured,
+                    captured_at_local: "2026-11-09 12:00:00".to_string(),
+                    tz_offset_sec: 9 * 3600,
+                    width: 1920,
+                    height: 1080,
+                    file_size: size,
+                    mtime: captured,
+                    blake3: None,
+                })
+                .unwrap(),
+            );
+        }
+        let (a, b) = (photos[0], photos[1]);
+        let world_a = db
+            .upsert_world("wrld_a", Some("World A"), Some("log"))
+            .unwrap();
+        let world_b = db
+            .upsert_world("wrld_b", Some("World B"), Some("log"))
+            .unwrap();
+        for (photo_id, world_id, name) in [(a, world_a, "World A"), (b, world_b, "World B")] {
+            db.set_photo_context(&PhotoContext {
+                photo_id,
+                session_id: None,
+                world_id: Some(world_id),
+                world_name: Some(name.to_string()),
+                instance_id: Some("12345".to_string()),
+                link_method: "log".to_string(),
+                confidence: 1.0,
+                author: None,
+                linked_at: "2026-11-09T03:00:00+09:00".to_string(),
+            })
+            .unwrap();
+        }
+        db.set_photo_players(
+            a,
+            &[PhotoPlayer {
+                user_id: "usr_alice".to_string(),
+                display_name: "Alice".to_string(),
+            }],
+        )
+        .unwrap();
+        db.set_photo_tags(a, &["beach".to_string()]).unwrap();
+        db.set_favorite(a, true).unwrap();
+        db.connection()
+            .execute_batch(&format!(
+                "INSERT INTO photo_ai_tags(photo_id, plugin_id, tag_key, probability, applied, \
+                    model_version, catalog_version, tagged_at) \
+                 VALUES ({a}, '{AI_PLUGIN_ID}', 'sea', 0.9, 1, 'm1', 'c1', \
+                    '2026-11-09T00:00:00+00:00'); \
+                 INSERT INTO photo_ai(photo_id, plugin_id, variant, sidecar_version, \
+                    model_version, model_revision, catalog_version, source, presence_threshold, \
+                    character_present, presence_probability, people_min, people_max, \
+                    people_median, place_branch, place_probabilities_json, tagged_at) \
+                 VALUES ({a}, '{AI_PLUGIN_ID}', 'v', 's', 'm1', 'r1', 'c1', 'model', 0.5, \
+                    1, 0.9, 2, 3, 2, 'outdoor', NULL, '2026-11-09T00:00:00+00:00')"
+            ))
+            .unwrap();
+        (a, b)
     }
 
     fn install_plugin_row(control: &IpcControl) {
@@ -1271,6 +1565,127 @@ mod tests {
             Response::Status { status } => {
                 assert_eq!(status.pending_tagging_jobs, 2);
                 assert!(status.tagging_ready);
+            }
+            other => panic!("unexpected response: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn search_photos_returns_pages_players_and_worlds() {
+        let (_dir, endpoint, control) = test_control();
+        let (a, _b) = seed_library(&control);
+        let _server = IpcServer::start(endpoint.clone(), control.clone()).unwrap();
+
+        let response = request_raw(
+            &endpoint,
+            Request::SearchPhotos {
+                world: Some("World A".to_string()),
+                player: Some("Alice".to_string()),
+                tag: Some("beach".to_string()),
+                ai_tags: vec!["sea".to_string()],
+                from_utc: Some(99),
+                to_utc: Some(101),
+                favorite: true,
+                limit: 10,
+                offset: 0,
+            },
+        );
+        match response {
+            Response::Photos { result } => {
+                assert_eq!(result.total, 1);
+                assert_eq!(result.limit, 10);
+                assert_eq!(result.photos.len(), 1);
+                let photo = &result.photos[0];
+                assert_eq!(photo.id, a);
+                assert_eq!(photo.path, "/photos/a.png");
+                assert_eq!(photo.captured_at_utc, 100);
+                assert_eq!(photo.world_name.as_deref(), Some("World A"));
+                assert_eq!(photo.world_id.as_deref(), Some("wrld_a"));
+                assert_eq!(photo.players[0].display_name, "Alice");
+            }
+            other => panic!("unexpected response: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn search_photos_clamps_the_page_limit() {
+        let (_dir, endpoint, control) = test_control();
+        seed_library(&control);
+        let _server = IpcServer::start(endpoint.clone(), control.clone()).unwrap();
+
+        let response = request_raw(
+            &endpoint,
+            Request::SearchPhotos {
+                world: None,
+                player: None,
+                tag: None,
+                ai_tags: Vec::new(),
+                from_utc: None,
+                to_utc: None,
+                favorite: false,
+                limit: u32::MAX,
+                offset: 0,
+            },
+        );
+        match response {
+            Response::Photos { result } => assert_eq!(result.limit, MAX_LIBRARY_LIMIT),
+            other => panic!("unexpected response: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn get_photo_returns_full_metadata_and_not_found_for_missing_ids() {
+        let (_dir, endpoint, control) = test_control();
+        let (a, _b) = seed_library(&control);
+        let _server = IpcServer::start(endpoint.clone(), control.clone()).unwrap();
+
+        match request_raw(&endpoint, Request::GetPhoto { id: a }) {
+            Response::Photo { photo } => {
+                assert_eq!(photo.id, a);
+                assert_eq!(photo.path, "/photos/a.png");
+                assert_eq!(photo.original_path, "/photos/a.png");
+                assert_eq!((photo.width, photo.height), (1920, 1080));
+                assert_eq!(photo.file_size, 10);
+                assert!(photo.is_favorite);
+                assert_eq!(photo.tags, vec!["beach".to_string()]);
+                assert_eq!(photo.players[0].user_id, "usr_alice");
+                assert_eq!(photo.ai_tags.len(), 1);
+                assert_eq!(photo.ai_tags[0].tag_key, "sea");
+                assert!(photo.ai_tags[0].applied);
+                assert_eq!(
+                    (photo.people_min, photo.people_max, photo.people_median),
+                    (Some(2), Some(3), Some(2))
+                );
+            }
+            other => panic!("unexpected response: {other:?}"),
+        }
+
+        match request_raw(&endpoint, Request::GetPhoto { id: 9999 }) {
+            Response::Error { code, .. } => assert_eq!(code, ErrorCode::NotFound),
+            other => panic!("unexpected response: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn list_worlds_and_library_stats_report_library_totals() {
+        let (_dir, endpoint, control) = test_control();
+        seed_library(&control);
+        let _server = IpcServer::start(endpoint.clone(), control.clone()).unwrap();
+
+        match request_raw(&endpoint, Request::ListWorlds) {
+            Response::Worlds { worlds } => {
+                assert_eq!(worlds.len(), 2);
+                assert_eq!(worlds[0].photo_count, 1);
+            }
+            other => panic!("unexpected response: {other:?}"),
+        }
+
+        match request_raw(&endpoint, Request::LibraryStats) {
+            Response::LibraryStats { stats } => {
+                assert_eq!(stats.photo_count, 2);
+                assert_eq!(stats.total_bytes, 30);
+                assert_eq!(stats.world_count, 2);
+                assert_eq!(stats.compressed_count, 0);
             }
             other => panic!("unexpected response: {other:?}"),
         }
