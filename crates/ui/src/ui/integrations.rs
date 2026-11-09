@@ -39,6 +39,56 @@ enum AiToggle {
     Backlog,
 }
 
+fn on_off_label(enabled: bool) -> String {
+    if enabled {
+        tr!("integrations.summary.enabled")
+    } else {
+        tr!("integrations.summary.disabled")
+    }
+}
+
+/// One-line Discord state for the master list.
+pub(crate) fn discord_summary(configured: bool, destination: &str) -> String {
+    let state = if configured {
+        tr!("integrations.discord.webhook.configured")
+    } else {
+        tr!("integrations.discord.webhook.missing_short")
+    };
+    tr_args!(
+        "integrations.summary.discord",
+        state = state,
+        destination = destination
+    )
+}
+
+/// One-line automatic compression state for the master list.
+pub(crate) fn auto_compression_summary(enabled: bool, profile_count: usize) -> String {
+    tr_args!(
+        "integrations.summary.auto",
+        state = on_off_label(enabled),
+        count = profile_count
+    )
+}
+
+/// One-line AI tagging state for the master list.
+pub(crate) fn ai_tagging_summary(enabled: bool, running: i64, waiting: i64) -> String {
+    tr_args!(
+        "integrations.summary.ai",
+        state = on_off_label(enabled),
+        running = running,
+        waiting = waiting
+    )
+}
+
+/// One-line clipboard state for the master list.
+pub(crate) fn clipboard_summary(enabled: bool, profile: Option<&str>) -> String {
+    let state = on_off_label(enabled);
+    match profile {
+        Some(name) => tr_args!("integrations.summary.clipboard", state = state, name = name),
+        None => tr_args!("integrations.summary.clipboard_empty", state = state),
+    }
+}
+
 impl App {
     pub(crate) fn integrations_screen(
         &mut self,
@@ -848,8 +898,40 @@ pub(crate) fn ai_stage_label(stage: Option<TaggingStage>) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::ai_stage_label;
+    use super::{
+        ai_stage_label, ai_tagging_summary, auto_compression_summary, clipboard_summary,
+        discord_summary,
+    };
     use vrc_photon_ai_protocol::TaggingStage;
+
+    #[test]
+    fn section_summaries_follow_the_existing_card_values() {
+        assert_eq!(
+            discord_summary(true, "VRChat写真部"),
+            "設定済み ・ 送信先：VRChat写真部"
+        );
+        assert_eq!(
+            discord_summary(false, "Discord"),
+            "未設定 ・ 送信先：Discord"
+        );
+        assert_eq!(
+            auto_compression_summary(true, 2),
+            "有効 ・ 対象プロファイル 2 件"
+        );
+        assert_eq!(
+            auto_compression_summary(false, 0),
+            "無効 ・ 対象プロファイル 0 件"
+        );
+        assert_eq!(
+            ai_tagging_summary(true, 1, 12),
+            "有効 ・ 実行中 1 件 / 待機 12 件"
+        );
+        assert_eq!(
+            clipboard_summary(true, Some("標準")),
+            "有効 ・ プロファイル：標準"
+        );
+        assert_eq!(clipboard_summary(false, None), "無効 ・ プロファイル未選択");
+    }
 
     #[test]
     fn atmosphere_stage_has_a_label() {
