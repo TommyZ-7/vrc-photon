@@ -305,7 +305,7 @@ fn seed_demo_sessions(
             let previous = &fixture[order[end - 1]];
             let next = &fixture[order[end]];
             let same_world = next.world == Some(world_index);
-            let close = next.captured_at.utc - previous.captured_at.utc <= 2 * 60 * 60;
+            let close = next.captured_at.utc - previous.captured_at.utc <= 4 * 60 * 60;
             if !same_world || !close {
                 break;
             }
@@ -832,6 +832,7 @@ mod tests {
         assert!(!ids.is_empty());
         let summaries = db.session_summaries(&ids).unwrap();
         assert!(summaries.iter().any(|summary| !summary.players.is_empty()));
+        assert!(summaries.iter().any(|summary| summary.photo_count > 1));
         assert!(summaries.iter().all(|summary| summary.photo_count > 0));
         assert!(
             summaries
