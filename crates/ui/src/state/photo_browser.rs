@@ -28,6 +28,12 @@ pub(crate) fn list_scroll_top(handle: &UniformListScrollHandle) -> f32 {
     (-f32::from(offset)).max(0.0)
 }
 
+/// Scroll distance from the top of a `v_virtual_list`, in pixels.
+pub(crate) fn session_scroll_top(handle: &VirtualListScrollHandle) -> f32 {
+    let offset = handle.base_handle().offset().y;
+    (-f32::from(offset)).max(0.0)
+}
+
 /// Ordered snapshot of the library: only IDs and capture timestamps, so the
 /// full 100k-entry list stays cheap while photo rows load in pages.
 pub(crate) struct PhotoIndex {

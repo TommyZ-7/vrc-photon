@@ -17,9 +17,7 @@ use vrc_photon_ipc::{
 use crate::app::cli::log_timing;
 use crate::app::{App, Screen};
 use crate::ipc_bridge;
-use crate::state::photo_browser::{
-    anchor_photo_id, apply_library_index, list_scroll_top, sync_search_mirror,
-};
+use crate::state::photo_browser::{apply_library_index, sync_search_mirror};
 use crate::ui::notifications::{FailureNotice, failure_transition};
 use crate::ui::palette::{Palette, apply_component_theme, resolve};
 use crate::ui::shell::screen_direction;
@@ -888,16 +886,9 @@ impl App {
     /// mounted and `library_error` exposes the retry action. Returns `true`
     /// when the snapshot was replaced.
     pub(crate) fn reload_library(&mut self, preserve_anchor: bool, cx: &mut Context<Self>) -> bool {
-        let anchor = preserve_anchor.then(|| {
-            let browser = self.library.borrow();
-            anchor_photo_id(
-                &browser.index,
-                list_scroll_top(&browser.scroll),
-                browser.columns,
-                browser.row_height,
-            )
-        });
-        let anchor = anchor.flatten();
+        let anchor = preserve_anchor
+            .then(|| self.capture_top_photo(false))
+            .flatten();
 
         let index_start = Instant::now();
         let result = self.db.photo_index(PhotoSort::Newest);
@@ -912,14 +903,10 @@ impl App {
 
         self.library_error = None;
         self.library_dirty = false;
-        let (columns, scroll) = {
-            let browser = self.library.borrow();
-            (browser.columns.max(1), browser.scroll.clone())
-        };
-        if let Some(row) = anchor.and_then(|id| self.library.borrow().index.row_of_id(id)) {
-            scroll.scroll_to_item_strict(row / columns, ScrollStrategy::Top);
+        if let Some(id) = anchor {
+            self.scroll_to_photo(false, id, ScrollStrategy::Top);
         } else {
-            scroll.scroll_to_item_strict(0, ScrollStrategy::Top);
+            self.scroll_grid_to_top(false);
         }
 
         // An active result set stays mounted until the user clears it or runs

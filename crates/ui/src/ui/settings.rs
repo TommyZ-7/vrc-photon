@@ -34,7 +34,6 @@ use crate::app::ai::{
 };
 use crate::app::daemon::{autostart_description, open_path};
 use crate::ipc_bridge;
-use crate::state::photo_browser::{anchor_photo_id, list_scroll_top};
 use crate::ui::components::{dialog_panel, glass_panel, status_progress_bar};
 use crate::ui::palette::{
     accent_colors, find_accent, find_main, main_colors, preview_accent, preview_main, readable_on,
@@ -927,24 +926,20 @@ impl App {
     /// Remembers the top-left photo before a display change alters columns or
     /// row height. The next render of each grid restores that photo.
     pub(crate) fn capture_display_layout_anchors(&mut self) {
+        if self.settings.ui_photos_view_mode == vrc_photon_core::settings::PhotosViewMode::Sessions
+        {
+            self.ensure_library_session_rows();
+        }
+        let library_anchor = self.capture_top_photo(false);
+        let search_anchor = self.capture_top_photo(true);
         let mut library = self.library.borrow_mut();
         if library.pending_anchor.is_none() {
-            library.pending_anchor = anchor_photo_id(
-                &library.index,
-                list_scroll_top(&library.scroll),
-                library.columns,
-                library.row_height,
-            );
+            library.pending_anchor = library_anchor;
         }
         drop(library);
         let mut search = self.search_view.borrow_mut();
         if search.pending_anchor.is_none() {
-            search.pending_anchor = anchor_photo_id(
-                &search.index,
-                list_scroll_top(&search.scroll),
-                search.columns,
-                search.row_height,
-            );
+            search.pending_anchor = search_anchor;
         }
     }
 

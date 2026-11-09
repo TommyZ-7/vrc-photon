@@ -23,6 +23,15 @@ pub enum CardSize {
     ExtraLarge,
 }
 
+/// Photo grid presentation used when the Photos screen opens.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum PhotosViewMode {
+    #[default]
+    Timeline,
+    Sessions,
+}
+
 /// How automatic Discord posting is scheduled after a photo is compressed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
@@ -96,6 +105,9 @@ pub struct AppSettings {
     pub ui_card_show_size: bool,
     #[serde(default, deserialize_with = "deserialize_card_size")]
     pub ui_card_size: CardSize,
+    /// Whether the Photos grid opens in timeline or session order.
+    #[serde(default, deserialize_with = "deserialize_photos_view_mode")]
+    pub ui_photos_view_mode: PhotosViewMode,
     /// Main colour catalog id. Unknown ids fall back to `charcoal` in the UI.
     #[serde(default = "default_ui_theme_main")]
     pub ui_theme_main: String,
@@ -200,6 +212,16 @@ where
     Ok(serde_json::from_value(value).unwrap_or_default())
 }
 
+fn deserialize_photos_view_mode<'de, D>(
+    deserializer: D,
+) -> std::result::Result<PhotosViewMode, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).unwrap_or_default())
+}
+
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
@@ -231,6 +253,7 @@ impl Default for AppSettings {
             ui_card_show_date: true,
             ui_card_show_size: true,
             ui_card_size: CardSize::Medium,
+            ui_photos_view_mode: PhotosViewMode::Timeline,
             ui_theme_main: default_ui_theme_main(),
             ui_theme_accent: default_ui_theme_accent(),
             auto_update_check: true,
@@ -605,6 +628,35 @@ mod tests {
         assert!(!loaded.ui_card_show_date);
         assert!(!loaded.ui_card_show_size);
         assert_eq!(loaded.ui_card_size, CardSize::ExtraLarge);
+    }
+
+    #[test]
+    fn photos_view_mode_defaults_to_timeline_and_round_trips() {
+        let db = Db::open_in_memory().unwrap();
+        let settings = AppSettings {
+            ui_photos_view_mode: PhotosViewMode::Sessions,
+            ..Default::default()
+        };
+        settings.save(&db).unwrap();
+        let loaded = AppSettings::load(&db).unwrap();
+        assert_eq!(loaded.ui_photos_view_mode, PhotosViewMode::Sessions);
+        assert_eq!(
+            AppSettings::default().ui_photos_view_mode,
+            PhotosViewMode::Timeline
+        );
+    }
+
+    #[test]
+    fn unknown_photos_view_mode_falls_back_to_timeline() {
+        let mut value = serde_json::to_value(AppSettings::default()).unwrap();
+        value["ui_photos_view_mode"] = serde_json::json!("future_mode");
+        let settings: AppSettings = serde_json::from_value(value).unwrap();
+        assert_eq!(settings.ui_photos_view_mode, PhotosViewMode::Timeline);
+
+        let mut value = serde_json::to_value(AppSettings::default()).unwrap();
+        value["ui_photos_view_mode"] = serde_json::Value::Null;
+        let settings: AppSettings = serde_json::from_value(value).unwrap();
+        assert_eq!(settings.ui_photos_view_mode, PhotosViewMode::Timeline);
     }
 
     #[test]
