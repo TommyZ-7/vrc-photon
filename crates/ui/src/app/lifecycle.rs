@@ -481,6 +481,12 @@ impl App {
             self.refresh_search_after_ai_tag_edit(cx);
             self.refresh_selected_ai(cx);
         }
+        if let Ok(session_revision) = self.db.session_revision()
+            && session_revision > self.last_session_revision
+        {
+            self.last_session_revision = session_revision;
+            self.library.borrow_mut().invalidate_session_summaries();
+        }
         if let Some(revision) = revision_value
             && revision != self.stats_revision
         {

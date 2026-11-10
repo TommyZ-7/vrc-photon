@@ -763,6 +763,14 @@ impl PhotoBrowser {
         self.session_summary_failed.remove(&session_id);
     }
 
+    /// Drops every summary after a session lifecycle change. Visible headers
+    /// are re-planned by the next render; the row model and scroll stay put.
+    pub(crate) fn invalidate_session_summaries(&mut self) {
+        self.session_summaries.clear();
+        self.session_summary_pending.clear();
+        self.session_summary_failed.clear();
+    }
+
     pub(crate) fn toggle_session_collapsed(&mut self, id: i64) -> bool {
         let collapsed = if self.collapsed_sessions.remove(&id) {
             false
