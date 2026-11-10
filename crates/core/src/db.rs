@@ -1780,19 +1780,37 @@ impl Db {
     /// Monotonic counter used by the UI to detect daemon-side changes even
     /// when the number of photos stays the same (for example a moved file).
     pub fn library_revision(&self) -> Result<i64> {
+        self.revision("library_revision")
+    }
+
+    pub fn bump_library_revision(&self) -> Result<i64> {
+        self.bump_revision("library_revision")
+    }
+
+    /// Monotonic counter for AI metadata changes that do not alter the photo
+    /// index (results, thresholds, and catalog updates).
+    pub fn ai_revision(&self) -> Result<i64> {
+        self.revision("ai_revision")
+    }
+
+    pub fn bump_ai_revision(&self) -> Result<i64> {
+        self.bump_revision("ai_revision")
+    }
+
+    fn revision(&self, key: &str) -> Result<i64> {
         Ok(self
-            .get_setting("library_revision")?
+            .get_setting(key)?
             .and_then(|value| value.parse().ok())
             .unwrap_or(0))
     }
 
-    pub fn bump_library_revision(&self) -> Result<i64> {
+    fn bump_revision(&self, key: &str) -> Result<i64> {
         let revision = self.conn.query_row(
-            "INSERT INTO app_settings(key, value) VALUES ('library_revision', '1') \
+            "INSERT INTO app_settings(key, value) VALUES (?1, '1') \
              ON CONFLICT(key) DO UPDATE SET \
                 value = CAST(CAST(app_settings.value AS INTEGER) + 1 AS TEXT) \
              RETURNING CAST(value AS INTEGER)",
-            [],
+            params![key],
             |row| row.get(0),
         )?;
         Ok(revision)
@@ -5007,7 +5025,7 @@ impl Db {
         };
         tx.commit()?;
         if defaults_changed || updated > 0 {
-            self.bump_library_revision()?;
+            self.bump_ai_revision()?;
         }
         Ok(())
     }
@@ -5067,7 +5085,7 @@ impl Db {
         let updated = reapply_thresholds(&tx, plugin_id)?;
         tx.commit()?;
         if updated > 0 {
-            self.bump_library_revision()?;
+            self.bump_ai_revision()?;
         }
         Ok(updated)
     }
@@ -5098,14 +5116,14 @@ impl Db {
 
     /// Recomputes `photo_ai_tags.applied` from the effective threshold
     /// (user override, else the catalog default) in one UPDATE. Returns the
-    /// number of tag rows that were re-evaluated. The library revision
-    /// advances after the commit when at least one row was touched.
+    /// number of tag rows that were re-evaluated. The AI revision advances
+    /// after the commit when at least one row was touched.
     pub fn reapply_ai_tag_thresholds(&self, plugin_id: &str) -> Result<usize> {
         let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
         let updated = reapply_thresholds(&tx, plugin_id)?;
         tx.commit()?;
         if updated > 0 {
-            self.bump_library_revision()?;
+            self.bump_ai_revision()?;
         }
         Ok(updated)
     }
@@ -5117,7 +5135,7 @@ impl Db {
     /// photos are skipped without writing anything. The judged tags replace
     /// the previous result for this plugin, and `applied` is derived from the
     /// effective threshold (user override, else catalog default). Manual tags
-    /// are never touched. The library revision advances after the commit.
+    /// are never touched. The AI revision advances after the commit.
     pub fn save_photo_ai(
         &self,
         photo_id: i64,
@@ -5128,7 +5146,7 @@ impl Db {
         let saved = write_photo_ai(&tx, photo_id, plugin_id, result)?;
         tx.commit()?;
         if saved {
-            self.bump_library_revision()?;
+            self.bump_ai_revision()?;
         }
         Ok(saved)
     }
@@ -5156,7 +5174,7 @@ impl Db {
         let saved = write_photo_ai(&tx, photo_id, &plugin_id, result)?;
         tx.commit()?;
         if saved {
-            self.bump_library_revision()?;
+            self.bump_ai_revision()?;
         }
         Ok(saved)
     }
@@ -5575,7 +5593,7 @@ impl Db {
     /// Removes every AI result and catalog row for one plugin in a single
     /// transaction. Manual tags and other plugins' data are left untouched.
     /// Active jobs for the plugin are cancelled first so an in-flight sidecar
-    /// result cannot recreate the rows after the delete. The library revision
+    /// result cannot recreate the rows after the delete. The AI revision
     /// advances only when something was removed.
     pub fn delete_ai_data(&self, plugin_id: &str) -> Result<()> {
         let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
@@ -5591,7 +5609,7 @@ impl Db {
         }
         tx.commit()?;
         if removed > 0 {
-            self.bump_library_revision()?;
+            self.bump_ai_revision()?;
         }
         Ok(())
     }
@@ -10893,7 +10911,8 @@ mod tests {
             &test_ai_result(&[("sea", 0.75), ("park", 0.75)]),
         )
         .unwrap();
-        let revision = db.library_revision().unwrap();
+        let ai_revision = db.ai_revision().unwrap();
+        let library_revision = db.library_revision().unwrap();
 
         let updated = db
             .apply_ai_tag_thresholds(
@@ -10920,7 +10939,8 @@ mod tests {
                 .unwrap()
                 .applied
         );
-        assert!(db.library_revision().unwrap() > revision);
+        assert!(db.ai_revision().unwrap() > ai_revision);
+        assert_eq!(db.library_revision().unwrap(), library_revision);
     }
 
     #[test]
@@ -10937,7 +10957,22 @@ mod tests {
     }
 
     #[test]
-    fn threshold_reapplication_bumps_library_revision() {
+    fn ai_result_bumps_ai_revision_without_moving_library_revision() {
+        let db = Db::open_in_memory().unwrap();
+        install_test_catalog(&db);
+        let photo = seed_photo(&db);
+        let library_before = db.library_revision().unwrap();
+        let ai_before = db.ai_revision().unwrap();
+
+        db.save_photo_ai(photo, AI_PLUGIN, &test_ai_result(&[("sea", 0.97)]))
+            .unwrap();
+
+        assert!(db.ai_revision().unwrap() > ai_before);
+        assert_eq!(db.library_revision().unwrap(), library_before);
+    }
+
+    #[test]
+    fn threshold_reapplication_bumps_ai_revision() {
         let db = Db::open_in_memory().unwrap();
         db.sync_ai_catalog(AI_PLUGIN, &ai_catalog("2026-11-03.1", 0.5, 0.5))
             .unwrap();
@@ -10945,27 +10980,35 @@ mod tests {
         db.save_photo_ai(photo, AI_PLUGIN, &test_ai_result(&[("sea", 0.6)]))
             .unwrap();
 
-        let before = db.library_revision().unwrap();
+        let ai_before = db.ai_revision().unwrap();
+        let library_before = db.library_revision().unwrap();
         db.set_ai_tag_threshold(AI_PLUGIN, "sea", 0.7).unwrap();
         assert!(!db.photo_ai_tags(photo, false).unwrap()[0].applied);
-        assert!(db.library_revision().unwrap() > before);
+        assert!(db.ai_revision().unwrap() > ai_before);
+        assert_eq!(db.library_revision().unwrap(), library_before);
 
-        let before = db.library_revision().unwrap();
+        let ai_before = db.ai_revision().unwrap();
+        let library_before = db.library_revision().unwrap();
         db.reset_ai_tag_threshold(AI_PLUGIN, "sea").unwrap();
         assert!(db.photo_ai_tags(photo, false).unwrap()[0].applied);
-        assert!(db.library_revision().unwrap() > before);
+        assert!(db.ai_revision().unwrap() > ai_before);
+        assert_eq!(db.library_revision().unwrap(), library_before);
 
-        let before = db.library_revision().unwrap();
+        let ai_before = db.ai_revision().unwrap();
+        let library_before = db.library_revision().unwrap();
         db.sync_ai_catalog(AI_PLUGIN, &ai_catalog("2026-11-04.1", 0.7, 0.5))
             .unwrap();
         assert!(!db.photo_ai_tags(photo, false).unwrap()[0].applied);
-        assert!(db.library_revision().unwrap() > before);
+        assert!(db.ai_revision().unwrap() > ai_before);
+        assert_eq!(db.library_revision().unwrap(), library_before);
 
         // A catalog refresh that keeps the defaults does not reapply.
-        let before = db.library_revision().unwrap();
+        let ai_before = db.ai_revision().unwrap();
+        let library_before = db.library_revision().unwrap();
         db.sync_ai_catalog(AI_PLUGIN, &ai_catalog("2026-11-05.1", 0.7, 0.5))
             .unwrap();
-        assert_eq!(db.library_revision().unwrap(), before);
+        assert_eq!(db.ai_revision().unwrap(), ai_before);
+        assert_eq!(db.library_revision().unwrap(), library_before);
     }
 
     fn install_test_catalog(db: &Db) {
@@ -11267,7 +11310,8 @@ mod tests {
         let photo = seed_photo(&db);
         install_test_catalog(&db);
         let result = test_ai_result(&[("sea", 0.97)]);
-        let before = db.library_revision().unwrap();
+        let library_before = db.library_revision().unwrap();
+        let ai_before = db.ai_revision().unwrap();
 
         db.connection()
             .execute(
@@ -11287,7 +11331,7 @@ mod tests {
             .unwrap();
         assert!(!db.save_photo_ai(photo, AI_PLUGIN, &result).unwrap());
         assert!(db.photo_ai(photo).unwrap().is_none());
-        assert_eq!(db.library_revision().unwrap(), before);
+        assert_eq!(db.ai_revision().unwrap(), ai_before);
 
         db.connection()
             .execute(
@@ -11296,7 +11340,8 @@ mod tests {
             )
             .unwrap();
         assert!(db.save_photo_ai(photo, AI_PLUGIN, &result).unwrap());
-        assert!(db.library_revision().unwrap() > before);
+        assert!(db.ai_revision().unwrap() > ai_before);
+        assert_eq!(db.library_revision().unwrap(), library_before);
     }
 
     #[test]
@@ -11720,17 +11765,19 @@ mod tests {
             .unwrap();
         let job = db.tagging_jobs_for_photo(photo).unwrap()[0].id.clone();
         let result = test_ai_result(&[("sea", 0.97)]);
-        let before = db.library_revision().unwrap();
+        let library_before = db.library_revision().unwrap();
+        let ai_before = db.ai_revision().unwrap();
 
         assert!(!db.save_photo_ai_for_job(&job, &result).unwrap());
         assert!(db.photo_ai(photo).unwrap().is_none());
         assert!(!db.save_photo_ai_for_job("missing-job", &result).unwrap());
-        assert_eq!(db.library_revision().unwrap(), before);
+        assert_eq!(db.ai_revision().unwrap(), ai_before);
 
         db.next_pending_tagging_job().unwrap().unwrap();
         assert!(db.save_photo_ai_for_job(&job, &result).unwrap());
         assert_eq!(db.photo_ai(photo).unwrap().unwrap().plugin_id, AI_PLUGIN);
-        assert!(db.library_revision().unwrap() > before);
+        assert!(db.ai_revision().unwrap() > ai_before);
+        assert_eq!(db.library_revision().unwrap(), library_before);
         db.complete_tagging_job(&job).unwrap();
         assert_eq!(
             db.tagging_job(&job).unwrap().unwrap().status,
