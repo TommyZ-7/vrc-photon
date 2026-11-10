@@ -545,14 +545,45 @@ pub struct PhotoScanState {
     pub display_derivative_id: Option<i64>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DbProfile {
+    /// Long-running service connections (the daemon) keep the original cache
+    /// sizes because they run the heavy import and compression queries.
+    Service,
+    /// The UI process shares its address space with the renderer, thumbnail
+    /// cache, and decoded previews, so its connections use a smaller page
+    /// cache and mmap window.
+    Ui,
+}
+
+impl DbProfile {
+    const fn cache_size_kib(self) -> i64 {
+        match self {
+            Self::Service => 65_536,
+            Self::Ui => 16_384,
+        }
+    }
+
+    const fn mmap_size_bytes(self) -> i64 {
+        match self {
+            Self::Service => 268_435_456,
+            Self::Ui => 67_108_864,
+        }
+    }
+}
+
 impl Db {
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
+        Self::open_with_profile(path, DbProfile::Service)
+    }
+
+    pub fn open_with_profile(path: impl AsRef<Path>, profile: DbProfile) -> Result<Self> {
         let path = path.as_ref();
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
         let conn = Connection::open(path)?;
-        Self::configure(&conn)?;
+        Self::configure(&conn, profile)?;
         let db = Self {
             conn,
             path: Some(path.to_path_buf()),
@@ -562,9 +593,13 @@ impl Db {
     }
 
     pub fn open_in_memory() -> Result<Self> {
+        Self::open_in_memory_with_profile(DbProfile::Service)
+    }
+
+    pub fn open_in_memory_with_profile(profile: DbProfile) -> Result<Self> {
         let conn = Connection::open_in_memory()?;
-        Self::configure(&conn)?;
-        let db = Self { conn, path: None };
+        Self::configure(&conn, profile)?;
+        let db = Db { conn, path: None };
         db.migrate()?;
         Ok(db)
     }
@@ -573,9 +608,13 @@ impl Db {
     /// such as background index workers. Callers should fall back to a
     /// synchronous query when this fails.
     pub fn open_read_only(path: impl AsRef<Path>) -> Result<Self> {
+        Self::open_read_only_with_profile(path, DbProfile::Service)
+    }
+
+    pub fn open_read_only_with_profile(path: impl AsRef<Path>, profile: DbProfile) -> Result<Self> {
         let path = path.as_ref();
         let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
-        Self::configure(&conn)?;
+        Self::configure(&conn, profile)?;
         let version: i64 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
         check_schema_version(version)?;
         Ok(Self {
@@ -588,7 +627,7 @@ impl Db {
         self.path.as_deref()
     }
 
-    fn configure(conn: &Connection) -> Result<()> {
+    fn configure(conn: &Connection, profile: DbProfile) -> Result<()> {
         conn.pragma_update(None, "foreign_keys", "ON")?;
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
         // Best-effort tuning hints; the results are intentionally ignored. WAL
@@ -600,8 +639,8 @@ impl Db {
         // on a regular cadence. Keep a larger page cache and avoid spilling
         // ORDER BY temp b-trees to disk. These are per-connection hints; read-
         // only handles accept them, in-memory databases ignore mmap.
-        let _ = conn.pragma_update(None, "cache_size", -65_536i64);
-        let _ = conn.pragma_update(None, "mmap_size", 268_435_456i64);
+        let _ = conn.pragma_update(None, "cache_size", -profile.cache_size_kib());
+        let _ = conn.pragma_update(None, "mmap_size", profile.mmap_size_bytes());
         let _ = conn.pragma_update(None, "temp_store", "MEMORY");
         Ok(())
     }
@@ -8906,6 +8945,37 @@ mod tests {
             .pragma_query_value(None, "temp_store", |row| row.get(0))
             .unwrap();
         assert_eq!(temp_store, 2);
+    }
+
+    #[test]
+    fn ui_connections_use_a_smaller_cache_and_mmap_window() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("library.db");
+        let db = Db::open_with_profile(&path, DbProfile::Ui).unwrap();
+        let cache_size: i64 = db
+            .conn
+            .pragma_query_value(None, "cache_size", |row| row.get(0))
+            .unwrap();
+        assert_eq!(cache_size, -16_384);
+        let mmap_size: i64 = db
+            .conn
+            .pragma_query_value(None, "mmap_size", |row| row.get(0))
+            .unwrap();
+        assert_eq!(mmap_size, 67_108_864);
+    }
+
+    #[test]
+    fn read_only_connections_accept_a_profile() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("library.db");
+        drop(Db::open(&path).unwrap());
+
+        let db = Db::open_read_only_with_profile(&path, DbProfile::Ui).unwrap();
+        let cache_size: i64 = db
+            .conn
+            .pragma_query_value(None, "cache_size", |row| row.get(0))
+            .unwrap();
+        assert_eq!(cache_size, -16_384);
     }
 
     #[test]

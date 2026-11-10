@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Local, Utc};
-use vrc_photon_core::db::Db;
+use vrc_photon_core::db::{Db, DbProfile};
 use vrc_photon_core::model::{NewPhoto, PhotoContext};
 use vrc_photon_i18n::tr_args;
 
@@ -131,7 +131,7 @@ fn prepare_demo_at(
         remove_demo_root_checked(root)?;
     }
     create_demo_dirs(root)?;
-    let mut db = match Db::open(&db_path) {
+    let mut db = match Db::open_with_profile(&db_path, DbProfile::Ui) {
         Ok(db) => db,
         Err(_) if current && !reset => {
             // The marker claims the data is current, but the database
@@ -139,7 +139,8 @@ fn prepare_demo_at(
             // mode broken.
             remove_demo_root_checked(root)?;
             create_demo_dirs(root)?;
-            Db::open(&db_path).map_err(|error| format!("{}: {error}", db_path.display()))?
+            Db::open_with_profile(&db_path, DbProfile::Ui)
+                .map_err(|error| format!("{}: {error}", db_path.display()))?
         }
         Err(error) => return Err(format!("{}: {error}", db_path.display())),
     };
@@ -149,7 +150,8 @@ fn prepare_demo_at(
         drop(db);
         remove_demo_root_checked(root)?;
         create_demo_dirs(root)?;
-        db = Db::open(&db_path).map_err(|error| format!("{}: {error}", db_path.display()))?;
+        db = Db::open_with_profile(&db_path, DbProfile::Ui)
+            .map_err(|error| format!("{}: {error}", db_path.display()))?;
         count = db.count_photos();
     }
     if count.map_err(|error| error.to_string())? == 0 {
@@ -171,7 +173,7 @@ pub(crate) fn demo_thumb_path(assets: &DemoAssets, photo_id: i64) -> PathBuf {
 }
 
 fn empty_database() -> Db {
-    Db::open_in_memory().expect("fallback in-memory database")
+    Db::open_in_memory_with_profile(DbProfile::Ui).expect("fallback in-memory database")
 }
 
 /// Resolves the database the UI will open, before any window exists, so the
@@ -215,7 +217,7 @@ pub(crate) fn open_database(
         };
     }
     let path = resolve_db_path(options);
-    match Db::open(&path) {
+    match Db::open_with_profile(&path, DbProfile::Ui) {
         Ok(db) => (db, false, true, None, None),
         Err(error) => {
             let message = tr_args!("demo.db_error", error = error);

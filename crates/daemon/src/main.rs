@@ -58,6 +58,7 @@ fn open_daemon(
 }
 
 fn main() -> Result<()> {
+    vrc_photon_core::memory::configure_allocator();
     if logging::init("vrc-photon-daemon", "info,vrc_photon_daemon=debug").is_none() {
         tracing::warn!("file logging is unavailable; using stderr only");
     }

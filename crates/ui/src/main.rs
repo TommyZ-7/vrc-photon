@@ -34,6 +34,7 @@ mod update_view;
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 fn main() {
+    vrc_photon_core::memory::configure_allocator();
     if logging::init("vrc-photon", "info,vrc_photonn=debug").is_none() {
         tracing::warn!("file logging is unavailable; using stderr only");
     }

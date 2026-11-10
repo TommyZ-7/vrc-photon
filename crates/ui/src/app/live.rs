@@ -13,7 +13,7 @@ use std::time::Duration;
 use chrono::Utc;
 use gpui_kit::component::notification::NotificationType;
 use gpui_kit::*;
-use vrc_photon_core::db::Db;
+use vrc_photon_core::db::{Db, DbProfile};
 use vrc_photon_core::model::{
     CompressionJob, DaemonError, DeletionCounts, DeletionRequest, LibraryStats, QueueStatus,
 };
@@ -153,7 +153,7 @@ impl App {
             let snapshot = cx
                 .background_executor()
                 .spawn(async move {
-                    let db = Db::open_read_only(&open_path).ok()?;
+                    let db = Db::open_read_only_with_profile(&open_path, DbProfile::Ui).ok()?;
                     Some(collect_live_snapshot(&db, stats_revision))
                 })
                 .await;

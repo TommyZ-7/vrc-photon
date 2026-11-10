@@ -17,6 +17,7 @@ pub mod instance;
 pub mod linker;
 pub mod log_parser;
 pub mod logging;
+pub mod memory;
 pub mod metadata;
 pub mod model;
 pub mod photo_filename;

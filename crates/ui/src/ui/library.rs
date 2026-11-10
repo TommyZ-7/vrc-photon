@@ -14,7 +14,7 @@ use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::*;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
-use vrc_photon_core::db::Db;
+use vrc_photon_core::db::{Db, DbProfile};
 use vrc_photon_core::model::Photo;
 use vrc_photon_i18n::{tr, tr_args};
 
@@ -182,8 +182,8 @@ impl App {
                 .background_executor()
                 .spawn(async move {
                     let page_start = Instant::now();
-                    let result =
-                        Db::open_read_only(&path).and_then(|db| db.photos_by_ids(&background_ids));
+                    let result = Db::open_read_only_with_profile(&path, DbProfile::Ui)
+                        .and_then(|db| db.photos_by_ids(&background_ids));
                     log_timing("photos_by_ids", page_start);
                     result
                 })
