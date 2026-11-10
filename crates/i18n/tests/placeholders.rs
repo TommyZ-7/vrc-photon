@@ -191,6 +191,7 @@ const CALL_SITES: &[(&str, &[&str])] = &[
     ("session.players", &["names"]),
     ("session.players.more", &["count", "names"]),
     ("session.unlinked_date", &["count", "date"]),
+    ("session.continued_count", &["count"]),
     ("ai.tags.picker.selected", &["count"]),
     ("settings.footer.summary", &["cache", "language"]),
     ("settings.language.save_failed", &["error"]),

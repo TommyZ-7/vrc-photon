@@ -1077,8 +1077,20 @@ fn render_session_grid(
                         SessionRowKind::DateLabel { day, photo_count } => {
                             rendered.push(render_session_date_label(app, day, photo_count));
                         }
-                        SessionRowKind::Continuation { .. } => {
-                            // Rendered in Task 5.2; the row model is tested first.
+                        SessionRowKind::Continuation {
+                            session_id,
+                            photo_count,
+                        } => {
+                            let summary = browser.session_summary(session_id);
+                            let failed = browser.session_summary_failed.contains(&session_id);
+                            if summary.is_none() && !failed {
+                                missing_summaries.push(session_id);
+                            }
+                            rendered.push(render_session_continuation(
+                                app,
+                                summary.as_deref(),
+                                photo_count,
+                            ));
                         }
                         SessionRowKind::Photos { first_photo, count } => {
                             let start = first_photo;
@@ -1514,8 +1526,57 @@ fn render_session_header(
         .into_any_element()
 }
 
-fn render_session_date_label(app: &App, day: i32, photo_count: usize) -> AnyElement {
+fn render_session_continuation(
+    app: &App,
+    summary: Option<&SessionSummary>,
+    photo_count: usize,
+) -> AnyElement {
     let p = app.palette;
+    let world = summary
+        .and_then(|summary| summary.world_name.clone())
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| tr!("session.unknown_world"));
+    let world = summary
+        .is_none()
+        .then(|| tr!("session.loading"))
+        .unwrap_or(world);
+
+    h_flex()
+        .h(px(SESSION_CONTINUATION_ROW_HEIGHT))
+        .w_full()
+        .pr(px(RAIL_WIDTH))
+        .pl(px(SESSION_HEADER_PAD_X))
+        .items_center()
+        .gap(px(9.))
+        .border_l_2()
+        .border_color(rgba(p.line_soft))
+        .text_size(px(11.))
+        .text_color(rgb(p.muted))
+        .child(div().min_w_0().truncate().child(world))
+        .child(
+            div()
+                .flex_shrink_0()
+                .px(px(6.))
+                .py(px(1.))
+                .rounded_full()
+                .bg(rgba(with_alpha(p.accent, 0x12)))
+                .text_color(rgb(p.accent))
+                .text_size(px(8.5))
+                .child(tr!("session.continued")),
+        )
+        .child(
+            div()
+                .flex_shrink_0()
+                .font_family("monospace")
+                .child(tr_args!(
+                    "session.continued_count",
+                    count = format_count(photo_count as i64)
+                )),
+        )
+        .into_any_element()
+}
+
+fn render_session_date_label(app: &App, day: i32, photo_count: usize) -> AnyElement {    let p = app.palette;
     let line = || div().h(px(1.)).flex_1().bg(rgba(p.line_soft));
     h_flex()
         .h(px(SESSION_DATE_LABEL_ROW_HEIGHT))
