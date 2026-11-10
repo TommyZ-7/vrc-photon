@@ -12,9 +12,7 @@ use serde_json::json;
 use vrc_photon_core::error::CoreError;
 use vrc_photon_core::photo_image::{PhotoImage, render_photo_image};
 
-use crate::client::{
-    DaemonClient, DaemonError, RandomSearchPhotosQuery, SearchPhotosQuery,
-};
+use crate::client::{DaemonClient, DaemonError, RandomSearchPhotosQuery, SearchPhotosQuery};
 
 const DEFAULT_LIMIT: u32 = 50;
 const MAX_LIMIT: u32 = 200;

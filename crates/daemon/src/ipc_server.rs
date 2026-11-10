@@ -450,8 +450,7 @@ fn handle_connection(
                 seed,
             } => {
                 let response = random_library_search_response(
-                    &control, world, player, tag, ai_tags, from_utc, to_utc, favorite, limit,
-                    seed,
+                    &control, world, player, tag, ai_tags, from_utc, to_utc, favorite, limit, seed,
                 );
                 write_response(reader.get_mut(), id, response)?;
             }
