@@ -582,6 +582,40 @@ mod tests {
     }
 
     #[test]
+    fn full_image_matches_the_standard_decode_for_grayscale_alpha_png() {
+        let dir = tempdir().unwrap();
+        let source = dir.path().join("gray-alpha.png");
+        image::GrayAlphaImage::from_fn(37, 21, |x, y| {
+            image::LumaA([(x * 7 + y * 11) as u8, (x * 13 % 256) as u8])
+        })
+        .save(&source)
+        .unwrap();
+
+        let expected = decode_image(&source).expect("standard decode").into_rgba8();
+        let actual = decode_full_image(&source).expect("full decode");
+
+        assert_eq!(actual.dimensions(), (37, 21));
+        assert_eq!(actual.as_raw(), expected.as_raw());
+    }
+
+    #[test]
+    fn full_image_falls_back_for_16_bit_png() {
+        let dir = tempdir().unwrap();
+        let source = dir.path().join("gray16.png");
+        image::ImageBuffer::<image::Luma<u16>, Vec<u16>>::from_fn(37, 21, |x, y| {
+            image::Luma([(x * 1000 + y * 37) as u16])
+        })
+        .save(&source)
+        .unwrap();
+
+        let expected = decode_image(&source).expect("standard decode").into_rgba8();
+        let actual = decode_full_image(&source).expect("full decode");
+
+        assert_eq!(actual.dimensions(), (37, 21));
+        assert_eq!(actual.as_raw(), expected.as_raw());
+    }
+
+    #[test]
     fn full_image_matches_the_standard_decode_for_webp() {
         let dir = tempdir().unwrap();
         let source = write_source(dir.path());
