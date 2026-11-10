@@ -22,15 +22,16 @@ use crate::app::ai::{
 };
 use crate::state::motion::ToggleMotion;
 use crate::ui::components::{
-    chip, compression_policy_warning, glass_panel, manual_option_row, status_progress_bar,
+    card_divider, chip, compression_policy_warning, glass_panel, manual_option_row,
+    status_progress_bar,
 };
 use crate::ui::theme::*;
 
 /// Generous bounds for the collapsed-body height animation. The profile lists
 /// scroll above these sizes, so the body never exceeds its bound.
-const AUTO_BODY_MAX: f32 = 430.0;
-const CLIPBOARD_BODY_MAX: f32 = 330.0;
-const AI_BODY_MAX: f32 = 520.0;
+const AUTO_BODY_MAX: f32 = 560.0;
+const CLIPBOARD_BODY_MAX: f32 = 400.0;
+const AI_BODY_MAX: f32 = 700.0;
 
 /// Which runtime setting a switch row writes.
 #[derive(Clone, Copy)]
@@ -286,6 +287,7 @@ impl App {
         let body = v_flex()
             .pt(px(12.))
             .gap(px(12.))
+            .child(card_divider(&p))
             .child(self.setting_switch(
                 tr!("settings.startup.immediate"),
                 "",
@@ -294,6 +296,7 @@ impl App {
                 cx,
                 |settings, value| settings.auto_compress_immediate = value,
             ))
+            .child(card_divider(&p))
             .child(self.setting_switch(
                 tr!("settings.startup.keep_original"),
                 tr!("settings.startup.keep_original_hint"),
@@ -308,7 +311,7 @@ impl App {
                     self.settings.auto_compress,
                 ),
                 |this, warning| {
-                    this.child(
+                    this.child(card_divider(&p)).child(
                         div()
                             .p(px(12.))
                             .rounded(px(8.))
@@ -321,6 +324,7 @@ impl App {
                     )
                 },
             )
+            .child(card_divider(&p))
             .child(
                 v_flex()
                     .gap(px(6.))
@@ -446,12 +450,14 @@ impl App {
                     v_flex()
                         .pt(px(12.))
                         .gap(px(10.))
+                        .child(card_divider(&p))
                         .child(
                             div()
                                 .text_size(px(10.))
                                 .text_color(rgb(p.muted))
                                 .child(tr!("integrations.ai.not_ready")),
                         )
+                        .child(card_divider(&p))
                         .child(
                             Button::new("integrations-ai-open-settings-not-ready")
                                 .label(tr!("integrations.ai.open_settings"))
@@ -648,6 +654,7 @@ impl App {
             v_flex()
                 .pt(px(12.))
                 .gap(px(12.))
+                .child(card_divider(&p))
                 .child(self.ai_switch_row(
                     tr!("integrations.ai.enabled"),
                     enabled,
@@ -655,6 +662,7 @@ impl App {
                     AiToggle::Enabled,
                     cx,
                 ))
+                .child(card_divider(&p))
                 .child(self.ai_switch_row(
                     tr!("integrations.ai.auto"),
                     auto,
@@ -662,6 +670,7 @@ impl App {
                     AiToggle::Auto,
                     cx,
                 ))
+                .child(card_divider(&p))
                 .child(self.ai_switch_row(
                     tr!("integrations.ai.backlog"),
                     backlog,
@@ -669,6 +678,7 @@ impl App {
                     AiToggle::Backlog,
                     cx,
                 ))
+                .child(card_divider(&p))
                 .child(
                     v_flex()
                         .gap(px(6.))
@@ -712,6 +722,7 @@ impl App {
                             }),
                         )),
                 )
+                .child(card_divider(&p))
                 .child(self.collapsible_body(
                     "integrations-ai-body",
                     motion,
@@ -720,6 +731,7 @@ impl App {
                     cx,
                     details,
                 ))
+                .child(card_divider(&p))
                 .child(settings_row);
 
         card.child(body).into_any_element()
@@ -803,12 +815,14 @@ impl App {
         let body = v_flex()
             .pt(px(12.))
             .gap(px(8.))
+            .child(card_divider(&p))
             .child(
                 div()
                     .text_size(px(10.))
                     .text_color(rgb(p.muted_2))
                     .child(tr!("integrations.clipboard.profiles_hint")),
             )
+            .child(card_divider(&p))
             .child(if profiles.is_empty() {
                 div()
                     .text_size(px(10.))
