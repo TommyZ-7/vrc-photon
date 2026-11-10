@@ -1695,9 +1695,11 @@ mod tests {
     fn replace_index_drops_collapsed_sessions_without_visible_photos() {
         let mut browser = PhotoBrowser::new(session_index(), TEST_ROW_HEIGHT);
         browser.toggle_session_collapsed(7);
-        browser.replace_index(Arc::new(PhotoIndex::new(vec![
-            index_entry_with_session(3, 202512, Some(8)),
-        ])));
+        browser.replace_index(Arc::new(PhotoIndex::new(vec![index_entry_with_session(
+            3,
+            202512,
+            Some(8),
+        )])));
         assert!(browser.collapsed_sessions.is_empty());
     }
 
@@ -1711,9 +1713,11 @@ mod tests {
         browser.insert_session_summaries(generation, &[7], vec![summary(7)]);
         browser.plan_session_summaries([8], 1);
 
-        browser.replace_index(Arc::new(PhotoIndex::new(vec![
-            index_entry_with_session(1, 202601, Some(7)),
-        ])));
+        browser.replace_index(Arc::new(PhotoIndex::new(vec![index_entry_with_session(
+            1,
+            202601,
+            Some(7),
+        )])));
 
         assert!(browser.collapsed_sessions.contains(&7));
         assert!(browser.session_rows.is_none());
