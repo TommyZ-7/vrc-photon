@@ -1421,14 +1421,26 @@ fn render_session_header(
     let app_weak = shared.app.clone();
     let toggle = Button::new(SharedString::from(format!("session-toggle-{session_id}")))
         .label(if collapsed { "▸" } else { "▾" })
-        .small()
-        .ghost()
+        .text()
+        .h(px(SESSION_TOGGLE_SIZE))
+        .w(px(SESSION_TOGGLE_SIZE))
+        .flex_shrink_0()
+        .justify_center()
+        .text_size(px(14.))
+        .accessibility_label(if collapsed {
+            tr!("session.expand")
+        } else {
+            tr!("session.collapse")
+        })
+        .toggled(!collapsed)
         .tooltip(if collapsed {
             tr!("session.expand")
         } else {
             tr!("session.collapse")
         })
         .on_click(move |_, window, cx| {
+            // The card below is also clickable. Stop here so one press toggles once.
+            cx.stop_propagation();
             let viewport_height = session_grid_viewport_height(window);
             if let Some(app_entity) = app_weak.upgrade() {
                 app_entity.update(cx, |app, cx| {
@@ -1437,21 +1449,13 @@ fn render_session_header(
             }
         });
 
-    let mut header = h_flex()
-        .w_full()
-        .h(px(SESSION_HEADER_ROW_HEIGHT))
+    let mut controls = h_flex()
+        .flex_shrink_0()
         .items_center()
-        .gap(px(13.))
-        .pl(px(14.))
-        .pr(px(RAIL_WIDTH + 14.))
-        .rounded(px(12.))
-        .border_1()
-        .border_color(rgba(p.line_soft))
-        .bg(rgb(p.panel_inner))
-        .child(cover_el)
-        .child(body);
+        .gap(px(8.))
+        .mr(px(SESSION_HEADER_CONTROL_INSET));
     if ongoing {
-        header = header.child(
+        controls = controls.child(
             h_flex()
                 .flex_shrink_0()
                 .items_center()
@@ -1469,7 +1473,41 @@ fn render_session_header(
                 .child(tr!("session.ongoing")),
         );
     }
-    header.child(toggle).into_any_element()
+    controls = controls.child(toggle);
+
+    let card_id = SharedString::from(format!("session-header-{session_id}"));
+    let app_card = shared.app.clone();
+    let header = h_flex()
+        .id(card_id)
+        .cursor_pointer()
+        .hover(move |this| this.bg(rgb(p.panel_2)))
+        .on_click(move |_, window, cx| {
+            let viewport_height = session_grid_viewport_height(window);
+            if let Some(app_entity) = app_card.upgrade() {
+                app_entity.update(cx, |app, cx| {
+                    app.toggle_session_collapsed(session_id, viewport_height, cx);
+                });
+            }
+        })
+        .w_full()
+        .h(px(SESSION_HEADER_ROW_HEIGHT))
+        .items_center()
+        .gap(px(13.))
+        .pl(px(SESSION_HEADER_PAD_X))
+        .pr(px(SESSION_HEADER_PAD_X))
+        .rounded(px(12.))
+        .border_1()
+        .border_color(rgba(p.line_soft))
+        .bg(rgb(p.panel_inner))
+        .child(cover_el)
+        .child(body)
+        .child(controls);
+
+    div()
+        .w_full()
+        .pr(px(RAIL_WIDTH))
+        .child(header)
+        .into_any_element()
 }
 
 fn render_session_date_label(app: &App, day: i32, photo_count: usize) -> AnyElement {
