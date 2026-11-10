@@ -48,7 +48,7 @@ UI を起動すると、デーモンが未起動の場合は同じディレク�
   vrc-photon-daemon --no-tray
   ```
 
-デーモンが起動しているかは次のコマンドで確認できます。
+デーモンが起動しているかは、Linux では次のコマンドで確認できます。
 
 ```bash
 pgrep -a vrc-photon-daemon
@@ -105,14 +105,12 @@ MCP サーバーは標準入出力で通信するため、クライアント側�
 
 ## 4. データディレクトリを上書きする
 
-MCP サーバーは、`--data-dir` で指定したデータディレクトリ（省略時は既定値）からデーモンのソケットを解決します。デーモンが使っているデータディレクトリと一致させてください。既定のデータディレクトリは次の場所です。
+MCP サーバーがデーモンのソケットを解決するために使うデータディレクトリは、`--data-dir <PATH>` で上書きできます。省略時は次の既定値を使います。デーモン側と同じパスを指定してください。
 
 | 環境 | データディレクトリ |
 |---|---|
 | Linux | `$XDG_DATA_HOME/vrc-photon`（未設定なら `~/.local/share/vrc-photon`） |
 | Windows | `%LOCALAPPDATA%\vrc-photon` |
-
-`--data-dir <PATH>` を指定すると、MCP サーバーがデーモンのソケットを解決するためのデータディレクトリを上書きできます。デーモン側と同じパスを指定してください。
 
 ```json
 {
@@ -124,6 +122,8 @@ MCP サーバーは、`--data-dir` で指定したデータディレクトリ（
   }
 }
 ```
+
+Linux で `XDG_RUNTIME_DIR` が設定されている場合、デーモンのソケットは `$XDG_RUNTIME_DIR/vrc-photon/daemon.sock` に置かれます。この場合は通常 `--data-dir` を指定する必要はありません。`XDG_RUNTIME_DIR` が未設定の場合、ソケットは `<data-dir>/run/daemon.sock` になります。
 
 Linux で `XDG_RUNTIME_DIR` が設定されている場合、デーモンのソケットは `$XDG_RUNTIME_DIR/vrc-photon/daemon.sock` に置かれます。この場合は通常 `--data-dir` を指定する必要はありません。`XDG_RUNTIME_DIR` が未設定の場合、ソケットは `<data-dir>/run/daemon.sock` になります。
 
@@ -191,4 +191,4 @@ AppImage を使っている場合は、展開した `squashfs-root` のパスが
 | `image_unavailable` | 写真ファイルが移動・削除されている、または画像を読み取れない |
 | `daemon_error` | デーモンが返したその他のエラー |
 
-写真 ID は検索のたびに変わる可能性があるため、`get_photo` や `get_photo_image` には直前に `search_photos` が返した ID を指定してください。
+写真 ID は `search_photos` の結果に含まれる値をそのまま使ってください。
