@@ -232,12 +232,41 @@ impl SessionRows {
     /// Photo shown at the top of the viewport for a non-negative scroll
     /// offset. Header and date-label rows resolve to the photos below them.
     pub(crate) fn top_photo_index(&self, scroll_top: f32) -> Option<usize> {
+        self.top_photo_index_with_origins(scroll_top, &self.origins)
+    }
+
+    /// Cumulative origins for a caller-supplied height vector. Used while a
+    /// collapse animation is painting heights that differ from the settled
+    /// row model.
+    pub(crate) fn origins_with_heights(&self, heights: &[f32]) -> Vec<f32> {
+        let mut origins = Vec::with_capacity(heights.len());
+        let mut offset = 0.0;
+        for height in heights {
+            origins.push(offset);
+            offset += *height;
+        }
+        origins
+    }
+
+    /// Photo shown at the top of the viewport using animated row heights.
+    pub(crate) fn top_photo_index_with_heights(
+        &self,
+        scroll_top: f32,
+        heights: &[f32],
+    ) -> Option<usize> {
+        self.top_photo_index_with_origins(scroll_top, &self.origins_with_heights(heights))
+    }
+
+    fn top_photo_index_with_origins(
+        &self,
+        scroll_top: f32,
+        origins: &[f32],
+    ) -> Option<usize> {
         if self.rows.is_empty() {
             return None;
         }
         let top = scroll_top.max(0.0);
-        let index = self
-            .origins
+        let index = origins
             .partition_point(|origin| *origin <= top)
             .saturating_sub(1);
         let photo = *self.row_photo_start.get(index)?;
@@ -680,6 +709,33 @@ mod tests {
             rows.heights_with_collapse(&HashMap::from([(7, 2.0)])),
             vec![40.0, 0.0]
         );
+    }
+
+    #[test]
+    fn top_photo_index_follows_the_animated_heights() {
+        let entries = vec![
+            entry(6, 20261109, Some(7)),
+            entry(5, 20261109, Some(7)),
+            entry(4, 20261108, Some(8)),
+            entry(3, 20261108, Some(8)),
+        ];
+        let rows = SessionRows::build(
+            &entries,
+            2,
+            200.0,
+            92.0,
+            46.0,
+            &HashSet::new(),
+            &HashSet::new(),
+        );
+        let animated = rows.heights_with_collapse(&HashMap::from([(7, 0.5)]));
+        // Header 92 + half photo row 100 => the second header starts at 192.
+        assert_eq!(
+            rows.top_photo_index_with_heights(200.0, &animated),
+            Some(2)
+        );
+        // The settled geometry still has the first photo row at 200..400.
+        assert_eq!(rows.top_photo_index(200.0), Some(0));
     }
 
     #[test]

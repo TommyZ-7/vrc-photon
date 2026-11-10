@@ -377,6 +377,10 @@ pub(crate) struct PhotoBrowser {
     pub(crate) session_scroll: VirtualListScrollHandle,
     pub(crate) session_rows: Option<Arc<SessionRows>>,
     session_rows_key: Option<SessionRowsKey>,
+    /// Row heights most recently painted by `session_layout`, including the
+    /// per-frame collapse animation. The gallery header and year rail use
+    /// these instead of the settled origins while rows are moving.
+    session_last_heights: Vec<f32>,
     pub(crate) collapsed_sessions: HashSet<i64>,
     pub(crate) session_collapse_motions: SessionCollapseMotions,
     /// Session header restored after the active collapse motions settle.
@@ -408,6 +412,7 @@ impl PhotoBrowser {
             session_scroll: VirtualListScrollHandle::new(),
             session_rows: None,
             session_rows_key: None,
+            session_last_heights: Vec::new(),
             collapsed_sessions: HashSet::new(),
             session_collapse_motions: SessionCollapseMotions::default(),
             pending_session_anchor: None,
@@ -546,6 +551,7 @@ impl PhotoBrowser {
             &animating,
         );
         let heights = rows.heights_with_collapse(&factors);
+        self.session_last_heights = heights.clone();
         // A navigation target chosen while another session was still moving
         // is restored once every motion has settled, using the settled row
         // origins. A rail jump (photo anchor) wins over a header click.
@@ -611,9 +617,13 @@ impl PhotoBrowser {
     }
 
     pub(crate) fn top_photo_index(&self, scroll_top: f32) -> Option<usize> {
-        self.session_rows
-            .as_ref()
-            .and_then(|rows| rows.top_photo_index(scroll_top))
+        self.session_rows.as_ref().and_then(|rows| {
+            if self.session_last_heights.len() == rows.heights().len() {
+                rows.top_photo_index_with_heights(scroll_top, &self.session_last_heights)
+            } else {
+                rows.top_photo_index(scroll_top)
+            }
+        })
     }
 
     /// Marks up to `limit` uncached session IDs as pending and returns them.
