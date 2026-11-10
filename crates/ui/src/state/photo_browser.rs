@@ -701,10 +701,7 @@ impl PhotoBrowser {
 
     /// Expands a collapsed session before a rail jump measures its photo row.
     /// Returns the rebuilt rows, or `None` before the first layout.
-    pub(crate) fn expand_session_for_jump(
-        &mut self,
-        session_id: i64,
-    ) -> Option<Arc<SessionRows>> {
+    pub(crate) fn expand_session_for_jump(&mut self, session_id: i64) -> Option<Arc<SessionRows>> {
         if self.collapsed_sessions.remove(&session_id) {
             self.settle_session_collapse(session_id);
             self.session_rows = None;
