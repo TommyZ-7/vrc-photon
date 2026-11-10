@@ -14,9 +14,11 @@ use crate::ui::theme::average_bgra;
 
 /// Decoded RGBA bytes the in-memory thumbnail cache may retain. The count cap
 /// below only bounds bookkeeping overhead; the byte budget is what keeps the
-/// cache from growing with a large thumbnail size.
-const THUMB_CACHE_BYTES: usize = 96 * 1024 * 1024;
-const THUMB_CACHE_ENTRIES: usize = 192;
+/// cache from growing with a large thumbnail size. Photos and search share
+/// this cache, and the UI process also holds preview images, so the budget is
+/// deliberately smaller than the renderer's working set.
+const THUMB_CACHE_BYTES: usize = 64 * 1024 * 1024;
+const THUMB_CACHE_ENTRIES: usize = 128;
 const THUMB_IN_FLIGHT: usize = 4;
 /// A failed decode is retried after this delay, so a transient source or IO
 /// error does not hide the thumbnail until the next cache clear.

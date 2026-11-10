@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 #[cfg(test)]
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use vrc_photon_core::db::Db;
+use vrc_photon_core::db::{Db, DbProfile};
 use vrc_photon_core::error::Result;
 
 /// Keeps one read-only connection open for background queries so the UI does
@@ -43,7 +43,7 @@ impl BackgroundReader {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         if slot.is_none() {
-            let db = Db::open_read_only(&self.path)?;
+            let db = Db::open_read_only_with_profile(&self.path, DbProfile::Ui)?;
             #[cfg(test)]
             self.successful_opens.fetch_add(1, Ordering::Relaxed);
             *slot = Some(db);
