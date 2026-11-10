@@ -13,7 +13,7 @@ use crate::state::photo_browser::{
     anchor_photo_id, list_scroll_top, session_scroll_top, set_session_scroll_offset,
 };
 use crate::ui::theme::{
-    CARD_ROW_GAP, MOTION_BASE, SESSION_CONTINUATION_ROW_HEIGHT, SESSION_DATE_LABEL_ROW_HEIGHT,
+    MOTION_BASE, SESSION_CONTINUATION_ROW_HEIGHT, SESSION_DATE_LABEL_ROW_HEIGHT,
     SESSION_HEADER_ROW_HEIGHT,
 };
 
@@ -75,9 +75,9 @@ impl App {
         self.library.borrow_mut().ensure_session_rows(
             columns,
             row_height,
-            SESSION_HEADER_ROW_HEIGHT + CARD_ROW_GAP,
-            SESSION_DATE_LABEL_ROW_HEIGHT + CARD_ROW_GAP,
-            SESSION_CONTINUATION_ROW_HEIGHT + CARD_ROW_GAP,
+            SESSION_HEADER_ROW_HEIGHT + self.grid_gap(),
+            SESSION_DATE_LABEL_ROW_HEIGHT + self.grid_gap(),
+            SESSION_CONTINUATION_ROW_HEIGHT + self.grid_gap(),
         );
     }
 
@@ -106,9 +106,9 @@ impl App {
         let rows = browser.ensure_session_rows(
             columns,
             row_height,
-            SESSION_HEADER_ROW_HEIGHT + CARD_ROW_GAP,
-            SESSION_DATE_LABEL_ROW_HEIGHT + CARD_ROW_GAP,
-            SESSION_CONTINUATION_ROW_HEIGHT + CARD_ROW_GAP,
+            SESSION_HEADER_ROW_HEIGHT + self.grid_gap(),
+            SESSION_DATE_LABEL_ROW_HEIGHT + self.grid_gap(),
+            SESSION_CONTINUATION_ROW_HEIGHT + self.grid_gap(),
         );
         let index = rows.top_photo_index(session_scroll_top(&browser.session_scroll))?;
         browser.index.entries.get(index).map(|entry| entry.id)
@@ -140,9 +140,9 @@ impl App {
         let rows = browser.ensure_session_rows(
             columns,
             row_height,
-            SESSION_HEADER_ROW_HEIGHT + CARD_ROW_GAP,
-            SESSION_DATE_LABEL_ROW_HEIGHT + CARD_ROW_GAP,
-            SESSION_CONTINUATION_ROW_HEIGHT + CARD_ROW_GAP,
+            SESSION_HEADER_ROW_HEIGHT + self.grid_gap(),
+            SESSION_DATE_LABEL_ROW_HEIGHT + self.grid_gap(),
+            SESSION_CONTINUATION_ROW_HEIGHT + self.grid_gap(),
         );
         let Some(position) = browser.index.row_of_id(id) else {
             return;
@@ -220,9 +220,9 @@ impl App {
         let before = browser.session_layout(
             columns,
             row_height,
-            SESSION_HEADER_ROW_HEIGHT + CARD_ROW_GAP,
-            SESSION_DATE_LABEL_ROW_HEIGHT + CARD_ROW_GAP,
-            SESSION_CONTINUATION_ROW_HEIGHT + CARD_ROW_GAP,
+            SESSION_HEADER_ROW_HEIGHT + self.grid_gap(),
+            SESSION_DATE_LABEL_ROW_HEIGHT + self.grid_gap(),
+            SESSION_CONTINUATION_ROW_HEIGHT + self.grid_gap(),
             now,
         );
         let header_offset = before
@@ -247,9 +247,9 @@ impl App {
         let after = browser.session_layout(
             columns,
             row_height,
-            SESSION_HEADER_ROW_HEIGHT + CARD_ROW_GAP,
-            SESSION_DATE_LABEL_ROW_HEIGHT + CARD_ROW_GAP,
-            SESSION_CONTINUATION_ROW_HEIGHT + CARD_ROW_GAP,
+            SESSION_HEADER_ROW_HEIGHT + self.grid_gap(),
+            SESSION_DATE_LABEL_ROW_HEIGHT + self.grid_gap(),
+            SESSION_CONTINUATION_ROW_HEIGHT + self.grid_gap(),
             now,
         );
         let header_offset = after

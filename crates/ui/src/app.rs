@@ -42,7 +42,10 @@ use vrc_photon_core::model::{
     CompressionJob, CompressionProfile, DaemonError, DeletionCounts, DeletionRequest, Derivative,
     LibraryStats, Photo, PhotoPlayer, PhotoTextFilter, SendHistoryEntry,
 };
-use vrc_photon_core::settings::{AppSettings, load_discord_webhook};
+use vrc_photon_core::settings::{
+    AppSettings, UI_CARD_RADIUS_MAX, UI_CARD_RADIUS_MIN, UI_GRID_GAP_MAX, UI_GRID_GAP_MIN,
+    clamp_card_radius, clamp_grid_gap, load_discord_webhook,
+};
 use vrc_photon_core::thumbnail::ThumbnailCacheUsage;
 use vrc_photon_i18n::{tr, tr_args};
 use vrc_photon_ipc::Endpoint;
@@ -76,7 +79,8 @@ use crate::ui::notifications::{ToastSpec, toast_flush_needed};
 use crate::ui::palette::{accent_colors, main_colors, resolve};
 use crate::ui::settings::ThemeAxis;
 use crate::ui::theme::{
-    MIN_CARD_WIDTH, Palette, WORKSPACE_GAP, WORKSPACE_PAD, content_insets, photo_row_height,
+    GRID_GAP, MIN_CARD_WIDTH, Palette, WORKSPACE_GAP, WORKSPACE_PAD, content_insets,
+    photo_row_height,
 };
 use crate::update_view;
 
@@ -344,6 +348,10 @@ pub struct App {
     pub(crate) pending_test_send: Option<i64>,
     pub(crate) thumbnail_quality_slider: Entity<SliderState>,
     pub(crate) _thumbnail_quality_subscription: Subscription,
+    pub(crate) grid_gap_slider: Entity<SliderState>,
+    pub(crate) _grid_gap_subscription: Subscription,
+    pub(crate) card_radius_slider: Entity<SliderState>,
+    pub(crate) _card_radius_subscription: Subscription,
     /// Last measured size of the thumbnail cache, refreshed when the settings
     /// screen opens and after a clear.
     pub(crate) thumbnail_cache_usage: Option<ThumbnailCacheUsage>,
@@ -542,6 +550,11 @@ impl App {
     /// display. `0` disables throttling.
     pub(crate) fn motion_fps(&self, window: &Window, cx: &Context<Self>) -> f32 {
         effective_motion_fps(self.settings.ui_max_fps, window.refresh_interval(cx))
+    }
+
+    /// Horizontal and vertical gap between photo cards, in pixels.
+    pub(crate) fn grid_gap(&self) -> f32 {
+        f32::from(self.settings.ui_grid_gap)
     }
 
     pub(crate) fn overlay_open(&self) -> bool {
@@ -854,6 +867,63 @@ impl App {
                 }
             },
         );
+        let grid_gap_slider = cx.new(|_| {
+            SliderState::new()
+                .min(f32::from(UI_GRID_GAP_MIN))
+                .max(f32::from(UI_GRID_GAP_MAX))
+                .step(1.0)
+                .default_value(f32::from(initial_settings.ui_grid_gap))
+        });
+        let grid_gap_subscription = cx.subscribe(
+            &grid_gap_slider,
+            |this, _, event: &SliderEvent, cx| match event {
+                SliderEvent::Change(value) => {
+                    let gap = clamp_grid_gap(value.end());
+                    if this.settings.ui_grid_gap != gap {
+                        this.settings.ui_grid_gap = gap;
+                        cx.notify();
+                    }
+                }
+                SliderEvent::Release(value) => {
+                    let gap = clamp_grid_gap(value.end());
+                    if this.settings.ui_grid_gap != gap {
+                        this.settings.ui_grid_gap = gap;
+                    }
+                    // Do not capture the anchor here: the setting is already
+                    // updated, and the gallery's `layout_changed` path reads
+                    // the pre-change browser geometry when Photos returns.
+                    this.save_grid_display_settings(cx);
+                }
+            },
+        );
+        let card_radius_slider = cx.new(|_| {
+            SliderState::new()
+                .min(f32::from(UI_CARD_RADIUS_MIN))
+                .max(f32::from(UI_CARD_RADIUS_MAX))
+                .step(1.0)
+                .default_value(f32::from(initial_settings.ui_card_radius))
+        });
+        let card_radius_subscription = cx.subscribe(
+            &card_radius_slider,
+            |this, _, event: &SliderEvent, cx| match event {
+                SliderEvent::Change(value) => {
+                    let radius = clamp_card_radius(value.end());
+                    if this.settings.ui_card_radius != radius {
+                        this.settings.ui_card_radius = radius;
+                        cx.notify();
+                    }
+                }
+                SliderEvent::Release(value) => {
+                    let radius = clamp_card_radius(value.end());
+                    if this.settings.ui_card_radius != radius {
+                        this.settings.ui_card_radius = radius;
+                    }
+                    // Card radius does not change the grid geometry, so the
+                    // scroll anchor does not need to be recaptured.
+                    this.save_grid_display_settings(cx);
+                }
+            },
+        );
         let initial_discord_url = load_discord_webhook(&db).ok().flatten();
         let discord_url_input = cx.new(|cx| {
             InputState::new(window, cx).placeholder(tr!("integrations.discord.webhook.placeholder"))
@@ -949,7 +1019,7 @@ impl App {
         let search_bounds = Rc::new(RefCell::new(HashMap::new()));
         let library_bounds_epoch = Rc::new(Cell::new(0));
         let search_bounds_epoch = Rc::new(Cell::new(0));
-        let initial_row_height = photo_row_height(MIN_CARD_WIDTH, true, true);
+        let initial_row_height = photo_row_height(MIN_CARD_WIDTH, true, true, GRID_GAP);
         let library = Rc::new(RefCell::new(PhotoBrowser::new(
             empty_index.clone(),
             initial_row_height,
@@ -1186,6 +1256,10 @@ impl App {
             pending_test_send: None,
             thumbnail_quality_slider,
             _thumbnail_quality_subscription: thumbnail_quality_subscription,
+            grid_gap_slider,
+            _grid_gap_subscription: grid_gap_subscription,
+            card_radius_slider,
+            _card_radius_subscription: card_radius_subscription,
             thumbnail_cache_usage: None,
             palette: initial_palette,
             update: update_view::UpdateState::new(health_token, database_ok, demo, db_path),

@@ -349,6 +349,7 @@ fn render_header(app: &App, shared: &Rc<GalleryShared>, window: &Window) -> AnyE
         app.settings.ui_card_size,
         app.settings.ui_card_show_world,
         app.settings.ui_card_show_date || app.settings.ui_card_show_size,
+        app.grid_gap(),
     );
     let first_visible = if app.settings.ui_photos_view_mode == PhotosViewMode::Sessions {
         browser
@@ -554,6 +555,7 @@ fn render_grid(
     let p = app.palette;
     let search = shared.search;
     let width = f32::from(content_viewport(window).width);
+    let grid_gap = app.grid_gap();
     let metrics = if search {
         search_grid_metrics(
             width,
@@ -561,6 +563,7 @@ fn render_grid(
             app.settings.ui_card_size,
             app.settings.ui_card_show_world,
             app.settings.ui_card_show_date || app.settings.ui_card_show_size,
+            grid_gap,
         )
     } else {
         library_grid_metrics(
@@ -570,11 +573,11 @@ fn render_grid(
             app.settings.ui_card_size,
             app.settings.ui_card_show_world,
             app.settings.ui_card_show_date || app.settings.ui_card_show_size,
+            grid_gap,
         )
     };
     let image_height = metrics.image_height;
     let card_width = Some(metrics.card_width);
-    let grid_gap = GRID_GAP;
 
     let (index, scroll, columns, row_height, generation, labels, rail_drag, rail_hover) = {
         let mut browser = shared.browser.borrow_mut();
@@ -904,6 +907,7 @@ fn render_session_grid(
 ) -> AnyElement {
     let p = app.palette;
     let width = f32::from(content_viewport(window).width);
+    let grid_gap = app.grid_gap();
     let metrics = library_grid_metrics(
         width,
         app.sidebar_collapsed,
@@ -911,6 +915,7 @@ fn render_session_grid(
         app.settings.ui_card_size,
         app.settings.ui_card_show_world,
         app.settings.ui_card_show_date || app.settings.ui_card_show_size,
+        grid_gap,
     );
 
     let now = Instant::now();
@@ -947,9 +952,9 @@ fn render_session_grid(
         let layout = browser.session_layout(
             metrics.columns,
             metrics.row_height,
-            SESSION_HEADER_ROW_HEIGHT + CARD_ROW_GAP,
-            SESSION_DATE_LABEL_ROW_HEIGHT + CARD_ROW_GAP,
-            SESSION_CONTINUATION_ROW_HEIGHT + CARD_ROW_GAP,
+            SESSION_HEADER_ROW_HEIGHT + grid_gap,
+            SESSION_DATE_LABEL_ROW_HEIGHT + grid_gap,
+            SESSION_CONTINUATION_ROW_HEIGHT + grid_gap,
             now,
         );
         let rows = layout.rows.clone();
@@ -1005,7 +1010,6 @@ fn render_session_grid(
     let list_index = index.clone();
     let list_columns = columns;
     let list_heights = animated_heights.clone();
-    let grid_gap = GRID_GAP;
     let list = v_virtual_list(
         app_entity,
         "session-photo-grid",
@@ -1620,7 +1624,7 @@ fn render_page_error(
         PageFailure::Timeout => tr!("photos.page_load_failed_timeout"),
         PageFailure::ReadError => tr!("photos.page_load_failed_error"),
     };
-    let panel_height = (metrics.row_height - CARD_ROW_GAP).max(metrics.image_height);
+    let panel_height = (metrics.row_height - grid_gap).max(metrics.image_height);
     // Small card presets with hidden metadata cannot fit the full mock copy.
     // Drop the explanation line first so the range, reason, and actions never
     // spill out of the fixed row.
@@ -1789,7 +1793,7 @@ fn render_card(
         .borrow()
         .color(id)
         .unwrap_or_else(|| p.scene_color(photo_scene_key(photo)));
-    let card_radius = 13.0;
+    let card_radius = f32::from(app.settings.ui_card_radius);
     let image_radius = inner_corner_radius(card_radius, 1.0);
     let meta_line = card_strings.meta.clone();
     let has_info = show_world || meta_line.is_some();
