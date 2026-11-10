@@ -91,8 +91,14 @@ fn begin_suggestion_state(
 // composition rely on the platform IME consuming them before GPUI sees them.
 // Escape is deliberately not intercepted here: the input handles IME cancel
 // first, and the field wrapper dismisses the popup from the propagated event.
+//
+// Enter is exempt from the IME check: GPUI's printable-key heuristic omits
+// `"enter"`, so `Keystroke::is_ime_in_progress()` reports `true` for a plain
+// Enter because it has no `key_char`. The platform IME consumes the Enter that
+// commits a composition before the event reaches this interceptor, so a
+// delivered Enter always means "confirm the selected suggestion".
 fn suggestion_key_action_for_key(key: &str, ime_in_progress: bool) -> Option<SuggestionKeyAction> {
-    if ime_in_progress {
+    if ime_in_progress && key != "enter" {
         return None;
     }
     suggestion_key_action(key)
@@ -401,8 +407,23 @@ mod tests {
     }
 
     #[test]
-    fn ime_keystrokes_are_not_intercepted() {
-        assert_eq!(suggestion_key_action_for_key("enter", true), None);
+    fn ime_printable_keys_are_not_intercepted() {
+        assert_eq!(suggestion_key_action_for_key("up", true), None);
+        assert_eq!(
+            suggestion_key_action_for_key("up", false),
+            Some(SuggestionKeyAction::Previous)
+        );
+    }
+
+    #[test]
+    fn enter_confirms_even_when_gpui_reports_ime_in_progress() {
+        // GPUI reports `is_ime_in_progress()` for Enter because `"enter"` is
+        // missing from its non-printable key list and Enter has no key_char.
+        // The confirm path must not be gated on that flag.
+        assert_eq!(
+            suggestion_key_action_for_key("enter", true),
+            Some(SuggestionKeyAction::Confirm)
+        );
         assert_eq!(
             suggestion_key_action_for_key("enter", false),
             Some(SuggestionKeyAction::Confirm)
