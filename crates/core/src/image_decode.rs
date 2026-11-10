@@ -7,8 +7,8 @@
 //! oversized files from their metadata before reading them into memory.
 //!
 //! Formats decoded through the `image` crate are returned with their EXIF
-//! orientation applied, so thumbnails, previews, compression, and tagging all
-//! see the displayed layout. AVIF and JPEG XL keep their own decoders'
+//! orientation applied, so thumbnails, full images, compression, and tagging
+//! all see the displayed layout. AVIF and JPEG XL keep their own decoders'
 //! container/bitstream orientation handling and are not rotated a second time.
 //!
 //! # Memory bounds
@@ -24,7 +24,9 @@ use std::fs;
 use std::path::Path;
 
 use image::metadata::Orientation;
-use image::{DynamicImage, ImageBuffer, ImageDecoder, ImageReader};
+use image::{
+    ColorType, DynamicImage, GenericImageView, ImageBuffer, ImageDecoder, ImageReader, RgbaImage,
+};
 use jpegxl_rs::decode::{Event, Events};
 use jpegxl_rs::image::ToDynamic;
 
@@ -36,6 +38,8 @@ pub const MAX_DECODE_PIXELS: u64 = 64 * 1024 * 1024;
 pub const MAX_DECODE_ALLOC_BYTES: u64 = 512 * 1024 * 1024;
 /// Maximum compressed file size read for the AVIF/JXL decoders.
 pub const MAX_COMPRESSED_FILE_BYTES: u64 = 256 * 1024 * 1024;
+/// Longest edge kept for the memory-only Quick Look image.
+pub const FULL_IMAGE_MAX: u32 = 8192;
 
 /// Decodes a source or derivative image in any format the library can produce.
 ///
@@ -44,10 +48,7 @@ pub const MAX_COMPRESSED_FILE_BYTES: u64 = 256 * 1024 * 1024;
 /// `jpegxl-rs`. All formats are bounded by [`MAX_DECODE_PIXELS`], and any EXIF
 /// orientation is applied exactly once.
 pub fn decode_image(path: &Path) -> Option<DynamicImage> {
-    let extension = path
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .map(|extension| extension.to_ascii_lowercase());
+    let extension = normalized_extension(path);
 
     match extension.as_deref() {
         Some("avif") => decode_avif(path),
@@ -56,11 +57,156 @@ pub fn decode_image(path: &Path) -> Option<DynamicImage> {
     }
 }
 
+/// Decodes the display file for Quick Look without the thumbnail cap.
+///
+/// Images under [`FULL_IMAGE_MAX`] keep their original pixels; larger ones are
+/// downscaled once so the memory ceiling is bounded. Formats decoded by the
+/// `image` crate are expanded into one pre-sized RGBA allocation, so a full RGB
+/// source and a full RGBA conversion never exist at the same time.
+pub fn decode_full_image(source: &Path) -> Option<RgbaImage> {
+    match normalized_extension(source).as_deref() {
+        Some("avif" | "jxl") => decode_full_fallback(source),
+        _ => decode_standard_rgba(source).or_else(|| decode_full_fallback(source)),
+    }
+}
+
+fn normalized_extension(path: &Path) -> Option<String> {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .map(|extension| extension.to_ascii_lowercase())
+}
+
+fn decode_full_fallback(source: &Path) -> Option<RgbaImage> {
+    let image = decode_image(source)?;
+    let (width, height) = image.dimensions();
+    if width.max(height) <= FULL_IMAGE_MAX {
+        Some(image.into_rgba8())
+    } else {
+        let scaled = image.thumbnail(FULL_IMAGE_MAX, FULL_IMAGE_MAX);
+        drop(image);
+        Some(scaled.into_rgba8())
+    }
+}
+
+/// Decodes an 8-bit image through one allocation sized for RGBA.
+///
+/// The decoder writes its native bytes into the spare capacity, then the
+/// buffer is expanded in place from the last pixel backwards, so the source
+/// and the converted pixels share one full-size allocation. Sixteen-bit and
+/// float formats keep the image-crate conversion path.
+fn decode_standard_rgba(source: &Path) -> Option<RgbaImage> {
+    let mut reader = ImageReader::open(source).ok()?.with_guessed_format().ok()?;
+    reader.limits(decode_limits());
+    let mut decoder = reader.into_decoder().ok()?;
+    let (width, height) = decoder.dimensions();
+    if !within_pixel_limit(width, height) {
+        return reject_too_many_pixels(source, width, height);
+    }
+    let color = decoder.color_type();
+    if !matches!(
+        color,
+        ColorType::Rgba8 | ColorType::Rgb8 | ColorType::L8 | ColorType::La8
+    ) {
+        return None;
+    }
+    let pixels = usize::try_from(width)
+        .ok()?
+        .checked_mul(usize::try_from(height).ok()?)?;
+    let rgba_len = pixels.checked_mul(4)?;
+    let decoded_len = usize::try_from(decoder.total_bytes()).ok()?;
+    if decoded_len > rgba_len {
+        return None;
+    }
+    let orientation = decoder.orientation().unwrap_or(Orientation::NoTransforms);
+    let mut buffer = Vec::with_capacity(rgba_len);
+    buffer.resize(decoded_len, 0);
+    decoder.read_image(&mut buffer).ok()?;
+    expand_decoded_buffer(&mut buffer, color, pixels, rgba_len)?;
+    let image = RgbaImage::from_raw(width, height, buffer)?;
+    Some(finish_full_image(image, orientation))
+}
+
+/// Expands an 8-bit decoded buffer to RGBA in place.
+fn expand_decoded_buffer(
+    buffer: &mut Vec<u8>,
+    color: ColorType,
+    pixels: usize,
+    rgba_len: usize,
+) -> Option<()> {
+    debug_assert!(
+        buffer.capacity() >= rgba_len,
+        "decoded buffer must reserve the RGBA size before expansion"
+    );
+    match color {
+        ColorType::Rgba8 => {
+            if buffer.len() != rgba_len {
+                return None;
+            }
+            Some(())
+        }
+        ColorType::Rgb8 => {
+            if buffer.len() != pixels.checked_mul(3)? {
+                return None;
+            }
+            buffer.resize(rgba_len, 0);
+            for index in (0..pixels).rev() {
+                let src = index * 3;
+                let dst = index * 4;
+                let pixel = [buffer[src], buffer[src + 1], buffer[src + 2]];
+                buffer[dst..dst + 4].copy_from_slice(&[pixel[0], pixel[1], pixel[2], 255]);
+            }
+            Some(())
+        }
+        ColorType::L8 => {
+            if buffer.len() != pixels {
+                return None;
+            }
+            buffer.resize(rgba_len, 0);
+            for index in (0..pixels).rev() {
+                let value = buffer[index];
+                let dst = index * 4;
+                buffer[dst..dst + 4].copy_from_slice(&[value, value, value, 255]);
+            }
+            Some(())
+        }
+        ColorType::La8 => {
+            if buffer.len() != pixels.checked_mul(2)? {
+                return None;
+            }
+            buffer.resize(rgba_len, 0);
+            for index in (0..pixels).rev() {
+                let src = index * 2;
+                let value = buffer[src];
+                let alpha = buffer[src + 1];
+                let dst = index * 4;
+                buffer[dst..dst + 4].copy_from_slice(&[value, value, value, alpha]);
+            }
+            Some(())
+        }
+        _ => None,
+    }
+}
+
+/// Applies EXIF orientation before the one downscale, matching the order used
+/// by the image-crate path.
+fn finish_full_image(image: RgbaImage, orientation: Orientation) -> RgbaImage {
+    let mut image = DynamicImage::ImageRgba8(image);
+    image.apply_orientation(orientation);
+    let rgba = image.into_rgba8();
+    if rgba.width().max(rgba.height()) <= FULL_IMAGE_MAX {
+        rgba
+    } else {
+        DynamicImage::ImageRgba8(rgba)
+            .thumbnail(FULL_IMAGE_MAX, FULL_IMAGE_MAX)
+            .into_rgba8()
+    }
+}
+
 /// Reads displayed image dimensions without decoding pixel data.
 ///
 /// EXIF orientation is read from the file header and 90/270-degree
 /// orientations swap the stored width and height. This keeps the scanner's
-/// width/height semantics equal to what previews and thumbnails display.
+/// width/height semantics equal to what thumbnails and full images display.
 pub fn image_dimensions(path: &Path) -> Option<(u32, u32)> {
     let mut decoder = open_decoder(path)?;
     let (width, height) = decoder.dimensions();
@@ -103,7 +249,7 @@ fn within_pixel_limit(width: u32, height: u32) -> bool {
 
 /// Rejects an image whose header declares more pixels than the cap allows.
 /// The check happens before any full-size pixel buffer is allocated.
-fn reject_too_many_pixels(path: &Path, width: u32, height: u32) -> Option<DynamicImage> {
+fn reject_too_many_pixels<T>(path: &Path, width: u32, height: u32) -> Option<T> {
     tracing::warn!(
         path = %path.display(),
         width,
@@ -302,7 +448,6 @@ mod tests {
     use super::*;
     use crate::compressor;
     use crate::model::{CompressionFormat, CompressionProfile};
-    use crate::preview;
     use crate::thumbnail::{self, ThumbnailSpec};
     use image::{GenericImageView, Rgb, RgbImage, Rgba, RgbaImage};
     use std::path::PathBuf;
@@ -347,6 +492,158 @@ mod tests {
             .unwrap();
 
         assert_eq!(decode_image(&source).unwrap().dimensions(), (4, 3));
+    }
+
+    fn write_rgb_jpeg(path: &Path, width: u32, height: u32) {
+        RgbImage::from_fn(width, height, |x, y| {
+            Rgb([
+                (x * 7 % 251) as u8,
+                (y * 11 % 241) as u8,
+                ((x + y) * 13 % 239) as u8,
+            ])
+        })
+        .save(path)
+        .unwrap();
+    }
+
+    fn write_rgb_png(path: &Path, width: u32, height: u32) {
+        RgbImage::from_fn(width, height, |x, y| {
+            Rgb([
+                (x * 7 % 251) as u8,
+                (y * 11 % 241) as u8,
+                ((x + y) * 13 % 239) as u8,
+            ])
+        })
+        .save(path)
+        .unwrap();
+    }
+
+    #[test]
+    fn full_image_matches_the_standard_decode_for_rgb_jpeg() {
+        let dir = tempdir().unwrap();
+        let source = dir.path().join("rgb.jpg");
+        write_rgb_jpeg(&source, 37, 21);
+
+        let expected = decode_image(&source).expect("standard decode").into_rgba8();
+        let actual = decode_full_image(&source).expect("full decode");
+
+        assert_eq!(actual.dimensions(), (37, 21));
+        assert_eq!(actual.as_raw(), expected.as_raw());
+    }
+
+    #[test]
+    fn full_image_matches_the_standard_decode_for_rgb_png() {
+        let dir = tempdir().unwrap();
+        let source = dir.path().join("rgb.png");
+        write_rgb_png(&source, 37, 21);
+
+        let expected = decode_image(&source).expect("standard decode").into_rgba8();
+        let actual = decode_full_image(&source).expect("full decode");
+
+        assert_eq!(actual.dimensions(), (37, 21));
+        assert_eq!(actual.as_raw(), expected.as_raw());
+    }
+
+    #[test]
+    fn full_image_matches_the_standard_decode_for_rgba_png() {
+        let dir = tempdir().unwrap();
+        let source = dir.path().join("rgba.png");
+        RgbaImage::from_fn(37, 21, |x, y| {
+            Rgba([
+                (x * 5 % 251) as u8,
+                (y * 3 % 241) as u8,
+                ((x + y) * 17 % 239) as u8,
+                (x * 29 % 256) as u8,
+            ])
+        })
+        .save(&source)
+        .unwrap();
+
+        let expected = decode_image(&source).expect("standard decode").into_rgba8();
+        let actual = decode_full_image(&source).expect("full decode");
+
+        assert_eq!(actual.dimensions(), (37, 21));
+        assert_eq!(actual.as_raw(), expected.as_raw());
+    }
+
+    #[test]
+    fn full_image_matches_the_standard_decode_for_grayscale_png() {
+        let dir = tempdir().unwrap();
+        let source = dir.path().join("gray.png");
+        image::GrayImage::from_fn(37, 21, |x, y| image::Luma([(x * 7 + y * 11) as u8]))
+            .save(&source)
+            .unwrap();
+
+        let expected = decode_image(&source).expect("standard decode").into_rgba8();
+        let actual = decode_full_image(&source).expect("full decode");
+
+        assert_eq!(actual.dimensions(), (37, 21));
+        assert_eq!(actual.as_raw(), expected.as_raw());
+    }
+
+    #[test]
+    fn full_image_matches_the_standard_decode_for_grayscale_alpha_png() {
+        let dir = tempdir().unwrap();
+        let source = dir.path().join("gray-alpha.png");
+        image::GrayAlphaImage::from_fn(37, 21, |x, y| {
+            image::LumaA([(x * 7 + y * 11) as u8, (x * 13 % 256) as u8])
+        })
+        .save(&source)
+        .unwrap();
+
+        let expected = decode_image(&source).expect("standard decode").into_rgba8();
+        let actual = decode_full_image(&source).expect("full decode");
+
+        assert_eq!(actual.dimensions(), (37, 21));
+        assert_eq!(actual.as_raw(), expected.as_raw());
+    }
+
+    #[test]
+    fn full_image_falls_back_for_16_bit_png() {
+        let dir = tempdir().unwrap();
+        let source = dir.path().join("gray16.png");
+        image::ImageBuffer::<image::Luma<u16>, Vec<u16>>::from_fn(37, 21, |x, y| {
+            image::Luma([(x * 1000 + y * 37) as u16])
+        })
+        .save(&source)
+        .unwrap();
+
+        let expected = decode_image(&source).expect("standard decode").into_rgba8();
+        let actual = decode_full_image(&source).expect("full decode");
+
+        assert_eq!(actual.dimensions(), (37, 21));
+        assert_eq!(actual.as_raw(), expected.as_raw());
+    }
+
+    #[test]
+    fn full_image_matches_the_standard_decode_for_webp() {
+        let dir = tempdir().unwrap();
+        let source = write_source(dir.path());
+        let compressed =
+            compressor::compress_image(&source, &profile(CompressionFormat::Webp)).unwrap();
+
+        let expected = decode_image(&compressed.output_path)
+            .expect("standard decode")
+            .into_rgba8();
+        let actual = decode_full_image(&compressed.output_path).expect("full decode");
+
+        assert_eq!(actual.as_raw(), expected.as_raw());
+    }
+
+    #[test]
+    fn full_image_caps_only_the_long_edge() {
+        let dir = tempdir().unwrap();
+        let source = dir.path().join("wide.png");
+        write_rgb_png(&source, FULL_IMAGE_MAX + 16, 32);
+
+        let expected = decode_image(&source)
+            .expect("standard decode")
+            .thumbnail(FULL_IMAGE_MAX, FULL_IMAGE_MAX)
+            .into_rgba8();
+        let actual = decode_full_image(&source).expect("full decode");
+
+        assert_eq!(actual.dimensions(), (FULL_IMAGE_MAX, 32));
+        assert_eq!(actual.as_raw(), expected.as_raw());
     }
 
     #[test]
@@ -426,11 +723,23 @@ mod tests {
                 .map(|pixel| if pixel[0] > pixel[2] { 'r' } else { 'b' })
                 .collect();
             assert_eq!(actual, pixels, "orientation {orientation}");
+
+            let full = decode_full_image(&path).expect("oriented full JPEG");
+            assert_eq!(
+                full.dimensions(),
+                expected,
+                "full image keeps orientation {orientation}"
+            );
+            assert_eq!(
+                full.as_raw(),
+                rgba.as_raw(),
+                "full image matches the standard RGBA pixels for orientation {orientation}"
+            );
         }
     }
 
     #[test]
-    fn thumbnails_previews_and_compression_use_oriented_dimensions() {
+    fn thumbnails_and_compression_use_oriented_dimensions() {
         let dir = tempdir().unwrap();
         let source_image = RgbaImage::from_pixel(400, 200, Rgba([40, 120, 220, 255]));
 
@@ -456,13 +765,6 @@ mod tests {
                 image::image_dimensions(&thumbnail).unwrap(),
                 (128, 256),
                 "thumbnail keeps the displayed portrait layout for orientation {orientation}"
-            );
-
-            let preview = preview::decode_preview(&source).expect("preview");
-            assert_eq!(
-                preview.dimensions(),
-                (600, 1200),
-                "preview keeps the displayed portrait layout for orientation {orientation}"
             );
 
             let compressed =

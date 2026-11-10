@@ -293,7 +293,6 @@ impl App {
         // Selected-photo metadata is refreshed by the actions that change it
         // and by revision-driven `reload_aux`; polling it here would race a
         // tag edit with a stale background snapshot.
-        self.refresh_stale_preview(cx);
 
         let next_active = daemon_liveness(snapshot.monitor.age_secs, self.ipc_connected);
         let age_changed = self.daemon_age_secs != snapshot.monitor.age_secs;

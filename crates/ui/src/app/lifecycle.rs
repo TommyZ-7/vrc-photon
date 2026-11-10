@@ -451,7 +451,6 @@ impl App {
         self.search_view.borrow_mut().invalidate_pages();
         if let Some(id) = self.selected {
             self.load_selected_meta(id);
-            self.refresh_stale_preview(cx);
             if let Some(photo) = self.selected_photo.clone() {
                 // A replace invalidation drops the pinned thumbnail; request
                 // it again now that the display derivative is known.
@@ -505,7 +504,6 @@ impl App {
         self.refresh_monitor();
         if let Some(id) = self.selected {
             self.load_selected_meta(id);
-            self.refresh_stale_preview(cx);
         }
 
         // Path rebinds and replacement status changes keep the same photo
@@ -570,7 +568,6 @@ impl App {
                 self.mark_library_dirty();
                 if let Some(id) = self.selected {
                     self.load_selected_meta(id);
-                    self.refresh_stale_preview(cx);
                 }
             }
         }
@@ -676,7 +673,6 @@ impl App {
         // job counters and the monitor. Collect those off the UI thread.
         if let Some(id) = self.selected {
             self.load_selected_meta(id);
-            self.refresh_stale_preview(cx);
         }
         self.refresh_live_async(cx);
     }
@@ -873,7 +869,6 @@ impl App {
         self.refresh_monitor();
         if let Some(id) = self.selected {
             self.load_selected_meta(id);
-            self.refresh_stale_preview(cx);
         }
     }
 
