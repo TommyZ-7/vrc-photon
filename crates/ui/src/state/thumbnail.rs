@@ -135,7 +135,10 @@ impl ThumbnailCache {
     }
 
     /// Discards every decoded image and retry marker. Decodes already in
-    /// flight finish under their old generation and are ignored.
+    /// flight keep their slots and finish under their old generation; their
+    /// results are ignored, but a new decode cannot start until they release
+    /// the slot. This keeps the thumbnail decode/generation concurrency bound
+    /// even when the settings change mid-decode.
     pub(crate) fn clear(&mut self) {
         self.generation = self.generation.wrapping_add(1);
         self.images.clear();
@@ -145,10 +148,7 @@ impl ThumbnailCache {
         self.total_bytes = 0;
         self.last_disk_refresh.clear();
         self.disk_refresh_due.clear();
-        self.pending.clear();
         self.failed.clear();
-        self.photo_generations.clear();
-        self.in_flight = 0;
     }
 
     #[allow(dead_code)]
@@ -652,6 +652,19 @@ mod tests {
             assert!(cache.begin(id));
         }
         assert!(!cache.begin(999));
+    }
+
+    #[test]
+    fn clearing_the_cache_keeps_an_in_flight_decode_in_its_slot() {
+        let mut cache = ThumbnailCache::default();
+        let ticket = cache.begin_ticket(1).expect("first decode");
+        cache.clear();
+        assert!(
+            !cache.begin(2),
+            "a cleared cache must not start a second decode while one is in flight"
+        );
+        assert!(!cache.insert_if_ticket(ticket, 1, test_render_image(), 0));
+        assert!(cache.begin(2), "the old decode releases its slot");
     }
 
     #[test]
