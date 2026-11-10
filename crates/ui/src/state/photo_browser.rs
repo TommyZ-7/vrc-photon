@@ -394,6 +394,8 @@ pub(crate) struct PhotoBrowser {
     session_scroll_anchor: Option<SessionScrollAnchor>,
     /// Photo row restored after the active collapse motions settle.
     pending_photo_anchor: Option<usize>,
+    /// Scroll offset written by the rail jump that set `pending_photo_anchor`.
+    pending_photo_expected_offset: Option<f32>,
     pub(crate) session_summaries: HashMap<i64, Arc<SessionSummary>>,
     pub(crate) session_summary_pending: HashSet<i64>,
     pub(crate) session_summary_failed: HashSet<i64>,
@@ -424,6 +426,7 @@ impl PhotoBrowser {
             session_collapse_motions: SessionCollapseMotions::default(),
             session_scroll_anchor: None,
             pending_photo_anchor: None,
+            pending_photo_expected_offset: None,
             session_summaries: HashMap::new(),
             session_summary_pending: HashSet::new(),
             session_summary_failed: HashSet::new(),
@@ -451,6 +454,7 @@ impl PhotoBrowser {
         self.session_collapse_motions.clear();
         self.session_scroll_anchor = None;
         self.pending_photo_anchor = None;
+        self.pending_photo_expected_offset = None;
         self.session_summaries.clear();
         self.session_summary_pending.clear();
         self.session_summary_failed.clear();
@@ -564,6 +568,7 @@ impl PhotoBrowser {
             // A rail jump is restored once every motion has settled, using the
             // settled row origins.
             if let Some(photo_index) = self.pending_photo_anchor.take() {
+                self.pending_photo_expected_offset = None;
                 let offset = rows
                     .offset_for_photo(photo_index)
                     .or_else(|| rows.anchor_offset_for_photo(photo_index));
@@ -628,6 +633,7 @@ impl PhotoBrowser {
         self.session_collapse_motions.clear();
         self.session_scroll_anchor = None;
         self.pending_photo_anchor = None;
+        self.pending_photo_expected_offset = None;
         self.session_rows = None;
         self.session_rows_key = None;
     }
@@ -636,7 +642,30 @@ impl PhotoBrowser {
     /// the year rail, whose jump is computed from the settled row geometry.
     pub(crate) fn set_pending_photo_anchor(&mut self, photo_index: usize) {
         self.pending_photo_anchor = Some(photo_index);
+        self.pending_photo_expected_offset = None;
         self.session_scroll_anchor = None;
+    }
+
+    /// Cancels anchors when the user scrolls by hand. A programmatic scroll
+    /// (rail jump or header click) records its expected offset first, so only
+    /// a mismatch is treated as a manual scroll.
+    pub(crate) fn note_session_scroll(&mut self) {
+        let top = session_scroll_top(&self.session_scroll);
+        if let Some(anchor) = &self.session_scroll_anchor
+            && (top - anchor.expected_offset).abs() > 1.5
+        {
+            self.session_scroll_anchor = None;
+        }
+        if let Some(expected) = self.pending_photo_expected_offset
+            && (top - expected).abs() > 1.5
+        {
+            self.pending_photo_anchor = None;
+            self.pending_photo_expected_offset = None;
+        }
+    }
+
+    pub(crate) fn note_programmatic_scroll(&mut self) {
+        self.pending_photo_expected_offset = Some(session_scroll_top(&self.session_scroll));
     }
 
     pub(crate) fn set_session_scroll_anchor(&mut self, session_id: i64, viewport_y: f32) {
@@ -743,6 +772,7 @@ impl PhotoBrowser {
         };
         self.session_scroll_anchor = None;
         self.pending_photo_anchor = None;
+        self.pending_photo_expected_offset = None;
         self.session_rows = None;
         self.session_rows_key = None;
         collapsed
@@ -1874,6 +1904,29 @@ mod tests {
         let expected = done.rows.offset_for_photo(2).unwrap();
         assert_eq!(session_scroll_top(&browser.session_scroll), expected);
         assert!(browser.pending_photo_anchor.is_none());
+    }
+
+    #[test]
+    fn scrolling_by_hand_cancels_the_pending_photo_anchor() {
+        let now = Instant::now();
+        let mut browser = PhotoBrowser::new(session_index(), TEST_ROW_HEIGHT);
+        browser.animate_session_collapse(7, true, Duration::from_millis(100), now);
+        browser.set_pending_photo_anchor(2);
+        set_session_scroll_offset(&browser, 0.0);
+        browser.note_programmatic_scroll();
+        set_session_scroll_offset(&browser, 120.0);
+        browser.note_session_scroll();
+        assert!(browser.pending_photo_anchor.is_none());
+        assert!(browser.pending_photo_expected_offset.is_none());
+    }
+
+    #[test]
+    fn a_manual_scroll_cancels_the_header_anchor() {
+        let mut browser = PhotoBrowser::new(session_index(), TEST_ROW_HEIGHT);
+        browser.set_session_scroll_anchor(8, 100.0);
+        set_session_scroll_offset(&browser, 50.0);
+        browser.note_session_scroll();
+        assert!(browser.session_scroll_anchor.is_none());
     }
 
     #[test]
