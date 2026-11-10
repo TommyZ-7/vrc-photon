@@ -98,6 +98,17 @@ pub(crate) fn notification_sections(
     sections
 }
 
+/// Whether the open notification modal has lost its last actionable section.
+pub(crate) fn notification_modal_should_close(
+    open: bool,
+    import: bool,
+    library_error: bool,
+    failed_jobs: i64,
+    daemon_errors: usize,
+) -> bool {
+    open && notification_sections(import, library_error, failed_jobs, daemon_errors).is_empty()
+}
+
 /// Whether a render should schedule the deferred toast flush.
 pub(crate) fn toast_flush_needed(pending: usize, scheduled: bool) -> bool {
     pending > 0 && !scheduled
@@ -213,6 +224,9 @@ impl App {
         if self.notification_modal_open {
             return;
         }
+        if !self.notification_attention() {
+            return;
+        }
         if !notification_modal_allowed(self.import_dialog.is_some(), self.manual_compress.is_some())
             || self.ai_tag_picker.open
             || self.ai_thresholds.open
@@ -297,6 +311,20 @@ impl App {
         if !self.notification_modal_open {
             return div().into_any_element();
         }
+        if notification_modal_should_close(
+            self.notification_modal_open,
+            self.import_report.is_some(),
+            self.library_error.is_some(),
+            self.failed_job_count,
+            self.daemon_errors.len(),
+        ) {
+            cx.defer_in(window, |this, window, cx| {
+                if this.notification_modal_open && !this.notification_attention() {
+                    this.close_notification_modal(window, cx);
+                }
+            });
+            return div().into_any_element();
+        }
         let sections = notification_sections(
             self.import_report.is_some(),
             self.library_error.is_some(),
@@ -328,16 +356,6 @@ impl App {
             if let Some(item) = item {
                 items.push(item);
             }
-        }
-        if items.is_empty() {
-            items.push(
-                div()
-                    .p(px(16.))
-                    .text_size(px(11.))
-                    .text_color(rgb(p.muted))
-                    .child(tr!("notifications.empty"))
-                    .into_any_element(),
-            );
         }
 
         let max_height = (f32::from(window.viewport_size().height) * 0.8).max(240.0);
@@ -723,7 +741,8 @@ impl App {
 mod tests {
     use super::{
         NotificationSection, auto_compress_badge_label, deletion_blocked_transition,
-        notification_modal_allowed, notification_sections, toast_flush_needed,
+        notification_modal_allowed, notification_modal_should_close, notification_sections,
+        toast_flush_needed,
     };
 
     #[test]
@@ -766,5 +785,14 @@ mod tests {
         assert!(notification_modal_allowed(false, false));
         assert!(!notification_modal_allowed(true, false));
         assert!(!notification_modal_allowed(false, true));
+    }
+
+    #[test]
+    fn notification_modal_closes_when_the_last_section_disappears() {
+        assert!(notification_modal_should_close(true, false, false, 0, 0));
+        assert!(!notification_modal_should_close(false, false, false, 0, 0));
+        assert!(!notification_modal_should_close(true, true, false, 0, 0));
+        assert!(!notification_modal_should_close(true, false, false, 1, 0));
+        assert!(!notification_modal_should_close(true, false, false, 0, 1));
     }
 }

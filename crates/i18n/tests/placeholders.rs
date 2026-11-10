@@ -193,7 +193,6 @@ const CALL_SITES: &[(&str, &[&str])] = &[
     ("session.unlinked_date", &["count", "date"]),
     ("session.continued_count", &["count"]),
     ("ai.tags.picker.selected", &["count"]),
-    ("settings.footer.summary", &["cache", "language"]),
     ("settings.language.save_failed", &["error"]),
     ("settings.save_failed", &["error"]),
     ("settings.ai.error_code", &["code"]),

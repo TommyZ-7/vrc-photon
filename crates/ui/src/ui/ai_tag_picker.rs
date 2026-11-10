@@ -120,23 +120,13 @@ impl App {
                     .items_center()
                     .gap(px(10.))
                     .child(
-                        v_flex()
-                            .flex_1()
-                            .min_w_0()
-                            .gap(px(2.))
-                            .child(
-                                div()
-                                    .text_size(px(16.))
-                                    .font_semibold()
-                                    .text_color(rgb(p.text))
-                                    .child(tr!("ai.tags.picker.title")),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(10.))
-                                    .text_color(rgb(p.muted_2))
-                                    .child(tr!("ai.tags.picker.hint")),
-                            ),
+                        v_flex().flex_1().min_w_0().gap(px(2.)).child(
+                            div()
+                                .text_size(px(16.))
+                                .font_semibold()
+                                .text_color(rgb(p.text))
+                                .child(tr!("ai.tags.picker.title")),
+                        ),
                     )
                     .child(
                         Button::new("ai-tag-picker-close")

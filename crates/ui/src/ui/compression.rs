@@ -85,7 +85,6 @@ fn job_retry_label(job: &CompressionJob) -> String {
 /// loaded failed job gets a row after them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum QueueRow {
-    FailedHint,
     Waiting(usize),
     Failed(usize),
     Empty,
@@ -96,27 +95,20 @@ pub(crate) enum QueueRow {
 /// The failed error line is truncated to one line so the list can pass fixed
 /// sizes without measuring text; the old widget let long errors wrap and grow
 /// the row.
-const QUEUE_HINT_ROW_HEIGHT: f32 = 32.0;
 const QUEUE_WAITING_ROW_HEIGHT: f32 = 41.0;
 const QUEUE_FAILED_ROW_HEIGHT: f32 = 93.0;
 const QUEUE_FAILED_ROW_HEIGHT_NO_RETRY: f32 = 85.0;
 const QUEUE_EMPTY_ROW_HEIGHT: f32 = 43.0;
 
-/// Builds the queue's display order: failed-count hint, waiting rows (max
-/// 20), then failed rows, with the empty state last when the queue is empty.
+/// Builds the queue's display order: waiting rows (max 20), then failed
+/// rows, with the empty state last when the queue is empty.
 pub(crate) fn queue_rows(
     waiting_count: usize,
     failed_count: usize,
-    failed_job_count: i64,
     is_empty: bool,
 ) -> Vec<QueueRow> {
     let waiting = waiting_count.min(20);
-    let mut rows = Vec::with_capacity(
-        waiting + failed_count + usize::from(failed_job_count > 100) + usize::from(is_empty),
-    );
-    if failed_job_count > 100 {
-        rows.push(QueueRow::FailedHint);
-    }
+    let mut rows = Vec::with_capacity(waiting + failed_count + usize::from(is_empty));
     rows.extend((0..waiting).map(QueueRow::Waiting));
     rows.extend((0..failed_count).map(QueueRow::Failed));
     if is_empty {
@@ -129,7 +121,6 @@ pub(crate) fn queue_rows(
 /// button is shorter, matching the previous layout.
 pub(crate) fn queue_row_height(row: QueueRow, failed_jobs: &[CompressionJob]) -> f32 {
     match row {
-        QueueRow::FailedHint => QUEUE_HINT_ROW_HEIGHT,
         QueueRow::Waiting(_) => QUEUE_WAITING_ROW_HEIGHT,
         QueueRow::Failed(index) => {
             if failed_jobs.get(index).is_some_and(job_retry_available) {
@@ -616,13 +607,14 @@ impl App {
                                         );
                                     })),
                             )
-                            .child(div().text_size(px(10.)).text_color(rgb(p.muted_2)).child(
-                                if profile.lossless {
-                                    tr!("compression.lossless_no_quality")
-                                } else {
-                                    tr!("compression.adjust_quality")
-                                },
-                            )),
+                            .when(!profile.lossless, |this| {
+                                this.child(
+                                    div()
+                                        .text_size(px(10.))
+                                        .text_color(rgb(p.muted_2))
+                                        .child(tr!("compression.adjust_quality")),
+                                )
+                            }),
                     )
                     .child(section_divider(&p))
                     .child(self.section_label(tr!("compression.section.resize")))
@@ -963,17 +955,6 @@ impl App {
                             ),
                     )
                     .child(section_divider(&p))
-                    .child(
-                        div()
-                            .p(px(12.))
-                            .rounded(px(8.))
-                            .bg(rgb(p.panel_2))
-                            .border_1()
-                            .border_color(rgb(p.border))
-                            .text_size(px(10.))
-                            .text_color(rgb(p.muted))
-                            .child(tr!("compression.save_hint")),
-                    ),
             )
             .child(
                 h_flex()
@@ -1117,7 +1098,6 @@ impl App {
                 let rows = queue_rows(
                     self.waiting_jobs.len(),
                     self.failed_jobs.len(),
-                    self.failed_job_count,
                     queue_is_empty,
                 );
                 let item_sizes: Rc<Vec<VirtualRowSize<Pixels>>> = Rc::new(
@@ -1159,15 +1139,6 @@ impl App {
 fn render_queue_row(app: &mut App, row: QueueRow, cx: &mut Context<App>) -> AnyElement {
     let p = app.palette;
     match row {
-        QueueRow::FailedHint => div()
-            .w_full()
-            .h(px(QUEUE_HINT_ROW_HEIGHT))
-            .px(px(GALLERY_PAD_X))
-            .py(px(8.))
-            .text_size(px(10.))
-            .text_color(rgb(p.muted_2))
-            .child(tr!("compression.queue.failed_hint"))
-            .into_any_element(),
         QueueRow::Empty => div()
             .w_full()
             .h(px(QUEUE_EMPTY_ROW_HEIGHT))
@@ -1374,7 +1345,7 @@ mod tests {
 
     #[test]
     fn queue_rows_order_waiting_before_failed_and_cap_waiting_at_twenty() {
-        let rows = queue_rows(25, 3, 3, false);
+        let rows = queue_rows(25, 3, false);
         let expected: Vec<QueueRow> = (0..20)
             .map(QueueRow::Waiting)
             .chain((0..3).map(QueueRow::Failed))
@@ -1383,27 +1354,15 @@ mod tests {
     }
 
     #[test]
-    fn queue_rows_show_the_failed_hint_only_past_one_hundred_failures() {
-        let hinted = queue_rows(1, 1, 101, false);
-        assert_eq!(hinted.first(), Some(&QueueRow::FailedHint));
-        assert_eq!(hinted[1], QueueRow::Waiting(0));
-        assert_eq!(hinted[2], QueueRow::Failed(0));
-
-        let normal = queue_rows(1, 1, 100, false);
-        assert!(!normal.contains(&QueueRow::FailedHint));
-    }
-
-    #[test]
     fn queue_rows_empty_queue_shows_the_empty_state() {
-        assert_eq!(queue_rows(0, 0, 0, true), vec![QueueRow::Empty]);
-        assert!(queue_rows(0, 0, 0, false).is_empty());
+        assert_eq!(queue_rows(0, 0, true), vec![QueueRow::Empty]);
+        assert!(queue_rows(0, 0, false).is_empty());
     }
 
     #[test]
     fn queue_rows_over_one_hundred_twenty_only_builds_a_bounded_window() {
-        let rows = queue_rows(20, 200, 200, false);
-        assert_eq!(rows.first(), Some(&QueueRow::FailedHint));
-        assert_eq!(rows.len(), 221);
+        let rows = queue_rows(20, 200, false);
+        assert_eq!(rows.len(), 220);
 
         let failures = vec![test_job(QueueStatus::Failed, 0); 200];
         let heights: Vec<f32> = rows

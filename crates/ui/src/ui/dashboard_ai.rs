@@ -25,12 +25,6 @@ impl App {
         let more = view.more;
         let job_names = self.ai.active_job_names.clone();
         let job_error = self.ai.error_of(AiErrorKind::Job).cloned();
-        let (state_label, state_color) = match view.state {
-            AiDashboardState::NotReady => (tr!("dashboard.ai.state.not_ready"), p.amber),
-            AiDashboardState::Idle => (tr!("dashboard.ai.state.idle"), p.green),
-            AiDashboardState::Active => (tr!("dashboard.ai.state.active"), p.accent),
-            AiDashboardState::Failed => (tr!("dashboard.ai.state.failed"), p.red),
-        };
 
         let mut card = glass_panel(&self.palette)
             .flex()
@@ -40,49 +34,15 @@ impl App {
             .gap(px(10.))
             .rounded(px(17.))
             .child(
-                h_flex()
-                    .items_center()
-                    .gap(px(9.))
-                    .child(
+                h_flex().items_center().gap(px(9.)).child(
+                    v_flex().flex_1().min_w_0().gap(px(1.)).child(
                         div()
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .size(px(30.))
-                            .rounded(px(9.))
-                            .bg(rgb(p.accent_soft))
-                            .child(
-                                Icon::new(IconName::Bot)
-                                    .with_size(px(16.))
-                                    .text_color(rgb(p.accent)),
-                            ),
-                    )
-                    .child(
-                        v_flex()
-                            .flex_1()
-                            .min_w_0()
-                            .gap(px(1.))
-                            .child(
-                                div()
-                                    .text_size(px(12.))
-                                    .font_semibold()
-                                    .text_color(rgb(p.text))
-                                    .child(tr!("dashboard.ai.title")),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(9.))
-                                    .text_color(rgb(p.muted_2))
-                                    .child(tr!("dashboard.ai.hint")),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .flex_shrink_0()
-                            .text_size(px(9.5))
-                            .text_color(rgb(state_color))
-                            .child(state_label),
+                            .text_size(px(12.))
+                            .font_semibold()
+                            .text_color(rgb(p.text))
+                            .child(tr!("dashboard.ai.title")),
                     ),
+                ),
             )
             .child(
                 h_flex()
@@ -98,33 +58,17 @@ impl App {
 
         match view.state {
             AiDashboardState::NotReady => {
-                card = card
-                    .child(
-                        div()
-                            .text_size(px(10.))
-                            .text_color(rgb(p.muted))
-                            .child(tr!("dashboard.ai.not_ready_hint")),
-                    )
-                    .child(
-                        Button::new("dashboard-ai-open-settings")
-                            .label(tr!("dashboard.ai.open_settings"))
-                            .small()
-                            .primary()
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.switch_screen(Screen::Settings, cx)
-                            })),
-                    );
+                card = card.child(
+                    Button::new("dashboard-ai-open-settings")
+                        .label(tr!("dashboard.ai.open_settings"))
+                        .small()
+                        .primary()
+                        .on_click(
+                            cx.listener(|this, _, _, cx| this.switch_screen(Screen::Settings, cx)),
+                        ),
+                );
             }
             AiDashboardState::Idle | AiDashboardState::Active | AiDashboardState::Failed => {
-                if view.state == AiDashboardState::Idle {
-                    card = card.child(
-                        div()
-                            .text_size(px(10.))
-                            .text_color(rgb(p.muted))
-                            .child(tr!("dashboard.ai.idle_hint")),
-                    );
-                }
-
                 if !jobs.is_empty() {
                     card = card.child(v_flex().id("dashboard-ai-jobs").gap(px(6.)).children(
                         jobs.into_iter().map(|job| {

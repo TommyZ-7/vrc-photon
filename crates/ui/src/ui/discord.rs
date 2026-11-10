@@ -353,23 +353,13 @@ impl App {
                     .items_center()
                     .gap(px(12.))
                     .child(
-                        v_flex()
-                            .flex_1()
-                            .min_w_0()
-                            .gap(px(2.))
-                            .child(
-                                div()
-                                    .text_size(px(13.))
-                                    .font_semibold()
-                                    .text_color(rgb(p.text))
-                                    .child(tr!("integrations.discord.title")),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(10.))
-                                    .text_color(rgb(p.muted_2))
-                                    .child(tr!("integrations.discord.hint")),
-                            ),
+                        v_flex().flex_1().min_w_0().gap(px(2.)).child(
+                            div()
+                                .text_size(px(13.))
+                                .font_semibold()
+                                .text_color(rgb(p.text))
+                                .child(tr!("integrations.discord.title")),
+                        ),
                     )
                     .child(
                         Switch::new("integrations-discord-enabled")
@@ -419,23 +409,13 @@ impl App {
                     .items_center()
                     .gap(px(12.))
                     .child(
-                        v_flex()
-                            .flex_1()
-                            .min_w_0()
-                            .gap(px(2.))
-                            .child(
-                                div()
-                                    .text_size(px(13.))
-                                    .font_semibold()
-                                    .text_color(rgb(p.text))
-                                    .child(tr!("integrations.discord.history.title")),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(10.))
-                                    .text_color(rgb(p.muted_2))
-                                    .child(tr!("integrations.discord.history.hint")),
-                            ),
+                        v_flex().flex_1().min_w_0().gap(px(2.)).child(
+                            div()
+                                .text_size(px(13.))
+                                .font_semibold()
+                                .text_color(rgb(p.text))
+                                .child(tr!("integrations.discord.history.title")),
+                        ),
                     )
                     .when(waiting > 0, |this| {
                         this.child(self.badge(
@@ -840,19 +820,16 @@ impl App {
                 DiscordAutoMode::Off,
                 "discord-auto-off",
                 tr!("integrations.discord.auto.off"),
-                tr!("integrations.discord.auto.off_hint"),
             ),
             (
                 DiscordAutoMode::Immediate,
                 "discord-auto-immediate",
                 tr!("integrations.discord.auto.immediate"),
-                tr!("integrations.discord.auto.immediate_hint"),
             ),
             (
                 DiscordAutoMode::Waiting,
                 "discord-auto-waiting",
                 tr!("integrations.discord.auto.waiting"),
-                tr!("integrations.discord.auto.waiting_hint"),
             ),
         ];
 
@@ -870,19 +847,12 @@ impl App {
                     .text_color(rgb(p.muted_2))
                     .child(tr!("integrations.discord.auto.hint")),
             )
-            .children(options.into_iter().map(|(mode, id, title, description)| {
-                manual_option_row(
-                    &p,
-                    SharedString::from(id),
-                    title,
-                    description,
-                    current == mode,
-                    true,
-                )
-                .on_click(cx.listener(move |this, _, window, cx| {
-                    this.set_discord_auto_mode(mode, window, cx);
-                }))
-                .into_any_element()
+            .children(options.into_iter().map(|(mode, id, title)| {
+                manual_option_row(&p, SharedString::from(id), title, "", current == mode, true)
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        this.set_discord_auto_mode(mode, window, cx);
+                    }))
+                    .into_any_element()
             }))
             .when(current != DiscordAutoMode::Off, |this| {
                 this.child(

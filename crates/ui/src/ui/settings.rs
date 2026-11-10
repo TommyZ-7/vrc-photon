@@ -68,17 +68,6 @@ impl App {
         let p = self.palette;
         let autostart_hint =
             autostart_description(self.daemon_active, self.daemon_supervisor.as_deref());
-        let cache_label = if self.settings.thumbnail_cache_mb == 0 {
-            tr!("settings.cache.unlimited")
-        } else {
-            format!("{} MB", self.settings.thumbnail_cache_mb)
-        };
-        let active_language = vrc_photon_i18n::normalize(&self.settings.language);
-        let language_name = vrc_photon_i18n::locales()
-            .into_iter()
-            .find(|locale| locale.code == active_language)
-            .map(|locale| locale.name)
-            .unwrap_or(active_language);
         h_flex()
             .relative()
             .flex_1()
@@ -276,7 +265,7 @@ impl App {
                             )
                             .child(self.setting_switch(
                                 tr!("settings.display.status.label"),
-                                tr!("settings.display.status.hint"),
+                                "",
                                 self.settings.ui_card_show_status,
                                 true,
                                 cx,
@@ -284,7 +273,7 @@ impl App {
                             ))
                             .child(self.setting_switch(
                                 tr!("settings.display.world.label"),
-                                tr!("settings.display.world.hint"),
+                                "",
                                 self.settings.ui_card_show_world,
                                 true,
                                 cx,
@@ -292,7 +281,7 @@ impl App {
                             ))
                             .child(self.setting_switch(
                                 tr!("settings.display.date.label"),
-                                tr!("settings.display.date.hint"),
+                                "",
                                 self.settings.ui_card_show_date,
                                 true,
                                 cx,
@@ -300,7 +289,7 @@ impl App {
                             ))
                             .child(self.setting_switch(
                                 tr!("settings.display.size.label"),
-                                tr!("settings.display.size.hint"),
+                                "",
                                 self.settings.ui_card_show_size,
                                 true,
                                 cx,
@@ -409,12 +398,6 @@ impl App {
                                                     .text_color(rgb(p.text))
                                                     .child(tr!("settings.thumbnail.quality")),
                                             )
-                                            .child(
-                                                div()
-                                                    .text_size(px(10.))
-                                                    .text_color(rgb(p.muted_2))
-                                                    .child(tr!("settings.thumbnail.quality_hint")),
-                                            )
                                             .child(div().flex_1())
                                             .child(
                                                 div()
@@ -436,12 +419,6 @@ impl App {
                                             .text_size(px(12.))
                                             .text_color(rgb(p.text))
                                             .child(tr!("settings.thumbnail.size")),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_size(px(10.))
-                                            .text_color(rgb(p.muted_2))
-                                            .child(tr!("settings.thumbnail.size_hint")),
                                     )
                                     .child(h_flex().gap(px(4.)).children(
                                         thumbnail::THUMBNAIL_SIZES.into_iter().map(|size| {
@@ -501,12 +478,6 @@ impl App {
                                                 this.clear_thumbnail_cache(cx)
                                             })),
                                     ),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(10.))
-                                    .text_color(rgb(p.muted_2))
-                                    .child(tr!("settings.thumbnail.clear_hint")),
                             ),
                     )
                     .child(
@@ -533,7 +504,7 @@ impl App {
                             ))
                             .child(self.setting_switch(
                                 tr!("settings.startup.tray"),
-                                tr!("settings.startup.tray_hint"),
+                                "",
                                 self.settings.tray,
                                 false,
                                 cx,
@@ -575,25 +546,16 @@ impl App {
                     .child(self.update_card(cx))
                     .child(self.log_card(cx))
                     .child(
-                        h_flex()
-                            .gap(px(8.))
-                            .child(
-                                Button::new("settings-reload")
-                                    .label(tr!("settings.reload"))
-                                    .small()
-                                    .ghost()
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        this.reload_aux(cx);
-                                        cx.notify();
-                                    })),
-                            )
-                            .child(div().text_size(px(10.)).text_color(rgb(p.muted_2)).child(
-                                tr_args!(
-                                    "settings.footer.summary",
-                                    language = language_name,
-                                    cache = cache_label
-                                ),
-                            )),
+                        h_flex().gap(px(8.)).child(
+                            Button::new("settings-reload")
+                                .label(tr!("settings.reload"))
+                                .small()
+                                .ghost()
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.reload_aux(cx);
+                                    cx.notify();
+                                })),
+                        ),
                     ),
             )
             .child(
@@ -622,12 +584,6 @@ impl App {
                     .font_semibold()
                     .text_color(rgb(p.text))
                     .child(tr!("settings.language.title")),
-            )
-            .child(
-                div()
-                    .text_size(px(10.))
-                    .text_color(rgb(p.muted_2))
-                    .child(tr!("settings.language.hint")),
             )
             .child(h_flex().flex_wrap().gap(px(4.)).children(
                 vrc_photon_i18n::locales().into_iter().map(|locale| {
@@ -676,12 +632,6 @@ impl App {
             )
             .child(self.theme_axis(ThemeAxis::Main, cx))
             .child(self.theme_axis(ThemeAxis::Accent, cx))
-            .child(
-                div()
-                    .text_size(px(10.))
-                    .text_color(rgb(p.muted_2))
-                    .child(tr!("settings.theme.hint")),
-            )
     }
 
     fn theme_axis(&self, axis: ThemeAxis, cx: &mut Context<Self>) -> impl IntoElement {
@@ -1104,14 +1054,7 @@ impl App {
             {
                 card = card.child(self.ai_operation_error_box(&error));
             }
-            return card
-                .child(self.ai_primary_action_button(view.primary_action, false, cx))
-                .child(
-                    div()
-                        .text_size(px(10.))
-                        .text_color(rgb(p.muted_2))
-                        .child(tr!("settings.ai.install_hint")),
-                );
+            return card.child(self.ai_primary_action_button(view.primary_action, false, cx));
         }
 
         let install = self
@@ -1160,9 +1103,6 @@ impl App {
             AiPluginCardState::Ready | AiPluginCardState::NeedsProbe
         ) {
             card = card.child(self.ai_model_path_box(&install, &manifest, &size_label));
-            if state == AiPluginCardState::NeedsProbe {
-                card = card.child(self.ai_warning_box(&tr!("settings.ai.needs_probe")));
-            }
             card = card.child(
                 h_flex()
                     .flex_wrap()
@@ -1251,53 +1191,45 @@ impl App {
                     )),
             );
         } else {
-            card = card
-                .child(self.ai_model_box(&manifest, &size_label))
-                .child(
-                    h_flex()
-                        .flex_wrap()
-                        .items_center()
-                        .gap(px(8.))
-                        .child(self.ai_primary_action_button(view.primary_action, false, cx))
-                        .child(self.ai_action_button(
-                            "ai-import-model",
-                            AiPluginAction::ImportModel,
-                            tr!("settings.ai.import_model"),
-                            false,
-                            false,
-                            cx,
-                        ))
-                        .child(self.ai_action_button(
-                            "ai-recheck",
-                            AiPluginAction::Recheck,
-                            tr!("settings.ai.recheck"),
-                            false,
-                            false,
-                            cx,
-                        ))
-                        .child(self.ai_action_button(
-                            "ai-import-zip",
-                            AiPluginAction::InstallZip,
-                            tr!("settings.ai.install"),
-                            false,
-                            false,
-                            cx,
-                        ))
-                        .child(self.ai_action_button(
-                            "ai-missing-uninstall",
-                            AiPluginAction::Uninstall,
-                            tr!("settings.ai.uninstall"),
-                            false,
-                            true,
-                            cx,
-                        )),
-                )
-                .child(
-                    div()
-                        .text_size(px(10.))
-                        .text_color(rgb(p.muted_2))
-                        .child(tr!("settings.ai.download_note")),
-                );
+            card = card.child(self.ai_model_box(&manifest, &size_label)).child(
+                h_flex()
+                    .flex_wrap()
+                    .items_center()
+                    .gap(px(8.))
+                    .child(self.ai_primary_action_button(view.primary_action, false, cx))
+                    .child(self.ai_action_button(
+                        "ai-import-model",
+                        AiPluginAction::ImportModel,
+                        tr!("settings.ai.import_model"),
+                        false,
+                        false,
+                        cx,
+                    ))
+                    .child(self.ai_action_button(
+                        "ai-recheck",
+                        AiPluginAction::Recheck,
+                        tr!("settings.ai.recheck"),
+                        false,
+                        false,
+                        cx,
+                    ))
+                    .child(self.ai_action_button(
+                        "ai-import-zip",
+                        AiPluginAction::InstallZip,
+                        tr!("settings.ai.install"),
+                        false,
+                        false,
+                        cx,
+                    ))
+                    .child(self.ai_action_button(
+                        "ai-missing-uninstall",
+                        AiPluginAction::Uninstall,
+                        tr!("settings.ai.uninstall"),
+                        false,
+                        true,
+                        cx,
+                    )),
+            );
         }
 
         if state != AiPluginCardState::Error
@@ -1410,12 +1342,6 @@ impl App {
                                 )
                             })
                     })),
-            )
-            .child(
-                div()
-                    .text_size(px(10.))
-                    .text_color(rgb(p.muted_2))
-                    .child(tr!("settings.ai.variant.note")),
             )
     }
 
@@ -1608,19 +1534,6 @@ impl App {
                         .child(detail),
                 )
             })
-    }
-
-    fn ai_warning_box(&self, text: &str) -> impl IntoElement {
-        let p = self.palette;
-        div()
-            .p(px(10.))
-            .rounded(px(8.))
-            .bg(rgb(p.amber_soft))
-            .border_1()
-            .border_color(rgb(p.amber))
-            .text_size(px(10.))
-            .text_color(rgb(p.amber))
-            .child(text.to_string())
     }
 
     fn ai_primary_action_button(

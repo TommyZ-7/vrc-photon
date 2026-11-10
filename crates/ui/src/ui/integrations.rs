@@ -288,7 +288,7 @@ impl App {
             .gap(px(12.))
             .child(self.setting_switch(
                 tr!("settings.startup.immediate"),
-                tr!("settings.startup.immediate_hint"),
+                "",
                 self.settings.auto_compress_immediate,
                 false,
                 cx,
@@ -380,23 +380,13 @@ impl App {
                     .items_center()
                     .gap(px(12.))
                     .child(
-                        v_flex()
-                            .flex_1()
-                            .min_w_0()
-                            .gap(px(2.))
-                            .child(
-                                div()
-                                    .text_size(px(13.))
-                                    .font_semibold()
-                                    .text_color(rgb(p.text))
-                                    .child(tr!("integrations.auto.title")),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(10.))
-                                    .text_color(rgb(p.muted_2))
-                                    .child(tr!("integrations.auto.hint")),
-                            ),
+                        v_flex().flex_1().min_w_0().gap(px(2.)).child(
+                            div()
+                                .text_size(px(13.))
+                                .font_semibold()
+                                .text_color(rgb(p.text))
+                                .child(tr!("integrations.auto.title")),
+                        ),
                     )
                     .child(
                         Switch::new("integrations-auto-enabled")
@@ -550,12 +540,6 @@ impl App {
                                 .text_color(rgb(p.muted))
                                 .child(tr!("integrations.ai.jobs.empty")),
                         )
-                        .child(
-                            div()
-                                .text_size(px(10.))
-                                .text_color(rgb(p.muted_2))
-                                .child(tr!("integrations.ai.jobs.empty_hint")),
-                        )
                         .into_any_element()
                 } else {
                     v_flex()
@@ -640,12 +624,6 @@ impl App {
                                     .child(tr!("integrations.ai.start_backlog")),
                             )
                             .child(
-                                div()
-                                    .text_size(px(10.))
-                                    .text_color(rgb(p.muted_2))
-                                    .child(tr!("integrations.ai.start_backlog_hint")),
-                            )
-                            .child(
                                 Button::new("integrations-ai-start-backlog")
                                     .label(tr!("integrations.ai.start_backlog"))
                                     .small()
@@ -657,80 +635,57 @@ impl App {
                     )
                 });
 
-        let settings_row = h_flex()
-            .items_center()
-            .gap(px(8.))
-            .child(
-                Button::new("integrations-ai-open-settings-ready")
-                    .label(tr!("integrations.ai.open_settings"))
-                    .small()
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.switch_screen(Screen::Settings, cx);
-                    })),
-            )
-            .child(div().flex_1())
-            .child(
-                div()
-                    .text_size(px(9.))
-                    .text_color(rgb(p.muted_2))
-                    .child(tr!("integrations.ai.jobs.limit_hint")),
-            );
+        let settings_row = h_flex().items_center().gap(px(8.)).child(
+            Button::new("integrations-ai-open-settings-ready")
+                .label(tr!("integrations.ai.open_settings"))
+                .small()
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.switch_screen(Screen::Settings, cx);
+                })),
+        );
 
-        let body = v_flex()
-            .pt(px(12.))
-            .gap(px(12.))
-            .child(self.ai_switch_row(
-                tr!("integrations.ai.enabled"),
-                tr!("integrations.ai.enabled_hint"),
-                enabled,
-                true,
-                AiToggle::Enabled,
-                cx,
-            ))
-            .child(self.ai_switch_row(
-                tr!("integrations.ai.auto"),
-                tr!("integrations.ai.auto_hint"),
-                auto,
-                enabled,
-                AiToggle::Auto,
-                cx,
-            ))
-            .child(self.ai_switch_row(
-                tr!("integrations.ai.backlog"),
-                tr!("integrations.ai.backlog_hint"),
-                backlog,
-                enabled,
-                AiToggle::Backlog,
-                cx,
-            ))
-            .child(
-                v_flex()
-                    .gap(px(6.))
-                    .child(
-                        h_flex()
-                            .items_center()
-                            .gap(px(8.))
-                            .child(
-                                div()
-                                    .text_size(px(12.))
-                                    .text_color(rgb(p.text))
-                                    .child(tr!("integrations.ai.backend")),
-                            )
-                            .child(div().flex_1())
-                            .when(backend_selection_disabled, |this| {
-                                this.child(
+        let body =
+            v_flex()
+                .pt(px(12.))
+                .gap(px(12.))
+                .child(self.ai_switch_row(
+                    tr!("integrations.ai.enabled"),
+                    enabled,
+                    true,
+                    AiToggle::Enabled,
+                    cx,
+                ))
+                .child(self.ai_switch_row(
+                    tr!("integrations.ai.auto"),
+                    auto,
+                    enabled,
+                    AiToggle::Auto,
+                    cx,
+                ))
+                .child(self.ai_switch_row(
+                    tr!("integrations.ai.backlog"),
+                    backlog,
+                    enabled,
+                    AiToggle::Backlog,
+                    cx,
+                ))
+                .child(
+                    v_flex()
+                        .gap(px(6.))
+                        .child(
+                            h_flex()
+                                .items_center()
+                                .gap(px(8.))
+                                .child(
                                     div()
-                                        .text_size(px(10.))
-                                        .text_color(rgb(p.muted_2))
-                                        .child(tr!("integrations.ai.backend_enable_hint")),
+                                        .text_size(px(12.))
+                                        .text_color(rgb(p.text))
+                                        .child(tr!("integrations.ai.backend")),
                                 )
-                            }),
-                    )
-                    .child(
-                        h_flex()
-                            .flex_wrap()
-                            .gap(px(4.))
-                            .children(backends.into_iter().map(|(id, selected)| {
+                                .child(div().flex_1()),
+                        )
+                        .child(h_flex().flex_wrap().gap(px(4.)).children(
+                            backends.into_iter().map(|(id, selected)| {
                                 let click_id = id.clone();
                                 let label = if id == "auto" {
                                     tr!("integrations.ai.backend.auto")
@@ -754,24 +709,18 @@ impl App {
                                         ))
                                     })
                                     .into_any_element()
-                            })),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(10.))
-                            .text_color(rgb(p.muted_2))
-                            .child(tr!("integrations.ai.backend_hint")),
-                    ),
-            )
-            .child(self.collapsible_body(
-                "integrations-ai-body",
-                motion,
-                AI_BODY_MAX,
-                window,
-                cx,
-                details,
-            ))
-            .child(settings_row);
+                            }),
+                        )),
+                )
+                .child(self.collapsible_body(
+                    "integrations-ai-body",
+                    motion,
+                    AI_BODY_MAX,
+                    window,
+                    cx,
+                    details,
+                ))
+                .child(settings_row);
 
         card.child(body).into_any_element()
     }
@@ -779,7 +728,6 @@ impl App {
     fn ai_switch_row(
         &self,
         label: String,
-        hint: String,
         checked: bool,
         enabled: bool,
         toggle: AiToggle,
@@ -796,22 +744,12 @@ impl App {
             .gap(px(12.))
             .py(px(2.))
             .child(
-                v_flex()
-                    .flex_1()
-                    .min_w_0()
-                    .gap(px(2.))
-                    .child(
-                        div()
-                            .text_size(px(12.))
-                            .text_color(rgb(if enabled { p.text } else { p.muted_2 }))
-                            .child(label),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(10.))
-                            .text_color(rgb(p.muted_2))
-                            .child(hint),
-                    ),
+                v_flex().flex_1().min_w_0().gap(px(2.)).child(
+                    div()
+                        .text_size(px(12.))
+                        .text_color(rgb(if enabled { p.text } else { p.muted_2 }))
+                        .child(label),
+                ),
             )
             .child(
                 Switch::new(id)
@@ -912,23 +850,13 @@ impl App {
                     .items_center()
                     .gap(px(12.))
                     .child(
-                        v_flex()
-                            .flex_1()
-                            .min_w_0()
-                            .gap(px(2.))
-                            .child(
-                                div()
-                                    .text_size(px(13.))
-                                    .font_semibold()
-                                    .text_color(rgb(p.text))
-                                    .child(tr!("integrations.clipboard.title")),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(10.))
-                                    .text_color(rgb(p.muted_2))
-                                    .child(tr!("integrations.clipboard.hint")),
-                            ),
+                        v_flex().flex_1().min_w_0().gap(px(2.)).child(
+                            div()
+                                .text_size(px(13.))
+                                .font_semibold()
+                                .text_color(rgb(p.text))
+                                .child(tr!("integrations.clipboard.title")),
+                        ),
                     )
                     .child(
                         Switch::new("integrations-clipboard-enabled")

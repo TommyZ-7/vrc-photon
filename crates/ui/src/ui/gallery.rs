@@ -654,13 +654,6 @@ fn render_grid(
                 .text_size(px(12.))
                 .text_color(rgb(p.red))
                 .child(tr(error))
-                .child(
-                    div()
-                        .pt(px(4.))
-                        .text_size(px(10.))
-                        .text_color(rgb(p.muted_2))
-                        .child(tr!("gallery.reload_hint")),
-                )
                 .into_any_element()
         } else {
             div()

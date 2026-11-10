@@ -971,20 +971,6 @@ pub(crate) fn format_tagged_at(tagged_at: &str) -> String {
         .unwrap_or_else(|_| tagged_at.to_string())
 }
 
-/// Title and hint for the AI tag row when no applied tags are shown. A stored
-/// result with zero applied tags is different from never having tagged the
-/// photo.
-pub(crate) fn ai_empty_state_labels(has_ai: bool) -> (String, String) {
-    if has_ai {
-        (
-            tr!("photos.ai.none_applied"),
-            tr!("photos.ai.none_applied_hint"),
-        )
-    } else {
-        (tr!("photos.ai.empty"), tr!("photos.ai.empty_hint"))
-    }
-}
-
 /// The presentation of one AI tag chip.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AiTagView {
@@ -2017,10 +2003,10 @@ mod tests {
         AI_PLUGIN_ID, AiDashboardState, AiErrorInfo, AiErrorKind, AiMetaCache, AiMetaKey,
         AiPluginAction, AiPluginCardState, AiPluginCardView, AiResponseOutcome, AiUiState,
         ManualRetagOutcome, ModelDownloadView, TaggingLiveRefresh, UninstallTarget,
-        active_job_photo_label, ai_dashboard_view, ai_empty_state_labels, ai_error_code_is_stable,
-        ai_error_detail_in, ai_error_label_in, ai_error_summary_in, ai_error_toast_in,
-        ai_job_error_is_notifiable, ai_manifest_view, ai_plugin_card_state, ai_response_outcome,
-        ai_tag_view, ai_tag_view_with_context, ai_tag_views, apply_install_event, backend_options,
+        active_job_photo_label, ai_dashboard_view, ai_error_code_is_stable, ai_error_detail_in,
+        ai_error_label_in, ai_error_summary_in, ai_error_toast_in, ai_job_error_is_notifiable,
+        ai_manifest_view, ai_plugin_card_state, ai_response_outcome, ai_tag_view,
+        ai_tag_view_with_context, ai_tag_views, apply_install_event, backend_options,
         backend_selection_is_disabled_when_not_ready, collect_ai_snapshot,
         download_progress_bar_ratio, enqueue_manual_retag, format_tagged_at,
         install_event_applies_to_ai, installation_row_id, is_active_installation, load_photo_ai,
@@ -2989,17 +2975,6 @@ mod tests {
         // block from another photo.
         cache.view(base, "ja", Some(&ai), &tags);
         assert_eq!(cache.computations, 7);
-    }
-
-    #[test]
-    fn empty_state_copy_distinguishes_missing_and_unapplied_tags() {
-        let (title, hint) = ai_empty_state_labels(false);
-        assert_eq!(title, "AIタグ未生成");
-        assert_eq!(hint, "「AIタグを再生成」で作成");
-
-        let (title, hint) = ai_empty_state_labels(true);
-        assert_eq!(title, "適用されたAIタグはありません");
-        assert_eq!(hint, "しきい値を満たしたタグはありません");
     }
 
     #[test]

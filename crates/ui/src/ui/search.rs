@@ -136,12 +136,6 @@ impl App {
                     .text_color(rgb(p.text))
                     .child(tr!("search.filters")),
             )
-            .child(
-                div()
-                    .text_size(px(10.))
-                    .text_color(rgb(p.muted_2))
-                    .child(tr!("search.filter_logic")),
-            )
             .child(self.suggestion_field(
                 SuggestionKind::World,
                 tr!("search.world"),
@@ -300,12 +294,6 @@ impl App {
             .when(!chips.is_empty(), |this| {
                 this.child(h_flex().flex_wrap().gap(px(4.)).children(chips))
             })
-            .child(
-                div()
-                    .text_size(px(9.))
-                    .text_color(rgb(p.muted_2))
-                    .child(tr!("search.ai.any")),
-            )
             .into_any_element()
     }
 }

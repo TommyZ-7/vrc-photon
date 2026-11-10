@@ -124,6 +124,7 @@ pub(crate) fn manual_option_row(
     let id: SharedString = id.into();
     let title: SharedString = title.into();
     let description: SharedString = description.into();
+    let has_description = !description.is_empty();
     h_flex()
         .id(id)
         .w_full()
@@ -162,12 +163,14 @@ pub(crate) fn manual_option_row(
                         .text_color(rgb(if enabled { p.text } else { p.muted_2 }))
                         .child(title),
                 )
-                .child(
-                    div()
-                        .text_size(px(10.))
-                        .text_color(rgb(p.muted_2))
-                        .child(description),
-                ),
+                .when(has_description, |this| {
+                    this.child(
+                        div()
+                            .text_size(px(10.))
+                            .text_color(rgb(p.muted_2))
+                            .child(description),
+                    )
+                }),
         )
 }
 
@@ -436,6 +439,7 @@ impl App {
         let p = self.palette;
         let label: String = label.into();
         let description: String = description.into();
+        let has_description = !description.is_empty();
         h_flex()
             .items_center()
             .gap(px(12.))
@@ -449,12 +453,14 @@ impl App {
                             .text_color(rgb(p.text))
                             .child(label.to_string()),
                     )
-                    .child(
-                        div()
-                            .text_size(px(10.))
-                            .text_color(rgb(p.muted_2))
-                            .child(description.to_string()),
-                    ),
+                    .when(has_description, |this| {
+                        this.child(
+                            div()
+                                .text_size(px(10.))
+                                .text_color(rgb(p.muted_2))
+                                .child(description.to_string()),
+                        )
+                    }),
             )
             .child(div().flex_1())
             .child(

@@ -19,13 +19,13 @@ use vrc_photon_core::model::Photo;
 use vrc_photon_i18n::{tr, tr_args};
 
 use crate::app::App;
-use crate::app::ai::{AiMetaKey, AiTagView, ai_empty_state_labels};
+use crate::app::ai::{AiMetaKey, AiTagView};
 use crate::app::cli::log_timing;
 use crate::app::daemon::open_path;
 use crate::state::photo_browser::{PAGE_SIZE, PageFailure, PhotoIndex};
 use crate::state::preview::preview_placeholder_label;
 use crate::state::viewer::ViewerOpenSource;
-use crate::ui::components::{ButtonState, ButtonTone, glass_panel, photo_world_label};
+use crate::ui::components::{ButtonState, ButtonTone, photo_world_label};
 use crate::ui::theme::*;
 
 /// Stable keyboard-focus state for one AI tag chip. The entity lives in the
@@ -315,30 +315,6 @@ impl App {
                 .w(px(column_width))
                 .h_full()
                 .flex_shrink_0()
-                .child(
-                    glass_panel(&p)
-                        .flex_1()
-                        .w(px(card_width))
-                        .rounded(px(17.))
-                        .flex()
-                        .flex_col()
-                        .justify_center()
-                        .gap(px(6.))
-                        .px(px(20.))
-                        .child(
-                            div()
-                                .text_size(px(12.))
-                                .font_medium()
-                                .text_color(rgb(p.text))
-                                .child(tr!("photos.select_prompt")),
-                        )
-                        .child(
-                            div()
-                                .text_size(px(10.))
-                                .text_color(rgb(p.muted_2))
-                                .child(tr!("photos.select_prompt_hint")),
-                        ),
-                )
                 .into_any_element();
         };
 
@@ -491,13 +467,6 @@ impl App {
                     .font_semibold()
                     .text_color(rgb(p.muted_2))
                     .child(tr!("photos.inspector.selected")),
-            )
-            .child(
-                div()
-                    .text_size(px(10.))
-                    .font_family("monospace")
-                    .text_color(rgb(p.muted_2))
-                    .child(tr!("photos.inspector.space_hint")),
             );
 
         let title = v_flex()
@@ -769,7 +738,6 @@ impl App {
                 )
         };
 
-        let (empty_title, empty_hint) = ai_empty_state_labels(ai.is_some());
         let place_tags: Vec<(usize, AiTagView)> = tags
             .iter()
             .cloned()
@@ -839,23 +807,8 @@ impl App {
                 .into_any_element()
         };
 
-        let tag_block: AnyElement = if tags.is_empty() {
-            v_flex()
-                .gap(px(1.))
-                .child(
-                    div()
-                        .text_size(px(10.))
-                        .font_medium()
-                        .text_color(rgb(p.text))
-                        .child(empty_title),
-                )
-                .child(
-                    div()
-                        .text_size(px(9.))
-                        .text_color(rgb(p.muted_2))
-                        .child(empty_hint),
-                )
-                .into_any_element()
+        let tag_block: Option<AnyElement> = if tags.is_empty() {
+            None
         } else {
             let mut block = v_flex().gap(px(5.));
             if !place_tags.is_empty() {
@@ -868,26 +821,16 @@ impl App {
                     .child(section_label(tr!("photos.ai.atmosphere")))
                     .child(chip_row(&atmosphere_tags));
             }
-            block.into_any_element()
+            Some(block.into_any_element())
         };
 
-        let header = h_flex()
-            .items_center()
-            .flex_wrap()
-            .gap(px(6.))
-            .child(
-                div()
-                    .text_size(px(10.))
-                    .font_semibold()
-                    .text_color(rgb(p.green))
-                    .child(tr!("photos.section.ai_tags")),
-            )
-            .child(
-                div()
-                    .text_size(px(9.))
-                    .text_color(rgb(p.muted_2))
-                    .child(tr!("photos.ai.read_only")),
-            );
+        let header = h_flex().items_center().flex_wrap().gap(px(6.)).child(
+            div()
+                .text_size(px(10.))
+                .font_semibold()
+                .text_color(rgb(p.green))
+                .child(tr!("photos.section.ai_tags")),
+        );
 
         let mut panel = v_flex()
             .min_w_0()
@@ -897,8 +840,10 @@ impl App {
             .bg(rgba(with_alpha(p.green, 0x0c)))
             .border_1()
             .border_color(rgba(with_alpha(p.green, 0x33)))
-            .child(header)
-            .child(tag_block);
+            .child(header);
+        if let Some(tag_block) = tag_block {
+            panel = panel.child(tag_block);
+        }
         if let Some(tooltip) = focused_tooltip {
             panel = panel.child(
                 div()
@@ -956,6 +901,7 @@ impl App {
         let derivatives = self.selected_derivatives.clone();
         let favorite = photo.is_favorite;
         let note = photo.note.clone();
+        let has_note = note.as_deref().is_some_and(|text| !text.trim().is_empty());
         let note_for_edit = note.clone();
         let section = |label: String| {
             div()
@@ -1224,28 +1170,22 @@ impl App {
                     .child(add_tag_button),
             )
             .child(self.ai_meta_block(id, window, cx))
-            .child(
-                v_flex()
-                    .gap(px(6.))
-                    .child(section(tr!("photos.section.compression_history")))
-                    .when(derivatives.is_empty(), |this| {
-                        this.child(
-                            div()
+            .when(!derivatives.is_empty(), |this| {
+                this.child(
+                    v_flex()
+                        .gap(px(6.))
+                        .child(section(tr!("photos.section.compression_history")))
+                        .children(derivatives.iter().map(|derivative| {
+                            h_flex()
+                                .gap(px(8.))
                                 .text_size(px(10.))
-                                .text_color(rgb(p.muted_2))
-                                .child(tr!("photos.no_compression")),
-                        )
-                    })
-                    .children(derivatives.iter().map(|derivative| {
-                        h_flex()
-                            .gap(px(8.))
-                            .text_size(px(10.))
-                            .text_color(rgb(p.muted))
-                            .child(derivative.format.to_uppercase())
-                            .child(format_bytes(derivative.file_size))
-                            .child(div().min_w_0().truncate().child(derivative.path.clone()))
-                    })),
-            )
+                                .text_color(rgb(p.muted))
+                                .child(derivative.format.to_uppercase())
+                                .child(format_bytes(derivative.file_size))
+                                .child(div().min_w_0().truncate().child(derivative.path.clone()))
+                        })),
+                )
+            })
             .child(
                 v_flex()
                     .gap(px(6.))
@@ -1265,16 +1205,10 @@ impl App {
                                     .gap(px(8.))
                                     .items_center()
                                     .child(note_save_button)
-                                    .child(note_cancel_button)
-                                    .child(
-                                        div()
-                                            .text_size(px(10.))
-                                            .text_color(rgb(p.muted_2))
-                                            .child(tr!("photos.note.esc_cancel")),
-                                    ),
+                                    .child(note_cancel_button),
                             )
                     })
-                    .when(self.note_edit_id != Some(id), |this| {
+                    .when(self.note_edit_id != Some(id) && has_note, |this| {
                         this.child(
                             div()
                                 .p(px(8.))
@@ -1284,7 +1218,7 @@ impl App {
                                 .border_color(rgb(p.border))
                                 .text_size(px(10.))
                                 .text_color(rgb(p.muted))
-                                .child(note.clone().unwrap_or_else(|| tr!("photos.note.empty"))),
+                                .child(note.clone().unwrap_or_default()),
                         )
                     }),
             )
