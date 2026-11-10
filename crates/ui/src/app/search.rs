@@ -252,8 +252,17 @@ impl App {
         self.search_refresh_pending = false;
         self.search_refresh_dirty = false;
         self.search_ai_tags.clear();
-        self.search_people_input
-            .update(cx, |input, cx| input.set_value("", window, cx));
+        // Clear every text field, not only the AI people count: leaving the
+        // world/tag text behind after the results reset made the panel show a
+        // filter that was no longer applied.
+        for input in [
+            &self.world_input,
+            &self.player_input,
+            &self.tag_input,
+            &self.search_people_input,
+        ] {
+            input.update(cx, |input, cx| input.set_value("", window, cx));
+        }
         // Invalidate an in-flight request so it cannot revive the cleared view.
         self.search_request = self.search_request.wrapping_add(1);
         let index = self.library.borrow().index.clone();
