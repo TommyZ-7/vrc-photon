@@ -1830,10 +1830,10 @@ impl App {
         cx.notify();
     }
 
-    /// Which library refresh a tagging event requires. Terminal events can
-    /// move the library revision (applied tags) and the job queue, so they
-    /// schedule the coalesced background pass. Progress events stay on the
-    /// debounced AI-card read.
+    /// Which live refresh a tagging event requires. Terminal events advance
+    /// the AI revision and the job queue, so they schedule the coalesced
+    /// background pass; that pass refreshes AI views without rebuilding the
+    /// photo index. Progress events stay on the debounced AI-card read.
     fn tagging_live_refresh(terminal: bool) -> TaggingLiveRefresh {
         if terminal {
             TaggingLiveRefresh::Background

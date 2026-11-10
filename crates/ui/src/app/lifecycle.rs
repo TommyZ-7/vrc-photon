@@ -474,6 +474,13 @@ impl App {
         let count = self.db.count_photos();
         let revision = self.db.library_revision();
         let revision_value = revision.as_ref().ok().copied();
+        if let Ok(ai_revision) = self.db.ai_revision()
+            && ai_revision > self.last_ai_revision
+        {
+            self.last_ai_revision = ai_revision;
+            self.refresh_search_after_ai_tag_edit(cx);
+            self.refresh_selected_ai(cx);
+        }
         if let Some(revision) = revision_value
             && revision != self.stats_revision
         {
@@ -949,9 +956,6 @@ impl App {
             && matches!(screen, Screen::Photos | Screen::Search)
         {
             self.clear_selection(cx);
-        }
-        if self.screen == Screen::Photos && screen != Screen::Photos {
-            self.library.borrow_mut().clear_collapsed_sessions();
         }
         self.screen = screen;
         if screen == Screen::Settings {

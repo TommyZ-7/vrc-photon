@@ -200,6 +200,9 @@ pub struct App {
     /// replacement status changes do not alter the photo count, so the count
     /// alone cannot tell the grid to rebuild.
     pub(crate) last_library_revision: i64,
+    /// Last daemon-side AI metadata revision observed by the UI. AI results do
+    /// not change the photo index, so this refresh path must not rebuild it.
+    pub(crate) last_ai_revision: i64,
     pub(crate) library: Rc<RefCell<PhotoBrowser>>,
     pub(crate) search_view: Rc<RefCell<PhotoBrowser>>,
     pub(crate) library_gallery: Entity<GalleryView>,
@@ -656,6 +659,7 @@ impl App {
             &initial_settings.ui_theme_accent,
         );
         let initial_library_revision = db.library_revision().unwrap_or(0);
+        let initial_ai_revision = db.ai_revision().unwrap_or(0);
         cx.set_reduce_motion(initial_settings.ui_reduce_motion);
         let world_input = cx.new(|cx| InputState::new(window, cx).placeholder(tr!("input.world")));
         let player_input =
@@ -1056,6 +1060,7 @@ impl App {
             daemon_paused: false,
             scan_progress: None,
             last_library_revision: initial_library_revision,
+            last_ai_revision: initial_ai_revision,
             library,
             search_view,
             library_gallery,
