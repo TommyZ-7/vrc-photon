@@ -7,6 +7,17 @@ use crate::error::Result;
 
 const SETTINGS_KEY: &str = "app_settings";
 
+/// Photo-grid spacing in pixels. The UI slider and the settings normalizer
+/// share these bounds.
+pub const UI_GRID_GAP_MIN: u8 = 0;
+pub const UI_GRID_GAP_MAX: u8 = 32;
+pub const UI_GRID_GAP_DEFAULT: u8 = 14;
+
+/// Photo-card corner radius in pixels.
+pub const UI_CARD_RADIUS_MIN: u8 = 0;
+pub const UI_CARD_RADIUS_MAX: u8 = 24;
+pub const UI_CARD_RADIUS_DEFAULT: u8 = 13;
+
 /// Keeps the last JSON that failed to parse so a later save cannot destroy
 /// the only copy of the user's settings. The value is overwritten on the next
 /// parse failure.
@@ -105,6 +116,19 @@ pub struct AppSettings {
     pub ui_card_show_size: bool,
     #[serde(default, deserialize_with = "deserialize_card_size")]
     pub ui_card_size: CardSize,
+    /// Horizontal and vertical gap between photo cards, in pixels.
+    #[serde(
+        default = "default_ui_grid_gap",
+        deserialize_with = "deserialize_ui_grid_gap"
+    )]
+    pub ui_grid_gap: u8,
+    /// Corner radius of photo cards, in pixels. The image inside a card uses
+    /// this value minus the 1 px border.
+    #[serde(
+        default = "default_ui_card_radius",
+        deserialize_with = "deserialize_ui_card_radius"
+    )]
+    pub ui_card_radius: u8,
     /// Whether the Photos grid opens in timeline or session order.
     #[serde(default, deserialize_with = "deserialize_photos_view_mode")]
     pub ui_photos_view_mode: PhotosViewMode,
@@ -200,6 +224,56 @@ fn default_ai_idle_timeout() -> u64 {
     600
 }
 
+fn default_ui_grid_gap() -> u8 {
+    UI_GRID_GAP_DEFAULT
+}
+
+fn default_ui_card_radius() -> u8 {
+    UI_CARD_RADIUS_DEFAULT
+}
+
+/// Reads one scalar and clamps it. A malformed value must not fail the whole
+/// `AppSettings` parse: callers lose every setting when that happens.
+fn deserialize_clamped_u8<'de, D>(
+    deserializer: D,
+    min: u8,
+    max: u8,
+    default: u8,
+) -> std::result::Result<u8, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(value
+        .as_f64()
+        .map(|value| value.round().clamp(f64::from(min), f64::from(max)) as u8)
+        .unwrap_or(default))
+}
+
+fn deserialize_ui_grid_gap<'de, D>(deserializer: D) -> std::result::Result<u8, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    deserialize_clamped_u8(
+        deserializer,
+        UI_GRID_GAP_MIN,
+        UI_GRID_GAP_MAX,
+        UI_GRID_GAP_DEFAULT,
+    )
+}
+
+fn deserialize_ui_card_radius<'de, D>(deserializer: D) -> std::result::Result<u8, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    deserialize_clamped_u8(
+        deserializer,
+        UI_CARD_RADIUS_MIN,
+        UI_CARD_RADIUS_MAX,
+        UI_CARD_RADIUS_DEFAULT,
+    )
+}
+
 fn deserialize_card_size<'de, D>(deserializer: D) -> std::result::Result<CardSize, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -253,6 +327,8 @@ impl Default for AppSettings {
             ui_card_show_date: true,
             ui_card_show_size: true,
             ui_card_size: CardSize::Medium,
+            ui_grid_gap: UI_GRID_GAP_DEFAULT,
+            ui_card_radius: UI_CARD_RADIUS_DEFAULT,
             ui_photos_view_mode: PhotosViewMode::Timeline,
             ui_theme_main: default_ui_theme_main(),
             ui_theme_accent: default_ui_theme_accent(),
@@ -290,6 +366,7 @@ impl AppSettings {
                 Ok(mut settings) => {
                     settings.normalize_discord_destination();
                     settings.normalize_ai_settings();
+                    settings.normalize_grid_display();
                     Ok(settings)
                 }
                 Err(error) => {
@@ -319,6 +396,7 @@ impl AppSettings {
         let mut settings = self.clone();
         settings.normalize_discord_destination();
         settings.normalize_ai_settings();
+        settings.normalize_grid_display();
         let json = serde_json::to_string_pretty(&settings)?;
         db.set_setting(SETTINGS_KEY, &json)
     }
@@ -347,6 +425,14 @@ impl AppSettings {
                 default_ai_backend()
             };
         self.ai_tagging_idle_timeout_sec = self.ai_tagging_idle_timeout_sec.clamp(30, 3600);
+    }
+
+    /// Keeps photo-grid spacing and corner radius inside the slider ranges.
+    fn normalize_grid_display(&mut self) {
+        self.ui_grid_gap = self.ui_grid_gap.clamp(UI_GRID_GAP_MIN, UI_GRID_GAP_MAX);
+        self.ui_card_radius = self
+            .ui_card_radius
+            .clamp(UI_CARD_RADIUS_MIN, UI_CARD_RADIUS_MAX);
     }
 
     pub fn photo_roots(&self) -> Vec<PathBuf> {
@@ -680,6 +766,94 @@ mod tests {
         assert!(settings.ui_card_show_date);
         assert!(settings.ui_card_show_size);
         assert_eq!(settings.ui_card_size, CardSize::Medium);
+    }
+
+    #[test]
+    fn grid_display_settings_default_to_14_and_13() {
+        let settings = AppSettings::default();
+        assert_eq!(settings.ui_grid_gap, UI_GRID_GAP_DEFAULT);
+        assert_eq!(settings.ui_card_radius, UI_CARD_RADIUS_DEFAULT);
+        assert_eq!(UI_GRID_GAP_DEFAULT, 14);
+        assert_eq!(UI_CARD_RADIUS_DEFAULT, 13);
+    }
+
+    #[test]
+    fn missing_grid_display_fields_use_defaults() {
+        let settings: AppSettings = serde_json::from_str("{}").unwrap();
+        assert_eq!(settings.ui_grid_gap, UI_GRID_GAP_DEFAULT);
+        assert_eq!(settings.ui_card_radius, UI_CARD_RADIUS_DEFAULT);
+    }
+
+    #[test]
+    fn out_of_range_grid_display_values_are_clamped() {
+        for (raw, expected) in [
+            (serde_json::json!(33), UI_GRID_GAP_MAX),
+            (serde_json::json!(255), UI_GRID_GAP_MAX),
+            (serde_json::json!(999), UI_GRID_GAP_MAX),
+            (serde_json::json!(-1), UI_GRID_GAP_MIN),
+            (serde_json::json!("wide"), UI_GRID_GAP_DEFAULT),
+            (serde_json::Value::Null, UI_GRID_GAP_DEFAULT),
+        ] {
+            let mut value = serde_json::to_value(AppSettings {
+                photo_roots: vec!["/tmp/photos".to_string()],
+                ..Default::default()
+            })
+            .unwrap();
+            value["ui_grid_gap"] = raw.clone();
+            let settings: AppSettings = serde_json::from_value(value).unwrap();
+            assert_eq!(settings.ui_grid_gap, expected, "input: {raw}");
+            assert_eq!(
+                settings.photo_roots,
+                vec!["/tmp/photos".to_string()],
+                "input: {raw}"
+            );
+        }
+
+        for (raw, expected) in [
+            (serde_json::json!(25), UI_CARD_RADIUS_MAX),
+            (serde_json::json!(255), UI_CARD_RADIUS_MAX),
+            (serde_json::json!(-1), UI_CARD_RADIUS_MIN),
+            (serde_json::json!("round"), UI_CARD_RADIUS_DEFAULT),
+            (serde_json::Value::Null, UI_CARD_RADIUS_DEFAULT),
+        ] {
+            let mut value = serde_json::to_value(AppSettings {
+                photo_roots: vec!["/tmp/photos".to_string()],
+                ..Default::default()
+            })
+            .unwrap();
+            value["ui_card_radius"] = raw.clone();
+            let settings: AppSettings = serde_json::from_value(value).unwrap();
+            assert_eq!(settings.ui_card_radius, expected, "input: {raw}");
+            assert_eq!(
+                settings.photo_roots,
+                vec!["/tmp/photos".to_string()],
+                "input: {raw}"
+            );
+        }
+    }
+
+    #[test]
+    fn grid_display_settings_roundtrip_and_save_clamps() {
+        let db = Db::open_in_memory().unwrap();
+        let settings = AppSettings {
+            ui_grid_gap: 0,
+            ui_card_radius: 24,
+            ..Default::default()
+        };
+        settings.save(&db).unwrap();
+        let loaded = AppSettings::load(&db).unwrap();
+        assert_eq!(loaded.ui_grid_gap, 0);
+        assert_eq!(loaded.ui_card_radius, 24);
+
+        let out_of_range = AppSettings {
+            ui_grid_gap: 200,
+            ui_card_radius: 200,
+            ..Default::default()
+        };
+        out_of_range.save(&db).unwrap();
+        let loaded = AppSettings::load(&db).unwrap();
+        assert_eq!(loaded.ui_grid_gap, UI_GRID_GAP_MAX);
+        assert_eq!(loaded.ui_card_radius, UI_CARD_RADIUS_MAX);
     }
 
     #[test]
