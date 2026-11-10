@@ -3627,20 +3627,14 @@ fn process_decoded_job(
         let preferred = preferred_display_derivative(&derivatives, &profiles)
             .context("no displayable derivative after compression")?;
         // The displayed file is about to change. Drop every cached thumbnail
-        // and preview for this photo before publishing `replaced`, so the next
-        // display request regenerates from the derivative instead of showing
-        // the old original. Failures are non-fatal: the source stamp still
-        // invalidates a stale entry on the next read.
+        // for this photo before publishing `replaced`, so the next display
+        // request regenerates from the derivative instead of showing the old
+        // original. Failures are non-fatal: the source stamp still invalidates
+        // a stale entry on the next read.
         if let Some(cache_dir) = thumbnail_dir
             && let Err(error) = thumbnail::remove_thumbnail_files_in(cache_dir, photo.id)
         {
             tracing::warn!(photo_id = photo.id, %error, "cannot invalidate thumbnail cache");
-        }
-        if let Some(cache_dir) = vrc_photon_core::preview::previews_dir()
-            && let Err(error) =
-                vrc_photon_core::preview::remove_preview_files_in(&cache_dir, photo.id)
-        {
-            tracing::warn!(photo_id = photo.id, %error, "cannot invalidate preview cache");
         }
         if !db.set_replaced(photo.id, preferred.id)? {
             anyhow::bail!("derivative was not attached to the photo");

@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 use gpui_kit::*;
 
 use crate::app::{App, Screen};
+use crate::state::display_image::display_key;
 use crate::state::viewer::{
     ViewerBoxState, ViewerMorph, ViewerOpenSource, ViewerPanelState, ViewerZoom, ViewerZoomDrag,
     current_tagged_bounds, preferred_bounds,
@@ -273,8 +274,7 @@ impl App {
             && let Some((actual_source, from)) = resolved
         {
             let thumbnail = self.thumbnails.borrow_mut().get(id);
-            let preview = self.preview.clone();
-            if thumbnail.is_some() || preview.is_some() {
+            if thumbnail.is_some() {
                 self.viewer_morph_epoch = self.viewer_morph_epoch.wrapping_add(1);
                 let epoch = self.viewer_morph_epoch;
                 let color = self
@@ -288,7 +288,6 @@ impl App {
                     from,
                     to,
                     thumbnail,
-                    preview,
                     color,
                     source: actual_source,
                     closing: false,
@@ -319,7 +318,7 @@ impl App {
         self.quick_look_open = true;
         self.zoom = ViewerZoom::default();
         self.zoom_drag = None;
-        self.request_full_preview(cx);
+        self.request_full_image(cx);
         self.quick_look_epoch = self.quick_look_epoch.wrapping_add(1);
         self.quick_look_focus_index = 0;
         // Remember the last details state for the session, but render it
@@ -374,14 +373,13 @@ impl App {
             Instant::now(),
         );
         let thumbnail = self.thumbnails.borrow_mut().get(id);
-        let preview = self.preview.clone();
         let color = self
             .selected_photo
             .as_ref()
             .map(|photo| self.color_for(photo))
             .unwrap_or(0);
 
-        if !cx.reduce_motion() && (thumbnail.is_some() || preview.is_some()) {
+        if !cx.reduce_motion() && thumbnail.is_some() {
             self.viewer_morph_epoch = self.viewer_morph_epoch.wrapping_add(1);
             let epoch = self.viewer_morph_epoch;
             let morph = ViewerMorph {
@@ -390,7 +388,6 @@ impl App {
                 from,
                 to,
                 thumbnail,
-                preview,
                 color,
                 source: target_kind,
                 closing: true,
@@ -420,13 +417,12 @@ impl App {
             self.set_viewer_morph(None, cx);
         }
         self.viewer_return_source = None;
-        self.reset_full_preview();
+        self.reset_full_image();
         self.zoom = ViewerZoom::default();
         self.zoom_drag = None;
-        // The closing morph owns its image clones; the crossfade frame must
-        // not keep a decoded preview alive after the viewer is gone.
-        self.previous_preview = None;
-        self.previous_color = None;
+        // The closing morph owns its image clone; the crossfade frame must
+        // not keep a decoded image alive after the viewer is gone.
+        self.previous_image = None;
         self.quick_look_open = false;
         self.note_edit_id = None;
         let focus = self
@@ -462,7 +458,7 @@ impl App {
         self.selection_anchor = None;
         self.quick_look_photo_ids.clear();
         self.quick_look_index = 0;
-        self.reset_preview_state();
+        self.reset_image_state();
         let focus = self
             .quick_look_return_focus
             .take()
@@ -523,15 +519,24 @@ impl App {
         }
         // Keep the top-bar navigation focused; only the library selection and
         // the displayed photo change behind the overlay.
-        let visible_image = self.preview.clone().or_else(|| {
-            self.selected
-                .and_then(|id| self.thumbnails.borrow_mut().get(id))
-        });
+        let visible_image = self
+            .selected_photo
+            .as_ref()
+            .and_then(|photo| {
+                let key = display_key(photo);
+                self.full_image
+                    .clone()
+                    .filter(|_| self.full_image_key == Some(key))
+            })
+            .or_else(|| {
+                self.selected
+                    .and_then(|id| self.thumbnails.borrow_mut().get(id))
+            });
         let viewport = content_viewport(window);
         let from_size = self.viewer_box.current_size(viewport);
         let target_details_width = self.viewer_panel.to_width;
         self.select_photo(self.quick_look_photo_ids[next], cx);
-        self.previous_preview = visible_image;
+        self.previous_image = visible_image;
         let new_aspect = self
             .selected_photo
             .as_ref()
@@ -706,7 +711,7 @@ impl App {
                 current_tagged_bounds(inspector_entry, self.render_epoch),
             )
         };
-        // The morph always starts from the grid card. The inspector preview is
+        // The morph always starts from the grid card. The inspector image is
         // only a fallback for a card that is scrolled out of view.
         let chosen = preferred_bounds(true, card, inspector)?;
         if card == Some(chosen) {

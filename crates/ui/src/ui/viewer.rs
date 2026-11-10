@@ -10,8 +10,8 @@ use gpui_kit::*;
 use vrc_photon_i18n::tr;
 
 use crate::app::{App, effective_motion_fps};
-use crate::state::preview::{preview_key, preview_placeholder_label};
-use crate::state::viewer::{ViewerMorph, minimap_size, morph_image_plan};
+use crate::state::display_image::{display_key, thumbnail_placeholder_label};
+use crate::state::viewer::{ViewerMorph, minimap_size, morph_radius_plan};
 use crate::ui::components::{ButtonState, ButtonTone};
 use crate::ui::theme::*;
 
@@ -150,15 +150,13 @@ impl App {
             )
             .child(details_button);
 
-        let previous_image = self.previous_preview.clone();
-        let key = preview_key(&photo);
+        let previous_image = self.previous_image.clone();
+        let key = display_key(&photo);
         let full_image = self
-            .full_preview
+            .full_image
             .clone()
-            .filter(|_| self.full_preview_key == Some(key));
-        let current_image = full_image
-            .or_else(|| self.preview.clone())
-            .or_else(|| self.thumbnails.borrow_mut().get(photo.id));
+            .filter(|_| self.full_image_key == Some(key));
+        let current_image = full_image.or_else(|| self.thumbnails.borrow_mut().get(photo.id));
         let (start_w, start_h) = box_state.size_at(0.0, viewport);
 
         let mut image_frame = div()
@@ -245,8 +243,9 @@ impl App {
                     .justify_center()
                     .text_size(px(11.))
                     .text_color(rgb(p.muted))
-                    .child(preview_placeholder_label(
-                        self.preview_queue.pending_for(photo.id),
+                    .child(thumbnail_placeholder_label(
+                        self.thumbnails.borrow().pending_for(photo.id)
+                            || self.full_image_queue.pending_for(photo.id),
                     )),
             );
         }
@@ -490,13 +489,8 @@ impl Render for ViewerMorphView {
         let closing = morph.closing;
         let fade_only = morph.fade_only;
         let backdrop_from = morph.backdrop_from;
-        let (_old_kind, _new_kind, start_radius, end_radius) = morph_image_plan(
-            closing,
-            morph.source,
-            morph.thumbnail.is_some(),
-            morph.preview.is_some(),
-        );
-        let Some(image) = morph.preview.clone().or_else(|| morph.thumbnail.clone()) else {
+        let (start_radius, end_radius) = morph_radius_plan(closing, morph.source);
+        let Some(image) = morph.thumbnail.clone() else {
             // Keep the empty slot out of flow for the same reason as the idle
             // return above: a root flex gap would narrow the whole shell.
             return div().absolute().into_any_element();

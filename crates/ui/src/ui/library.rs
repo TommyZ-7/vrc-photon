@@ -22,8 +22,8 @@ use crate::app::App;
 use crate::app::ai::{AiMetaKey, AiTagView};
 use crate::app::cli::log_timing;
 use crate::app::daemon::open_path;
+use crate::state::display_image::thumbnail_placeholder_label;
 use crate::state::photo_browser::{PAGE_SIZE, PageFailure, PhotoIndex};
-use crate::state::preview::preview_placeholder_label;
 use crate::state::viewer::ViewerOpenSource;
 use crate::ui::components::{ButtonState, ButtonTone, photo_world_label};
 use crate::ui::theme::*;
@@ -320,7 +320,6 @@ impl App {
 
         let id = photo.id;
         let current_color = self.selected_color();
-        let current_preview = self.preview.clone();
         let thumbnail = self.thumbnails.borrow_mut().get(id);
         let compressed = self.compressed_ids.contains(&id);
         let world = photo_world_label(photo);
@@ -374,13 +373,13 @@ impl App {
             .bg(rgb(current_color));
         card = card.child(tint_layer.into_any_element());
 
-        // 2. The selected 256 px thumbnail, upscaled and softened by opacity.
+        // 2. The selected thumbnail, upscaled and softened by opacity.
         //    The layer matches the card bounds so its rounded corners can be
         //    clipped by the image itself (GPUI overflow clipping is rectangular).
-        if let Some(thumbnail) = thumbnail {
+        if let Some(thumbnail) = thumbnail.as_ref() {
             card = card.child(
                 div().absolute().size_full().opacity(0.45).child(
-                    gpui_kit::img(thumbnail)
+                    gpui_kit::img(thumbnail.clone())
                         .object_fit(ObjectFit::Cover)
                         .size_full()
                         .rounded(px(inner_corner_radius(18.0, 1.0))),
@@ -413,7 +412,7 @@ impl App {
             .relative()
             .w_full()
             .flex_shrink_0()
-            // The spec fixes the preview height (168 / 118 short); the frame
+            // The spec fixes the image height (168 / 118 short); the frame
             // width follows the inspector column, so the visible ratio varies.
             // The image covers the frame rather than letterboxing.
             .h(px(preview_height))
@@ -425,11 +424,11 @@ impl App {
             .shadow(vec![
                 BoxShadow::new(px(0.), px(16.), rgba(p.shadow).into()).blur_radius(px(32.)),
             ]);
-        if let Some(preview) = current_preview.as_ref() {
-            preview_frame = preview_frame.child(image_layer(preview.clone()));
+        if let Some(thumbnail) = thumbnail.as_ref() {
+            preview_frame = preview_frame.child(image_layer(thumbnail.clone()));
         }
-        if current_preview.is_none() {
-            let label = preview_placeholder_label(self.preview_queue.pending_for(id));
+        if thumbnail.is_none() {
+            let label = thumbnail_placeholder_label(self.thumbnails.borrow().pending_for(id));
             preview_frame = preview_frame.child(
                 div()
                     .absolute()

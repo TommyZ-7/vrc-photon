@@ -1,5 +1,5 @@
 //! Thumbnail LRU cache and the background decode / image conversion helpers
-//! shared by the photo grid and the preview viewer.
+//! shared by the photo grid and the viewer.
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -15,11 +15,13 @@ use crate::ui::theme::average_bgra;
 /// Decoded RGBA bytes the in-memory thumbnail cache may retain. The count cap
 /// below only bounds bookkeeping overhead; the byte budget is what keeps the
 /// cache from growing with a large thumbnail size. Photos and search share
-/// this cache, and the UI process also holds preview images, so the budget is
-/// deliberately smaller than the renderer's working set.
+/// this cache, and the UI process also holds a memory-only full image, so the
+/// budget is deliberately smaller than the renderer's working set.
 const THUMB_CACHE_BYTES: usize = 64 * 1024 * 1024;
 const THUMB_CACHE_ENTRIES: usize = 128;
-const THUMB_IN_FLIGHT: usize = 4;
+/// Decode and generation share one slot: a thumbnail is the only display
+/// derivative, so serialising them keeps the UI decode peak bounded.
+const THUMB_IN_FLIGHT: usize = 1;
 /// A failed decode is retried after this delay, so a transient source or IO
 /// error does not hide the thumbnail until the next cache clear.
 const FAILED_RETRY_AFTER: Duration = Duration::from_secs(30);
@@ -350,6 +352,10 @@ impl ThumbnailCache {
         self.failed.insert(id, Instant::now());
     }
 
+    pub(crate) fn pending_for(&self, id: i64) -> bool {
+        self.pending.contains_key(&id)
+    }
+
     pub(crate) fn pin(&mut self, id: i64) {
         self.pinned = Some(id);
     }
@@ -596,7 +602,7 @@ pub(crate) fn make_render_image(rgba: image::RgbaImage) -> Arc<RenderImage> {
 }
 
 /// Swaps RGBA to the BGRA order GPUI's `RenderImage` expects. Call this on the
-/// background executor so a full preview does not spend its pixel loop on the
+/// background executor so a full image does not spend its pixel loop on the
 /// UI thread.
 pub(crate) fn rgba_to_bgra(mut rgba: image::RgbaImage) -> image::RgbaImage {
     for pixel in rgba.pixels_mut() {

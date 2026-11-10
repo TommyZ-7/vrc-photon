@@ -22,7 +22,6 @@ pub mod metadata;
 pub mod model;
 pub mod photo_filename;
 pub mod photo_image;
-pub mod preview;
 pub mod scanner;
 pub mod settings;
 pub mod tagging_image;
