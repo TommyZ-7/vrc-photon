@@ -6,7 +6,6 @@
   - Linux: `~/.local/share/vrc-photon/library.db`
   - Windows: `%LOCALAPPDATA%\vrc-photon\library.db`
 - サムネイル: 同ディレクトリの `thumbnails/<photo_id>-q<quality>-s<size>.webp`（旧 `<photo_id>.webp` も読める）。隣に元ファイルの `mtime + size` を記録した `.meta` を置く。
-- プレビュー: 同ディレクトリの `previews/<photo_id>-<variant>.webp`（`variant` は表示derivative ID、元画像は `0`）。同じく `.meta` で鮮度を判定する。
 - AI プラグイン: 同ディレクトリの `plugins/<plugin_id>/<variant>/<version>/`
 - AI モデル: 同ディレクトリの `plugins/<plugin_id>/models/<revision>/`
 - タグ付け用スナップショット: 同ディレクトリの `cache/tagging/<job_id>.jpg`（一時ファイル）
@@ -811,7 +810,6 @@ v9 は fresh DB では v1 で作成済みの `idx_jobs_photo_profile` を
 
 - DBをバックアップする場合は、WAL/SHMを含めずにSQLiteの `.backup` を使うか、アプリ終了後に `library.db` をコピーする。
 - サムネイルは再生成可能。バックアップ必須ではない。
-- プレビューも再生成可能なキャッシュ。バックアップ必須ではない。
 - AI の推論結果は DB に含まれる。プラグイン本体とモデルファイルは
   `plugins/` 配下にあり、ZIP / manifest / モデルから再取得できる。
 - 写真ファイルとログはDBに含まれない。
