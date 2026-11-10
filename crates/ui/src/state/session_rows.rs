@@ -24,6 +24,10 @@ pub(crate) enum SessionRowKind {
         day: i32,
         photo_count: usize,
     },
+    Continuation {
+        session_id: i64,
+        photo_count: usize,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -61,7 +65,7 @@ pub(crate) struct SessionRows {
     hidden_session_ranges: Vec<(usize, usize, usize)>,
     /// Row ranges carrying each session's photos. A session that is split by
     /// unlinked photos has more than one range.
-    session_photo_rows: HashMap<i64, Vec<Range<usize>>>,
+    session_content_rows: HashMap<i64, Vec<Range<usize>>>,
     photo_count: usize,
 }
 
@@ -72,6 +76,7 @@ impl SessionRows {
         photo_row_height: f32,
         header_height: f32,
         date_label_height: f32,
+        continuation_height: f32,
         collapsed: &HashSet<i64>,
         animating: &HashSet<i64>,
     ) -> Self {
@@ -90,7 +95,7 @@ impl SessionRows {
         let mut header_rows = HashMap::new();
         let mut leading_rows = HashMap::new();
         let mut hidden_session_ranges = Vec::new();
-        let mut session_photo_rows: HashMap<i64, Vec<Range<usize>>> = HashMap::new();
+        let mut session_content_rows: HashMap<i64, Vec<Range<usize>>> = HashMap::new();
         let mut seen_sessions = HashSet::new();
         let mut index = 0;
 
@@ -102,9 +107,9 @@ impl SessionRows {
                 }
                 let run_len = index - start;
                 let is_collapsed = collapsed.contains(&session_id);
-                // A session whose photo run was interrupted by unlinked
-                // photos keeps only its first header (decision Q6).
-                if seen_sessions.insert(session_id) {
+                let first_run = seen_sessions.insert(session_id);
+                let mut content_start = rows.len();
+                if first_run {
                     let row = rows.len();
                     rows.push(SessionRow {
                         kind: SessionRowKind::Header {
@@ -117,13 +122,24 @@ impl SessionRows {
                     row_photo_start.push(start);
                     header_rows.insert(session_id, row);
                     leading_rows.insert(start, row);
+                    content_start = rows.len();
+                } else if !is_collapsed || animating.contains(&session_id) {
+                    let row = rows.len();
+                    rows.push(SessionRow {
+                        kind: SessionRowKind::Continuation {
+                            session_id,
+                            photo_count: run_len,
+                        },
+                    });
+                    heights.push(continuation_height);
+                    row_photo_start.push(start);
+                    leading_rows.insert(start, row);
                 }
                 if is_collapsed && !animating.contains(&session_id) {
                     if let Some(header_row) = header_rows.get(&session_id) {
                         hidden_session_ranges.push((start, index, *header_row));
                     }
                 } else {
-                    let first_row = rows.len();
                     push_photo_rows(
                         &mut rows,
                         &mut heights,
@@ -135,11 +151,11 @@ impl SessionRows {
                         photo_row_height,
                     );
                     let end_row = rows.len();
-                    if first_row < end_row {
-                        session_photo_rows
+                    if content_start < end_row {
+                        session_content_rows
                             .entry(session_id)
                             .or_default()
-                            .push(first_row..end_row);
+                            .push(content_start..end_row);
                     }
                 }
             } else {
@@ -195,7 +211,7 @@ impl SessionRows {
             header_rows,
             leading_rows,
             hidden_session_ranges,
-            session_photo_rows,
+            session_content_rows,
             photo_count: entries.len(),
         }
     }
@@ -216,7 +232,7 @@ impl SessionRows {
         }
         let mut heights = self.heights.clone();
         for (session_id, factor) in factors {
-            let Some(ranges) = self.session_photo_rows.get(session_id) else {
+            let Some(ranges) = self.session_content_rows.get(session_id) else {
                 continue;
             };
             let visible = 1.0 - factor.clamp(0.0, 1.0);
@@ -385,6 +401,7 @@ mod tests {
             200.0,
             92.0,
             46.0,
+            44.0,
             &HashSet::new(),
             &HashSet::new(),
         );
@@ -429,6 +446,7 @@ mod tests {
             200.0,
             92.0,
             46.0,
+            44.0,
             &HashSet::new(),
             &HashSet::new(),
         );
@@ -472,7 +490,16 @@ mod tests {
             entry(2, 20261108, Some(8)),
         ];
         let collapsed = HashSet::from([7]);
-        let rows = SessionRows::build(&entries, 2, 200.0, 92.0, 46.0, &collapsed, &HashSet::new());
+        let rows = SessionRows::build(
+            &entries,
+            2,
+            200.0,
+            92.0,
+            46.0,
+            44.0,
+            &collapsed,
+            &HashSet::new(),
+        );
         assert_eq!(
             rows.rows().iter().map(|row| row.kind()).collect::<Vec<_>>(),
             vec![
@@ -499,7 +526,7 @@ mod tests {
     }
 
     #[test]
-    fn a_split_session_keeps_only_its_first_header() {
+    fn a_split_session_gets_a_continuation_row_for_its_second_run() {
         let entries = vec![
             entry(4, 20261109, Some(7)),
             entry(3, 20261109, Some(7)),
@@ -512,6 +539,7 @@ mod tests {
             200.0,
             92.0,
             46.0,
+            44.0,
             &HashSet::new(),
             &HashSet::new(),
         );
@@ -535,11 +563,20 @@ mod tests {
                     first_photo: 2,
                     count: 1
                 },
+                SessionRowKind::Continuation {
+                    session_id: 7,
+                    photo_count: 1
+                },
                 SessionRowKind::Photos {
                     first_photo: 3,
                     count: 1
                 },
             ]
+        );
+        // The first photo of the second run keeps its continuation context.
+        assert_eq!(
+            rows.anchor_offset_for_photo(3),
+            Some(rows.offset_for_photo(3).unwrap() - 44.0)
         );
     }
 
@@ -554,6 +591,7 @@ mod tests {
             200.0,
             92.0,
             46.0,
+            44.0,
             &HashSet::new(),
             &HashSet::new(),
         );
@@ -581,6 +619,7 @@ mod tests {
             200.0,
             92.0,
             46.0,
+            44.0,
             &HashSet::new(),
             &HashSet::new(),
         );
@@ -599,6 +638,7 @@ mod tests {
             200.0,
             92.0,
             46.0,
+            44.0,
             &HashSet::new(),
             &HashSet::new(),
         );
@@ -617,6 +657,7 @@ mod tests {
             200.0,
             92.0,
             46.0,
+            44.0,
             &HashSet::from([7]),
             &HashSet::from([7]),
         );
@@ -651,6 +692,7 @@ mod tests {
             200.0,
             92.0,
             46.0,
+            44.0,
             &HashSet::new(),
             &HashSet::new(),
         );
@@ -678,13 +720,17 @@ mod tests {
             100.0,
             40.0,
             20.0,
+            44.0,
             &HashSet::new(),
             &HashSet::new(),
         );
         let heights = rows.heights_with_collapse(&HashMap::from([(7, 0.25)]));
         // Header 40, first run 2 photos, date label 20, unlinked photo 1,
-        // split session photo 1.
-        assert_eq!(heights, vec![40.0, 75.0, 75.0, 20.0, 100.0, 75.0]);
+        // continuation 44 * 0.75, split session photo 1.
+        assert_eq!(
+            heights,
+            vec![40.0, 75.0, 75.0, 20.0, 100.0, 33.0, 75.0]
+        );
     }
 
     #[test]
@@ -695,6 +741,7 @@ mod tests {
             100.0,
             40.0,
             20.0,
+            44.0,
             &HashSet::new(),
             &HashSet::new(),
         );
@@ -722,6 +769,7 @@ mod tests {
             200.0,
             92.0,
             46.0,
+            44.0,
             &HashSet::new(),
             &HashSet::new(),
         );
@@ -746,6 +794,7 @@ mod tests {
             200.0,
             92.0,
             46.0,
+            44.0,
             &HashSet::new(),
             &HashSet::new(),
         );

@@ -13,7 +13,8 @@ use crate::state::photo_browser::{
     anchor_photo_id, list_scroll_top, session_scroll_top, set_session_scroll_offset,
 };
 use crate::ui::theme::{
-    CARD_ROW_GAP, MOTION_BASE, SESSION_DATE_LABEL_ROW_HEIGHT, SESSION_HEADER_ROW_HEIGHT,
+    CARD_ROW_GAP, MOTION_BASE, SESSION_CONTINUATION_ROW_HEIGHT, SESSION_DATE_LABEL_ROW_HEIGHT,
+    SESSION_HEADER_ROW_HEIGHT,
 };
 
 #[cfg(test)]
@@ -76,6 +77,7 @@ impl App {
             row_height,
             SESSION_HEADER_ROW_HEIGHT + CARD_ROW_GAP,
             SESSION_DATE_LABEL_ROW_HEIGHT + CARD_ROW_GAP,
+            SESSION_CONTINUATION_ROW_HEIGHT + CARD_ROW_GAP,
         );
     }
 
@@ -106,6 +108,7 @@ impl App {
             row_height,
             SESSION_HEADER_ROW_HEIGHT + CARD_ROW_GAP,
             SESSION_DATE_LABEL_ROW_HEIGHT + CARD_ROW_GAP,
+            SESSION_CONTINUATION_ROW_HEIGHT + CARD_ROW_GAP,
         );
         let index = rows.top_photo_index(session_scroll_top(&browser.session_scroll))?;
         browser.index.entries.get(index).map(|entry| entry.id)
@@ -139,6 +142,7 @@ impl App {
             row_height,
             SESSION_HEADER_ROW_HEIGHT + CARD_ROW_GAP,
             SESSION_DATE_LABEL_ROW_HEIGHT + CARD_ROW_GAP,
+            SESSION_CONTINUATION_ROW_HEIGHT + CARD_ROW_GAP,
         );
         let Some(position) = browser.index.row_of_id(id) else {
             return;
@@ -218,6 +222,7 @@ impl App {
             row_height,
             SESSION_HEADER_ROW_HEIGHT + CARD_ROW_GAP,
             SESSION_DATE_LABEL_ROW_HEIGHT + CARD_ROW_GAP,
+            SESSION_CONTINUATION_ROW_HEIGHT + CARD_ROW_GAP,
             now,
         );
         let header_offset = before
@@ -244,6 +249,7 @@ impl App {
             row_height,
             SESSION_HEADER_ROW_HEIGHT + CARD_ROW_GAP,
             SESSION_DATE_LABEL_ROW_HEIGHT + CARD_ROW_GAP,
+            SESSION_CONTINUATION_ROW_HEIGHT + CARD_ROW_GAP,
             now,
         );
         let header_offset = after

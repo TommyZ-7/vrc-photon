@@ -342,6 +342,7 @@ struct SessionRowsKey {
     photo_row_height: f32,
     header_height: f32,
     date_label_height: f32,
+    continuation_height: f32,
     collapsed: Vec<i64>,
     animating: Vec<i64>,
 }
@@ -367,6 +368,7 @@ pub(crate) struct SessionLayoutParams {
     pub(crate) photo_row_height: f32,
     pub(crate) header_height: f32,
     pub(crate) date_label_height: f32,
+    pub(crate) continuation_height: f32,
 }
 
 /// Snapshot plus page cache for one grid (library or search).
@@ -481,12 +483,14 @@ impl PhotoBrowser {
         photo_row_height: f32,
         header_height: f32,
         date_label_height: f32,
+        continuation_height: f32,
     ) -> Arc<SessionRows> {
         self.ensure_session_rows_at(
             columns,
             photo_row_height,
             header_height,
             date_label_height,
+            continuation_height,
             Instant::now(),
         )
     }
@@ -497,6 +501,7 @@ impl PhotoBrowser {
         photo_row_height: f32,
         header_height: f32,
         date_label_height: f32,
+        continuation_height: f32,
         now: Instant,
     ) -> Arc<SessionRows> {
         let animating: HashSet<i64> = self
@@ -509,6 +514,7 @@ impl PhotoBrowser {
             photo_row_height,
             header_height,
             date_label_height,
+            continuation_height,
             &animating,
         )
     }
@@ -519,6 +525,7 @@ impl PhotoBrowser {
         photo_row_height: f32,
         header_height: f32,
         date_label_height: f32,
+        continuation_height: f32,
         animating: &HashSet<i64>,
     ) -> Arc<SessionRows> {
         let mut collapsed: Vec<i64> = self.collapsed_sessions.iter().copied().collect();
@@ -531,6 +538,7 @@ impl PhotoBrowser {
             photo_row_height,
             header_height,
             date_label_height,
+            continuation_height,
             collapsed,
             animating: animating_ids,
         };
@@ -545,6 +553,7 @@ impl PhotoBrowser {
             photo_row_height,
             header_height,
             date_label_height,
+            continuation_height,
             &self.collapsed_sessions,
             animating,
         ));
@@ -562,6 +571,7 @@ impl PhotoBrowser {
         photo_row_height: f32,
         header_height: f32,
         date_label_height: f32,
+        continuation_height: f32,
         now: Instant,
     ) -> SessionLayout {
         self.session_layout_params = Some(SessionLayoutParams {
@@ -569,6 +579,7 @@ impl PhotoBrowser {
             photo_row_height,
             header_height,
             date_label_height,
+            continuation_height,
         });
         let factors = self.session_collapse_motions.factors(now);
         let animating: HashSet<i64> = factors.keys().copied().collect();
@@ -577,6 +588,7 @@ impl PhotoBrowser {
             photo_row_height,
             header_height,
             date_label_height,
+            continuation_height,
             &animating,
         );
         let heights = rows.heights_with_collapse(&factors);
@@ -713,6 +725,7 @@ impl PhotoBrowser {
             params.photo_row_height,
             params.header_height,
             params.date_label_height,
+            params.continuation_height,
         ))
     }
 
@@ -1733,14 +1746,14 @@ mod tests {
     fn session_rows_rebuild_only_when_the_key_changes() {
         let index = Arc::new(PhotoIndex::new(vec![index_entry(1, 202601)]));
         let mut browser = PhotoBrowser::new(index, TEST_ROW_HEIGHT);
-        let first = browser.ensure_session_rows(4, 200.0, 92.0, 46.0);
-        let second = browser.ensure_session_rows(4, 200.0, 92.0, 46.0);
+        let first = browser.ensure_session_rows(4, 200.0, 92.0, 46.0, 44.0);
+        let second = browser.ensure_session_rows(4, 200.0, 92.0, 46.0, 44.0);
         assert!(Arc::ptr_eq(&first, &second));
         assert_eq!(browser.top_photo_index(0.0), Some(0));
-        let changed = browser.ensure_session_rows(3, 200.0, 92.0, 46.0);
+        let changed = browser.ensure_session_rows(3, 200.0, 92.0, 46.0, 44.0);
         assert!(!Arc::ptr_eq(&first, &changed));
         browser.toggle_session_collapsed(7);
-        let collapsed = browser.ensure_session_rows(3, 200.0, 92.0, 46.0);
+        let collapsed = browser.ensure_session_rows(3, 200.0, 92.0, 46.0, 44.0);
         assert!(!Arc::ptr_eq(&changed, &collapsed));
     }
 
@@ -1785,7 +1798,7 @@ mod tests {
         let generation = browser.generation;
         browser.insert_session_summaries(generation, &[7], vec![summary(7)]);
         browser.plan_session_summaries([8], 1);
-        browser.ensure_session_rows(4, 200.0, 92.0, 46.0);
+        browser.ensure_session_rows(4, 200.0, 92.0, 46.0, 44.0);
         browser.invalidate_pages();
         assert!(browser.session_summaries.is_empty());
         assert!(browser.session_summary_pending.is_empty());
@@ -1828,7 +1841,7 @@ mod tests {
         let mut browser = PhotoBrowser::new(index, TEST_ROW_HEIGHT);
         let generation = browser.generation;
         browser.toggle_session_collapsed(7);
-        browser.ensure_session_rows(4, 200.0, 92.0, 46.0);
+        browser.ensure_session_rows(4, 200.0, 92.0, 46.0, 44.0);
         browser.insert_session_summaries(generation, &[7], vec![summary(7)]);
         browser.plan_session_summaries([8], 1);
 
@@ -1865,7 +1878,8 @@ mod tests {
         let mut browser = PhotoBrowser::new(session_index(), TEST_ROW_HEIGHT);
         browser.animate_session_collapse(7, true, Duration::from_millis(100), now);
 
-        let layout = browser.session_layout(4, 200.0, 92.0, 46.0, now + Duration::from_millis(50));
+        let layout =
+            browser.session_layout(4, 200.0, 92.0, 46.0, 44.0, now + Duration::from_millis(50));
         assert_eq!(layout.rows.rows().len(), 4);
         assert!(layout.heights[1] > 0.0 && layout.heights[1] < 200.0);
         assert_eq!(layout.heights[0], 92.0);
@@ -1877,9 +1891,9 @@ mod tests {
     fn session_rows_rebuild_when_the_animating_set_changes() {
         let now = Instant::now();
         let mut browser = PhotoBrowser::new(session_index(), TEST_ROW_HEIGHT);
-        let settled = browser.ensure_session_rows(4, 200.0, 92.0, 46.0);
+        let settled = browser.ensure_session_rows(4, 200.0, 92.0, 46.0, 44.0);
         browser.animate_session_collapse(7, true, Duration::from_millis(100), now);
-        let animating = browser.ensure_session_rows(4, 200.0, 92.0, 46.0);
+        let animating = browser.ensure_session_rows(4, 200.0, 92.0, 46.0, 44.0);
         assert!(!Arc::ptr_eq(&settled, &animating));
         assert_eq!(animating.rows().len(), 4);
     }
@@ -1901,7 +1915,7 @@ mod tests {
         browser.animate_session_collapse(7, true, Duration::from_millis(100), now);
         browser.settle_session_collapse(7);
         assert!(browser.collapsed_sessions.contains(&7));
-        let rows = browser.ensure_session_rows(4, 200.0, 92.0, 46.0);
+        let rows = browser.ensure_session_rows(4, 200.0, 92.0, 46.0, 44.0);
         assert!(!rows.rows().iter().any(|row| matches!(
             row.kind(),
             SessionRowKind::Photos {
@@ -1915,13 +1929,14 @@ mod tests {
     fn a_header_anchor_keeps_its_viewport_y_while_another_session_moves() {
         let now = Instant::now();
         let mut browser = PhotoBrowser::new(session_index(), TEST_ROW_HEIGHT);
-        let layout = browser.session_layout(4, 200.0, 92.0, 46.0, now);
+        let layout = browser.session_layout(4, 200.0, 92.0, 46.0, 44.0, now);
         let header_offset = layout.rows.offset_for_session(8).unwrap();
         set_session_scroll_offset(&browser, header_offset - 100.0);
         browser.set_session_scroll_anchor(8, 100.0);
         browser.animate_session_collapse(7, true, Duration::from_millis(100), now);
 
-        let mid = browser.session_layout(4, 200.0, 92.0, 46.0, now + Duration::from_millis(50));
+        let mid =
+            browser.session_layout(4, 200.0, 92.0, 46.0, 44.0, now + Duration::from_millis(50));
         let expected = mid
             .rows
             .offset_for_session_with_heights(8, &mid.heights)
@@ -1941,11 +1956,13 @@ mod tests {
         browser.animate_session_collapse(7, true, Duration::from_millis(100), now);
         browser.set_pending_photo_anchor(2);
 
-        let mid = browser.session_layout(4, 200.0, 92.0, 46.0, now + Duration::from_millis(50));
+        let mid =
+            browser.session_layout(4, 200.0, 92.0, 46.0, 44.0, now + Duration::from_millis(50));
         assert_eq!(mid.rows.rows().len(), 4);
         assert_eq!(session_scroll_top(&browser.session_scroll), 0.0);
 
-        let done = browser.session_layout(4, 200.0, 92.0, 46.0, now + Duration::from_millis(100));
+        let done =
+            browser.session_layout(4, 200.0, 92.0, 46.0, 44.0, now + Duration::from_millis(100));
         assert_eq!(done.rows.rows().len(), 3);
         let expected = done.rows.offset_for_photo(2).unwrap();
         assert_eq!(session_scroll_top(&browser.session_scroll), expected);
@@ -1980,7 +1997,7 @@ mod tests {
         let now = Instant::now();
         let mut browser = PhotoBrowser::new(session_index(), TEST_ROW_HEIGHT);
         browser.toggle_session_collapsed(7);
-        let _ = browser.session_layout(4, 200.0, 92.0, 46.0, now);
+        let _ = browser.session_layout(4, 200.0, 92.0, 46.0, 44.0, now);
         let rows = browser.expand_session_for_jump(7).unwrap();
         assert!(!browser.collapsed_sessions.contains(&7));
         assert!(rows.offset_for_photo(0).is_some());
@@ -1991,8 +2008,10 @@ mod tests {
         let now = Instant::now();
         let mut browser = PhotoBrowser::new(session_index(), TEST_ROW_HEIGHT);
         browser.animate_session_collapse(7, true, Duration::from_millis(100), now);
-        let first = browser.session_layout(4, 200.0, 92.0, 46.0, now + Duration::from_millis(10));
-        let second = browser.session_layout(4, 200.0, 92.0, 46.0, now + Duration::from_millis(60));
+        let first =
+            browser.session_layout(4, 200.0, 92.0, 46.0, 44.0, now + Duration::from_millis(10));
+        let second =
+            browser.session_layout(4, 200.0, 92.0, 46.0, 44.0, now + Duration::from_millis(60));
         assert!(Arc::ptr_eq(&first.rows, &second.rows));
         assert_ne!(first.heights, second.heights);
     }
@@ -2004,11 +2023,11 @@ mod tests {
         assert!(browser.toggle_session_collapsed(7));
         browser.animate_session_collapse(7, true, Duration::from_millis(100), now);
         browser.set_session_scroll_anchor(8, 100.0);
-        let animating = browser.ensure_session_rows(4, 200.0, 92.0, 46.0);
+        let animating = browser.ensure_session_rows(4, 200.0, 92.0, 46.0, 44.0);
         assert_eq!(animating.rows().len(), 4);
         browser.settle_all_session_collapses();
         assert!(browser.session_scroll_anchor.is_none());
-        let settled = browser.ensure_session_rows(4, 200.0, 92.0, 46.0);
+        let settled = browser.ensure_session_rows(4, 200.0, 92.0, 46.0, 44.0);
         assert!(!Arc::ptr_eq(&animating, &settled));
         assert_eq!(settled.rows().len(), 3);
     }

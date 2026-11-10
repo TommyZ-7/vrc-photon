@@ -956,6 +956,7 @@ fn render_session_grid(
             metrics.row_height,
             SESSION_HEADER_ROW_HEIGHT + CARD_ROW_GAP,
             SESSION_DATE_LABEL_ROW_HEIGHT + CARD_ROW_GAP,
+            SESSION_CONTINUATION_ROW_HEIGHT + CARD_ROW_GAP,
             now,
         );
         let rows = layout.rows.clone();
@@ -1075,6 +1076,9 @@ fn render_session_grid(
                         }
                         SessionRowKind::DateLabel { day, photo_count } => {
                             rendered.push(render_session_date_label(app, day, photo_count));
+                        }
+                        SessionRowKind::Continuation { .. } => {
+                            // Rendered in Task 5.2; the row model is tested first.
                         }
                         SessionRowKind::Photos { first_photo, count } => {
                             let start = first_photo;
@@ -2034,6 +2038,7 @@ mod tests {
             200.0,
             92.0,
             46.0,
+            44.0,
             &HashSet::new(),
             &HashSet::new(),
         );
