@@ -70,6 +70,7 @@ impl LiveRefreshGate {
 struct LiveSnapshot {
     revision: Option<i64>,
     ai_revision: Option<i64>,
+    session_revision: Option<i64>,
     photo_count: Option<i64>,
     stats: Option<LibraryStats>,
     /// Recomputed only when the revision moved; the asset badges follow the
@@ -311,6 +312,14 @@ impl App {
             notify = true;
         }
 
+        if let Some(revision) = snapshot.session_revision
+            && revision > self.last_session_revision
+        {
+            self.last_session_revision = revision;
+            self.library.borrow_mut().invalidate_session_summaries();
+            notify = true;
+        }
+
         if let Some(revision) = snapshot.ai_revision
             && revision > self.last_ai_revision
         {
@@ -333,6 +342,7 @@ impl App {
 fn collect_live_snapshot(db: &Db, stats_revision: i64) -> LiveSnapshot {
     let revision = db.library_revision().ok();
     let ai_revision = db.ai_revision().ok();
+    let session_revision = db.session_revision().ok();
     let photo_count = db.count_photos().ok();
     // Stats and the compressed/duplicate badge sets only change when the
     // revision moves. All three aggregates run here, on the background
@@ -350,6 +360,7 @@ fn collect_live_snapshot(db: &Db, stats_revision: i64) -> LiveSnapshot {
     LiveSnapshot {
         revision,
         ai_revision,
+        session_revision,
         photo_count,
         stats,
         compressed_ids,
@@ -582,6 +593,16 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let snapshot = collect_live_snapshot(&db, -1);
         assert_eq!(snapshot.ai_revision, Some(db.ai_revision().unwrap()));
+    }
+
+    #[test]
+    fn snapshot_reports_the_session_revision() {
+        let db = Db::open_in_memory().unwrap();
+        let snapshot = collect_live_snapshot(&db, -1);
+        assert_eq!(
+            snapshot.session_revision,
+            Some(db.session_revision().unwrap())
+        );
     }
 
     #[test]

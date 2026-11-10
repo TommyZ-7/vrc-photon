@@ -240,13 +240,13 @@ pub(crate) fn rail_scroll_offset(
 pub(crate) fn session_rail_scroll_offset(
     rows: &SessionRows,
     photo_index: usize,
-    _max_offset: f32,
+    max_offset: f32,
 ) -> f32 {
     let offset = rows
         .offset_for_photo(photo_index)
         .or_else(|| rows.anchor_offset_for_photo(photo_index))
         .unwrap_or(0.0);
-    -offset
+    (-offset).clamp(-max_offset.max(0.0), 0.0)
 }
 
 pub(crate) fn rail_text_run(len: usize, color: u32) -> TextRun {
@@ -562,6 +562,26 @@ mod tests {
             session_rail_scroll_offset(&rows, 1, 10_000.0),
             -rows.offset_for_session(1).unwrap()
         );
+    }
+
+    #[test]
+    fn session_rail_jump_clamps_to_the_scrollable_range() {
+        let entries = vec![
+            session_entry(10, 20261109, Some(1)),
+            session_entry(9, 20261109, Some(1)),
+            session_entry(8, 20261108, Some(2)),
+            session_entry(7, 20261108, Some(2)),
+        ];
+        let rows = SessionRows::build(
+            &entries,
+            2,
+            200.0,
+            92.0,
+            46.0,
+            &HashSet::new(),
+            &HashSet::new(),
+        );
+        assert_eq!(session_rail_scroll_offset(&rows, 2, 100.0), -100.0);
     }
 
     #[test]

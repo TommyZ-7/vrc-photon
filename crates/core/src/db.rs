@@ -1797,6 +1797,16 @@ impl Db {
         self.bump_revision("ai_revision")
     }
 
+    /// Monotonic counter for session lifecycle changes that affect header
+    /// summaries but not the photo index.
+    pub fn session_revision(&self) -> Result<i64> {
+        self.revision("session_revision")
+    }
+
+    pub fn bump_session_revision(&self) -> Result<i64> {
+        self.bump_revision("session_revision")
+    }
+
     fn revision(&self, key: &str) -> Result<i64> {
         Ok(self
             .get_setting(key)?
@@ -2241,14 +2251,18 @@ impl Db {
             params![log_file, started_at, world_id, instance_id],
             |row| row.get(0),
         )?;
+        self.bump_session_revision()?;
         Ok(id)
     }
 
     pub fn close_session(&self, session_id: i64, ended_at: i64) -> Result<()> {
-        self.conn.execute(
+        let updated = self.conn.execute(
             "UPDATE sessions SET ended_at = ?1 WHERE id = ?2 AND ended_at IS NULL",
             params![ended_at, session_id],
         )?;
+        if updated > 0 {
+            self.bump_session_revision()?;
+        }
         Ok(())
     }
 
@@ -2347,15 +2361,19 @@ impl Db {
                 display_name = excluded.display_name, left_at = NULL",
             params![session_id, user_id, display_name, joined_at],
         )?;
+        self.bump_session_revision()?;
         Ok(())
     }
 
     pub fn close_session_player(&self, session_id: i64, user_id: &str, left_at: i64) -> Result<()> {
-        self.conn.execute(
+        let updated = self.conn.execute(
             "UPDATE session_players SET left_at = ?1 \
              WHERE session_id = ?2 AND user_id = ?3 AND left_at IS NULL",
             params![left_at, session_id, user_id],
         )?;
+        if updated > 0 {
+            self.bump_session_revision()?;
+        }
         Ok(())
     }
 
@@ -2368,11 +2386,14 @@ impl Db {
         display_name: &str,
         left_at: i64,
     ) -> Result<()> {
-        self.conn.execute(
+        let updated = self.conn.execute(
             "UPDATE session_players SET display_name = ?1, left_at = ?2 \
              WHERE session_id = ?3 AND user_id = ?4 AND left_at IS NULL",
             params![display_name, left_at, session_id, user_id],
         )?;
+        if updated > 0 {
+            self.bump_session_revision()?;
+        }
         Ok(())
     }
 
@@ -8975,6 +8996,38 @@ mod tests {
         let sessions = db.open_sessions().unwrap();
         assert_eq!(sessions.len(), 1);
         assert_eq!(sessions[0].id, open);
+    }
+
+    #[test]
+    fn session_lifecycle_bumps_session_revision_without_moving_library_revision() {
+        let db = Db::open_in_memory().unwrap();
+        let world = db
+            .upsert_world("wrld_test", Some("Test World"), Some("log"))
+            .unwrap();
+        let library_before = db.library_revision().unwrap();
+        let revision_before = db.session_revision().unwrap();
+
+        let session = db.create_session("log.txt", 100, world, None).unwrap();
+        assert!(db.session_revision().unwrap() > revision_before);
+
+        let revision_before = db.session_revision().unwrap();
+        db.close_session(session, 200).unwrap();
+        assert!(db.session_revision().unwrap() > revision_before);
+
+        let revision_before = db.session_revision().unwrap();
+        db.close_session(session, 200).unwrap();
+        assert_eq!(db.session_revision().unwrap(), revision_before);
+
+        let revision_before = db.session_revision().unwrap();
+        db.upsert_session_player(session, "usr_a", "Aoi", 110)
+            .unwrap();
+        assert!(db.session_revision().unwrap() > revision_before);
+
+        let revision_before = db.session_revision().unwrap();
+        db.close_session_player(session, "usr_a", 120).unwrap();
+        assert!(db.session_revision().unwrap() > revision_before);
+
+        assert_eq!(db.library_revision().unwrap(), library_before);
     }
 
     #[test]
