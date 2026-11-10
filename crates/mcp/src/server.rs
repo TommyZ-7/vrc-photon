@@ -12,7 +12,7 @@ use serde_json::json;
 use vrc_photon_core::error::CoreError;
 use vrc_photon_core::photo_image::{PhotoImage, render_photo_image};
 
-use crate::client::{DaemonClient, DaemonError, SearchPhotosQuery};
+use crate::client::{DaemonClient, DaemonError, RandomSearchPhotosQuery, SearchPhotosQuery};
 
 const DEFAULT_LIMIT: u32 = 50;
 const MAX_LIMIT: u32 = 200;
@@ -53,6 +53,38 @@ pub struct SearchPhotosParams {
     /// Page offset. Defaults to 0.
     #[serde(default)]
     pub offset: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct RandomSearchPhotosParams {
+    /// World name, world ID, or instance ID substring.
+    #[serde(default)]
+    pub world: Option<String>,
+    /// Player display name or user ID substring.
+    #[serde(default)]
+    pub player: Option<String>,
+    /// Manual tag or applied AI tag name/key substring.
+    #[serde(default)]
+    pub tag: Option<String>,
+    /// Applied AI tag keys, matched with OR.
+    #[serde(default)]
+    pub ai_tags: Vec<String>,
+    /// Inclusive lower capture bound as an RFC 3339 timestamp.
+    #[serde(default)]
+    pub captured_from: Option<String>,
+    /// Inclusive upper capture bound as an RFC 3339 timestamp.
+    #[serde(default)]
+    pub captured_to: Option<String>,
+    /// Restrict the result to favorites when true.
+    #[serde(default)]
+    pub favorite: Option<bool>,
+    /// Sample size. Defaults to 50 and is clamped to 1..=200.
+    #[serde(default)]
+    pub limit: Option<u32>,
+    /// Reproducibility seed. The same seed and library contents return the same
+    /// sample; omit it to get a different sample on each call.
+    #[serde(default)]
+    pub seed: Option<u64>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -101,6 +133,33 @@ impl PhotoNMcp {
         };
         let client = self.client.clone();
         match call_daemon(move || client.search_photos(query)).await {
+            Ok(result) => structured(result),
+            Err(error) => Ok(tool_error(error)),
+        }
+    }
+
+    #[tool(
+        description = "Return a random sample of photos matching the same filters as search_photos. The same seed and library contents return the same sample; omit seed to vary each call."
+    )]
+    async fn random_search_photos(
+        &self,
+        Parameters(params): Parameters<RandomSearchPhotosParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let captured_from = parse_timestamp(params.captured_from.as_deref(), "captured_from")?;
+        let captured_to = parse_timestamp(params.captured_to.as_deref(), "captured_to")?;
+        let query = RandomSearchPhotosQuery {
+            world: params.world,
+            player: params.player,
+            tag: params.tag,
+            ai_tags: params.ai_tags,
+            from_utc: captured_from,
+            to_utc: captured_to,
+            favorite: params.favorite.unwrap_or(false),
+            limit: params.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT),
+            seed: params.seed,
+        };
+        let client = self.client.clone();
+        match call_daemon(move || client.random_search_photos(query)).await {
             Ok(result) => structured(result),
             Err(error) => Ok(tool_error(error)),
         }
@@ -256,8 +315,8 @@ mod tests {
 
     use vrc_photon_ipc::server::Listener;
     use vrc_photon_ipc::{
-        PROTOCOL_VERSION, PhotoDetail, PhotoSearch, PhotoSummary, RequestEnvelope, Response,
-        ServerMessage, StatusSnapshot,
+        PROTOCOL_VERSION, PhotoDetail, PhotoSearch, PhotoSummary, RandomPhotoSearch,
+        RequestEnvelope, Response, ServerMessage, StatusSnapshot,
     };
 
     struct FakeDaemon {
@@ -735,7 +794,150 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tool_router_lists_all_five_tools() {
+    async fn random_search_photos_clamps_limits_and_forwards_filters() {
+        let daemon = FakeDaemon::start(vec![Response::RandomPhotos {
+            result: RandomPhotoSearch {
+                photos: photo_search().photos,
+                total: 20,
+                limit: 200,
+            },
+        }]);
+        let server = PhotoNMcp::new(daemon.client());
+
+        let result = server
+            .random_search_photos(Parameters(RandomSearchPhotosParams {
+                world: Some(" World ".to_string()),
+                player: None,
+                tag: Some("海".to_string()),
+                ai_tags: vec!["sea".to_string()],
+                captured_from: Some("2026-11-09T00:00:00Z".to_string()),
+                captured_to: Some("2026-11-09T23:59:59Z".to_string()),
+                favorite: Some(true),
+                limit: Some(9999),
+                seed: Some(42),
+            }))
+            .await
+            .unwrap();
+
+        assert_eq!(result.is_error, Some(false));
+        let structured = result.structured_content.unwrap();
+        assert_eq!(structured["total"], 20);
+        assert_eq!(structured["limit"], 200);
+        assert_eq!(structured["photos"][0]["id"], 7);
+
+        match &daemon.requests()[0] {
+            vrc_photon_ipc::Request::RandomSearchPhotos {
+                world,
+                tag,
+                ai_tags,
+                from_utc,
+                to_utc,
+                favorite,
+                limit,
+                seed,
+                ..
+            } => {
+                assert_eq!(world.as_deref(), Some(" World "));
+                assert_eq!(tag.as_deref(), Some("海"));
+                assert_eq!(ai_tags, &vec!["sea".to_string()]);
+                assert_eq!(from_utc, &Some(1_794_182_400));
+                assert_eq!(to_utc, &Some(1_794_268_799));
+                assert!(favorite);
+                assert_eq!(*limit, 200);
+                assert_eq!(*seed, Some(42));
+            }
+            other => panic!("unexpected request: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn random_search_photos_forwards_an_unspecified_seed_as_none() {
+        let daemon = FakeDaemon::start(vec![Response::RandomPhotos {
+            result: RandomPhotoSearch {
+                photos: Vec::new(),
+                total: 0,
+                limit: 50,
+            },
+        }]);
+        let server = PhotoNMcp::new(daemon.client());
+
+        let result = server
+            .random_search_photos(Parameters(RandomSearchPhotosParams {
+                world: None,
+                player: None,
+                tag: None,
+                ai_tags: Vec::new(),
+                captured_from: None,
+                captured_to: None,
+                favorite: None,
+                limit: None,
+                seed: None,
+            }))
+            .await
+            .unwrap();
+        assert_eq!(result.is_error, Some(false));
+        assert_eq!(result.structured_content.unwrap()["limit"], 50);
+
+        match &daemon.requests()[0] {
+            vrc_photon_ipc::Request::RandomSearchPhotos { limit, seed, .. } => {
+                assert_eq!(*limit, 50);
+                assert_eq!(*seed, None);
+            }
+            other => panic!("unexpected request: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn random_search_photos_rejects_invalid_timestamps() {
+        let daemon = FakeDaemon::start(Vec::new());
+        let server = PhotoNMcp::new(daemon.client());
+        let error = server
+            .random_search_photos(Parameters(RandomSearchPhotosParams {
+                world: None,
+                player: None,
+                tag: None,
+                ai_tags: Vec::new(),
+                captured_from: Some("yesterday".to_string()),
+                captured_to: None,
+                favorite: None,
+                limit: None,
+                seed: None,
+            }))
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, rmcp::model::ErrorCode::INVALID_PARAMS);
+    }
+
+    #[tokio::test]
+    async fn random_search_photos_reports_daemon_unavailable() {
+        let dir = tempfile::tempdir().unwrap();
+        let server = PhotoNMcp::new(DaemonClient::new(
+            vrc_photon_ipc::Endpoint::for_tests(dir.path()),
+            Duration::from_secs(1),
+        ));
+        let result = server
+            .random_search_photos(Parameters(RandomSearchPhotosParams {
+                world: None,
+                player: None,
+                tag: None,
+                ai_tags: Vec::new(),
+                captured_from: None,
+                captured_to: None,
+                favorite: None,
+                limit: None,
+                seed: None,
+            }))
+            .await
+            .unwrap();
+        assert_eq!(result.is_error, Some(true));
+        assert_eq!(
+            result.structured_content.unwrap()["error"],
+            "daemon_unavailable"
+        );
+    }
+
+    #[tokio::test]
+    async fn tool_router_lists_all_six_tools() {
         let daemon = FakeDaemon::start(Vec::new());
         let server = PhotoNMcp::new(daemon.client());
         let names = tool_router_names(&server);
@@ -745,6 +947,7 @@ mod tests {
             "list_worlds",
             "library_stats",
             "get_photo_image",
+            "random_search_photos",
         ] {
             assert!(names.contains(&expected.to_string()), "{names:?}");
         }

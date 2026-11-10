@@ -909,6 +909,14 @@ pub struct PhotoTextFilter {
     pub ai: AiPhotoFilter,
 }
 
+/// A deterministic random sample of photos matching a text filter.
+#[derive(Debug, Clone, Default)]
+pub struct RandomPhotoSample {
+    pub photos: Vec<Photo>,
+    /// Number of photos matching the filter before sampling.
+    pub total: i64,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct PhotoFilter {
     pub world_ids: Vec<i64>,

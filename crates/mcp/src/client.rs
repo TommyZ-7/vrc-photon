@@ -8,7 +8,8 @@ use std::time::Duration;
 
 use vrc_photon_ipc::client;
 use vrc_photon_ipc::{
-    Endpoint, IpcError, LibraryStats, PhotoDetail, PhotoSearch, Request, Response, WorldSummary,
+    Endpoint, IpcError, LibraryStats, PhotoDetail, PhotoSearch, RandomPhotoSearch, Request,
+    Response, WorldSummary,
 };
 
 /// A daemon-side failure surfaced to an MCP tool.
@@ -44,6 +45,20 @@ pub struct SearchPhotosQuery {
     pub offset: u32,
 }
 
+/// Parameters for one random photo search.
+#[derive(Debug, Clone, Default)]
+pub struct RandomSearchPhotosQuery {
+    pub world: Option<String>,
+    pub player: Option<String>,
+    pub tag: Option<String>,
+    pub ai_tags: Vec<String>,
+    pub from_utc: Option<i64>,
+    pub to_utc: Option<i64>,
+    pub favorite: bool,
+    pub limit: u32,
+    pub seed: Option<u64>,
+}
+
 /// Thin client over the daemon's versioned local socket.
 #[derive(Debug, Clone)]
 pub struct DaemonClient {
@@ -69,6 +84,26 @@ impl DaemonClient {
             offset: query.offset,
         })? {
             Response::Photos { result } => Ok(result),
+            other => Err(unexpected(&other)),
+        }
+    }
+
+    pub fn random_search_photos(
+        &self,
+        query: RandomSearchPhotosQuery,
+    ) -> Result<RandomPhotoSearch, DaemonError> {
+        match self.request(Request::RandomSearchPhotos {
+            world: query.world,
+            player: query.player,
+            tag: query.tag,
+            ai_tags: query.ai_tags,
+            from_utc: query.from_utc,
+            to_utc: query.to_utc,
+            favorite: query.favorite,
+            limit: query.limit,
+            seed: query.seed,
+        })? {
+            Response::RandomPhotos { result } => Ok(result),
             other => Err(unexpected(&other)),
         }
     }

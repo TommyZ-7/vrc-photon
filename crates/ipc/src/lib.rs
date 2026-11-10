@@ -12,7 +12,7 @@ pub use endpoint::Endpoint;
 pub use library::*;
 pub use protocol::*;
 
-pub const PROTOCOL_VERSION: u32 = 7;
+pub const PROTOCOL_VERSION: u32 = 8;
 pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[cfg(test)]
@@ -20,7 +20,7 @@ mod tests {
     use super::PROTOCOL_VERSION;
 
     #[test]
-    fn protocol_version_is_seven() {
-        assert_eq!(PROTOCOL_VERSION, 7);
+    fn protocol_version_is_eight() {
+        assert_eq!(PROTOCOL_VERSION, 8);
     }
 }

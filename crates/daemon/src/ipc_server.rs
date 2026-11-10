@@ -16,8 +16,8 @@ use vrc_photon_ipc::framing;
 use vrc_photon_ipc::server::Listener;
 use vrc_photon_ipc::{
     APP_VERSION, AiTagSummary, Endpoint, ErrorCode, Event, LibraryStats as IpcLibraryStats,
-    PROTOCOL_VERSION, PhotoDetail, PhotoSearch, PhotoSummary, PlayerSummary, Request,
-    RequestEnvelope, Response, ServerMessage, StatusSnapshot, WorldSummary,
+    PROTOCOL_VERSION, PhotoDetail, PhotoSearch, PhotoSummary, PlayerSummary, RandomPhotoSearch,
+    Request, RequestEnvelope, Response, ServerMessage, StatusSnapshot, WorldSummary,
 };
 
 use crate::DaemonStatus;
@@ -41,6 +41,10 @@ const MAX_IPC_CONNECTIONS: usize = 16;
 /// for at most 200; the daemon keeps a hard cap so a stray client cannot
 /// materialize a huge response.
 const MAX_LIBRARY_LIMIT: u32 = 500;
+
+/// Upper bound for one random sample requested over IPC. The MCP tool clamps
+/// to the same value.
+const MAX_RANDOM_LIMIT: u32 = 200;
 
 /// How often an idle subscription receives a `StatusChanged` heartbeat. The
 /// client treats 30 seconds without any event as a disconnect, so two missed
@@ -434,6 +438,22 @@ fn handle_connection(
                 );
                 write_response(reader.get_mut(), id, response)?;
             }
+            Request::RandomSearchPhotos {
+                world,
+                player,
+                tag,
+                ai_tags,
+                from_utc,
+                to_utc,
+                favorite,
+                limit,
+                seed,
+            } => {
+                let response = random_library_search_response(
+                    &control, world, player, tag, ai_tags, from_utc, to_utc, favorite, limit, seed,
+                );
+                write_response(reader.get_mut(), id, response)?;
+            }
             Request::GetPhoto { id: photo_id } => {
                 let response = library_photo_response(&control, photo_id);
                 write_response(reader.get_mut(), id, response)?;
@@ -698,6 +718,68 @@ fn library_search_response(
         Ok(result) => Response::Photos { result },
         Err(error) => library_error(error),
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn random_library_search_response(
+    control: &IpcControl,
+    world: Option<String>,
+    player: Option<String>,
+    tag: Option<String>,
+    ai_tags: Vec<String>,
+    from_utc: Option<i64>,
+    to_utc: Option<i64>,
+    favorite: bool,
+    limit: u32,
+    seed: Option<u64>,
+) -> Response {
+    let limit = limit.clamp(1, MAX_RANDOM_LIMIT);
+    let filter = PhotoTextFilter {
+        world,
+        player,
+        tag,
+        favorite,
+        from_utc,
+        to_utc,
+        ai: AiPhotoFilter {
+            tags: ai_tags,
+            people_count: None,
+        },
+    };
+    let seed = seed.unwrap_or_else(random_seed);
+    let result = (|| -> vrc_photon_core::Result<RandomPhotoSearch> {
+        let db = control
+            .db
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let sample = db.random_photos_text(&filter, i64::from(limit), seed)?;
+        let photos = sample
+            .photos
+            .iter()
+            .map(|photo| photo_summary(&db, photo))
+            .collect::<vrc_photon_core::Result<Vec<_>>>()?;
+        Ok(RandomPhotoSearch {
+            photos,
+            total: sample.total,
+            limit,
+        })
+    })();
+    match result {
+        Ok(result) => Response::RandomPhotos { result },
+        Err(error) => library_error(error),
+    }
+}
+
+fn random_seed() -> u64 {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_nanos() as u64)
+        .unwrap_or(0);
+    let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
+    now.rotate_left(17)
+        ^ counter.wrapping_mul(0x9E37_79B9_7F4A_7C15)
+        ^ u64::from(std::process::id())
 }
 
 fn library_photo_response(control: &IpcControl, photo_id: i64) -> Response {
@@ -1690,6 +1772,88 @@ mod tests {
                 assert_eq!(stats.world_count, 2);
                 assert_eq!(stats.compressed_count, 0);
             }
+            other => panic!("unexpected response: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn random_search_photos_is_deterministic_for_a_seed() {
+        let (_dir, endpoint, control) = test_control();
+        let (a, b) = seed_library(&control);
+        let _server = IpcServer::start(endpoint.clone(), control.clone()).unwrap();
+
+        let request = |seed| Request::RandomSearchPhotos {
+            world: None,
+            player: None,
+            tag: None,
+            ai_tags: Vec::new(),
+            from_utc: None,
+            to_utc: None,
+            favorite: false,
+            limit: 1,
+            seed: Some(seed),
+        };
+        let first = match request_raw(&endpoint, request(42)) {
+            Response::RandomPhotos { result } => result,
+            other => panic!("unexpected response: {other:?}"),
+        };
+        let second = match request_raw(&endpoint, request(42)) {
+            Response::RandomPhotos { result } => result,
+            other => panic!("unexpected response: {other:?}"),
+        };
+        assert_eq!(first.total, 2);
+        assert_eq!(first.limit, 1);
+        assert_eq!(first.photos.len(), 1);
+        assert_eq!(first.photos[0].id, second.photos[0].id);
+        assert!([a, b].contains(&first.photos[0].id));
+
+        let filtered = match request_raw(
+            &endpoint,
+            Request::RandomSearchPhotos {
+                world: Some("World A".to_string()),
+                player: None,
+                tag: None,
+                ai_tags: Vec::new(),
+                from_utc: None,
+                to_utc: None,
+                favorite: false,
+                limit: 10,
+                seed: Some(42),
+            },
+        ) {
+            Response::RandomPhotos { result } => result,
+            other => panic!("unexpected response: {other:?}"),
+        };
+        assert_eq!(filtered.total, 1);
+        assert_eq!(filtered.photos[0].id, a);
+    }
+
+    #[test]
+    fn random_seed_changes_between_calls() {
+        assert_ne!(random_seed(), random_seed());
+    }
+
+    #[test]
+    fn random_search_photos_clamps_the_limit() {
+        let (_dir, endpoint, control) = test_control();
+        seed_library(&control);
+        let _server = IpcServer::start(endpoint.clone(), control.clone()).unwrap();
+
+        match request_raw(
+            &endpoint,
+            Request::RandomSearchPhotos {
+                world: None,
+                player: None,
+                tag: None,
+                ai_tags: Vec::new(),
+                from_utc: None,
+                to_utc: None,
+                favorite: false,
+                limit: u32::MAX,
+                seed: Some(1),
+            },
+        ) {
+            Response::RandomPhotos { result } => assert_eq!(result.limit, MAX_RANDOM_LIMIT),
             other => panic!("unexpected response: {other:?}"),
         }
     }

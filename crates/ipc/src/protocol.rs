@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 pub use vrc_photon_ai_protocol::{ModelState, PluginInstallStatus, TaggingJobStatus, TaggingStage};
 
-use crate::library::{LibraryStats, PhotoDetail, PhotoSearch, WorldSummary};
+use crate::library::{LibraryStats, PhotoDetail, PhotoSearch, RandomPhotoSearch, WorldSummary};
 
 /// Client identity sent during the handshake.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -47,6 +47,22 @@ pub enum Request {
         favorite: bool,
         limit: u32,
         offset: u32,
+    },
+    /// Deterministic random sample of photos matching the same filters as
+    /// `SearchPhotos`.
+    RandomSearchPhotos {
+        world: Option<String>,
+        player: Option<String>,
+        /// Manual tag substring.
+        tag: Option<String>,
+        /// Applied AI tag keys, matched with OR.
+        ai_tags: Vec<String>,
+        from_utc: Option<i64>,
+        to_utc: Option<i64>,
+        favorite: bool,
+        limit: u32,
+        /// The same seed and library contents return the same sample.
+        seed: Option<u64>,
     },
     /// Read-only full metadata for one photo.
     GetPhoto {
@@ -120,6 +136,9 @@ pub enum Response {
     },
     Photos {
         result: PhotoSearch,
+    },
+    RandomPhotos {
+        result: RandomPhotoSearch,
     },
     Photo {
         photo: Box<PhotoDetail>,
@@ -647,6 +666,27 @@ mod tests {
         let json = serde_json::to_string(&get).unwrap();
         assert_eq!(json, r#"{"id":2,"request":{"type":"get_photo","id":42}}"#);
         assert_eq!(serde_json::from_str::<RequestEnvelope>(&json).unwrap(), get);
+
+        let random = RequestEnvelope {
+            id: 3,
+            request: Request::RandomSearchPhotos {
+                world: Some("World".into()),
+                player: None,
+                tag: Some("beach".into()),
+                ai_tags: vec!["sea".into()],
+                from_utc: Some(100),
+                to_utc: Some(200),
+                favorite: true,
+                limit: 50,
+                seed: Some(42),
+            },
+        };
+        let json = serde_json::to_string(&random).unwrap();
+        assert!(json.contains("\"type\":\"random_search_photos\""));
+        assert_eq!(
+            serde_json::from_str::<RequestEnvelope>(&json).unwrap(),
+            random
+        );
     }
 
     #[test]
@@ -714,5 +754,22 @@ mod tests {
         let json = serde_json::to_string(&stats).unwrap();
         assert!(json.contains("\"type\":\"library_stats\""));
         assert_eq!(serde_json::from_str::<ServerMessage>(&json).unwrap(), stats);
+
+        let random = ServerMessage::Response {
+            id: 3,
+            response: Response::RandomPhotos {
+                result: RandomPhotoSearch {
+                    photos: Vec::new(),
+                    total: 3,
+                    limit: 50,
+                },
+            },
+        };
+        let json = serde_json::to_string(&random).unwrap();
+        assert!(json.contains("\"type\":\"random_photos\""));
+        assert_eq!(
+            serde_json::from_str::<ServerMessage>(&json).unwrap(),
+            random
+        );
     }
 }

@@ -20,9 +20,10 @@ use crate::model::{
     DeletionBlockers, DeletionCounts, DeletionJobSummary, DeletionReason, DeletionRequest,
     DeletionStatus, Derivative, JobStatusCounts, LibraryRoot, LibraryStats, MAX_JOB_RETRIES,
     MAX_PROFILE_NAME_CHARS, NewPhoto, Photo, PhotoContext, PhotoFilter, PhotoIndexEntry,
-    PhotoPlayer, PhotoSort, PhotoStatus, PhotoTextFilter, QueueStatus, SearchSuggestion,
-    SendCompletion, SendErrorCode, SendHistoryEntry, SendKind, SendOrigin, SendOutboxEntry,
-    SendSource, SendStatus, Session, SessionPlayer, SessionSummary, World, WorldPhotoCount,
+    PhotoPlayer, PhotoSort, PhotoStatus, PhotoTextFilter, QueueStatus, RandomPhotoSample,
+    SearchSuggestion, SendCompletion, SendErrorCode, SendHistoryEntry, SendKind, SendOrigin,
+    SendOutboxEntry, SendSource, SendStatus, Session, SessionPlayer, SessionSummary, World,
+    WorldPhotoCount,
 };
 use crate::world_name::{
     NOT_FOUND_RETRY_SECONDS, REQUEST_INTERVAL_SECONDS, WorldNameFailure, WorldNameLookup,
@@ -512,6 +513,14 @@ const MAX_SESSION_SUMMARY_IDS: usize = 256;
 /// use this helper and must document their policy instead.
 fn clamp_limit(requested: i64) -> i64 {
     requested.clamp(1, MAX_ROW_LIMIT)
+}
+
+/// Mixes a 64-bit value for deterministic sampling keys.
+fn splitmix64(value: u64) -> u64 {
+    let mut z = value.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z ^ (z >> 31)
 }
 
 /// Local capture month as YYYYMM, falling back to the UTC capture time and
@@ -1479,6 +1488,37 @@ impl Db {
         let mut stmt = self.conn.prepare(&sql)?;
         let count = stmt.query_row(params_from_iter(values), |row| row.get(0))?;
         Ok(count)
+    }
+
+    fn photo_ids_text(&self, filter: &PhotoTextFilter) -> Result<Vec<i64>> {
+        let (where_sql, values) = build_text_filter(filter);
+        let sql = format!("SELECT p.id{PHOTO_FROM} WHERE {where_sql}");
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(params_from_iter(values), |row| row.get(0))?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Deterministically samples up to `limit` matching photos using `seed`.
+    /// `total` is the number of matches before sampling; `limit` follows
+    /// [`clamp_limit`].
+    pub fn random_photos_text(
+        &self,
+        filter: &PhotoTextFilter,
+        limit: i64,
+        seed: u64,
+    ) -> Result<RandomPhotoSample> {
+        let ids = self.photo_ids_text(filter)?;
+        let total = ids.len() as i64;
+        let take = clamp_limit(limit) as usize;
+        let mut keyed: Vec<(u64, i64)> = ids
+            .iter()
+            .map(|&id| (splitmix64(seed ^ id as u64), id))
+            .collect();
+        keyed.sort_unstable();
+        keyed.truncate(take.min(keyed.len()));
+        let ids: Vec<i64> = keyed.into_iter().map(|(_, id)| id).collect();
+        let photos = self.photos_by_ids(&ids)?;
+        Ok(RandomPhotoSample { photos, total })
     }
 
     pub fn unlinked_photos(&self, limit: i64) -> Result<Vec<Photo>> {
@@ -14204,6 +14244,12 @@ mod tests {
             .unwrap()
             .len()
         });
+        assert_limit_contract("random_photos_text", |limit| {
+            db.random_photos_text(&PhotoTextFilter::default(), limit, 7)
+                .unwrap()
+                .photos
+                .len()
+        });
 
         // The legacy filter search and the production index search must agree
         // for every normalized limit, including the old zero default.
@@ -14446,5 +14492,86 @@ mod tests {
         let stats = db.stats().unwrap();
         assert_eq!(stats.photo_count, 3);
         assert_eq!(stats.world_count, 2);
+    }
+
+    #[test]
+    fn random_photos_text_is_deterministic_for_a_seed() {
+        let db = Db::open_in_memory().unwrap();
+        seed_photos(&db, 20);
+        let run = || {
+            db.random_photos_text(&PhotoTextFilter::default(), 5, 42)
+                .unwrap()
+                .photos
+                .into_iter()
+                .map(|photo| photo.id)
+                .collect::<Vec<_>>()
+        };
+        let first = run();
+        assert_eq!(first.len(), 5);
+        assert_eq!(first, run());
+        let mut unique = first;
+        unique.sort_unstable();
+        unique.dedup();
+        assert_eq!(unique.len(), 5);
+    }
+
+    #[test]
+    fn random_photos_text_varies_with_the_seed() {
+        let db = Db::open_in_memory().unwrap();
+        seed_photos(&db, 20);
+        let sample = |seed| {
+            db.random_photos_text(&PhotoTextFilter::default(), 5, seed)
+                .unwrap()
+                .photos
+                .into_iter()
+                .map(|photo| photo.id)
+                .collect::<Vec<_>>()
+        };
+        let results: Vec<_> = (0..8).map(sample).collect();
+        assert!(
+            results.windows(2).any(|pair| pair[0] != pair[1]),
+            "different seeds must produce different samples: {results:?}"
+        );
+    }
+
+    #[test]
+    fn random_photos_text_returns_all_matches_when_the_limit_is_larger() {
+        let db = Db::open_in_memory().unwrap();
+        let ids = seed_photos(&db, 3);
+        let sample = db
+            .random_photos_text(&PhotoTextFilter::default(), 10, 1)
+            .unwrap();
+        assert_eq!(sample.total, 3);
+        assert_eq!(sample.photos.len(), 3);
+        let mut got: Vec<_> = sample.photos.iter().map(|photo| photo.id).collect();
+        got.sort_unstable();
+        assert_eq!(got, ids);
+
+        let empty_db = Db::open_in_memory().unwrap();
+        let empty = empty_db
+            .random_photos_text(&PhotoTextFilter::default(), 10, 0)
+            .unwrap();
+        assert_eq!(empty.total, 0);
+        assert!(empty.photos.is_empty());
+    }
+
+    #[test]
+    fn random_photos_text_honors_filters() {
+        let db = Db::open_in_memory().unwrap();
+        let ids = seed_photos(&db, 5);
+        db.set_favorite(ids[2], true).unwrap();
+        let sample = db
+            .random_photos_text(
+                &PhotoTextFilter {
+                    favorite: true,
+                    ..Default::default()
+                },
+                10,
+                99,
+            )
+            .unwrap();
+        assert_eq!(sample.total, 1);
+        assert_eq!(sample.photos.len(), 1);
+        assert_eq!(sample.photos[0].id, ids[2]);
     }
 }
