@@ -1442,8 +1442,8 @@ fn render_session_header(
         .h(px(SESSION_HEADER_ROW_HEIGHT))
         .items_center()
         .gap(px(13.))
-        .pl(px(14.))
-        .pr(px(RAIL_WIDTH + 14.))
+        .pl(px(SESSION_HEADER_PAD_X))
+        .pr(px(SESSION_HEADER_PAD_X))
         .rounded(px(12.))
         .border_1()
         .border_color(rgba(p.line_soft))
@@ -1469,7 +1469,11 @@ fn render_session_header(
                 .child(tr!("session.ongoing")),
         );
     }
-    header.child(toggle).into_any_element()
+    div()
+        .w_full()
+        .pr(px(RAIL_WIDTH))
+        .child(header.child(toggle))
+        .into_any_element()
 }
 
 fn render_session_date_label(app: &App, day: i32, photo_count: usize) -> AnyElement {
