@@ -1,6 +1,6 @@
 # 余計な表記の削除 (#490) 実装計画
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Issue #490 に列挙された UI のラベル・ヒント・ツールチップ・注記を、ja / en の i18n キーと call site ごと削除する。削除で中身が空になる見出し・カード・セクション・固定高のキュー行は、領域ごと削除する。
 
@@ -12,7 +12,7 @@
 
 **Mock:** `docs/ui-490-remove-labels-mockup.html`
 
-**Status:** 承認待ち。Phase 0 の docs PR 承認後に Phase 1 を開始する。
+**Status:** 実装完了（2026-11-10）。docs PR #509、実装 PR #510。
 
 ## Global Constraints
 
@@ -59,7 +59,7 @@
 **Interfaces:**
 - Produces: 承認済みの設計・モック・計画、更新済み `docs/ui.md`
 
-- [ ] **Step 1: `docs/ui.md` を更新する**
+- [x] **Step 1: `docs/ui.md` を更新する**
 
 更新箇所:
 
@@ -73,7 +73,7 @@
 - §2.9 設定: フッターの「言語・サムネイルキャッシュ上限」の表示を削除し、「設定を再読込」だけにする。
 - 末尾の参考リンクに設計・計画・モックを追加する。
 
-- [ ] **Step 2: Plannotator で計画を提示する**
+- [x] **Step 2: Plannotator で計画を提示する**
 
 ```bash
 plannotator annotate docs/superpowers/plans/2026-11-10-issue-490-remove-labels.md --gate --json
@@ -81,7 +81,7 @@ plannotator annotate docs/superpowers/plans/2026-11-10-issue-490-remove-labels.m
 
 Expected: `decision: "approved"`。注釈が返った場合は計画へ反映して再提示する。
 
-- [ ] **Step 3: Plannotator でモックを提示する**
+- [x] **Step 3: Plannotator でモックを提示する**
 
 ```bash
 plannotator annotate docs/ui-490-remove-labels-mockup.html --gate --json
@@ -89,7 +89,7 @@ plannotator annotate docs/ui-490-remove-labels-mockup.html --gate --json
 
 Expected: `decision: "approved"`。Q1〜Q4 の推奨案と、文字だけの削除項目を確認する。
 
-- [ ] **Step 4: docs PR を作る**
+- [x] **Step 4: docs PR を作る**
 
 ```bash
 git add docs/ui.md docs/ui-490-remove-labels-mockup.html \
@@ -101,7 +101,7 @@ gh pr create --title "docs: #490 余計な表記の削除の設計・モック" 
   --body "Refs #490" --label documentation
 ```
 
-- [ ] **Step 5: CI green を確認して merge する**
+- [x] **Step 5: CI green を確認して merge する**
 
 `ci-watch` の手順で `CI` を監視する。docs-only のため Release の bundle は走らない。
 green 後 `gh pr merge <n> --merge`、`main` へ戻って pull する。
@@ -115,14 +115,14 @@ green 後 `gh pr merge <n> --merge`、`main` へ戻って pull する。
 **Files:**
 - None（作業ディレクトリのみ）
 
-- [ ] **Step 1: 最新の `main` から worktree を作る**
+- [x] **Step 1: 最新の `main` から worktree を作る**
 
 ```bash
 git fetch origin
 git worktree add ../vrc-photo-manager-490 -b feat/490-remove-labels origin/main
 ```
 
-- [ ] **Step 2: worktree でベースラインを確認する**
+- [x] **Step 2: worktree でベースラインを確認する**
 
 ```bash
 cargo test --workspace
@@ -142,21 +142,21 @@ Expected: PASS。失敗する場合は環境の問題を先に解消する。
 - Produces: 空文字の説明を渡すと説明ノードを描画しない `setting_switch` / `manual_option_row`
 - Produces: 説明引数を持たない `ai_switch_row`
 
-- [ ] **Step 1: `setting_switch` を空説明対応にする**
+- [x] **Step 1: `setting_switch` を空説明対応にする**
 
 `description` を `String` に変換した後、`!description.is_empty()` のときだけ説明の `div` を `.child` する。
 ラベルの `v_flex` は残し、説明がない場合に `gap(2px)` だけの空行を作らない。
 
-- [ ] **Step 2: `manual_option_row` を空説明対応にする**
+- [x] **Step 2: `manual_option_row` を空説明対応にする**
 
 同じく `!description.is_empty()` のときだけ説明ノードを描画する。ラジオのタイトル・選択状態・クリックは変えない。
 
-- [ ] **Step 3: `ai_switch_row` から説明引数を削除する**
+- [x] **Step 3: `ai_switch_row` から説明引数を削除する**
 
 `integrations.rs` の `ai_switch_row` は 3 か所すべてで説明を削除するため、引数と描画ノードを削除する。
 呼び出し側のラベル・値・コールバックは変えない。
 
-- [ ] **Step 4: 既存の説明が残ることを確認する**
+- [x] **Step 4: 既存の説明が残ることを確認する**
 
 ```bash
 cargo test -p vrc-photon-ui
@@ -172,35 +172,35 @@ Expected: PASS。空説明対応で既存のスイッチ・ラジオの説明が
 - Modify: `crates/ui/src/ui/library.rs`
 - Modify: `crates/ui/src/app/ai.rs`
 
-- [ ] **Step 1: 未選択インスペクタの案内カードを削除する**
+- [x] **Step 1: 未選択インスペクタの案内カードを削除する**
 
 `library.rs` の `inspector` で `selected_photo` が `None` のとき、`glass_panel` と 2 つのテキストを削除する。
 列幅 `column_width` と `h_full().flex_shrink_0()` は維持し、空の `v_flex` を返す。
 
-- [ ] **Step 2: 「Space で開く」を削除する**
+- [x] **Step 2: 「Space で開く」を削除する**
 
 インスペクタヘッダーの右側 `.child(...tr!("photos.inspector.space_hint"))` を削除する。「選択中」は残す。
 
-- [ ] **Step 3: AI タグの空状態を削除する**
+- [x] **Step 3: AI タグの空状態を削除する**
 
 `app/ai.rs` の `ai_empty_state_labels` とそのテスト、`library.rs` の import・呼び出しを削除する。
 `tags.is_empty()` のときはタグブロックを追加せず、AI 見出し・fact・再生成ボタンは残す。
 
-- [ ] **Step 4: 「読み取り専用」を削除する**
+- [x] **Step 4: 「読み取り専用」を削除する**
 
 AI メタヘッダーの `photos.ai.read_only` の `.child` を削除する。
 
-- [ ] **Step 5: 圧縮履歴 0 件時にセクションごと削除する**
+- [x] **Step 5: 圧縮履歴 0 件時にセクションごと削除する**
 
 `derivatives.is_empty()` のとき「圧縮履歴」見出しと空文を出さない。
 `derivatives` があるときは従来どおり見出しと履歴行を表示する。
 
-- [ ] **Step 6: メモの空ボックスと Esc 注記を削除する**
+- [x] **Step 6: メモの空ボックスと Esc 注記を削除する**
 
 `note` が `None` または空白のみのときは本文ボックスを出さない。編集ボタンと見出しは残す。
 編集中のフッターから `photos.note.esc_cancel` の `.child` を削除する。
 
-- [ ] **Step 7: テストを更新する**
+- [x] **Step 7: テストを更新する**
 
 `ai_empty_state_labels` のテストを削除する。`cargo test -p vrc-photon-ui` を通す。
 
@@ -214,26 +214,26 @@ AI メタヘッダーの `photos.ai.read_only` の `.child` を削除する。
 - Modify: `crates/ui/src/app/daemon.rs`
 - Modify: `crates/ui/src/ui/settings.rs`
 
-- [ ] **Step 1: AI カードのアイコン・補足・状態ラベルを削除する**
+- [x] **Step 1: AI カードのアイコン・補足・状態ラベルを削除する**
 
 `dashboard_ai.rs` で `IconName::Bot` の 30 px ラッパー、`dashboard.ai.hint` のサブタイトル、
 `dashboard.ai.idle_hint` の Idle 条件ブロック、`dashboard.ai.not_ready_hint` のテキストを削除する。
 状態ラベルの `(state_label, state_color)` の match と、ラベルを表示する `.child` を削除する。
 タイトル・件数・ジョブ一覧・設定/連携ボタンは残す。
 
-- [ ] **Step 2: ログと削除待ちの注記を削除する**
+- [x] **Step 2: ログと削除待ちの注記を削除する**
 
 `dashboard.rs` で `dashboard.log_retention_hint` のアンバーカード全体、
 `dashboard.deletion.hint` の末尾テキスト、`dashboard.log.open_hint` のテキストを削除する。
 ログフォルダを開くボタンと削除待ちの行は残す。
 
-- [ ] **Step 3: systemd 管理時の自動起動説明を削除する**
+- [x] **Step 3: systemd 管理時の自動起動説明を削除する**
 
 `app/daemon.rs` の `autostart_description` は、`daemon_active && supervisor == Some("systemd")` のとき
 空文字を返す。それ以外は `daemon.autostart.login` を返す。
 `settings.rs` の自動起動スイッチは空説明対応の `setting_switch` で表示する。
 
-- [ ] **Step 4: テストを更新する**
+- [x] **Step 4: テストを更新する**
 
 `app/daemon.rs` の systemd テストを、systemd 時は空文字、通常時はログイン説明に更新する。
 
@@ -245,23 +245,23 @@ AI メタヘッダーの `photos.ai.read_only` の `.child` を削除する。
 - Modify: `crates/ui/src/ui/shell.rs`
 - Modify: `crates/ui/src/ui/notifications.rs`
 
-- [ ] **Step 1: サイドバーの空詳細を描画しない**
+- [x] **Step 1: サイドバーの空詳細を描画しない**
 
 `shell.rs` の `CardStatus.detail` は `String` のまま、待機中スキャンと未実行取り込みの `detail` を空文字にする。
 描画側は `!status.detail.is_empty()` のときだけ詳細の `div` を追加する。カード高 46 px は維持する。
 
-- [ ] **Step 2: ツールチップを削除する**
+- [x] **Step 2: ツールチップを削除する**
 
 「未実行を開始」の `sidebar.start_waiting_hint` と「再スキャン」の `sidebar.rescan_hint` の
 `.tooltip(...)` を削除する。ボタンのラベル・動作は変えない。
 
-- [ ] **Step 3: 通知なしでモーダルを開かない**
+- [x] **Step 3: 通知なしでモーダルを開かない**
 
 `notifications.rs` の `open_notification_modal` の先頭で `if !self.notification_attention() { return; }` を追加する。
 `items.is_empty()` の `notifications.empty` フォールバックを削除する。
 通知対象がある場合の 4 セクション（取り込み・ライブラリ・圧縮・デーモン）は従来どおり描画する。
 
-- [ ] **Step 4: テストを更新する**
+- [x] **Step 4: テストを更新する**
 
 `shell.rs` の待機中スキャン・未実行取り込みの詳細期待値を空文字へ更新する。
 通知モーダルの既存テストがあれば、空モーダルを開かない条件を追加する。
@@ -274,7 +274,7 @@ AI メタヘッダーの `photos.ai.read_only` の `.child` を削除する。
 - Modify: `crates/ui/src/ui/integrations.rs`
 - Modify: `crates/ui/src/ui/discord.rs`
 
-- [ ] **Step 1: AI の説明を削除する**
+- [x] **Step 1: AI の説明を削除する**
 
 `integrations.rs` で以下を削除する。
 
@@ -287,12 +287,12 @@ AI メタヘッダーの `photos.ai.read_only` の `.child` を削除する。
 
 「実行中のジョブはありません」などの空ラベル、バックログ開始ボタン、バックエンド選択は残す。
 
-- [ ] **Step 2: カードのサブタイトルを削除する**
+- [x] **Step 2: カードのサブタイトルを削除する**
 
 `integrations.auto.hint`、`integrations.clipboard.hint`、`integrations.discord.hint`、
 `integrations.discord.history.hint` のテキストノードを削除する。カード見出しと操作は残す。
 
-- [ ] **Step 3: Discord 送信タイミングの説明を削除する**
+- [x] **Step 3: Discord 送信タイミングの説明を削除する**
 
 `discord.rs` の 3 つの `manual_option_row` から説明を外し、ラベルだけにする。
 `manual_option_row` は空説明対応（Task 2）を使う。
@@ -306,28 +306,28 @@ AI メタヘッダーの `photos.ai.read_only` の `.child` を削除する。
 - Modify: `crates/ui/src/ui/ai_thresholds.rs`
 - Modify: `crates/ui/src/ui/integrations.rs`
 
-- [ ] **Step 1: 表示・起動のスイッチ説明を削除する**
+- [x] **Step 1: 表示・起動のスイッチ説明を削除する**
 
 `settings.rs` の表示 4 スイッチ（圧縮状態・ワールド名・日付・サイズ）とトレイ常駐の
 `setting_switch` に空文字を渡す。ラベル・値・コールバックは変えない。
 `integrations.rs` の「新規写真をすぐに圧縮」も空文字にする。
 
-- [ ] **Step 2: 言語・テーマ・サムネイルの注記を削除する**
+- [x] **Step 2: 言語・テーマ・サムネイルの注記を削除する**
 
 `settings.language.hint`、`settings.theme.hint`、`settings.thumbnail.clear_hint`、
 `settings.thumbnail.quality_hint`、`settings.thumbnail.size_hint` のテキストノードを削除する。
 
-- [ ] **Step 3: AI カードの注記と probe 警告を削除する**
+- [x] **Step 3: AI カードの注記と probe 警告を削除する**
 
 `settings.ai.install_hint`、`settings.ai.download_note`、`settings.ai.variant.note` を削除する。
 `AiPluginCardState::NeedsProbe` の警告ボックスを削除し、未使用になる `ai_warning_box` を削除する。
 `AiPluginCardState::NeedsProbe` 自体と「再確認」ボタンは残す。
 
-- [ ] **Step 4: タグ別閾値の説明を削除する**
+- [x] **Step 4: タグ別閾値の説明を削除する**
 
 `ai_thresholds.rs` の `settings.ai.thresholds.hint` のテキストノードを削除する。タイトルと操作は残す。
 
-- [ ] **Step 5: フッター要約を削除する**
+- [x] **Step 5: フッター要約を削除する**
 
 `settings.rs` の `settings.footer.summary` の `tr_args!` と表示ノードを削除する。
 未使用になる `cache_label` / `language_name` / `active_language` のローカル計算を削除する。
@@ -341,27 +341,27 @@ AI メタヘッダーの `photos.ai.read_only` の `.child` を削除する。
 - Modify: `crates/ui/src/ui/compression.rs`
 - Modify: `crates/ui/src/ui/dialogs.rs`
 
-- [ ] **Step 1: 圧縮キューの失敗ヒント行を削除する**
+- [x] **Step 1: 圧縮キューの失敗ヒント行を削除する**
 
 `QueueRow::FailedHint`、`QUEUE_HINT_ROW_HEIGHT`、`queue_rows` の挿入・高さ・描画の各 match アームを削除する。
 `queue_rows` の `failed_job_count` 引数と、呼び出し側の該当引数を削除する。
 失敗ジョブの行・並び・再試行は変えない。
 
-- [ ] **Step 2: ロスレス時の品質注記を削除する**
+- [x] **Step 2: ロスレス時の品質注記を削除する**
 
 品質行の `if profile.lossless { tr!("compression.lossless_no_quality") } else { tr!("compression.adjust_quality") }` を、
 `!profile.lossless` のときだけ「品質を調整」を表示する形にする。ロスレス時の品質ボタン無効化は残す。
 
-- [ ] **Step 3: 保存ヒントのコールアウトを削除する**
+- [x] **Step 3: 保存ヒントのコールアウトを削除する**
 
 `compression.save_hint` のテキストを含む `div`（背景・枠・パディング）ごと削除する。
 
-- [ ] **Step 4: 手動圧縮ダイアログの説明を削除する**
+- [x] **Step 4: 手動圧縮ダイアログの説明を削除する**
 
 `dialogs.rs` の `dialog.description` / `dialog.description_no_profile` の説明ノードを削除する。
 `dialog.output.folder_hint` は `manual_option_row` に空文字を渡す。
 
-- [ ] **Step 5: キュー行のテストを更新する**
+- [x] **Step 5: キュー行のテストを更新する**
 
 `compression.rs` の `QueueRow` テストから `FailedHint` の期待値を削除し、200 失敗時の行数を
 `221` から `220` に更新する。`queue_rows` のシグネチャ変更に合わせてテスト呼び出しを直す。
@@ -376,20 +376,20 @@ AI メタヘッダーの `photos.ai.read_only` の `.child` を削除する。
 - Modify: `crates/ui/src/ui/gallery.rs`
 - Modify: `crates/ui/src/ui/import.rs`
 
-- [ ] **Step 1: 検索の説明を削除する**
+- [x] **Step 1: 検索の説明を削除する**
 
 `search.filter_logic` と `search.ai.any` のテキストノードを削除する。
 フィルター、AI タグチップ、人数入力、検索 / クリアは残す。
 
-- [ ] **Step 2: AI タグピッカーの説明を削除する**
+- [x] **Step 2: AI タグピッカーの説明を削除する**
 
 `ai.tags.picker.hint` のテキストノードを削除する。タイトル、タブ、検索、選択、適用は残す。
 
-- [ ] **Step 3: ギャラリーのエラー案内を削除する**
+- [x] **Step 3: ギャラリーのエラー案内を削除する**
 
 `gallery.reload_hint` のテキストノードを削除する。エラー文と再試行ボタンは残す。
 
-- [ ] **Step 4: 取り込み先の注記を削除する**
+- [x] **Step 4: 取り込み先の注記を削除する**
 
 `import.destination_hint` のテキストノードを削除する。取り込み先のパス表示と変更操作は残す。
 
@@ -402,7 +402,7 @@ AI メタヘッダーの `photos.ai.read_only` の `.child` を削除する。
 - Modify: `crates/i18n/locales/en.yml`
 - Modify: `crates/i18n/tests/placeholders.rs`
 
-- [ ] **Step 1: 対象キーを両カタログから削除する**
+- [x] **Step 1: 対象キーを両カタログから削除する**
 
 Issue #490 の対象キー（`settings.display.*.hint`、`settings.thumbnail.quality_hint` / `size_hint`、
 `integrations.discord.auto.off_hint` / `immediate_hint` / `waiting_hint`、`dialog.description` /
@@ -411,12 +411,12 @@ Issue #490 の対象キー（`settings.display.*.hint`、`settings.thumbnail.qua
 
 `viewer.close` は削除せず、ja を `"閉じる"`、en を `"Close"` に変更する。
 
-- [ ] **Step 2: `settings.footer.summary` の登録を削除する**
+- [x] **Step 2: `settings.footer.summary` の登録を削除する**
 
 `crates/i18n/tests/placeholders.rs` の `("settings.footer.summary", &["cache", "language"])` を削除する。
 他の対象キーに `tr_args!` 登録がないことを確認する。
 
-- [ ] **Step 3: キーの残存を確認する**
+- [x] **Step 3: キーの残存を確認する**
 
 ```bash
 rg -n 'photos\.ai\.(read_only|empty|none_applied)|photos\.inspector\.space_hint|photos\.select_prompt|photos\.no_compression|photos\.note\.(empty|esc_cancel)|dashboard\.(ai\.((hint|idle_hint|not_ready_hint)|state\.(not_ready|idle|active|failed))|log_retention_hint|deletion\.hint|log\.open_hint)|daemon\.autostart\.systemd|sidebar\.(scan\.idle\.detail|import\.none\.detail|start_waiting_hint|rescan_hint)|notifications\.empty|integrations\.(ai\.(enabled_hint|auto_hint|start_backlog_hint|backlog_hint|backend_hint|backend_enable_hint|jobs\.(limit_hint|empty_hint))|auto\.hint|clipboard\.hint|discord\.(hint|history\.hint|auto\.(off_hint|immediate_hint|waiting_hint)))|settings\.(ai\.(needs_probe|thresholds\.hint|install_hint|download_note|variant\.note)|footer\.summary|language\.hint|display\.(status|world|date|size)\.hint|thumbnail\.(clear_hint|quality_hint|size_hint)|theme\.hint|startup\.(tray_hint|immediate_hint))|compression\.(save_hint|queue\.failed_hint|clipboard_system|lossless_no_quality|use_for_auto_hint)|dialog\.(description|description_no_profile|output\.folder_hint)|search\.(filter_logic|ai\.any)|ai\.tags\.picker\.hint|gallery\.reload_hint|import\.destination_hint' crates
@@ -424,7 +424,7 @@ rg -n 'photos\.ai\.(read_only|empty|none_applied)|photos\.inspector\.space_hint|
 
 Expected: 0 件（カタログ・コード・テストのいずれにも残らない）。
 
-- [ ] **Step 4: i18n テストを通す**
+- [x] **Step 4: i18n テストを通す**
 
 ```bash
 cargo test -p vrc-photon-i18n
@@ -439,7 +439,7 @@ Expected: PASS。`every_tr_key_exists_in_the_default_catalog` と placeholders �
 **Files:**
 - None
 
-- [ ] **Step 1: ローカル検証を実行する**
+- [x] **Step 1: ローカル検証を実行する**
 
 ```bash
 cargo fmt --all -- --check
@@ -449,7 +449,7 @@ cargo test --workspace
 
 Expected: すべて PASS。
 
-- [ ] **Step 2: 実装をコミットする**
+- [x] **Step 2: 実装をコミットする**
 
 ```bash
 git add crates/ui/src crates/i18n
@@ -457,7 +457,7 @@ git commit -m "feat(ui): 余計な表記を削除する (#490)"
 git push -u origin feat/490-remove-labels
 ```
 
-- [ ] **Step 3: PR を作成する**
+- [x] **Step 3: PR を作成する**
 
 ```bash
 gh pr create --title "feat(ui): #490 余計な表記を削除する" \
@@ -471,7 +471,7 @@ PR 本文に以下を書く。
 - Q1〜Q4 の決定と、`viewer.close` を通知モーダルにも適用したこと
 - 検証コマンドの結果
 
-- [ ] **Step 4: CI green を確認して merge する**
+- [x] **Step 4: CI green を確認して merge する**
 
 `ci-watch` の手順で `CI` を監視する。green 後 `gh pr merge <n> --merge`。
 `main` へ戻って pull し、作業ブランチをローカル・リモートから削除する。
