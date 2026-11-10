@@ -389,13 +389,15 @@ impl App {
                     .text_color(rgb(status.tone.color(&p)))
                     .child(status.headline.clone()),
             )
-            .child(
-                div()
-                    .text_size(px(10.))
-                    .text_color(rgb(p.muted))
-                    .truncate()
-                    .child(status.detail.clone()),
-            );
+            .when(!status.detail.is_empty(), |this| {
+                this.child(
+                    div()
+                        .text_size(px(10.))
+                        .text_color(rgb(p.muted))
+                        .truncate()
+                        .child(status.detail.clone()),
+                )
+            });
         if let Some(ratio) = ratio {
             body = body.child(status_progress_bar(&self.palette, ratio));
         }
@@ -410,7 +412,6 @@ impl App {
                             .label(tr!("sidebar.start_waiting"))
                             .small()
                             .primary()
-                            .tooltip(tr!("sidebar.start_waiting_hint"))
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.request_release_waiting_jobs(window, cx)
                             })),
@@ -472,7 +473,6 @@ impl App {
                         .label(tr!("sidebar.rescan"))
                         .small()
                         .ghost()
-                        .tooltip(tr!("sidebar.rescan_hint"))
                         .on_click(cx.listener(|this, _, _, cx| this.request_daemon_rescan(cx)))
                 } else {
                     Button::new("sidebar-status-dashboard")
@@ -849,7 +849,7 @@ fn import_card_status(
     let Some(report) = report else {
         return CardStatus {
             headline: tr!("sidebar.import.none.headline"),
-            detail: tr!("sidebar.import.none.detail"),
+            detail: String::new(),
             tone: StatusTone::Idle,
         };
     };
@@ -958,7 +958,7 @@ fn scan_card_status(
     }
     CardStatus {
         headline: tr!("sidebar.scan.idle.headline"),
-        detail: tr!("sidebar.scan.idle.detail"),
+        detail: String::new(),
         tone: StatusTone::Idle,
     }
 }
@@ -1370,7 +1370,7 @@ mod tests {
 
         let none = import_card_status(None, None);
         assert_eq!(none.headline, "履歴なし");
-        assert_eq!(none.detail, "取り込み結果がここに残ります");
+        assert_eq!(none.detail, "");
         assert_eq!(none.tone, StatusTone::Idle);
     }
 
@@ -1483,7 +1483,7 @@ mod tests {
 
         let idle = scan_card_status(None, true, false);
         assert_eq!(idle.headline, "待機中");
-        assert_eq!(idle.detail, "変更を監視しています");
+        assert_eq!(idle.detail, "");
         assert_eq!(idle.tone, StatusTone::Idle);
     }
     #[test]

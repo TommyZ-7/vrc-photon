@@ -77,7 +77,7 @@ impl App {
             &self.palette,
             "manual-output-folder",
             tr!("dialog.output.folder"),
-            tr!("dialog.output.folder_hint"),
+            "",
             dialog.output == ManualOutputTarget::Folder,
             true,
         )
@@ -170,34 +170,25 @@ impl App {
             tr_args!("dialog.compress_count", count = count)
         };
 
-        let header = v_flex()
-            .gap(px(16.))
-            .child(
-                h_flex()
-                    .items_center()
-                    .gap(px(10.))
-                    .child(
-                        div()
-                            .text_size(px(20.))
-                            .font_semibold()
-                            .text_color(rgb(p.text))
-                            .child(tr!("dialog.title")),
-                    )
-                    .child(div().flex_1())
-                    .child(
-                        div()
-                            .text_size(px(11.))
-                            .text_color(rgb(p.muted_2))
-                            .child(tr_args!("dialog.target_count", count = count)),
-                    ),
-            )
-            .child(div().text_size(px(11.)).text_color(rgb(p.muted)).child(
-                if dialog.hide_output {
-                    tr!("dialog.description")
-                } else {
-                    tr!("dialog.description_no_profile")
-                },
-            ));
+        let header = v_flex().gap(px(16.)).child(
+            h_flex()
+                .items_center()
+                .gap(px(10.))
+                .child(
+                    div()
+                        .text_size(px(20.))
+                        .font_semibold()
+                        .text_color(rgb(p.text))
+                        .child(tr!("dialog.title")),
+                )
+                .child(div().flex_1())
+                .child(
+                    div()
+                        .text_size(px(11.))
+                        .text_color(rgb(p.muted_2))
+                        .child(tr_args!("dialog.target_count", count = count)),
+                ),
+        );
 
         let body = v_flex()
             .flex_1()

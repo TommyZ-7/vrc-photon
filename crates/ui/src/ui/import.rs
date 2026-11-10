@@ -175,21 +175,13 @@ impl App {
                 body = body
                     .child(self.section_label(tr!("import.section.destination")))
                     .child(
-                        v_flex()
-                            .gap(px(4.))
-                            .child(
-                                div()
-                                    .truncate()
-                                    .text_size(px(11.))
-                                    .text_color(rgb(p.muted))
-                                    .child(dest.clone()),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(10.))
-                                    .text_color(rgb(p.muted_2))
-                                    .child(tr!("import.destination_hint")),
-                            ),
+                        v_flex().gap(px(4.)).child(
+                            div()
+                                .truncate()
+                                .text_size(px(11.))
+                                .text_color(rgb(p.muted))
+                                .child(dest.clone()),
+                        ),
                     );
 
                 if shows_folder_structure(source) {

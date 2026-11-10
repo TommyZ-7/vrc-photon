@@ -65,7 +65,7 @@ pub(crate) fn daemon_sync_label(
 
 pub(crate) fn autostart_description(daemon_active: bool, supervisor: Option<&str>) -> String {
     if daemon_active && supervisor == Some("systemd") {
-        tr!("daemon.autostart.systemd")
+        String::new()
     } else {
         tr!("daemon.autostart.login")
     }
@@ -455,11 +455,8 @@ mod tests {
     }
 
     #[test]
-    fn autostart_description_mentions_systemd_only_while_active() {
-        assert_eq!(
-            autostart_description(true, Some("systemd")),
-            "systemd 管理で起動中。サービス利用時はOFF推奨"
-        );
+    fn autostart_description_is_empty_for_systemd_and_uses_login_otherwise() {
+        assert_eq!(autostart_description(true, Some("systemd")), "");
         assert_eq!(
             autostart_description(false, Some("systemd")),
             "OSログイン時にデーモンを起動"

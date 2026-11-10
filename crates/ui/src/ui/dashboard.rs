@@ -27,7 +27,6 @@ use crate::ui::theme::*;
 
 impl App {
     pub(crate) fn dashboard_screen(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let p = self.palette;
         let show_ai_card = ai_dashboard_view(&self.ai, self.settings.ai_tagging_enabled).visible;
         let stats = h_flex()
             .flex_shrink_0()
@@ -74,19 +73,7 @@ impl App {
                             .min_w_0()
                             .min_h_0()
                             .gap(px(CARD_GAP))
-                            .child(self.queue_panel(cx))
-                            .child(
-                                v_flex()
-                                    .flex_shrink_0()
-                                    .p(px(12.))
-                                    .rounded(px(12.))
-                                    .bg(rgb(p.amber_soft))
-                                    .border_1()
-                                    .border_color(rgba(with_alpha(p.amber, 0x40)))
-                                    .text_size(px(11.))
-                                    .text_color(rgb(p.amber))
-                                    .child(tr!("dashboard.log_retention_hint")),
-                            ),
+                            .child(self.queue_panel(cx)),
                     )
                     .child(
                         v_flex()
@@ -347,12 +334,7 @@ impl App {
             card = card.child(row);
         }
 
-        card.child(
-            div()
-                .text_size(px(10.))
-                .text_color(rgb(p.muted_2))
-                .child(tr!("dashboard.deletion.hint")),
-        )
+        card
     }
 
     pub(crate) fn daemon_card(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -640,21 +622,12 @@ impl App {
             );
         if dir.is_some() {
             card = card.child(
-                h_flex()
-                    .items_center()
-                    .gap(px(12.))
-                    .child(
-                        Button::new("open-logs-folder")
-                            .label(tr!("dashboard.log.open_folder"))
-                            .small()
-                            .on_click(cx.listener(|this, _, _, cx| this.open_logs_folder(cx))),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(10.))
-                            .text_color(rgb(p.muted_2))
-                            .child(tr!("dashboard.log.open_hint")),
-                    ),
+                h_flex().items_center().gap(px(12.)).child(
+                    Button::new("open-logs-folder")
+                        .label(tr!("dashboard.log.open_folder"))
+                        .small()
+                        .on_click(cx.listener(|this, _, _, cx| this.open_logs_folder(cx))),
+                ),
             );
         } else {
             card = card.child(
