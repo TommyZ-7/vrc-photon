@@ -420,6 +420,14 @@ impl PhotoBrowser {
 
     pub(crate) fn replace_index(&mut self, index: Arc<PhotoIndex>) {
         self.index = index;
+        let surviving_sessions: HashSet<i64> = self
+            .index
+            .entries
+            .iter()
+            .filter_map(|entry| entry.session_id)
+            .collect();
+        self.collapsed_sessions
+            .retain(|session_id| surviving_sessions.contains(session_id));
         self.generation = self.generation.wrapping_add(1);
         self.pages.clear();
         self.labels = None;
@@ -428,14 +436,12 @@ impl PhotoBrowser {
         self.rail_hover.set(false);
         self.session_rows = None;
         self.session_rows_key = None;
-        self.collapsed_sessions.clear();
         self.session_collapse_motions.clear();
         self.pending_session_anchor = None;
         self.pending_photo_anchor = None;
         self.session_summaries.clear();
         self.session_summary_pending.clear();
         self.session_summary_failed.clear();
-        self.session_scroll.set_offset(point(px(0.), px(0.)));
     }
 
     /// Builds or reuses the mixed session row model for the current index,
@@ -744,24 +750,6 @@ impl PhotoBrowser {
         if self.pending_anchor.is_none() {
             self.pending_anchor = anchor;
         }
-    }
-
-    /// Clears the ephemeral collapsed-session set (for example when leaving
-    /// the Photos screen).
-    pub(crate) fn clear_collapsed_sessions(&mut self) {
-        if self.collapsed_sessions.is_empty()
-            && self.session_collapse_motions.is_empty()
-            && self.pending_session_anchor.is_none()
-            && self.pending_photo_anchor.is_none()
-        {
-            return;
-        }
-        self.collapsed_sessions.clear();
-        self.session_collapse_motions.clear();
-        self.pending_session_anchor = None;
-        self.pending_photo_anchor = None;
-        self.session_rows = None;
-        self.session_rows_key = None;
     }
 
     fn clamp_scroll_after_removal(&mut self) {
@@ -1565,17 +1553,6 @@ mod tests {
     }
 
     #[test]
-    fn clearing_collapsed_sessions_invalidates_the_row_model() {
-        let index = Arc::new(PhotoIndex::new(vec![index_entry(1, 202601)]));
-        let mut browser = PhotoBrowser::new(index, TEST_ROW_HEIGHT);
-        browser.toggle_session_collapsed(7);
-        browser.ensure_session_rows(4, 200.0, 92.0, 46.0);
-        browser.clear_collapsed_sessions();
-        assert!(browser.collapsed_sessions.is_empty());
-        assert!(browser.session_rows.is_none());
-    }
-
-    #[test]
     fn removing_a_photo_clamps_a_scroll_past_the_last_row() {
         let entries = (1..=10).map(|id| index_entry(id, 202601)).collect();
         let mut browser = PhotoBrowser::new(Arc::new(PhotoIndex::new(entries)), TEST_ROW_HEIGHT);
@@ -1698,14 +1675,47 @@ mod tests {
     }
 
     #[test]
-    fn replace_index_clears_session_state() {
+    fn replace_index_keeps_collapsed_sessions_that_still_have_photos() {
+        let mut browser = PhotoBrowser::new(session_index(), TEST_ROW_HEIGHT);
+        browser.toggle_session_collapsed(7);
+        browser.toggle_session_collapsed(8);
+
+        browser.replace_index(Arc::new(PhotoIndex::new(vec![
+            index_entry_with_session(1, 202601, Some(7)),
+            index_entry_with_session(2, 202601, Some(7)),
+            index_entry_with_session(9, 202511, Some(9)),
+        ])));
+
+        assert!(browser.collapsed_sessions.contains(&7));
+        assert!(!browser.collapsed_sessions.contains(&8));
+        assert!(!browser.collapsed_sessions.contains(&9));
+    }
+
+    #[test]
+    fn replace_index_drops_collapsed_sessions_without_visible_photos() {
+        let mut browser = PhotoBrowser::new(session_index(), TEST_ROW_HEIGHT);
+        browser.toggle_session_collapsed(7);
+        browser.replace_index(Arc::new(PhotoIndex::new(vec![
+            index_entry_with_session(3, 202512, Some(8)),
+        ])));
+        assert!(browser.collapsed_sessions.is_empty());
+    }
+
+    #[test]
+    fn replace_index_rebuilds_session_rows_and_summaries() {
         let index = Arc::new(PhotoIndex::new(vec![index_entry(1, 202601)]));
         let mut browser = PhotoBrowser::new(index, TEST_ROW_HEIGHT);
+        let generation = browser.generation;
         browser.toggle_session_collapsed(7);
         browser.ensure_session_rows(4, 200.0, 92.0, 46.0);
-        browser.plan_session_summaries([7], 1);
-        browser.replace_index(Arc::new(PhotoIndex::new(vec![index_entry(2, 202602)])));
-        assert!(browser.collapsed_sessions.is_empty());
+        browser.insert_session_summaries(generation, &[7], vec![summary(7)]);
+        browser.plan_session_summaries([8], 1);
+
+        browser.replace_index(Arc::new(PhotoIndex::new(vec![
+            index_entry_with_session(1, 202601, Some(7)),
+        ])));
+
+        assert!(browser.collapsed_sessions.contains(&7));
         assert!(browser.session_rows.is_none());
         assert!(browser.session_summaries.is_empty());
         assert!(browser.session_summary_pending.is_empty());
@@ -1752,13 +1762,9 @@ mod tests {
     }
 
     #[test]
-    fn replacing_or_clearing_the_browser_drops_collapse_motions() {
+    fn replacing_the_browser_drops_collapse_motions() {
         let now = Instant::now();
         let mut browser = PhotoBrowser::new(session_index(), TEST_ROW_HEIGHT);
-        browser.animate_session_collapse(7, true, Duration::from_millis(100), now);
-        browser.clear_collapsed_sessions();
-        assert!(browser.session_collapse_motions.is_empty());
-
         browser.animate_session_collapse(7, true, Duration::from_millis(100), now);
         browser.replace_index(session_index());
         assert!(browser.session_collapse_motions.is_empty());

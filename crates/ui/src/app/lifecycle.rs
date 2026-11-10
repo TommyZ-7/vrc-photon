@@ -957,9 +957,6 @@ impl App {
         {
             self.clear_selection(cx);
         }
-        if self.screen == Screen::Photos && screen != Screen::Photos {
-            self.library.borrow_mut().clear_collapsed_sessions();
-        }
         self.screen = screen;
         if screen == Screen::Settings {
             self.refresh_thumbnail_cache_usage(cx);
