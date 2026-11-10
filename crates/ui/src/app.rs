@@ -545,6 +545,11 @@ impl App {
         effective_motion_fps(self.settings.ui_max_fps, window.refresh_interval(cx))
     }
 
+    /// Horizontal and vertical gap between photo cards, in pixels.
+    pub(crate) fn grid_gap(&self) -> f32 {
+        f32::from(self.settings.ui_grid_gap)
+    }
+
     pub(crate) fn overlay_open(&self) -> bool {
         any_overlay_open(
             self.quick_look_open,

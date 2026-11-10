@@ -22,9 +22,8 @@ pub(crate) const CARD_BODY_GAP: f32 = 8.0;
 pub(crate) const CARD_TEXT_GAP: f32 = 3.0;
 pub(crate) const CARD_WORLD_LINE_HEIGHT: f32 = 18.0;
 pub(crate) const CARD_META_LINE_HEIGHT: f32 = 15.0;
-/// Small vertical breathing room reserved inside each library row. The
-/// horizontal gap between cards is [`GRID_GAP`].
-pub(crate) const CARD_ROW_GAP: f32 = 14.0;
+/// Default gap between photo cards in both directions. Runtime layout uses
+/// the user's `ui_grid_gap` setting instead.
 pub(crate) const GRID_GAP: f32 = UI_GRID_GAP_DEFAULT as f32;
 pub(crate) const INSPECTOR_PREVIEW_HEIGHT: f32 = 168.0;
 pub(crate) const INSPECTOR_SHORT_PREVIEW_HEIGHT: f32 = 118.0;
@@ -42,8 +41,8 @@ pub(crate) const INTEGRATIONS_LIST_WIDTH: f32 = 252.0;
 pub(crate) const INTEGRATIONS_DETAIL_MIN_WIDTH: f32 = 620.0;
 pub(crate) const INTEGRATIONS_PANE_GAP: f32 = 16.0;
 pub(crate) const GALLERY_HEADER_HEIGHT: f32 = 42.0;
-/// Fixed content heights for the mixed session rows. The row model adds
-/// [`CARD_ROW_GAP`] when it hands these to the virtual list.
+/// Fixed content heights for the mixed session rows. The row model adds the
+/// current grid gap when it hands these to the virtual list.
 pub(crate) const SESSION_HEADER_ROW_HEIGHT: f32 = 78.0;
 pub(crate) const SESSION_DATE_LABEL_ROW_HEIGHT: f32 = 30.0;
 pub(crate) const SESSION_CONTINUATION_ROW_HEIGHT: f32 = 44.0;
@@ -967,7 +966,7 @@ mod tests {
                 gallery_height - GALLERY_HEADER_HEIGHT - GALLERY_PAD_TOP - GALLERY_PAD_BOTTOM;
             // The trailing row gap does not have to fit; only the three
             // visible rows and the gaps between them do.
-            let visible_rows = metrics.row_height * 3.0 - CARD_ROW_GAP;
+            let visible_rows = metrics.row_height * 3.0 - GRID_GAP;
             assert!(
                 visible_rows <= body_height,
                 "width={width} rows={visible_rows} body={body_height}"
