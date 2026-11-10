@@ -361,6 +361,14 @@ pub(crate) struct SessionScrollAnchor {
     pub(crate) expected_offset: f32,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct SessionLayoutParams {
+    pub(crate) columns: usize,
+    pub(crate) photo_row_height: f32,
+    pub(crate) header_height: f32,
+    pub(crate) date_label_height: f32,
+}
+
 /// Snapshot plus page cache for one grid (library or search).
 pub(crate) struct PhotoBrowser {
     pub(crate) index: Arc<PhotoIndex>,
@@ -392,6 +400,9 @@ pub(crate) struct PhotoBrowser {
     pub(crate) session_collapse_motions: SessionCollapseMotions,
     /// Header kept at a fixed viewport position while collapse motions settle.
     session_scroll_anchor: Option<SessionScrollAnchor>,
+    /// Last layout passed to `session_layout`, used by rail jumps that need to
+    /// rebuild rows after expanding a session.
+    session_layout_params: Option<SessionLayoutParams>,
     /// Photo row restored after the active collapse motions settle.
     pending_photo_anchor: Option<usize>,
     /// Scroll offset written by the rail jump that set `pending_photo_anchor`.
@@ -425,6 +436,7 @@ impl PhotoBrowser {
             collapsed_sessions: HashSet::new(),
             session_collapse_motions: SessionCollapseMotions::default(),
             session_scroll_anchor: None,
+            session_layout_params: None,
             pending_photo_anchor: None,
             pending_photo_expected_offset: None,
             session_summaries: HashMap::new(),
@@ -552,6 +564,12 @@ impl PhotoBrowser {
         date_label_height: f32,
         now: Instant,
     ) -> SessionLayout {
+        self.session_layout_params = Some(SessionLayoutParams {
+            columns,
+            photo_row_height,
+            header_height,
+            date_label_height,
+        });
         let factors = self.session_collapse_motions.factors(now);
         let animating: HashSet<i64> = factors.keys().copied().collect();
         let rows = self.ensure_session_rows_with_animating(
@@ -679,6 +697,26 @@ impl PhotoBrowser {
 
     pub(crate) fn cancel_session_scroll_anchor(&mut self) {
         self.session_scroll_anchor = None;
+    }
+
+    /// Expands a collapsed session before a rail jump measures its photo row.
+    /// Returns the rebuilt rows, or `None` before the first layout.
+    pub(crate) fn expand_session_for_jump(
+        &mut self,
+        session_id: i64,
+    ) -> Option<Arc<SessionRows>> {
+        if self.collapsed_sessions.remove(&session_id) {
+            self.settle_session_collapse(session_id);
+            self.session_rows = None;
+            self.session_rows_key = None;
+        }
+        let params = self.session_layout_params?;
+        Some(self.ensure_session_rows(
+            params.columns,
+            params.photo_row_height,
+            params.header_height,
+            params.date_label_height,
+        ))
     }
 
     pub(crate) fn top_photo_index(&self, scroll_top: f32) -> Option<usize> {
@@ -1938,6 +1976,17 @@ mod tests {
         set_session_scroll_offset(&browser, 50.0);
         browser.note_session_scroll();
         assert!(browser.session_scroll_anchor.is_none());
+    }
+
+    #[test]
+    fn a_rail_jump_expands_a_collapsed_session_before_measuring() {
+        let now = Instant::now();
+        let mut browser = PhotoBrowser::new(session_index(), TEST_ROW_HEIGHT);
+        browser.toggle_session_collapsed(7);
+        let _ = browser.session_layout(4, 200.0, 92.0, 46.0, now);
+        let rows = browser.expand_session_for_jump(7).unwrap();
+        assert!(!browser.collapsed_sessions.contains(&7));
+        assert!(rows.offset_for_photo(0).is_some());
     }
 
     #[test]

@@ -244,13 +244,26 @@ impl YearRail {
             .map(|(_, row)| row)
             .unwrap_or_else(|| rail_row_at(local_y, total, height))
             .min(total - 1);
+        let mut session_rows: Option<Arc<SessionRows>> = None;
         if let RailList::Sessions { browser, .. } = &self.list {
-            // The offset uses the settled row model. If a collapse is still
-            // moving, restore the target photo once it settles.
-            browser.borrow_mut().set_pending_photo_anchor(photo_row);
+            let mut browser = browser.borrow_mut();
+            let session_id = self
+                .index
+                .entries
+                .get(photo_row)
+                .and_then(|entry| entry.session_id);
+            session_rows = session_id
+                .filter(|id| browser.collapsed_sessions.contains(id))
+                .and_then(|id| browser.expand_session_for_jump(id))
+                .or_else(|| browser.session_rows.clone());
+            browser.set_pending_photo_anchor(photo_row);
         }
         let max_offset = self.list.max_offset();
-        let offset = self.list.scroll_offset_for_photo(photo_row, max_offset);
+        let offset = if let Some(rows) = session_rows.as_ref() {
+            session_rail_scroll_offset(rows, photo_row, max_offset)
+        } else {
+            self.list.scroll_offset_for_photo(photo_row, max_offset)
+        };
         self.list.set_offset(offset);
         if let RailList::Sessions { browser, .. } = &self.list {
             browser.borrow_mut().note_programmatic_scroll();
