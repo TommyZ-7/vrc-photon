@@ -257,11 +257,7 @@ impl SessionRows {
         self.top_photo_index_with_origins(scroll_top, &self.origins_with_heights(heights))
     }
 
-    fn top_photo_index_with_origins(
-        &self,
-        scroll_top: f32,
-        origins: &[f32],
-    ) -> Option<usize> {
+    fn top_photo_index_with_origins(&self, scroll_top: f32, origins: &[f32]) -> Option<usize> {
         if self.rows.is_empty() {
             return None;
         }
@@ -279,6 +275,7 @@ impl SessionRows {
         self.row_for_photo(photo_index).map(|row| self.origins[row])
     }
 
+    #[cfg(test)]
     pub(crate) fn offset_for_session(&self, session_id: i64) -> Option<f32> {
         self.header_rows
             .get(&session_id)
@@ -730,10 +727,7 @@ mod tests {
         );
         let animated = rows.heights_with_collapse(&HashMap::from([(7, 0.5)]));
         // Header 92 + half photo row 100 => the second header starts at 192.
-        assert_eq!(
-            rows.top_photo_index_with_heights(200.0, &animated),
-            Some(2)
-        );
+        assert_eq!(rows.top_photo_index_with_heights(200.0, &animated), Some(2));
         // The settled geometry still has the first photo row at 200..400.
         assert_eq!(rows.top_photo_index(200.0), Some(0));
     }

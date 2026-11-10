@@ -1884,7 +1884,10 @@ mod tests {
             .offset_for_session_with_heights(8, &mid.heights)
             .unwrap()
             - 100.0;
-        assert_eq!(session_scroll_top(&browser.session_scroll), expected.max(0.0));
+        assert_eq!(
+            session_scroll_top(&browser.session_scroll),
+            expected.max(0.0)
+        );
     }
 
     #[test]
