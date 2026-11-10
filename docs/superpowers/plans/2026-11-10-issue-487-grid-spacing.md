@@ -12,7 +12,12 @@
 
 **Mock:** `docs/ui-487-grid-spacing-mockup.html`
 
-**Status:** 計画作成中。Phase 0 の docs PR 承認後に実装を開始する。
+**Status:** 実装完了（2026-11-10）。docs PR #512、実装 PR #513。Issue #487 はクローズ済み。
+
+最終レビューで Important 1件（セッション表示のアンカー取得順）を修正した。Minor 2件は保留:
+`grid_placeholder` の固定13 px角丸、f64を超える指数表記の設定JSON（`1e999`）で全体パースが失敗する件。
+スライダーのドラッグ操作は XTest が GPUI ウィンドウへ届かなかったため、保存処理はユニットテスト、
+表示は既定値を一時的に注入して確認した（コードはコミット前に復元）。
 
 ## Global Constraints
 
@@ -56,7 +61,7 @@
 **Interfaces:**
 - Produces: 承認済みの設計・モック・計画、更新済み `docs/ui.md`
 
-- [ ] **Step 1: `docs/ui.md` を更新する**
+- [x] **Step 1: `docs/ui.md` を更新する**
 
 更新箇所:
 
@@ -67,7 +72,7 @@
 - §6 デザイントークン: 写真カードの角丸が設定可能（既定13 px、0〜24 px）であることを追記する。
 - §10 参考: #487 の設計・計画・モックへのリンクを追加する。
 
-- [ ] **Step 2: Plannotator で計画を提示する**
+- [x] **Step 2: Plannotator で計画を提示する**
 
 ```bash
 plannotator annotate docs/superpowers/plans/2026-11-10-issue-487-grid-spacing.md --gate --json
@@ -75,7 +80,7 @@ plannotator annotate docs/superpowers/plans/2026-11-10-issue-487-grid-spacing.md
 
 Expected: `decision: "approved"`。注釈が返った場合は計画へ反映して再提示する。
 
-- [ ] **Step 3: Plannotator でモックを提示する**
+- [x] **Step 3: Plannotator でモックを提示する**
 
 ```bash
 plannotator annotate docs/ui-487-grid-spacing-mockup.html --gate --json
@@ -83,7 +88,7 @@ plannotator annotate docs/ui-487-grid-spacing-mockup.html --gate --json
 
 Expected: `decision: "approved"`。スライダーの配置、値表示、範囲ヒント、間隔・角丸の端の見え方を確認する。
 
-- [ ] **Step 4: docs PR を作る**
+- [x] **Step 4: docs PR を作る**
 
 ```bash
 git add docs/ui.md docs/ui-487-grid-spacing-mockup.html \
@@ -95,7 +100,7 @@ gh pr create --title "docs: #487 写真グリッドの間隔とカード角丸�
   --body "Refs #487" --label documentation
 ```
 
-- [ ] **Step 5: CI green を確認して merge する**
+- [x] **Step 5: CI green を確認して merge する**
 
 `ci-watch` の手順で `CI` を監視する。docs-only のため Release の bundle は走らない。
 green 後 `gh pr merge <n> --merge`、`main` へ戻って pull する。
@@ -109,14 +114,14 @@ green 後 `gh pr merge <n> --merge`、`main` へ戻って pull する。
 **Files:**
 - None（作業ディレクトリのみ）
 
-- [ ] **Step 1: 最新の `main` から worktree を作る**
+- [x] **Step 1: 最新の `main` から worktree を作る**
 
 ```bash
 git fetch origin
 git worktree add ../vrc-photo-manager-487 -b feat/487-grid-spacing origin/main
 ```
 
-- [ ] **Step 2: worktree でベースラインを確認する**
+- [x] **Step 2: worktree でベースラインを確認する**
 
 ```bash
 cargo test --workspace
@@ -136,7 +141,7 @@ Expected: PASS。失敗する場合は環境の問題を先に解消する。
 - Produces: `UI_GRID_GAP_MIN/MAX/DEFAULT`、`UI_CARD_RADIUS_MIN/MAX/DEFAULT`
 - Produces: `AppSettings::normalize_grid_display`
 
-- [ ] **Step 1: 範囲と既定値の定数を追加する**
+- [x] **Step 1: 範囲と既定値の定数を追加する**
 
 ```rust
 pub const UI_GRID_GAP_MIN: u8 = 0;
@@ -147,7 +152,7 @@ pub const UI_CARD_RADIUS_MAX: u8 = 24;
 pub const UI_CARD_RADIUS_DEFAULT: u8 = 13;
 ```
 
-- [ ] **Step 2: `AppSettings` にフィールドを追加する**
+- [x] **Step 2: `AppSettings` にフィールドを追加する**
 
 既存の `ui_card_size` の近くに追加する。
 
@@ -160,7 +165,7 @@ pub ui_card_radius: u8,
 
 `Default` 実装にも既定値を追加する。
 
-- [ ] **Step 3: 専用 deserializer を追加する**
+- [x] **Step 3: 専用 deserializer を追加する**
 
 `serde_json::Value` を受け取り、`as_f64()` で数値だけを読む。
 `round()` して範囲内へ `clamp` し、`u8` へ変換する。数値以外は既定値にする。
@@ -178,7 +183,7 @@ where D: serde::Deserializer<'de> {
 
 カード角丸も同じ形にする。
 
-- [ ] **Step 4: 読み込み時・保存時の正規化を追加する**
+- [x] **Step 4: 読み込み時・保存時の正規化を追加する**
 
 ```rust
 fn normalize_grid_display(&mut self) {
@@ -190,7 +195,7 @@ fn normalize_grid_display(&mut self) {
 `AppSettings::load` の成功パスと `AppSettings::save` の複製に対して呼ぶ。
 `save` は既存どおり `self.clone()` を正規化して書き込む。
 
-- [ ] **Step 5: core のテストを追加する**
+- [x] **Step 5: core のテストを追加する**
 
 - 既定値が 14 / 13。
 - `{}` から読むと 14 / 13。
@@ -221,25 +226,25 @@ Expected: PASS。
 - Produces: `library_grid_metrics(..., grid_gap)`
 - Produces: `search_grid_metrics(..., grid_gap)`
 
-- [ ] **Step 1: 定数の二重定義を整理する**
+- [x] **Step 1: 定数の二重定義を整理する**
 
 `GRID_GAP` と `CARD_ROW_GAP` はどちらも14 pxの固定値である。
 `GRID_GAP` を core の `UI_GRID_GAP_DEFAULT` から導出する既定値として残し、
 `CARD_ROW_GAP` は削除して `GRID_GAP` に統一する。テストと初期行高は `GRID_GAP` を使う。
 既定値が core と一致することをテストで固定する。
 
-- [ ] **Step 2: レイアウト関数のシグネチャを変更する**
+- [x] **Step 2: レイアウト関数のシグネチャを変更する**
 
 `grid_columns`、`photo_card_width`、`photo_row_height`、`library_grid_metrics`、
 `search_grid_metrics`、`grid_metrics_for` に `grid_gap: f32` を追加し、
 内部の `GRID_GAP` / `CARD_ROW_GAP` 参照を引数へ置き換える。
 
-- [ ] **Step 3: 全呼び出しを更新する**
+- [x] **Step 3: 全呼び出しを更新する**
 
 `rg -n "grid_columns|photo_card_width|photo_row_height|library_grid_metrics|search_grid_metrics" crates/ui/src`
 で全呼び出しを確認し、テストは `GRID_GAP`、本体は後続タスクで設定値を渡す。
 
-- [ ] **Step 4: theme のテストを更新・追加する**
+- [x] **Step 4: theme のテストを更新・追加する**
 
 - 既定の間隔で既存の期待値が変わらない。
 - 間隔0 / 14 / 32 で列数・カード幅・行高が計算どおりになる。
@@ -266,7 +271,7 @@ Expected: PASS。
 - Produces: `App::grid_gap() -> f32`
 - Consumes: `app.settings.ui_grid_gap`、`app.settings.ui_card_radius`
 
-- [ ] **Step 1: `App::grid_gap` を追加する**
+- [x] **Step 1: `App::grid_gap` を追加する**
 
 ```rust
 pub(crate) fn grid_gap(&self) -> f32 {
@@ -274,13 +279,13 @@ pub(crate) fn grid_gap(&self) -> f32 {
 }
 ```
 
-- [ ] **Step 2: `render_grid` と `render_sessions` で設定値を渡す**
+- [x] **Step 2: `render_grid` と `render_sessions` で設定値を渡す**
 
 両方の先頭で `let grid_gap = app.grid_gap();` を取得し、`library_grid_metrics` /
 `search_grid_metrics` と各行の `.gap(px(grid_gap))`、`render_page_error` に渡す。
 ページエラー行の高さ計算は `(metrics.row_height - grid_gap)` にする。
 
-- [ ] **Step 3: `render_card` で角丸を読む**
+- [x] **Step 3: `render_card` で角丸を読む**
 
 ```rust
 let card_radius = f32::from(app.settings.ui_card_radius);
@@ -289,7 +294,7 @@ let image_radius = inner_corner_radius(card_radius, 1.0);
 
 `13.0` の固定値を置き換える。カード本体・内側画像・角丸を伴うバッジの構造は変えない。
 
-- [ ] **Step 4: セッション行の高さを設定値に揃える**
+- [x] **Step 4: セッション行の高さを設定値に揃える**
 
 `crates/ui/src/app/session.rs` の `SESSION_HEADER_ROW_HEIGHT + CARD_ROW_GAP`、
 `SESSION_DATE_LABEL_ROW_HEIGHT + CARD_ROW_GAP`、
@@ -297,17 +302,17 @@ let image_radius = inner_corner_radius(card_radius, 1.0);
 `+ self.grid_gap()` に置き換える。`ensure_library_session_rows`、
 `capture_top_photo`、`scroll_to_photo`、`toggle_session_collapsed` の全経路を揃える。
 
-- [ ] **Step 5: gallery 側のセッション行の高さも揃える**
+- [x] **Step 5: gallery 側のセッション行の高さも揃える**
 
 `render_sessions` 内の同じ3つの加算を `+ grid_gap` に置き換える。
 
-- [ ] **Step 6: アンカー維持を確認する**
+- [x] **Step 6: アンカー維持を確認する**
 
 スライダーの `Release` で `capture_display_layout_anchors()` を呼ぶ（Task 5）。
 ギャラリー側は既存の `layout_changed` 判定で先頭写真をアンカーする。
 タイムライン・セッション表示の両方で、変更後に先頭写真が維持されることをテストまたは手動で確認する。
 
-- [ ] **Step 7: 既存テストを更新する**
+- [x] **Step 7: 既存テストを更新する**
 
 `photo_browser.rs` などで `library_grid_metrics` を呼ぶテストに `GRID_GAP` を渡す。
 セッション行高の期待値があるテストは `grid_gap` を明示する。
@@ -332,7 +337,7 @@ Expected: PASS。
 - Consumes: `SliderState`、`SliderEvent`
 - Produces: `grid_gap_slider`、`card_radius_slider` とそれぞれの subscription
 
-- [ ] **Step 1: `App` にスライダー状態を追加する**
+- [x] **Step 1: `App` にスライダー状態を追加する**
 
 既存の `thumbnail_quality_slider` の近くに追加する。
 
@@ -343,7 +348,7 @@ pub(crate) card_radius_slider: Entity<SliderState>,
 pub(crate) _card_radius_subscription: Subscription,
 ```
 
-- [ ] **Step 2: コンストラクタで `SliderState` を初期化する**
+- [x] **Step 2: コンストラクタで `SliderState` を初期化する**
 
 ```rust
 let grid_gap_slider = cx.new(|_| {
@@ -357,7 +362,7 @@ let grid_gap_slider = cx.new(|_| {
 
 カード角丸も同じ形で、`UI_CARD_RADIUS_MIN/MAX` と `initial_settings.ui_card_radius` を使う。
 
-- [ ] **Step 3: Change / Release の subscription を追加する**
+- [x] **Step 3: Change / Release の subscription を追加する**
 
 `Change` では値を `round().clamp(...) as u8` して `self.settings` を更新し、
 `cx.notify()` だけ行う。`Release` では同じ値を確定し、
@@ -368,7 +373,7 @@ let grid_gap_slider = cx.new(|_| {
 `save_grid_display_settings(&mut self, cx)` を作って共有する。
 既存のサムネイル画質の保存挙動（キャッシュを消すなど）は変えない。
 
-- [ ] **Step 4: 設定画面に2行を追加する**
+- [x] **Step 4: 設定画面に2行を追加する**
 
 `crates/ui/src/ui/settings.rs` の「表示（ライブラリ・検索）」カードで、
 4つの `setting_switch` の後に区切り線と2つのスライダー行を追加する。
@@ -378,7 +383,7 @@ let grid_gap_slider = cx.new(|_| {
 - `Slider::new(&self.grid_gap_slider).w_full()` / `Slider::new(&self.card_radius_slider).w_full()`。
 - ヒント行を追加する。
 
-- [ ] **Step 5: i18n キーを追加する**
+- [x] **Step 5: i18n キーを追加する**
 
 `ja.yml`:
 
@@ -398,7 +403,7 @@ settings.display.card_radius.label: Card corner radius
 settings.display.card_radius.hint: Photo card corner radius (0–24 px)
 ```
 
-- [ ] **Step 6: i18n テストを通す**
+- [x] **Step 6: i18n テストを通す**
 
 ```bash
 cargo test -p vrc-photon-i18n
@@ -406,7 +411,7 @@ cargo test -p vrc-photon-i18n
 
 Expected: PASS。ja / en の両方にキーが存在する。
 
-- [ ] **Step 7: UI をビルドして設定画面を確認する**
+- [x] **Step 7: UI をビルドして設定画面を確認する**
 
 ```bash
 cargo run -p vrc-photon-ui --bin vrc-photon -- --demo
@@ -421,7 +426,7 @@ cargo run -p vrc-photon-ui --bin vrc-photon -- --demo
 **Files:**
 - None（確認のみ）
 
-- [ ] **Step 1: 自動検証を実行する**
+- [x] **Step 1: 自動検証を実行する**
 
 ```bash
 cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace
@@ -429,23 +434,23 @@ cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warni
 
 Expected: PASS。
 
-- [ ] **Step 2: 既定値の回帰を確認する**
+- [x] **Step 2: 既定値の回帰を確認する**
 
 `--demo` で起動し、設定が 14 px / 13 px のとき、変更前と同じ間隔・角丸・列数・行高で
 表示されることを確認する。タイムラインとセッション表示の両方を見る。
 
-- [ ] **Step 3: 端の値を確認する**
+- [x] **Step 3: 端の値を確認する**
 
 - 間隔0 / 角丸0: カードが接し、角が直角になる。境界線と選択リングが崩れない。
 - 間隔32 / 角丸24: 列数が減る場合がある。内側画像がカードからはみ出さない。
 - 検索結果でも同じ値になる。
 
-- [ ] **Step 4: 永続化と即時反映を確認する**
+- [x] **Step 4: 永続化と即時反映を確認する**
 
 スライダーを動かした直後にプレビューが変わり、指を離した後に再起動しても値が残る。
 設定画面を離れて Photos へ戻ったとき、表示中の先頭写真が維持される。
 
-- [ ] **Step 5: 設定JSONの異常値を確認する**
+- [x] **Step 5: 設定JSONの異常値を確認する**
 
 テストで `999` / `-1` / 文字列を確認済み。必要ならデモDBの `app_settings` を手で書き換え、
 アプリ起動時に他の設定が初期化されないことを確認する。
@@ -457,7 +462,7 @@ Expected: PASS。
 **Files:**
 - None
 
-- [ ] **Step 1: 変更をコミットする**
+- [x] **Step 1: 変更をコミットする**
 
 ```bash
 git add crates/core/src/settings.rs crates/ui/src/ui/theme.rs crates/ui/src/ui/gallery.rs \
@@ -466,7 +471,7 @@ git add crates/core/src/settings.rs crates/ui/src/ui/theme.rs crates/ui/src/ui/g
 git commit -m "feat(ui): 写真グリッドの間隔とカード角丸を設定可能にする (#487)"
 ```
 
-- [ ] **Step 2: PR を作る**
+- [x] **Step 2: PR を作る**
 
 ```bash
 git push -u origin feat/487-grid-spacing
@@ -474,12 +479,12 @@ gh pr create --title "feat(ui): 写真グリッドの間隔とカード角丸を
   --body "Closes #487" --label enhancement
 ```
 
-- [ ] **Step 3: CI green を確認して merge する**
+- [x] **Step 3: CI green を確認して merge する**
 
 `ci-watch` の手順で `CI` を監視する。green 後 `gh pr merge <n> --merge`、
 `main` へ戻って pull する。作業 worktree とブランチを削除する。
 
-- [ ] **Step 4: Issue #487 のクローズを確認する**
+- [x] **Step 4: Issue #487 のクローズを確認する**
 
 PR 本文の `Closes #487` で自動クローズされる。クローズされない場合は
 ユーザーへ確認してから手動でクローズする。
