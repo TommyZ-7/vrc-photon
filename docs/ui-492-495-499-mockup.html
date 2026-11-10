@@ -1,0 +1,567 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VRC PhotoN — セッション見出しの操作と分断表示 モック (#495 / #499)</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --font: "Inter", "Noto Sans JP", "Hiragino Sans", "Yu Gothic UI", system-ui, -apple-system, sans-serif;
+    --text: #eef4ff;
+    --muted: #a8b4ca;
+    --dim: #7f8ba3;
+    --faint: #5e6a81;
+    --accent: #8bcbff;
+    --accent-strong: #2f7fd8;
+    --green: #7ee2b8;
+    --amber: #f4c878;
+    --line: rgba(255, 255, 255, 0.105);
+    --line-strong: rgba(255, 255, 255, 0.17);
+    --line-soft: rgba(255, 255, 255, 0.065);
+    --bg: #05070d;
+    --panel: #0d1420;
+    --panel-deep: #080d15;
+    --panel-inner: #111927;
+    --panel-card: #0b111c;
+    --panel-sidebar: #0b111b;
+    --shadow: rgba(0, 0, 0, 0.45);
+    --r-card: 22px;
+    --ease: cubic-bezier(0.22, 0.8, 0.24, 1);
+  }
+  * { box-sizing: border-box; }
+  html { overflow-x: hidden; }
+  body {
+    margin: 0;
+    min-width: 320px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -2;
+    background:
+      radial-gradient(ellipse 58% 54% at 10% 2%, rgba(54, 107, 255, 0.28), transparent 66%),
+      radial-gradient(ellipse 46% 52% at 92% 6%, rgba(255, 86, 181, 0.12), transparent 68%),
+      radial-gradient(ellipse 52% 48% at 64% 104%, rgba(30, 202, 178, 0.10), transparent 68%),
+      linear-gradient(140deg, #04060c 0%, #0a0f1e 44%, #060811 100%);
+  }
+  .page { width: min(1320px, calc(100% - 48px)); margin: 0 auto; padding: 44px 0 76px; }
+  .masthead { display: flex; align-items: flex-start; justify-content: space-between; gap: 28px; margin-bottom: 28px; }
+  .eyebrow { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; }
+  .issue-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border: 1px solid rgba(139,203,255,.24); border-radius: 999px; background: rgba(139,203,255,.08); color: var(--accent); font-size: 10px; letter-spacing: .08em; }
+  h1 { margin: 11px 0 9px; font-size: clamp(25px, 3vw, 36px); line-height: 1.22; letter-spacing: -.035em; font-weight: 620; }
+  .lede { max-width: 800px; margin: 0; color: var(--muted); font-size: 13px; }
+  .lede b { color: var(--text); font-weight: 560; }
+  .meta-card { flex: none; min-width: 268px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 16px; background: rgba(13,20,32,.72); }
+  .meta-row { display: flex; justify-content: space-between; gap: 18px; padding: 4px 0; color: var(--dim); font-size: 11px; }
+  .meta-row b { color: var(--text); font-weight: 550; }
+  .meta-row + .meta-row { border-top: 1px solid var(--line-soft); }
+  .section { margin-top: 40px; }
+  .section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 20px; margin-bottom: 14px; }
+  .section-head h2 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
+  .section-head h2 span { color: var(--dim); font-weight: 400; font-size: 12px; margin-left: 8px; }
+  .section-head p { margin: 0; max-width: 720px; color: var(--muted); font-size: 11.5px; text-align: right; }
+  .mock { border: 1px solid var(--line-soft); border-radius: 16px; background: rgba(9,14,23,.72); padding: 12px; }
+  .mock + .mock { margin-top: 14px; }
+  .mock-label { display: flex; align-items: center; gap: 8px; margin: 0 2px 9px; color: var(--muted); font-size: 10.5px; letter-spacing: .06em; }
+  .mock-label b { color: var(--text); font-weight: 600; }
+  .mock-label .tag { padding: 1px 7px; border-radius: 999px; font-size: 9px; letter-spacing: .02em; }
+  .mock-label .tag.before { background: rgba(244,200,120,.10); color: var(--amber); border: 1px solid rgba(244,200,120,.28); }
+  .mock-label .tag.after { background: rgba(126,226,184,.10); color: var(--green); border: 1px solid rgba(126,226,184,.28); }
+  .mock-label .tag.rec { background: rgba(139,203,255,.10); color: var(--accent); border: 1px solid rgba(139,203,255,.28); }
+  .gallery-card { overflow: hidden; border: 1px solid var(--line-soft); border-radius: 17px; background: var(--panel-card); box-shadow: 0 18px 44px var(--shadow); }
+  .gallery-head { display: flex; align-items: center; gap: 9px; height: 42px; padding: 0 14px; border-bottom: 1px solid rgba(255,255,255,.06); }
+  .gallery-month { font-size: 12px; font-weight: 600; }
+  .gallery-count { color: var(--dim); font-size: 9.5px; font-variant-numeric: tabular-nums; }
+  .gallery-head .sp { flex: 1; }
+  .seg { display: flex; gap: 2px; padding: 2px; border: 1px solid rgba(255,255,255,.06); border-radius: 8px; background: var(--panel-deep); }
+  .seg button { appearance: none; border: 1px solid transparent; background: transparent; color: var(--dim); padding: 4px 9px; border-radius: 6px; font-size: 9px; cursor: default; }
+  .seg button.on { border-color: var(--accent-strong); background: var(--accent-strong); color: #fff; font-weight: 600; }
+  .gallery-body { position: relative; padding: 11px 34px 14px 12px; }
+  .session-block { border-radius: 12px; }
+  .session-block + .session-block { margin-top: 2px; }
+  .session-head { display: flex; align-items: center; gap: 11px; min-height: 72px; padding: 9px 12px; border: 1px solid var(--line-soft); border-radius: 12px; background: var(--panel-inner); transition: background .14s var(--ease), box-shadow .14s var(--ease); }
+  .session-head.hover-demo { background: #162031; box-shadow: inset 0 0 0 1px rgba(139,203,255,.22); cursor: pointer; }
+  .session-head .click-hint { margin-left: 4px; flex: none; color: var(--faint); font-size: 8px; white-space: nowrap; }
+  .cover { width: 96px; height: 54px; flex: none; border-radius: 8px; border: 1px solid rgba(255,255,255,.08); overflow: hidden; position: relative; }
+  .cover::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, transparent 48%, rgba(0,0,0,.20)); }
+  .scene-a { background: linear-gradient(160deg, #0d1b3e, #274b8f 46%, #7fb2e5 78%, #dceefc); }
+  .scene-b { background: linear-gradient(150deg, #1c0f38, #5b21b6 48%, #d6336c 82%, #ff9e5e); }
+  .scene-c { background: linear-gradient(170deg, #0e2e3d, #14607e 50%, #4fb3c9 82%, #d9f4f6); }
+  .scene-d { background: linear-gradient(165deg, #173d24, #2e6b3e 45%, #79b657 80%, #d8efb8); }
+  .sbody { min-width: 0; flex: 1; }
+  .sname { color: var(--text); font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .smeta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 3px; color: var(--dim); font-size: 9px; }
+  .smeta .mono { font-variant-numeric: tabular-nums; }
+  .smeta b { color: var(--muted); font-weight: 560; }
+  .live { display: inline-flex; align-items: center; gap: 4px; padding: 1px 6px; border: 1px solid rgba(126,226,184,.24); border-radius: 999px; background: rgba(126,226,184,.08); color: var(--green); font-size: 8px; font-weight: 600; }
+  .live i { width: 4px; height: 4px; border-radius: 50%; background: var(--green); }
+  .chev { width: 22px; height: 22px; flex: none; display: grid; place-items: center; border: none; background: transparent; color: var(--muted); font-size: 10px; cursor: pointer; transition: color .14s var(--ease); }
+  .chev:hover { background: transparent; color: var(--text); }
+  .chev:focus-visible { outline: 1px solid rgba(139,203,255,.55); outline-offset: 2px; border-radius: 6px; }
+  .chev.size-24 { width: 24px; height: 24px; font-size: 10px; }
+  .chev.size-32 { width: 32px; height: 32px; font-size: 12px; }
+  .chev.size-36 { width: 36px; height: 36px; font-size: 14px; }
+  .chev.size-40 { width: 40px; height: 40px; font-size: 15px; }
+  .photos-clip { overflow: hidden; }
+  .photo-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; padding: 10px 0 16px; }
+  .photo-card { overflow: hidden; border: 1px solid rgba(255,255,255,.065); border-radius: 11px; background: rgba(17,25,39,.72); }
+  .photo-visual { aspect-ratio: 3 / 2; }
+  .photo-info { padding: 7px 8px 8px; }
+  .photo-title { display: block; color: var(--text); font-size: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .photo-meta { display: flex; justify-content: space-between; gap: 6px; margin-top: 2px; color: var(--dim); font-size: 7.5px; }
+  .date-label { display: flex; align-items: center; gap: 10px; height: 30px; margin: 2px 0; color: var(--dim); font-size: 9px; }
+  .date-label::before, .date-label::after { content: ""; height: 1px; flex: 1; background: var(--line-soft); }
+  .continuation { display: flex; align-items: center; gap: 9px; height: 44px; margin: 2px 0; padding: 0 12px; border-left: 2px solid rgba(139,203,255,.32); border-radius: 0 9px 9px 0; background: linear-gradient(90deg, rgba(139,203,255,.075), transparent 72%); color: var(--muted); font-size: 10px; }
+  .continuation .cname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .continuation .cbadge { flex: none; padding: 1px 6px; border-radius: 999px; background: rgba(139,203,255,.12); color: var(--accent); font-size: 8px; font-weight: 600; }
+  .continuation .ccount { flex: none; color: var(--dim); font-variant-numeric: tabular-nums; }
+  .temp-head { position: absolute; left: 46px; right: 46px; z-index: 2; display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px; border: 1px solid rgba(139,203,255,.28); border-radius: 9px; background: rgba(17,25,39,.94); box-shadow: 0 10px 28px rgba(0,0,0,.35); color: var(--muted); font-size: 9.5px; }
+  .temp-head b { color: var(--text); font-weight: 600; }
+  .temp-head .fade { margin-left: auto; color: var(--faint); font-size: 8px; }
+  .rail { position: absolute; top: 10px; right: 8px; bottom: 12px; width: 20px; pointer-events: none; }
+  .rail::before { content: ""; position: absolute; top: 20px; bottom: 20px; right: 6px; width: 2px; border-radius: 2px; background: var(--line-soft); }
+  .rail .marker { position: absolute; right: 3px; width: 8px; height: 8px; border-radius: 3px; background: rgba(255,255,255,.38); }
+  .rail .marker.m1 { top: 86px; }
+  .rail .marker.m2 { top: 210px; }
+  .rail .pill { position: absolute; top: 150px; right: -64px; display: grid; place-items: center; width: 80px; height: 18px; border-radius: 9px; background: rgba(17,25,39,.95); border: 1px solid var(--line); color: var(--text); font-size: 9px; }
+  .gap-note { display: flex; align-items: center; gap: 6px; margin-top: 7px; color: var(--faint); font-size: 9px; }
+  .gap-note i { display: block; width: 18px; height: 1px; background: var(--accent); opacity: .55; }
+  .size-lab { display: grid; gap: 10px; }
+  .size-row { display: grid; grid-template-columns: 140px minmax(0, 1fr) 190px; align-items: center; gap: 14px; padding: 10px 12px; border: 1px solid var(--line-soft); border-radius: 12px; background: rgba(11,17,27,.5); }
+  .size-row.rec { border-color: rgba(126,226,184,.24); background: rgba(126,226,184,.035); }
+  .size-copy b { display: block; font-size: 11.5px; font-weight: 600; }
+  .size-copy span { display: block; margin-top: 2px; color: var(--dim); font-size: 9.5px; }
+  .size-demo { display: flex; align-items: center; min-height: 58px; padding: 6px 10px; border: 1px solid var(--line-soft); border-radius: 11px; background: var(--panel-inner); }
+  .size-demo .sbody { min-width: 0; }
+  .size-demo .sname { font-size: 11px; }
+  .size-demo .smeta { margin-top: 1px; font-size: 8px; }
+  .size-demo .chev { margin-left: auto; }
+  .size-meta { color: var(--dim); font-size: 9.5px; line-height: 1.7; }
+  .size-meta code { color: var(--text); font-size: 9px; }
+  .rec-pill { display: inline-flex; align-items: center; padding: 1px 7px; border-radius: 999px; background: rgba(126,226,184,.10); border: 1px solid rgba(126,226,184,.24); color: var(--green); font-size: 8.5px; font-weight: 600; }
+  .compare { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+  .compare.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .variant { padding: 12px; border: 1px solid var(--line-soft); border-radius: 15px; background: rgba(11,17,27,.55); }
+  .variant.rec { border-color: rgba(126,226,184,.26); background: rgba(126,226,184,.035); }
+  .variant-head { display: flex; align-items: center; gap: 7px; margin-bottom: 8px; }
+  .variant-head b { font-size: 11px; font-weight: 600; }
+  .variant-head span { color: var(--dim); font-size: 9px; }
+  .variant .gallery-body { padding: 8px 26px 10px 8px; }
+  .variant .photo-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; padding: 7px 0 9px; }
+  .variant .photo-info { padding: 5px 6px 6px; }
+  .variant .photo-title { font-size: 7.5px; }
+  .variant .photo-meta { font-size: 6.5px; }
+  .variant .session-head { min-height: 58px; padding: 7px 9px; }
+  .variant .cover { width: 72px; height: 42px; }
+  .variant .sname { font-size: 10px; }
+  .variant .smeta { font-size: 7.5px; gap: 7px; }
+  .storyboard { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .frame { padding: 11px; border: 1px solid var(--line-soft); border-radius: 13px; background: rgba(11,17,27,.72); }
+  .frame-label { display: flex; justify-content: space-between; margin-bottom: 8px; color: var(--dim); font-size: 9px; }
+  .frame-label b { color: var(--text); font-weight: 600; }
+  .behavior-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 16px; }
+  .behavior { padding: 15px 16px; border: 1px solid var(--line-soft); border-radius: 15px; background: rgba(13,20,32,.66); }
+  .behavior h3 { margin: 0 0 7px; font-size: 11.5px; font-weight: 600; }
+  .behavior ul { margin: 0; padding-left: 16px; color: var(--muted); font-size: 10.5px; }
+  .behavior li + li { margin-top: 3px; }
+  .behavior p { margin: 0; color: var(--muted); font-size: 10.5px; }
+  .decisions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .decision { padding: 14px 16px; border: 1px solid var(--line-soft); border-radius: 14px; background: rgba(13,20,32,.66); }
+  .decision h3 { margin: 0 0 4px; font-size: 11.5px; font-weight: 600; }
+  .decision p { margin: 0; color: var(--muted); font-size: 10.5px; }
+  .decision .rec { display: inline-block; margin-top: 6px; padding: 2px 7px; border-radius: 999px; background: rgba(126,226,184,.10); color: var(--green); font-size: 9px; }
+  .note { margin-top: 14px; padding: 13px 17px; border: 1px solid var(--line-soft); border-radius: 14px; background: rgba(13,20,32,.66); color: var(--muted); font-size: 11.5px; line-height: 1.72; }
+  .note b { color: var(--text); font-weight: 600; }
+  .note ul { margin: 4px 0 0 17px; padding: 0; }
+  .note li + li { margin-top: 2px; }
+  @media (max-width: 980px) {
+    .masthead, .section-head { display: block; }
+    .meta-card { margin-top: 16px; }
+    .section-head p { text-align: left; margin-top: 6px; }
+    .compare, .compare.three, .behavior-grid, .decisions, .storyboard { grid-template-columns: 1fr; }
+    .size-row { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="masthead">
+    <div>
+      <div class="eyebrow"><span class="issue-chip">Issue #495</span><span class="issue-chip">Issue #499</span> UI MOCK</div>
+      <h1>セッション見出しの操作と、分断セッションの継続表示</h1>
+      <p class="lede">
+        #495 はセッション見出しの格納・展開操作を押しやすくする修正です。
+        #499 は同じセッションの写真が未紐付け写真で分断されたとき、2 区間目以降に
+        継続表示を出すかを決めるための比較です。どちらも新しいデータは増やしません。
+      </p>
+    </div>
+    <div class="meta-card">
+      <div class="meta-row"><span>対象画面</span><b>Photos / セッション表示</b></div>
+      <div class="meta-row"><span>#495 推奨</span><b>カード全体クリック + 三角のみ（36 × 36 ヒット領域）</b></div>
+      <div class="meta-row"><span>#499 推奨</span><b>コンパクトな継続見出し</b></div>
+      <div class="meta-row"><span>承認</span><b>Plannotator</b></div>
+    </div>
+  </header>
+
+  <section class="section">
+    <div class="section-head">
+      <h2>#495 格納・展開の操作 <span>カード全体と三角</span></h2>
+      <p>格納・展開はセッション見出しカード全体で行います。右端の三角は残しますが、背景・枠・hover 面は付けず、36×36 px のヒット領域だけを持たせます。カード側のクリックと二重に発火しないよう、三角側で伝播を止めます。</p>
+    </div>
+
+    <div class="mock">
+      <div class="mock-label"><span class="tag before">現状</span><b>24 × 24 px</b> — 三角形のみ、背景なし</div>
+      <div class="size-lab">
+        <div class="size-row">
+          <div class="size-copy"><b>現状</b><span>24 × 24 px</span></div>
+          <div class="size-demo">
+            <div class="sbody"><div class="sname">Starlight Observatory</div><div class="smeta"><span class="mono">11/9 21:14 –</span><span><b>写真 12 枚</b></span><span>同席 Aoi、Ren</span></div></div>
+            <button class="chev size-24" aria-label="折りたたむ">▾</button>
+          </div>
+          <div class="size-meta">クリック判定が小さく、見出しの高さ 78 px に対して埋もれる。<br><code>Button::small().ghost()</code></div>
+        </div>
+
+        <div class="size-row">
+          <div class="size-copy"><b>32 × 32 px</b><span>最小ライン</span></div>
+          <div class="size-demo">
+            <div class="sbody"><div class="sname">Starlight Observatory</div><div class="smeta"><span class="mono">11/9 21:14 –</span><span><b>写真 12 枚</b></span><span>同席 Aoi、Ren</span></div></div>
+            <button class="chev size-32" aria-label="折りたたむ">▾</button>
+          </div>
+          <div class="size-meta">Issue の最低ライン。行内の余白は確保できるが、矢印はまだ小さい。</div>
+        </div>
+
+        <div class="size-row rec">
+          <div class="size-copy"><b>36 × 36 px</b><span>推奨</span> <span class="rec-pill">RECOMMENDED</span></div>
+          <div class="size-demo">
+            <div class="sbody"><div class="sname">Starlight Observatory</div><div class="smeta"><span class="mono">11/9 21:14 –</span><span><b>写真 12 枚</b></span><span>同席 Aoi、Ren</span></div></div>
+            <button class="chev size-36" aria-label="折りたたむ">▾</button>
+          </div>
+          <div class="size-meta">78 px の見出し行に収まり、44 px の最小推奨にも近い。ヒット領域 36×36 px、見た目は三角のみ。hover はカード全体、キーボード focus はリング。<br><code>36 × 36 px / 三角のみ</code></div>
+        </div>
+
+        <div class="size-row">
+          <div class="size-copy"><b>40 × 40 px</b><span>大きめ</span></div>
+          <div class="size-demo">
+            <div class="sbody"><div class="sname">Starlight Observatory</div><div class="smeta"><span class="mono">11/9 21:14 –</span><span><b>写真 12 枚</b></span><span>同席 Aoi、Ren</span></div></div>
+            <button class="chev size-40" aria-label="折りたたむ">▾</button>
+          </div>
+          <div class="size-meta">さらに押しやすいが、見出し行の高さに対してヒット領域が支配的になり、窮屈に見える。</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="mock">
+      <div class="mock-label"><span class="tag after">変更後</span><b>右ガターと月ピルの安全域</b> — #500 と同時に実装する想定</div>
+      <div class="gallery-card">
+        <div class="gallery-head">
+          <span class="gallery-month">2026年11月</span>
+          <span class="gallery-count">128 / 2,480 枚</span>
+          <span class="sp"></span>
+          <div class="seg"><button>時系列</button><button class="on">セッション</button></div>
+        </div>
+        <div class="gallery-body">
+          <div class="session-block">
+            <div class="session-head">
+              <div class="cover scene-a"></div>
+              <div class="sbody">
+                <div class="sname">Starlight Observatory</div>
+                <div class="smeta"><span class="mono">11/9 21:14 –</span><span><b>写真 12 枚</b></span><span>同席 Aoi、Ren、Mika 他2名</span><span class="live"><i></i>滞在中</span></div>
+              </div>
+              <button class="chev size-36" aria-label="折りたたむ">▾</button>
+            </div>
+            <div class="photos-clip">
+              <div class="photo-grid">
+                <div class="photo-card"><div class="photo-visual scene-a"></div><div class="photo-info"><span class="photo-title">VRChat_2026-11-09_21-14-05</span><div class="photo-meta"><span>11/9 21:14</span><span>2.1 MB</span></div></div></div>
+                <div class="photo-card"><div class="photo-visual scene-b"></div><div class="photo-info"><span class="photo-title">VRChat_2026-11-09_21-16-22</span><div class="photo-meta"><span>11/9 21:16</span><span>2.4 MB</span></div></div></div>
+                <div class="photo-card"><div class="photo-visual scene-c"></div><div class="photo-info"><span class="photo-title">VRChat_2026-11-09_21-18-41</span><div class="photo-meta"><span>11/9 21:18</span><span>1.9 MB</span></div></div></div>
+                <div class="photo-card"><div class="photo-visual scene-d"></div><div class="photo-info"><span class="photo-title">VRChat_2026-11-09_21-20-10</span><div class="photo-meta"><span>11/9 21:20</span><span>2.0 MB</span></div></div></div>
+              </div>
+            </div>
+          </div>
+          <div class="date-label">11/9 ・ セッションに属さない写真 2枚</div>
+          <div class="session-block">
+            <div class="session-head">
+              <div class="cover scene-b"></div>
+              <div class="sbody">
+                <div class="sname">Neon District 2099</div>
+                <div class="smeta"><span class="mono">11/8 22:03 – 23:47</span><span><b>写真 8 枚</b></span><span>同席 Sora、Yui、Kaito 他12名</span></div>
+              </div>
+              <button class="chev size-36" aria-label="折りたたむ">▾</button>
+            </div>
+          </div>
+          <div class="rail"><span class="marker m1"></span><span class="marker m2"></span><span class="pill">2026年11月</span></div>
+        </div>
+      </div>
+      <div class="gap-note"><i></i>見出しカードの面は右ガター（年レール／スクロールバー）の手前で終わり、三角と滞在中バッジは月ピルの左に退避する。</div>
+    </div>
+
+    <div class="mock">
+      <div class="mock-label"><span class="tag after">変更後</span><b>カード全体が折りたたみ対象</b> — 右端の三角は残す</div>
+      <div class="compare">
+        <div class="frame">
+          <div class="frame-label"><b>通常</b><span>カード面は panel_inner</span></div>
+          <div class="session-head">
+            <div class="cover scene-a"></div>
+            <div class="sbody"><div class="sname">Starlight Observatory</div><div class="smeta"><span class="mono">11/9 21:14 –</span><span><b>写真 12 枚</b></span><span>同席 Aoi、Ren</span></div></div>
+            <span class="click-hint">カードをクリック</span>
+            <button class="chev size-36" aria-label="折りたたむ">▾</button>
+          </div>
+        </div>
+        <div class="frame">
+          <div class="frame-label"><b>hover</b><span>カード全体の背景 + ポインタ</span></div>
+          <div class="session-head hover-demo">
+            <div class="cover scene-a"></div>
+            <div class="sbody"><div class="sname">Starlight Observatory</div><div class="smeta"><span class="mono">11/9 21:14 –</span><span><b>写真 12 枚</b></span><span>同席 Aoi、Ren</span></div></div>
+            <span class="click-hint">クリックで折りたたむ</span>
+            <button class="chev size-36" aria-label="折りたたむ">▾</button>
+          </div>
+        </div>
+      </div>
+      <div class="gap-note"><i></i>三角側は <code>stop_propagation()</code> でカード側のクリックを止める。カード上から始まるドラッグスクロールでは、押下と離しが同じ要素で成立したときだけ折りたたむ。</div>
+    </div>
+
+    <div class="behavior-grid">
+      <div class="behavior">
+        <h3>クリック領域</h3>
+        <ul>
+          <li>カード全体のクリックで折りたたみ・展開する。</li>
+          <li>右端の三角は 36×36 px のヒット領域を確保し、キーボードと支援技術の入口にする。</li>
+          <li>三角のクリックは <code>stop_propagation()</code> でカードへ伝播させない。</li>
+        </ul>
+      </div>
+      <div class="behavior">
+        <h3>状態の提示</h3>
+        <ul>
+          <li>三角は背景・枠・hover 面を出さない。カード全体に hover 背景とポインタカーソルを付ける。</li>
+          <li><code>accessibility_label</code> は「折りたたむ」「展開する」。</li>
+          <li><code>toggled(!collapsed)</code> で開閉状態を支援技術へ伝える。</li>
+        </ul>
+      </div>
+      <div class="behavior">
+        <h3>キーボードとドラッグ</h3>
+        <ul>
+          <li>Tab で三角にフォーカスし、Enter / Space で折りたたみ・展開。</li>
+          <li>カード上から始まるドラッグスクロールでは誤作動しない。</li>
+          <li>押下と離しが同じ要素で成立するクリック条件を実装時に確認する。</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="decisions">
+      <div class="decision">
+        <h3>Q8-1. 三角の見た目とヒット領域</h3>
+        <p>三角の背景・枠は消し、三角のみを見せる。ヒット領域は 36×36 px を確保する。32 px は最低ライン、40 px は見出しに対して大きすぎる。</p>
+        <span class="rec">推奨: 36 × 36 px / 三角のみ</span>
+      </div>
+      <div class="decision">
+        <h3>Q8-2. クリック対象</h3>
+        <p>カード全体を折りたたみ対象にし、右端の三角は残す。三角側で <code>stop_propagation()</code> して二重発火を防ぐ。カード全体に hover 背景とポインタカーソルを付ける。</p>
+        <span class="rec">推奨: カード全体 + 三角</span>
+      </div>
+      <div class="decision">
+        <h3>Q8-3. ドラッグ誤作動</h3>
+        <p>カード上から始まるドラッグスクロールで折りたたみが発火しないよう、押下と離しが同じ要素で成立するクリック条件を実装時に確認する。必要なら押下位置からの移動距離でガードする。</p>
+        <span class="rec">推奨: 同一要素のクリックのみ</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-head">
+      <h2>#499 分断されたセッション <span>2 区間目以降の見せ方</span></h2>
+      <p>同じ <code>session_id</code> の写真が未紐付け写真で分断されると、現在は 2 区間目以降が見出しなしで並びます。どのセッションか分かるようにするため、3 案を比較します。</p>
+    </div>
+
+    <div class="compare three">
+      <div class="variant">
+        <div class="variant-head"><b>A. フル見出しを繰り返す</b><span>重い</span></div>
+        <div class="gallery-card">
+          <div class="gallery-body">
+            <div class="session-block">
+              <div class="session-head">
+                <div class="cover scene-a"></div>
+                <div class="sbody"><div class="sname">Starlight Observatory</div><div class="smeta"><span class="mono">11/9 21:14 –</span><span><b>写真 3 枚</b></span></div></div>
+                <button class="chev size-36" aria-label="折りたたむ">▾</button>
+              </div>
+              <div class="photos-clip"><div class="photo-grid">
+                <div class="photo-card"><div class="photo-visual scene-a"></div><div class="photo-info"><span class="photo-title">21:14:05</span></div></div>
+                <div class="photo-card"><div class="photo-visual scene-b"></div><div class="photo-info"><span class="photo-title">21:16:22</span></div></div>
+              </div></div>
+            </div>
+            <div class="date-label">11/9 ・ セッションに属さない写真 1枚</div>
+            <div class="session-block">
+              <div class="session-head">
+                <div class="cover scene-a"></div>
+                <div class="sbody"><div class="sname">Starlight Observatory</div><div class="smeta"><span class="mono">11/9 21:14 –</span><span><b>写真 3 枚</b></span></div></div>
+                <button class="chev size-36" aria-label="折りたたむ">▾</button>
+              </div>
+              <div class="photos-clip"><div class="photo-grid">
+                <div class="photo-card"><div class="photo-visual scene-c"></div><div class="photo-info"><span class="photo-title">21:18:41</span></div></div>
+                <div class="photo-card"><div class="photo-visual scene-d"></div><div class="photo-info"><span class="photo-title">21:20:10</span></div></div>
+              </div></div>
+            </div>
+          </div>
+        </div>
+        <p class="note">同じカバー・同じ時刻・同じ枚数が並び、同じセッションだと分かりやすい一方、縦方向のコストが大きい。折りたたみの三角が複数になり、どれが全体を畳むのか曖昧になる。</p>
+      </div>
+
+      <div class="variant rec">
+        <div class="variant-head"><b>B. コンパクトな継続見出し</b><span>推奨</span> <span class="rec-pill">RECOMMENDED</span></div>
+        <div class="gallery-card">
+          <div class="gallery-body">
+            <div class="session-block">
+              <div class="session-head">
+                <div class="cover scene-a"></div>
+                <div class="sbody"><div class="sname">Starlight Observatory</div><div class="smeta"><span class="mono">11/9 21:14 –</span><span><b>写真 3 枚</b></span></div></div>
+                <button class="chev size-36" aria-label="折りたたむ">▾</button>
+              </div>
+              <div class="photos-clip"><div class="photo-grid">
+                <div class="photo-card"><div class="photo-visual scene-a"></div><div class="photo-info"><span class="photo-title">21:14:05</span></div></div>
+                <div class="photo-card"><div class="photo-visual scene-b"></div><div class="photo-info"><span class="photo-title">21:16:22</span></div></div>
+              </div></div>
+            </div>
+            <div class="date-label">11/9 ・ セッションに属さない写真 1枚</div>
+            <div class="continuation"><span class="cname">Starlight Observatory</span><span class="cbadge">続き</span><span class="ccount">1枚</span></div>
+            <div class="photos-clip"><div class="photo-grid">
+              <div class="photo-card"><div class="photo-visual scene-c"></div><div class="photo-info"><span class="photo-title">21:18:41</span></div></div>
+              <div class="photo-card"><div class="photo-visual scene-d"></div><div class="photo-info"><span class="photo-title">21:20:10</span></div></div>
+            </div></div>
+          </div>
+        </div>
+        <p class="note">44 px の 1 行で、ワールド名・「続き」・区間枚数だけを示す。折りたたみは最初のフル見出しカード（とその三角）だけに持たせ、状態はセッション全体で 1 つに保つ。</p>
+      </div>
+
+      <div class="variant">
+        <div class="variant-head"><b>C. ジャンプ時だけ一時表示</b><span>軽いが文脈が消える</span></div>
+        <div class="gallery-card">
+          <div class="gallery-body">
+            <div class="session-block">
+              <div class="session-head">
+                <div class="cover scene-a"></div>
+                <div class="sbody"><div class="sname">Starlight Observatory</div><div class="smeta"><span class="mono">11/9 21:14 –</span><span><b>写真 3 枚</b></span></div></div>
+                <button class="chev size-36" aria-label="折りたたむ">▾</button>
+              </div>
+              <div class="photos-clip"><div class="photo-grid">
+                <div class="photo-card"><div class="photo-visual scene-a"></div><div class="photo-info"><span class="photo-title">21:14:05</span></div></div>
+                <div class="photo-card"><div class="photo-visual scene-b"></div><div class="photo-info"><span class="photo-title">21:16:22</span></div></div>
+              </div></div>
+            </div>
+            <div class="date-label">11/9 ・ セッションに属さない写真 1枚</div>
+            <div class="temp-head"><b>Starlight Observatory</b><span>続き</span><span class="fade">2.5 秒でフェード</span></div>
+            <div class="photos-clip"><div class="photo-grid" style="padding-top:42px">
+              <div class="photo-card"><div class="photo-visual scene-c"></div><div class="photo-info"><span class="photo-title">21:18:41</span></div></div>
+              <div class="photo-card"><div class="photo-visual scene-d"></div><div class="photo-info"><span class="photo-title">21:20:10</span></div></div>
+            </div></div>
+          </div>
+        </div>
+        <p class="note">通常時は写真行だけになり、年レールやモード切替でその区間へ移動したときだけ見出しが一時的に出る。定位置の文脈がないため、スクロールで通り過ぎるとどのセッションか分からない。</p>
+      </div>
+    </div>
+
+    <div class="mock">
+      <div class="mock-label"><span class="tag rec">推奨案 B</span><b>折りたたみ時の扱い</b> — 最初の見出しに集約する</div>
+      <div class="compare">
+        <div class="frame">
+          <div class="frame-label"><b>展開中</b><span>最初の見出し + 継続見出し + 写真行</span></div>
+          <div class="gallery-card"><div class="gallery-body">
+            <div class="session-head"><div class="cover scene-a"></div><div class="sbody"><div class="sname">Starlight Observatory</div><div class="smeta"><span class="mono">11/9 21:14 –</span><span><b>写真 3 枚</b></span></div></div><button class="chev size-36" aria-label="折りたたむ">▾</button></div>
+            <div class="continuation"><span class="cname">Starlight Observatory</span><span class="cbadge">続き</span><span class="ccount">1枚</span></div>
+          </div></div>
+        </div>
+        <div class="frame">
+          <div class="frame-label"><b>折りたたみ中</b><span>最初の見出しだけ。継続見出しも隠れる</span></div>
+          <div class="gallery-card"><div class="gallery-body">
+            <div class="session-head"><div class="cover scene-a"></div><div class="sbody"><div class="sname">Starlight Observatory</div><div class="smeta"><span class="mono">11/9 21:14 –</span><span><b>写真 3 枚</b></span></div></div><button class="chev size-36" aria-label="展開する">▸</button></div>
+          </div></div>
+        </div>
+      </div>
+      <div class="gap-note"><i></i>年レールで 2 区間目の写真へジャンプしたときは、セッションを展開し、継続見出しが先頭に来る。</div>
+    </div>
+
+    <div class="behavior-grid">
+      <div class="behavior">
+        <h3>行モデル</h3>
+        <ul>
+          <li>最初の区間はフル見出し。</li>
+          <li>2 区間目以降は、展開時だけ継続見出し。</li>
+          <li>折りたたみ時は継続見出しを出さない。</li>
+          <li>年レールのアンカーは各区間の先頭行に合わせる。</li>
+        </ul>
+      </div>
+      <div class="behavior">
+        <h3>操作</h3>
+        <ul>
+          <li>継続見出しはクリック対象にしない。</li>
+          <li>折りたたみは最初のフル見出しカード（とその三角）だけ。</li>
+          <li>写真の選択・右クリック・ダブルクリックは従来どおり。</li>
+        </ul>
+      </div>
+      <div class="behavior">
+        <h3>見た目</h3>
+        <ul>
+          <li>高さ 44 px、左に細いアクセント線。</li>
+          <li>ワールド名＋「続き」バッジ＋区間枚数。</li>
+          <li>フル見出しより弱い面にして、主見出しを邪魔しない。</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="decisions">
+      <div class="decision">
+        <h3>Q9-1. 継続表示の案</h3>
+        <p>A は情報量が多いが縦に重い。C は通常時が軽いが、通り過ぎると文脈が消える。B は 44 px でセッション名を保ち、折りたたみも 1 つに集約できる。</p>
+        <span class="rec">推奨: B. コンパクトな継続見出し</span>
+      </div>
+      <div class="decision">
+        <h3>Q9-2. 折りたたみ時の継続見出し</h3>
+        <p>折りたたみ中は写真行も継続見出しも隠し、最初のフル見出しだけを残す。状態はセッション単位で 1 つ。</p>
+        <span class="rec">推奨: 継続見出しも隠す</span>
+      </div>
+      <div class="decision">
+        <h3>Q9-3. 継続見出しの操作</h3>
+        <p>クリック・折りたたみ操作は付けない。年レールのジャンプは継続見出しの位置へ着地する。</p>
+        <span class="rec">推奨: 操作なし / アンカーのみ</span>
+      </div>
+      <div class="decision">
+        <h3>Q9-4. 区間枚数の表記</h3>
+        <p>フル見出しの「写真 3 枚」はセッション全体、継続見出しはその区間の枚数を示す。誤解を避けるため「1枚」のように短くする。</p>
+        <span class="rec">推奨: 区間枚数のみ</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-head">
+      <h2>承認前に確認したいこと</h2>
+      <p>推奨案でモックを作っています。Plannotator で番号または注釈で回答してください。</p>
+    </div>
+    <div class="decisions">
+      <div class="decision"><h3>Q8-1. #495 三角の見た目</h3><p>背景・枠を消して三角のみにし、36×36 px のヒット領域を確保するか。32 / 40 のどれかへ変更するか。</p><span class="rec">推奨: 36×36 px / 三角のみ</span></div>
+      <div class="decision"><h3>Q8-2. #495 クリック対象</h3><p>カード全体を折りたたみ対象にし、三角は残すか。三角側は stop_propagation で二重発火を防ぐ。</p><span class="rec">推奨: カード全体 + 三角</span></div>
+      <div class="decision"><h3>Q8-3. #495 ドラッグ誤作動</h3><p>カード上から始まるドラッグスクロールで折りたたみが発火しないことを、実装時に確認するか。必要なら移動距離ガードを追加する。</p><span class="rec">推奨: 同一要素のクリックのみ</span></div>
+      <div class="decision"><h3>Q9-1. #499 継続表示</h3><p>A フル見出し / B コンパクト継続 / C ジャンプ時だけ一時表示のどれにするか。</p><span class="rec">推奨: B</span></div>
+      <div class="decision"><h3>Q9-2. #499 折りたたみ</h3><p>折りたたみ中は継続見出しも隠し、最初の見出しだけを残すか。</p><span class="rec">推奨: 隠す</span></div>
+      <div class="decision"><h3>Q9-3. #499 操作</h3><p>継続見出しをクリック不可にし、年レールのアンカーだけに使うか。</p><span class="rec">推奨: 操作なし</span></div>
+      <div class="decision"><h3>Q9-4. #499 枚数</h3><p>継続見出しにはセッション全体ではなく、その区間の枚数を出すか。</p><span class="rec">推奨: 区間枚数</span></div>
+    </div>
+    <div class="note">
+      <b>実装メモ</b>
+      <ul>
+        <li>#495 は Phase 3（#492 / #500 と同時）に実装する。カード全体をクリック対象にし、三角は背景・枠を消して 36×36 px のヒット領域だけを持たせる。<code>stop_propagation()</code> でカード側と分離する。<code>SESSION_HEADER_CONTROL_INSET = 50 px</code> で月ピルの左へ退避する。</li>
+        <li>#499 は Phase 5 の単独 PR。承認された案に合わせて <code>SessionRowKind::Continuation</code>、高さ 44 px、i18n キーを決める。</li>
+        <li>折りたたみ状態はアプリ起動中だけ保持し、再起動では保存しない。索引再読込時は残存セッションだけ引き継ぐ。</li>
+      </ul>
+    </div>
+  </section>
+</div>
+</body>
+</html>

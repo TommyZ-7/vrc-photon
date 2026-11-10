@@ -405,6 +405,7 @@ AI タグ付けカードは、有効化 / 自動 / バックログのスイッ�
 - 実装計画: [2026-10-27-glass-ribbon-ui.md](superpowers/plans/2026-10-27-glass-ribbon-ui.md)
 - モック: [ui-glass-ribbon-mockup.html](ui-glass-ribbon-mockup.html)
 - セッション表示の設計・モック: [2026-11-09-session-groups-design.md](superpowers/specs/2026-11-09-session-groups-design.md) / [ui-session-groups-mockup.html](ui-session-groups-mockup.html)
+- セッション表示フォローアップ #492–#501: [2026-11-10-issue-492-501-followups.md](superpowers/plans/2026-11-10-issue-492-501-followups.md) / [ui-492-495-499-mockup.html](ui-492-495-499-mockup.html)
 - 連携一覧の背景・セッション折りたたみのモック: [ui-477-478-followup-mockup.html](ui-477-478-followup-mockup.html)
 - 旧UI設計: [2026-10-22-ui-redesign-design.md](superpowers/specs/2026-10-22-ui-redesign-design.md)
 - Issue: [#118 ガラス背景リボンUI](https://github.com/TommyZ-7/vrc-photon/issues/118)
