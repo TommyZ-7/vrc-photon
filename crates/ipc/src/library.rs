@@ -94,3 +94,12 @@ pub struct PhotoSearch {
     pub limit: u32,
     pub offset: u32,
 }
+
+/// A random sample of photos matching a filter. `total` is the number of
+/// matches before sampling.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RandomPhotoSearch {
+    pub photos: Vec<PhotoSummary>,
+    pub total: i64,
+    pub limit: u32,
+}
