@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use gpui_kit::component::window_paddings;
 use gpui_kit::{Bounds, Edges, Pixels, Size, Window, point, px, size};
 use vrc_photon_core::model::{CompressionFormat, CompressionProfile};
-use vrc_photon_core::settings::CardSize;
+use vrc_photon_core::settings::{CardSize, UI_GRID_GAP_DEFAULT};
 use vrc_photon_i18n::tr;
 
 pub(crate) use crate::ui::palette::{Palette, lerp_color, with_alpha};
@@ -25,7 +25,7 @@ pub(crate) const CARD_META_LINE_HEIGHT: f32 = 15.0;
 /// Small vertical breathing room reserved inside each library row. The
 /// horizontal gap between cards is [`GRID_GAP`].
 pub(crate) const CARD_ROW_GAP: f32 = 14.0;
-pub(crate) const GRID_GAP: f32 = 14.0;
+pub(crate) const GRID_GAP: f32 = UI_GRID_GAP_DEFAULT as f32;
 pub(crate) const INSPECTOR_PREVIEW_HEIGHT: f32 = 168.0;
 pub(crate) const INSPECTOR_SHORT_PREVIEW_HEIGHT: f32 = 118.0;
 /// Shell padding: 14px around the window and between the sidebar, header, and
@@ -414,8 +414,8 @@ pub(crate) fn centered_viewer_rect(
     )
 }
 
-pub(crate) fn grid_columns(available_width: f32, min_card_width: f32) -> usize {
-    (((available_width + GRID_GAP) / (min_card_width + GRID_GAP)).floor() as usize).max(1)
+pub(crate) fn grid_columns(available_width: f32, min_card_width: f32, grid_gap: f32) -> usize {
+    (((available_width + grid_gap) / (min_card_width + grid_gap)).floor() as usize).max(1)
 }
 
 /// Card layout for one uniform-list row of the library gallery.
@@ -440,17 +440,22 @@ pub(crate) fn library_min_card_width(size: CardSize) -> f32 {
 }
 
 /// Card width when `available_width` is split into `columns` equal cells with
-/// one [`GRID_GAP`] between neighbours.
-pub(crate) fn photo_card_width(available_width: f32, columns: usize) -> f32 {
+/// one `grid_gap` between neighbours.
+pub(crate) fn photo_card_width(available_width: f32, columns: usize, grid_gap: f32) -> f32 {
     let columns = columns.max(1) as f32;
-    ((available_width - GRID_GAP * (columns - 1.0)) / columns).max(0.0)
+    ((available_width - grid_gap * (columns - 1.0)) / columns).max(0.0)
 }
 
 /// Uniform-list row height for a 3:2 card plus the visible metadata lines and
 /// hover slack. Hiding text through the display settings tightens the row.
-pub(crate) fn photo_row_height(card_width: f32, show_world: bool, show_meta: bool) -> f32 {
+pub(crate) fn photo_row_height(
+    card_width: f32,
+    show_world: bool,
+    show_meta: bool,
+    grid_gap: f32,
+) -> f32 {
     let image_height = (card_width.max(0.0) * 2.0 / 3.0).max(0.0);
-    let mut height = image_height + CARD_ROW_GAP;
+    let mut height = image_height + grid_gap;
     if show_world || show_meta {
         height += CARD_BODY_GAP;
     }
@@ -479,6 +484,7 @@ pub(crate) fn library_grid_metrics(
     card_size: CardSize,
     show_world: bool,
     show_meta: bool,
+    grid_gap: f32,
 ) -> GridMetrics {
     grid_metrics_for(
         grid_available_width(window_width, sidebar_collapsed, inspector_collapsed),
@@ -486,6 +492,7 @@ pub(crate) fn library_grid_metrics(
         card_size,
         show_world,
         show_meta,
+        grid_gap,
     )
 }
 
@@ -497,6 +504,7 @@ pub(crate) fn search_grid_metrics(
     card_size: CardSize,
     show_world: bool,
     show_meta: bool,
+    grid_gap: f32,
 ) -> GridMetrics {
     grid_metrics_for(
         search_available_width(window_width, sidebar_collapsed),
@@ -504,6 +512,7 @@ pub(crate) fn search_grid_metrics(
         card_size,
         show_world,
         show_meta,
+        grid_gap,
     )
 }
 
@@ -513,11 +522,12 @@ fn grid_metrics_for(
     card_size: CardSize,
     show_world: bool,
     show_meta: bool,
+    grid_gap: f32,
 ) -> GridMetrics {
-    let columns = grid_columns(available_width, library_min_card_width(card_size)).max(1);
-    let card_width = photo_card_width(available_width, columns);
+    let columns = grid_columns(available_width, library_min_card_width(card_size), grid_gap).max(1);
+    let card_width = photo_card_width(available_width, columns, grid_gap);
     let image_height = card_width * 2.0 / 3.0;
-    let row_height = photo_row_height(card_width, show_world, show_meta);
+    let row_height = photo_row_height(card_width, show_world, show_meta, grid_gap);
     GridMetrics {
         columns,
         card_width,
@@ -776,7 +786,8 @@ mod tests {
     #[test]
     fn library_columns_follow_width_and_preset() {
         for (width, expected_columns) in [(1080.0, 2), (1280.0, 3), (1440.0, 4)] {
-            let metrics = library_grid_metrics(width, false, false, CardSize::Medium, true, true);
+            let metrics =
+                library_grid_metrics(width, false, false, CardSize::Medium, true, true, GRID_GAP);
             assert_eq!(metrics.columns, expected_columns, "width {width}");
         }
 
@@ -784,44 +795,91 @@ mod tests {
         assert_eq!(
             grid_columns(
                 grid_available_width(1440.0, false, false),
-                library_min_card_width(CardSize::Medium)
+                library_min_card_width(CardSize::Medium),
+                GRID_GAP
             ),
             4
         );
         assert_eq!(
-            library_grid_metrics(1440.0, false, false, CardSize::Medium, true, true).columns,
+            library_grid_metrics(1440.0, false, false, CardSize::Medium, true, true, GRID_GAP)
+                .columns,
             4
+        );
+    }
+
+    #[test]
+    fn default_grid_gap_matches_the_settings_default() {
+        assert_eq!(GRID_GAP, f32::from(UI_GRID_GAP_DEFAULT));
+    }
+
+    #[test]
+    fn grid_gap_changes_columns_and_card_width() {
+        assert_eq!(grid_columns(814.0, 190.0, 14.0), 4);
+        assert_eq!(grid_columns(814.0, 190.0, 32.0), 3);
+        close(photo_card_width(814.0, 4, 0.0), 203.5);
+        close(photo_card_width(814.0, 3, 32.0), 250.0);
+    }
+
+    #[test]
+    fn photo_row_height_uses_the_grid_gap() {
+        close(photo_row_height(300.0, true, true, 0.0), 244.0);
+        close(photo_row_height(300.0, true, true, 32.0), 276.0);
+    }
+
+    #[test]
+    fn library_grid_metrics_uses_the_grid_gap() {
+        let default =
+            library_grid_metrics(1280.0, false, false, CardSize::Medium, true, true, 14.0);
+        let wide = library_grid_metrics(1280.0, false, false, CardSize::Medium, true, true, 32.0);
+        assert_eq!(default.columns, 3);
+        assert!(wide.columns <= default.columns);
+        assert!(wide.card_width <= default.card_width);
+        close(
+            default.card_width * default.columns as f32 + 14.0 * (default.columns as f32 - 1.0),
+            grid_available_width(1280.0, false, false),
         );
     }
 
     #[test]
     fn photo_card_width_splits_the_gallery_with_the_grid_gap() {
-        close(photo_card_width(668.0, 3), 213.333_33);
-        close(photo_card_width(806.0, 3), 259.333_34);
-        close(photo_card_width(490.0, 2), 238.0);
-        close(photo_card_width(100.0, 1), 100.0);
-        close(photo_card_width(100.0, 0), 100.0);
-        close(photo_card_width(0.0, 3), 0.0);
+        close(photo_card_width(668.0, 3, GRID_GAP), 213.333_33);
+        close(photo_card_width(806.0, 3, GRID_GAP), 259.333_34);
+        close(photo_card_width(490.0, 2, GRID_GAP), 238.0);
+        close(photo_card_width(100.0, 1, GRID_GAP), 100.0);
+        close(photo_card_width(100.0, 0, GRID_GAP), 100.0);
+        close(photo_card_width(0.0, 3, GRID_GAP), 0.0);
     }
 
     #[test]
     fn photo_row_height_adds_only_the_visible_text_lines() {
-        close(photo_row_height(300.0, false, false), 214.0);
-        close(photo_row_height(300.0, true, false), 240.0);
-        close(photo_row_height(300.0, false, true), 237.0);
-        close(photo_row_height(300.0, true, true), 258.0);
+        close(photo_row_height(300.0, false, false, GRID_GAP), 214.0);
+        close(photo_row_height(300.0, true, false, GRID_GAP), 240.0);
+        close(photo_row_height(300.0, false, true, GRID_GAP), 237.0);
+        close(photo_row_height(300.0, true, true, GRID_GAP), 258.0);
 
-        let metrics = library_grid_metrics(1280.0, false, false, CardSize::Medium, true, true);
+        let metrics =
+            library_grid_metrics(1280.0, false, false, CardSize::Medium, true, true, GRID_GAP);
         close(metrics.image_height, metrics.card_width * 2.0 / 3.0);
         close(metrics.row_height, metrics.image_height + 58.0);
     }
 
     #[test]
     fn library_card_size_presets_scale_card_density() {
-        let small = library_grid_metrics(1280.0, false, false, CardSize::Small, true, true);
-        let medium = library_grid_metrics(1280.0, false, false, CardSize::Medium, true, true);
-        let large = library_grid_metrics(1280.0, false, false, CardSize::Large, true, true);
-        let extra = library_grid_metrics(1280.0, false, false, CardSize::ExtraLarge, true, true);
+        let small =
+            library_grid_metrics(1280.0, false, false, CardSize::Small, true, true, GRID_GAP);
+        let medium =
+            library_grid_metrics(1280.0, false, false, CardSize::Medium, true, true, GRID_GAP);
+        let large =
+            library_grid_metrics(1280.0, false, false, CardSize::Large, true, true, GRID_GAP);
+        let extra = library_grid_metrics(
+            1280.0,
+            false,
+            false,
+            CardSize::ExtraLarge,
+            true,
+            true,
+            GRID_GAP,
+        );
         assert!(small.columns > medium.columns);
         assert!(medium.columns > large.columns);
         assert!(large.columns >= extra.columns);
@@ -853,6 +911,7 @@ mod tests {
                             size,
                             true,
                             true,
+                            GRID_GAP,
                         )
                         .card_width
                     });
@@ -878,10 +937,12 @@ mod tests {
                         CardSize::Medium,
                         true,
                         true,
+                        GRID_GAP,
                     );
                     let expected = grid_columns(
                         grid_available_width(width, sidebar_collapsed, inspector_collapsed),
                         library_min_card_width(CardSize::Medium),
+                        GRID_GAP,
                     );
                     assert_eq!(
                         metrics.columns,
@@ -897,7 +958,8 @@ mod tests {
     #[test]
     fn medium_rows_fit_the_gallery_height_budget() {
         for (width, height, expected_columns) in [(1280.0, 820.0, 3), (1440.0, 900.0, 4)] {
-            let metrics = library_grid_metrics(width, false, false, CardSize::Medium, true, true);
+            let metrics =
+                library_grid_metrics(width, false, false, CardSize::Medium, true, true, GRID_GAP);
             assert_eq!(metrics.columns, expected_columns);
             let chrome = 46.0 + crate::ui::chrome::ribbon_height(height);
             let gallery_height = height - WORKSPACE_PAD * 2.0 - WORKSPACE_GAP - chrome;
@@ -915,15 +977,30 @@ mod tests {
 
     #[test]
     fn one_column_preset_fills_the_row() {
-        let extra = library_grid_metrics(1440.0, false, false, CardSize::ExtraLarge, true, true);
+        let extra = library_grid_metrics(
+            1440.0,
+            false,
+            false,
+            CardSize::ExtraLarge,
+            true,
+            true,
+            GRID_GAP,
+        );
         assert_eq!(extra.columns, 2);
         close(
             extra.card_width,
-            photo_card_width(grid_available_width(1440.0, false, false), 2),
+            photo_card_width(grid_available_width(1440.0, false, false), 2, GRID_GAP),
         );
 
-        let extra_narrow =
-            library_grid_metrics(1080.0, false, false, CardSize::ExtraLarge, true, true);
+        let extra_narrow = library_grid_metrics(
+            1080.0,
+            false,
+            false,
+            CardSize::ExtraLarge,
+            true,
+            true,
+            GRID_GAP,
+        );
         assert_eq!(extra_narrow.columns, 1);
         close(
             extra_narrow.card_width,
@@ -934,7 +1011,8 @@ mod tests {
     #[test]
     fn narrow_windows_follow_the_available_width_with_the_sidebar_collapsed() {
         assert_eq!(
-            library_grid_metrics(1080.0, true, false, CardSize::Medium, true, true).columns,
+            library_grid_metrics(1080.0, true, false, CardSize::Medium, true, true, GRID_GAP)
+                .columns,
             3
         );
     }
@@ -946,7 +1024,7 @@ mod tests {
         assert_eq!(grid_available_width(1080.0, false, false), 498.0);
         assert_eq!(grid_available_width(1440.0, true, false), 974.0);
         assert_eq!(search_available_width(1280.0, false), 658.0);
-        assert_eq!(grid_columns(0.0, MIN_CARD_WIDTH), 1);
+        assert_eq!(grid_columns(0.0, MIN_CARD_WIDTH, GRID_GAP), 1);
     }
 
     #[test]
@@ -1092,10 +1170,10 @@ mod tests {
 
     #[test]
     fn grid_columns_respect_the_card_size() {
-        assert!(grid_columns(1280.0, 140.0) >= grid_columns(1280.0, 280.0));
-        assert_eq!(grid_columns(300.0, 280.0), 1);
+        assert!(grid_columns(1280.0, 140.0, GRID_GAP) >= grid_columns(1280.0, 280.0, GRID_GAP));
+        assert_eq!(grid_columns(300.0, 280.0, GRID_GAP), 1);
         assert_eq!(
-            search_grid_metrics(1280.0, false, CardSize::Medium, true, true).columns,
+            search_grid_metrics(1280.0, false, CardSize::Medium, true, true, GRID_GAP).columns,
             3
         );
     }
@@ -1148,7 +1226,7 @@ mod tests {
         for (width, columns, available) in
             [(1280.0, 3, 658.0), (1440.0, 4, 818.0), (1080.0, 2, 458.0)]
         {
-            let metrics = search_grid_metrics(width, false, CardSize::Medium, true, true);
+            let metrics = search_grid_metrics(width, false, CardSize::Medium, true, true, GRID_GAP);
             assert_eq!(metrics.columns, columns, "width {width}");
             close(
                 metrics.card_width * columns as f32 + GRID_GAP * (columns as f32 - 1.0),
@@ -1166,37 +1244,39 @@ mod tests {
         // inspector must not shrink its grid. The uncapped grid follows the
         // width and the sidebar state.
         assert_eq!(
-            search_grid_metrics(1280.0, false, CardSize::Medium, true, true).columns,
+            search_grid_metrics(1280.0, false, CardSize::Medium, true, true, GRID_GAP).columns,
             3
         );
         assert_eq!(
-            search_grid_metrics(1440.0, false, CardSize::Medium, true, true).columns,
+            search_grid_metrics(1440.0, false, CardSize::Medium, true, true, GRID_GAP).columns,
             4
         );
         assert_eq!(
-            search_grid_metrics(1080.0, false, CardSize::Medium, true, true).columns,
+            search_grid_metrics(1080.0, false, CardSize::Medium, true, true, GRID_GAP).columns,
             2
         );
         for width in [1080.0, 1280.0, 1440.0] {
-            let expanded = search_grid_metrics(width, false, CardSize::Medium, true, true).columns;
-            let collapsed = search_grid_metrics(width, true, CardSize::Medium, true, true).columns;
+            let expanded =
+                search_grid_metrics(width, false, CardSize::Medium, true, true, GRID_GAP).columns;
+            let collapsed =
+                search_grid_metrics(width, true, CardSize::Medium, true, true, GRID_GAP).columns;
             assert!(collapsed >= expanded, "width {width}");
         }
     }
 
     #[test]
     fn search_grid_respects_hidden_text_and_card_size_presets() {
-        let visible = search_grid_metrics(1280.0, false, CardSize::Medium, true, true);
-        let hidden = search_grid_metrics(1280.0, false, CardSize::Medium, false, false);
+        let visible = search_grid_metrics(1280.0, false, CardSize::Medium, true, true, GRID_GAP);
+        let hidden = search_grid_metrics(1280.0, false, CardSize::Medium, false, false, GRID_GAP);
         close(visible.card_width, hidden.card_width);
         close(visible.row_height, visible.image_height + 58.0);
         close(hidden.row_height, hidden.image_height + 14.0);
         close(visible.image_height, hidden.image_height);
 
-        let small = search_grid_metrics(1280.0, false, CardSize::Small, true, true);
-        let medium = search_grid_metrics(1280.0, false, CardSize::Medium, true, true);
-        let large = search_grid_metrics(1280.0, false, CardSize::Large, true, true);
-        let extra = search_grid_metrics(1280.0, false, CardSize::ExtraLarge, true, true);
+        let small = search_grid_metrics(1280.0, false, CardSize::Small, true, true, GRID_GAP);
+        let medium = search_grid_metrics(1280.0, false, CardSize::Medium, true, true, GRID_GAP);
+        let large = search_grid_metrics(1280.0, false, CardSize::Large, true, true, GRID_GAP);
+        let extra = search_grid_metrics(1280.0, false, CardSize::ExtraLarge, true, true, GRID_GAP);
         assert!(small.columns > medium.columns);
         assert!(medium.columns > large.columns);
         assert!(large.columns >= extra.columns);
@@ -1207,35 +1287,40 @@ mod tests {
 
     #[test]
     fn search_grid_row_height_counts_only_visible_text_lines() {
-        let world_only = search_grid_metrics(1280.0, false, CardSize::Medium, true, false);
+        let world_only =
+            search_grid_metrics(1280.0, false, CardSize::Medium, true, false, GRID_GAP);
         close(
             world_only.row_height,
-            photo_row_height(world_only.card_width, true, false),
+            photo_row_height(world_only.card_width, true, false, GRID_GAP),
         );
         close(world_only.row_height, world_only.image_height + 40.0);
 
-        let meta_only = search_grid_metrics(1280.0, false, CardSize::Medium, false, true);
+        let meta_only = search_grid_metrics(1280.0, false, CardSize::Medium, false, true, GRID_GAP);
         close(
             meta_only.row_height,
-            photo_row_height(meta_only.card_width, false, true),
+            photo_row_height(meta_only.card_width, false, true, GRID_GAP),
         );
         close(meta_only.row_height, meta_only.image_height + 37.0);
 
-        let hidden = search_grid_metrics(1280.0, false, CardSize::Medium, false, false);
+        let hidden = search_grid_metrics(1280.0, false, CardSize::Medium, false, false, GRID_GAP);
         close(
             hidden.row_height,
-            photo_row_height(hidden.card_width, false, false),
+            photo_row_height(hidden.card_width, false, false, GRID_GAP),
         );
         close(hidden.row_height, hidden.image_height + 14.0);
     }
 
     #[test]
     fn search_card_width_fills_the_results_row() {
-        let medium = search_grid_metrics(1440.0, true, CardSize::Medium, true, true);
+        let medium = search_grid_metrics(1440.0, true, CardSize::Medium, true, true, GRID_GAP);
         assert_eq!(medium.columns, 4);
         close(
             medium.card_width,
-            photo_card_width(search_available_width(1440.0, true), medium.columns),
+            photo_card_width(
+                search_available_width(1440.0, true),
+                medium.columns,
+                GRID_GAP,
+            ),
         );
     }
 

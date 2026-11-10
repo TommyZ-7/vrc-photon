@@ -76,7 +76,8 @@ use crate::ui::notifications::{ToastSpec, toast_flush_needed};
 use crate::ui::palette::{accent_colors, main_colors, resolve};
 use crate::ui::settings::ThemeAxis;
 use crate::ui::theme::{
-    MIN_CARD_WIDTH, Palette, WORKSPACE_GAP, WORKSPACE_PAD, content_insets, photo_row_height,
+    GRID_GAP, MIN_CARD_WIDTH, Palette, WORKSPACE_GAP, WORKSPACE_PAD, content_insets,
+    photo_row_height,
 };
 use crate::update_view;
 
@@ -949,7 +950,7 @@ impl App {
         let search_bounds = Rc::new(RefCell::new(HashMap::new()));
         let library_bounds_epoch = Rc::new(Cell::new(0));
         let search_bounds_epoch = Rc::new(Cell::new(0));
-        let initial_row_height = photo_row_height(MIN_CARD_WIDTH, true, true);
+        let initial_row_height = photo_row_height(MIN_CARD_WIDTH, true, true, GRID_GAP);
         let library = Rc::new(RefCell::new(PhotoBrowser::new(
             empty_index.clone(),
             initial_row_height,

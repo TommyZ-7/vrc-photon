@@ -349,6 +349,7 @@ fn render_header(app: &App, shared: &Rc<GalleryShared>, window: &Window) -> AnyE
         app.settings.ui_card_size,
         app.settings.ui_card_show_world,
         app.settings.ui_card_show_date || app.settings.ui_card_show_size,
+        GRID_GAP,
     );
     let first_visible = if app.settings.ui_photos_view_mode == PhotosViewMode::Sessions {
         browser
@@ -561,6 +562,7 @@ fn render_grid(
             app.settings.ui_card_size,
             app.settings.ui_card_show_world,
             app.settings.ui_card_show_date || app.settings.ui_card_show_size,
+            GRID_GAP,
         )
     } else {
         library_grid_metrics(
@@ -570,6 +572,7 @@ fn render_grid(
             app.settings.ui_card_size,
             app.settings.ui_card_show_world,
             app.settings.ui_card_show_date || app.settings.ui_card_show_size,
+            GRID_GAP,
         )
     };
     let image_height = metrics.image_height;
@@ -911,6 +914,7 @@ fn render_session_grid(
         app.settings.ui_card_size,
         app.settings.ui_card_show_world,
         app.settings.ui_card_show_date || app.settings.ui_card_show_size,
+        GRID_GAP,
     );
 
     let now = Instant::now();

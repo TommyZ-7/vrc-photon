@@ -1042,7 +1042,7 @@ mod tests {
     use super::*;
     use crate::state::session_rows::SessionRowKind;
     use crate::state::test_support::{index_entry, test_photo};
-    use crate::ui::theme::library_grid_metrics;
+    use crate::ui::theme::{GRID_GAP, library_grid_metrics};
     use crate::ui::year_rail::YearRailLabels;
     use gpui_kit::{ScrollStrategy, UniformListScrollHandle, point, px};
     use vrc_photon_core::error::CoreError;
@@ -1520,7 +1520,8 @@ mod tests {
 
     #[test]
     fn first_visible_photo_uses_the_3_2_library_row_height() {
-        let metrics = library_grid_metrics(1280.0, false, false, CardSize::Medium, true, true);
+        let metrics =
+            library_grid_metrics(1280.0, false, false, CardSize::Medium, true, true, GRID_GAP);
         assert_eq!(metrics.columns, 3);
         assert_eq!(
             first_visible_photo(
