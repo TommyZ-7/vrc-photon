@@ -1,8 +1,8 @@
 //! Demo fixture generation and database selection for app startup.
 //!
-//! Demo mode writes a temporary photo library, thumbnails, and previews so the
-//! UI can run without a real VRChat library. `open_database` also owns the
-//! fallback to an in-memory library when the configured database cannot open.
+//! Demo mode writes a temporary photo library and thumbnails so the UI can run
+//! without a real VRChat library. `open_database` also owns the fallback to an
+//! in-memory library when the configured database cannot open.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -17,14 +17,13 @@ use crate::app::demo_fixture::{self, DEMO_WORLDS};
 use crate::ui::theme::lerp_color;
 
 pub(crate) struct DemoAssets {
-    #[allow(dead_code)] // Fixture root, kept for inspection and future previews.
+    #[allow(dead_code)] // Fixture root, kept for inspection.
     photo_dir: PathBuf,
     thumb_dir: PathBuf,
-    pub(crate) preview_dir: PathBuf,
 }
 
 /// Bump whenever the fixture layout changes so existing demo roots rebuild.
-const DEMO_DATA_VERSION: u32 = 3;
+const DEMO_DATA_VERSION: u32 = 4;
 const DEMO_VERSION_FILE: &str = "demo.version";
 
 fn demo_data_is_current(root: &Path) -> bool {
@@ -34,8 +33,8 @@ fn demo_data_is_current(root: &Path) -> bool {
         == Some(DEMO_DATA_VERSION)
 }
 
-/// Entries a demo root may contain. Anything else means the directory is
-/// not (only) demo data and must not be deleted.
+/// Entries a demo root may contain. `previews` is accepted only so roots
+/// created before the preview cache was removed can still be rebuilt safely.
 const DEMO_ROOT_ENTRIES: [&str; 9] = [
     "photos",
     "thumbnails",
@@ -85,7 +84,7 @@ fn write_demo_marker(root: &Path) -> Result<(), String> {
 }
 
 fn create_demo_dirs(root: &Path) -> Result<(), String> {
-    for name in ["photos", "thumbnails", "previews"] {
+    for name in ["photos", "thumbnails"] {
         let dir = root.join(name);
         std::fs::create_dir_all(&dir).map_err(|error| format!("{}: {error}", dir.display()))?;
     }
@@ -124,7 +123,6 @@ fn prepare_demo_at(
 ) -> Result<(Db, DemoAssets), String> {
     let photo_dir = root.join("photos");
     let thumb_dir = root.join("thumbnails");
-    let preview_dir = root.join("previews");
     let db_path = root.join("library.db");
     let current = demo_data_is_current(root);
     if reset || !current {
@@ -163,7 +161,6 @@ fn prepare_demo_at(
         DemoAssets {
             photo_dir,
             thumb_dir,
-            preview_dir,
         },
     ))
 }
@@ -509,11 +506,19 @@ mod tests {
         let assets = DemoAssets {
             photo_dir: std::path::PathBuf::from("/tmp/vrc-demo/photos"),
             thumb_dir: std::path::PathBuf::from("/tmp/vrc-demo/thumbnails"),
-            preview_dir: std::path::PathBuf::from("/tmp/vrc-demo/previews"),
         };
         let path = demo_thumb_path(&assets, 42);
         assert!(path.ends_with("42.png"));
         assert_eq!(path.parent(), Some(assets.thumb_dir.as_path()));
+    }
+
+    #[test]
+    fn demo_dirs_do_not_create_a_preview_cache() {
+        let temp = tempfile::tempdir().unwrap();
+        create_demo_dirs(temp.path()).unwrap();
+        assert!(temp.path().join("photos").is_dir());
+        assert!(temp.path().join("thumbnails").is_dir());
+        assert!(!temp.path().join("previews").exists());
     }
 
     #[test]

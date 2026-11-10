@@ -1,5 +1,5 @@
-//! App-side photo browser state: selection, thumbnails, previews, and the
-//! active grid accessor.
+//! App-side photo browser state: selection, thumbnails, and the active grid
+//! accessor.
 //!
 //! Rendering stays in `ui::library`; these methods only touch App fields and
 //! background decode queues.
@@ -15,17 +15,16 @@ use gpui_kit::component::dialog::DialogFooter;
 use gpui_kit::component::*;
 use gpui_kit::*;
 use vrc_photon_core::model::{DeletionJobSummary, DeletionReason, Photo};
-use vrc_photon_core::{CoreError, preview, thumbnail};
+use vrc_photon_core::{CoreError, image_decode, thumbnail};
 use vrc_photon_i18n::{tr, tr_args};
 use vrc_photon_ipc::Request as IpcRequest;
 
 use crate::app::cli::log_timing;
 use crate::app::demo::demo_thumb_path;
 use crate::app::{App, Screen};
+use crate::state::decode_budget;
+use crate::state::display_image::{display_key, should_apply_image};
 use crate::state::photo_browser::{PhotoBrowser, plan_page_retry};
-use crate::state::preview::{
-    preview_cache_dir, preview_key, should_apply_preview, should_request_preview,
-};
 use crate::state::thumbnail::{decode_thumbnail, make_render_image, rgba_to_bgra};
 use crate::ui::components::photo_scene_key;
 
@@ -42,8 +41,8 @@ enum TrashOutcome {
 }
 
 impl App {
-    /// Reloads the metadata for a photo without decoding its 1200 px preview.
-    /// Favorite and tag edits use this so the preview does not flash.
+    /// Reloads the metadata for a photo without decoding its display image.
+    /// Favorite and tag edits use this so the inspector does not flash.
     pub(crate) fn load_selected_meta(&mut self, id: i64) {
         self.selected = Some(id);
         self.selected_photo = match self.db.photo_by_id(id) {
@@ -79,6 +78,7 @@ impl App {
         };
         let id = photo.id;
         let source = PathBuf::from(photo.effective_path());
+        let fallback_dimensions = photo.effective_dimensions();
         let spec = self.settings.thumbnail_spec();
         let cache_path = match &self.demo_assets {
             Some(assets) => demo_thumb_path(assets, id),
@@ -94,6 +94,13 @@ impl App {
                 .background_executor()
                 .spawn(async move {
                     let decode_start = Instant::now();
+                    let (width, height) =
+                        image_decode::image_dimensions(&source).unwrap_or(fallback_dimensions);
+                    let (cache_width, cache_height) =
+                        image_decode::image_dimensions(&cache_path).unwrap_or_default();
+                    let estimate = decode_budget::rgba_bytes(width, height)
+                        .max(decode_budget::rgba_bytes(cache_width, cache_height));
+                    let _permit = decode_budget::reserve(estimate);
                     let decoded =
                         decode_thumbnail(id, &cache_path, &source, cache_dir.as_deref(), spec);
                     log_timing("thumbnail decode", decode_start);
@@ -245,29 +252,12 @@ impl App {
         // thumbnail failure so it is not hidden until the retry TTL.
         self.thumbnails.borrow_mut().retry(id);
         if changed {
-            let previous_color = self
-                .selected_photo
-                .as_ref()
-                .map(|photo| self.color_for(photo));
-            self.previous_preview = self.preview.take();
-            self.previous_color = previous_color;
-            self.preview_key = None;
-            self.preview_attempt = None;
-            self.reset_full_preview();
+            self.reset_full_image();
             self.zoom = Default::default();
             self.zoom_drag = None;
             self.load_selected_meta(id);
-            self.request_preview(cx);
             if self.quick_look_open {
-                self.request_full_preview(cx);
-            }
-        } else {
-            let current_key = self.selected_photo.as_ref().map(preview_key);
-            let loaded = current_key.is_some() && self.preview_key == current_key;
-            if !loaded && !self.preview_queue.pending_for(id) {
-                // An explicit click retries a failed or dropped preview.
-                self.preview_attempt = None;
-                self.request_preview(cx);
+                self.request_full_image(cx);
             }
         }
         self.thumbnails.borrow_mut().pin(id);
@@ -278,145 +268,69 @@ impl App {
         }
     }
 
-    /// Requests the preview for the current selection, coalescing rapid changes
-    /// so only one background decode runs at a time.
-    fn request_preview(&mut self, cx: &mut Context<Self>) {
-        let Some(photo) = self.selected_photo.as_ref() else {
-            return;
-        };
-        let key = preview_key(photo);
-        if self.preview_key == Some(key) {
-            self.preview_queue.cancel_wanted();
-            return;
-        }
-        if self.preview_queue.want(key) {
-            self.pump_preview(cx);
-        }
-    }
-
-    fn pump_preview(&mut self, cx: &mut Context<Self>) {
-        loop {
-            let Some(key) = self.preview_queue.begin() else {
-                return;
-            };
-            let matches = self
-                .selected_photo
-                .as_ref()
-                .is_some_and(|photo| preview_key(photo) == key);
-            if !matches || self.preview_key == Some(key) {
-                self.preview_queue.finish(key);
-                continue;
-            }
-            let source = PathBuf::from(
-                self.selected_photo
-                    .as_ref()
-                    .expect("selected photo")
-                    .effective_path(),
-            );
-            let cache_dir = preview_cache_dir(
-                self.demo,
-                self.demo_assets
-                    .as_ref()
-                    .map(|assets| assets.preview_dir.clone()),
-                preview::previews_dir(),
-            );
-            self.preview_attempt = Some(key);
-            cx.spawn(async move |this, cx| {
-                let decoded = cx
-                    .background_executor()
-                    .spawn(async move {
-                        let start = Instant::now();
-                        let decoded = match cache_dir {
-                            Some(dir) => {
-                                preview::ensure_preview_in(key.photo_id, key.variant, &source, &dir)
-                            }
-                            None => preview::decode_preview(&source),
-                        };
-                        log_timing("preview decode", start);
-                        decoded.map(rgba_to_bgra)
-                    })
-                    .await;
-                this.update(cx, |this, cx| {
-                    this.preview_queue.finish(key);
-                    let selected = this.selected_photo.as_ref().map(preview_key);
-                    if should_apply_preview(selected, key)
-                        && let Some(rgba) = decoded
-                    {
-                        this.preview = Some(make_render_image(rgba));
-                        this.preview_key = Some(key);
-                    }
-                    this.pump_preview(cx);
-                    this.refresh_stale_preview(cx);
-                    cx.notify();
-                })
-                .ok();
-            })
-            .detach();
-            return;
-        }
-    }
-
-    /// Requests the original display file for Quick Look. This queue is
-    /// separate from the 1200 px preview queue so a large decode never delays
-    /// the next photo's instant preview.
-    pub(crate) fn request_full_preview(&mut self, cx: &mut Context<Self>) {
+    /// Requests the original display file for Quick Look. The queue holds one
+    /// decode at a time so a large image never delays the next photo.
+    pub(crate) fn request_full_image(&mut self, cx: &mut Context<Self>) {
         if !self.quick_look_open {
-            self.full_preview_queue.cancel_wanted();
+            self.full_image_queue.cancel_wanted();
             return;
         }
         let Some(photo) = self.selected_photo.as_ref() else {
             return;
         };
-        let key = preview_key(photo);
-        if self.full_preview_key == Some(key) {
-            self.full_preview_queue.cancel_wanted();
+        let key = display_key(photo);
+        if self.full_image_key == Some(key) {
+            self.full_image_queue.cancel_wanted();
             return;
         }
-        if self.full_preview_queue.want(key) {
-            self.pump_full_preview(cx);
+        if self.full_image_queue.want(key) {
+            self.pump_full_image(cx);
         }
     }
 
-    fn pump_full_preview(&mut self, cx: &mut Context<Self>) {
+    fn pump_full_image(&mut self, cx: &mut Context<Self>) {
         loop {
-            let Some(key) = self.full_preview_queue.begin() else {
+            let Some(key) = self.full_image_queue.begin() else {
                 return;
             };
-            let matches = self
+            let Some(photo) = self
                 .selected_photo
                 .as_ref()
-                .is_some_and(|photo| preview_key(photo) == key);
-            if !matches || self.full_preview_key == Some(key) {
-                self.full_preview_queue.finish(key);
+                .filter(|photo| display_key(photo) == key)
+            else {
+                self.full_image_queue.finish(key);
+                continue;
+            };
+            if self.full_image_key == Some(key) {
+                self.full_image_queue.finish(key);
                 continue;
             }
-            let source = PathBuf::from(
-                self.selected_photo
-                    .as_ref()
-                    .expect("selected photo")
-                    .effective_path(),
-            );
+            let source = PathBuf::from(photo.effective_path());
+            let fallback_dimensions = photo.effective_dimensions();
             cx.spawn(async move |this, cx| {
                 let decoded = cx
                     .background_executor()
                     .spawn(async move {
                         let start = Instant::now();
-                        let decoded = preview::decode_full_image(&source);
-                        log_timing("full preview decode", start);
+                        let estimate =
+                            decode_budget::full_image_estimate(&source, fallback_dimensions);
+                        let _permit = decode_budget::reserve(estimate);
+                        let decoded = image_decode::decode_full_image(&source);
+                        log_timing("full image decode", start);
                         decoded.map(rgba_to_bgra)
                     })
                     .await;
                 this.update(cx, |this, cx| {
-                    this.full_preview_queue.finish(key);
-                    let selected = this.selected_photo.as_ref().map(preview_key);
+                    this.full_image_queue.finish(key);
+                    let selected = this.selected_photo.as_ref().map(display_key);
                     if this.quick_look_open
-                        && should_apply_preview(selected, key)
+                        && should_apply_image(selected, key)
                         && let Some(rgba) = decoded
                     {
-                        this.full_preview = Some(make_render_image(rgba));
-                        this.full_preview_key = Some(key);
+                        this.full_image = Some(make_render_image(rgba));
+                        this.full_image_key = Some(key);
                     }
-                    this.pump_full_preview(cx);
+                    this.pump_full_image(cx);
                     cx.notify();
                 })
                 .ok();
@@ -426,53 +340,29 @@ impl App {
         }
     }
 
-    pub(crate) fn reset_full_preview(&mut self) {
-        self.full_preview = None;
-        self.full_preview_key = None;
-        self.full_preview_queue.cancel_wanted();
+    pub(crate) fn reset_full_image(&mut self) {
+        self.full_image = None;
+        self.full_image_key = None;
+        self.full_image_queue.cancel_wanted();
     }
 
-    pub(crate) fn refresh_stale_preview(&mut self, cx: &mut Context<Self>) {
-        let Some(photo) = self.selected_photo.as_ref() else {
-            return;
-        };
-        let key = preview_key(photo);
-        let pending = self.preview_queue.pending_for(photo.id);
-        if should_request_preview(self.preview_key, self.preview_attempt, pending, key) {
-            self.request_preview(cx);
-        }
-    }
-
-    /// Resets every piece of preview state: the decoded preview, its key
-    /// and attempt bookkeeping, the queued decode request, and the
-    /// crossfade's previous frame. Selection clears, forced viewer closes,
-    /// and removals all go through here so no path can leave a stale
-    /// preview (or a decode for one) behind.
-    pub(crate) fn reset_preview_state(&mut self) {
-        self.preview = None;
-        self.preview_key = None;
-        self.preview_attempt = None;
-        self.preview_queue.cancel_wanted();
-        self.reset_full_preview();
+    /// Resets the full image, zoom, and crossfade state. Selection clears,
+    /// forced viewer closes, and removals all go through here.
+    pub(crate) fn reset_image_state(&mut self) {
+        self.reset_full_image();
         self.zoom = Default::default();
         self.zoom_drag = None;
-        self.previous_preview = None;
-        self.previous_color = None;
+        self.previous_image = None;
     }
 
-    /// Drops the in-memory thumbnail and preview for a photo whose display
+    /// Drops the in-memory thumbnail and full image for a photo whose display
     /// source changed (a completed `replace` compression). The next display
-    /// request regenerates both from the derivative.
+    /// request regenerates them from the derivative.
     pub(crate) fn invalidate_photo_media(&mut self, id: i64, cx: &mut Context<Self>) {
         self.thumbnails.borrow_mut().invalidate(id);
         if self.selected == Some(id) {
-            self.preview = None;
-            self.preview_key = None;
-            self.preview_attempt = None;
-            self.previous_preview = None;
-            self.previous_color = None;
-            self.reset_full_preview();
-            self.preview_queue.cancel_wanted();
+            self.reset_full_image();
+            self.previous_image = None;
             cx.notify();
         }
     }
@@ -489,7 +379,7 @@ impl App {
         self.selected_ai = None;
         self.selected_ai_tags.clear();
         self.selected_derivatives.clear();
-        self.reset_preview_state();
+        self.reset_image_state();
         self.note_edit_id = None;
         cx.notify();
     }
@@ -1137,7 +1027,7 @@ impl App {
             self.selected_ai = None;
             self.selected_ai_tags.clear();
             self.selected_derivatives.clear();
-            self.reset_preview_state();
+            self.reset_image_state();
         }
         if self.note_edit_id.is_some_and(|id| removed.contains(&id)) {
             self.note_edit_id = None;

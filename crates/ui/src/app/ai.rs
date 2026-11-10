@@ -1979,7 +1979,6 @@ impl App {
     pub(crate) fn refresh_selected_ai(&mut self, cx: &mut Context<Self>) {
         if let Some(id) = self.selected {
             self.load_selected_meta(id);
-            self.refresh_stale_preview(cx);
         }
         cx.notify();
     }

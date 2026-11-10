@@ -1,4 +1,4 @@
-//! Sidecar metadata shared by the thumbnail and preview caches.
+//! Sidecar metadata shared by the thumbnail cache.
 //!
 //! A cache entry is only reused when the source file still has the same
 //! modification time and size that produced it. The stamp lives next to the
@@ -83,7 +83,7 @@ fn read_stamp(cache: &Path) -> Option<SourceStamp> {
 /// Whether `cache` is a non-empty entry produced from the current `source`.
 ///
 /// A missing source keeps a usable cache entry: the file cannot be
-/// regenerated, and previews intentionally remain displayable after the
+/// regenerated, and thumbnails intentionally remain displayable after the
 /// original was removed. A missing or unreadable sidecar is stale, which
 /// upgrades old cache entries once.
 pub(crate) fn cache_is_fresh(cache: &Path, source: &Path) -> bool {

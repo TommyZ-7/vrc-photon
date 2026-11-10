@@ -58,9 +58,9 @@ use crate::app::demo::{DemoAssets, open_database};
 use crate::app::import::{ImportDialogState, ImportReportView};
 use crate::app::lifecycle::ScanProgressView;
 use crate::app::live::LiveRefreshGate;
+use crate::state::display_image::{DecodeQueue, DisplayKey};
 use crate::state::motion::ToggleMotion;
 use crate::state::photo_browser::{CountDebounce, PhotoBrowser, PhotoIndex};
-use crate::state::preview::{PreviewKey, PreviewQueue};
 use crate::state::selection::PhotoSelection;
 use crate::state::thumbnail::{ThumbnailCache, ThumbnailNoticeBatch};
 use crate::state::viewer::{
@@ -273,16 +273,11 @@ pub struct App {
     pub(crate) quick_look_note_edit_focus: FocusHandle,
     pub(crate) quick_look_note_save_focus: FocusHandle,
     pub(crate) quick_look_note_cancel_focus: FocusHandle,
-    pub(crate) preview: Option<Arc<RenderImage>>,
-    pub(crate) preview_key: Option<PreviewKey>,
-    pub(crate) preview_attempt: Option<PreviewKey>,
-    pub(crate) preview_queue: PreviewQueue,
     /// Full-resolution Quick Look image. Memory only: never cached on disk.
-    pub(crate) full_preview: Option<Arc<RenderImage>>,
-    pub(crate) full_preview_key: Option<PreviewKey>,
-    pub(crate) full_preview_queue: PreviewQueue,
-    pub(crate) previous_preview: Option<Arc<RenderImage>>,
-    pub(crate) previous_color: Option<u32>,
+    pub(crate) full_image: Option<Arc<RenderImage>>,
+    pub(crate) full_image_key: Option<DisplayKey>,
+    pub(crate) full_image_queue: DecodeQueue,
+    pub(crate) previous_image: Option<Arc<RenderImage>>,
     pub(crate) profiles: Vec<CompressionProfile>,
     pub(crate) profile_index: usize,
     pub(crate) profile_name_input: Entity<InputState>,
@@ -1185,15 +1180,10 @@ impl App {
             quick_look_note_edit_focus,
             quick_look_note_save_focus,
             quick_look_note_cancel_focus,
-            preview: None,
-            preview_key: None,
-            preview_attempt: None,
-            preview_queue: PreviewQueue::default(),
-            full_preview: None,
-            full_preview_key: None,
-            full_preview_queue: PreviewQueue::default(),
-            previous_preview: None,
-            previous_color: None,
+            full_image: None,
+            full_image_key: None,
+            full_image_queue: DecodeQueue::default(),
+            previous_image: None,
             profiles: Vec::new(),
             profile_index: 0,
             profile_name_input,

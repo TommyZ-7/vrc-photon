@@ -320,7 +320,7 @@ pub(crate) fn inspector_reveal_gap(collapsed: f32) -> f32 {
     INSPECTOR_GAP * (1.0 - collapsed.clamp(0.0, 1.0))
 }
 
-/// The inspector preview keeps the spec's fixed heights (168 px, 118 px in a
+/// The inspector image keeps the spec's fixed heights (168 px, 118 px in a
 /// short window). The frame width follows the responsive inspector card, so
 /// the visible ratio approaches 16:10 without being derived from it.
 pub(crate) fn inspector_preview_height(window_height: f32) -> f32 {

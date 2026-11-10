@@ -20,58 +20,13 @@ pub(crate) enum ViewerOpenSource {
     Auto,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum MorphImageKind {
-    Thumbnail,
-    Preview,
-}
-
-/// Chooses the old/new image kinds and the corner-radius sweep for one morph.
-pub(crate) fn morph_image_plan(
-    closing: bool,
-    source: ViewerOpenSource,
-    has_thumbnail: bool,
-    has_preview: bool,
-) -> (Option<MorphImageKind>, Option<MorphImageKind>, f32, f32) {
-    let viewer = if has_preview {
-        Some(MorphImageKind::Preview)
-    } else if has_thumbnail {
-        Some(MorphImageKind::Thumbnail)
-    } else {
-        None
-    };
-    let Some(viewer) = viewer else {
-        return (None, None, 10.0, 10.0);
-    };
-    let card = if has_thumbnail {
-        Some(MorphImageKind::Thumbnail)
-    } else if has_preview {
-        Some(MorphImageKind::Preview)
-    } else {
-        None
-    };
-    let inspector = if has_preview {
-        Some(MorphImageKind::Preview)
-    } else if has_thumbnail {
-        Some(MorphImageKind::Thumbnail)
-    } else {
-        None
-    };
+/// Chooses the corner-radius sweep for one morph.
+pub(crate) fn morph_radius_plan(closing: bool, source: ViewerOpenSource) -> (f32, f32) {
     let inspector_source = source == ViewerOpenSource::Inspector;
     if closing {
-        (
-            Some(viewer),
-            if inspector_source { inspector } else { card },
-            10.0,
-            if inspector_source { 11.0 } else { 12.0 },
-        )
+        (10.0, if inspector_source { 11.0 } else { 12.0 })
     } else {
-        (
-            if inspector_source { inspector } else { card },
-            Some(viewer),
-            if inspector_source { 11.0 } else { 12.0 },
-            10.0,
-        )
+        (if inspector_source { 11.0 } else { 12.0 }, 10.0)
     }
 }
 
@@ -215,7 +170,6 @@ pub(crate) struct ViewerMorph {
     pub(crate) from: Bounds<Pixels>,
     pub(crate) to: Bounds<Pixels>,
     pub(crate) thumbnail: Option<Arc<RenderImage>>,
-    pub(crate) preview: Option<Arc<RenderImage>>,
     pub(crate) color: u32,
     pub(crate) source: ViewerOpenSource,
     pub(crate) closing: bool,
@@ -343,7 +297,6 @@ mod tests {
             from,
             to,
             thumbnail: None,
-            preview: None,
             color: 0,
             source: ViewerOpenSource::Card,
             closing: false,
@@ -561,35 +514,22 @@ mod tests {
     }
 
     #[test]
-    fn morph_image_plan_covers_card_and_inspector_paths() {
-        use MorphImageKind::*;
+    fn morph_radius_plan_covers_card_and_inspector_paths() {
         assert_eq!(
-            morph_image_plan(false, ViewerOpenSource::Card, true, true),
-            (Some(Thumbnail), Some(Preview), 12.0, 10.0)
+            morph_radius_plan(false, ViewerOpenSource::Card),
+            (12.0, 10.0)
         );
         assert_eq!(
-            morph_image_plan(false, ViewerOpenSource::Inspector, true, true),
-            (Some(Preview), Some(Preview), 11.0, 10.0)
+            morph_radius_plan(false, ViewerOpenSource::Inspector),
+            (11.0, 10.0)
         );
         assert_eq!(
-            morph_image_plan(true, ViewerOpenSource::Card, true, true),
-            (Some(Preview), Some(Thumbnail), 10.0, 12.0)
+            morph_radius_plan(true, ViewerOpenSource::Card),
+            (10.0, 12.0)
         );
         assert_eq!(
-            morph_image_plan(true, ViewerOpenSource::Inspector, true, true),
-            (Some(Preview), Some(Preview), 10.0, 11.0)
-        );
-        assert_eq!(
-            morph_image_plan(false, ViewerOpenSource::Card, false, true),
-            (Some(Preview), Some(Preview), 12.0, 10.0)
-        );
-        assert_eq!(
-            morph_image_plan(true, ViewerOpenSource::Inspector, true, false),
-            (Some(Thumbnail), Some(Thumbnail), 10.0, 11.0)
-        );
-        assert_eq!(
-            morph_image_plan(false, ViewerOpenSource::Card, false, false),
-            (None, None, 10.0, 10.0)
+            morph_radius_plan(true, ViewerOpenSource::Inspector),
+            (10.0, 11.0)
         );
     }
 

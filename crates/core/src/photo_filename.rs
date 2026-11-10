@@ -69,8 +69,8 @@ pub fn from_modified_time(modified: std::time::SystemTime) -> ParsedPhotoName {
 /// Reads displayed image dimensions without decoding the pixel data.
 ///
 /// EXIF orientation is read from the file header, so 90/270-degree
-/// orientations report the swapped width and height that previews, thumbnails,
-/// and compression use.
+/// orientations report the swapped width and height that thumbnails and
+/// compression use.
 pub fn image_dimensions(path: &Path) -> Option<(u32, u32)> {
     crate::image_decode::image_dimensions(path)
 }

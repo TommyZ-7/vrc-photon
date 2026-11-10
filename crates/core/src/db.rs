@@ -560,7 +560,7 @@ pub enum DbProfile {
     /// sizes because they run the heavy import and compression queries.
     Service,
     /// The UI process shares its address space with the renderer, thumbnail
-    /// cache, and decoded previews, so its connections use a smaller page
+    /// cache, and decoded full image, so its connections use a smaller page
     /// cache and mmap window.
     Ui,
 }
