@@ -889,7 +889,9 @@ impl App {
                     if this.settings.ui_grid_gap != gap {
                         this.settings.ui_grid_gap = gap;
                     }
-                    this.capture_display_layout_anchors();
+                    // Do not capture the anchor here: the setting is already
+                    // updated, and the gallery's `layout_changed` path reads
+                    // the pre-change browser geometry when Photos returns.
                     this.save_grid_display_settings(cx);
                 }
             },
@@ -916,7 +918,8 @@ impl App {
                     if this.settings.ui_card_radius != radius {
                         this.settings.ui_card_radius = radius;
                     }
-                    this.capture_display_layout_anchors();
+                    // Card radius does not change the grid geometry, so the
+                    // scroll anchor does not need to be recaptured.
                     this.save_grid_display_settings(cx);
                 }
             },
