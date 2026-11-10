@@ -92,6 +92,7 @@ Documentation is currently written in Japanese.
 - [Development setup](docs/development.md)
 - [Release and packaging](docs/release.md)
 - [AI tagging plugin](docs/ai-tagging/README.md)
+- [MCP server](docs/mcp.md)
 - [Roadmap](docs/roadmap.md)
 - [Contributing](CONTRIBUTING.md)
 
