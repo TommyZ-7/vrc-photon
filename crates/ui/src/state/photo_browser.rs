@@ -354,6 +354,13 @@ pub(crate) struct SessionLayout {
     pub(crate) driver_epoch: u64,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct SessionScrollAnchor {
+    pub(crate) session_id: i64,
+    pub(crate) viewport_y: f32,
+    pub(crate) expected_offset: f32,
+}
+
 /// Snapshot plus page cache for one grid (library or search).
 pub(crate) struct PhotoBrowser {
     pub(crate) index: Arc<PhotoIndex>,
@@ -383,8 +390,8 @@ pub(crate) struct PhotoBrowser {
     session_last_heights: Vec<f32>,
     pub(crate) collapsed_sessions: HashSet<i64>,
     pub(crate) session_collapse_motions: SessionCollapseMotions,
-    /// Session header restored after the active collapse motions settle.
-    pending_session_anchor: Option<i64>,
+    /// Header kept at a fixed viewport position while collapse motions settle.
+    session_scroll_anchor: Option<SessionScrollAnchor>,
     /// Photo row restored after the active collapse motions settle.
     pending_photo_anchor: Option<usize>,
     pub(crate) session_summaries: HashMap<i64, Arc<SessionSummary>>,
@@ -415,7 +422,7 @@ impl PhotoBrowser {
             session_last_heights: Vec::new(),
             collapsed_sessions: HashSet::new(),
             session_collapse_motions: SessionCollapseMotions::default(),
-            pending_session_anchor: None,
+            session_scroll_anchor: None,
             pending_photo_anchor: None,
             session_summaries: HashMap::new(),
             session_summary_pending: HashSet::new(),
@@ -442,7 +449,7 @@ impl PhotoBrowser {
         self.session_rows = None;
         self.session_rows_key = None;
         self.session_collapse_motions.clear();
-        self.pending_session_anchor = None;
+        self.session_scroll_anchor = None;
         self.pending_photo_anchor = None;
         self.session_summaries.clear();
         self.session_summary_pending.clear();
@@ -552,10 +559,10 @@ impl PhotoBrowser {
         );
         let heights = rows.heights_with_collapse(&factors);
         self.session_last_heights = heights.clone();
-        // A navigation target chosen while another session was still moving
-        // is restored once every motion has settled, using the settled row
-        // origins. A rail jump (photo anchor) wins over a header click.
         if animating.is_empty() {
+            self.session_scroll_anchor = None;
+            // A rail jump is restored once every motion has settled, using the
+            // settled row origins.
             if let Some(photo_index) = self.pending_photo_anchor.take() {
                 let offset = rows
                     .offset_for_photo(photo_index)
@@ -563,10 +570,20 @@ impl PhotoBrowser {
                 if let Some(offset) = offset {
                     set_session_scroll_offset(self, offset);
                 }
-            } else if let Some(session_id) = self.pending_session_anchor.take()
-                && let Some(offset) = rows.offset_for_session(session_id)
+            }
+        } else if let Some(anchor) = self.session_scroll_anchor {
+            let current = session_scroll_top(&self.session_scroll);
+            if (current - anchor.expected_offset).abs() > 1.5 {
+                // A manual scroll supersedes the header anchor.
+                self.session_scroll_anchor = None;
+            } else if let Some(header_offset) =
+                rows.offset_for_session_with_heights(anchor.session_id, &heights)
             {
-                set_session_scroll_offset(self, offset);
+                let target = (header_offset - anchor.viewport_y).max(0.0);
+                set_session_scroll_offset(self, target);
+                if let Some(anchor) = &mut self.session_scroll_anchor {
+                    anchor.expected_offset = session_scroll_top(&self.session_scroll);
+                }
             }
         }
         SessionLayout {
@@ -590,20 +607,26 @@ impl PhotoBrowser {
 
     pub(crate) fn settle_session_collapse(&mut self, session_id: i64) {
         self.session_collapse_motions.settle(session_id);
+        if self
+            .session_scroll_anchor
+            .is_some_and(|anchor| anchor.session_id == session_id)
+        {
+            self.session_scroll_anchor = None;
+        }
     }
 
     /// Finishes every in-flight collapse before an explicit navigation. The
-    /// pending header anchor is discarded because the new navigation target
-    /// supersedes it.
+    /// pending anchors are discarded because the new navigation target
+    /// supersedes them.
     pub(crate) fn settle_all_session_collapses(&mut self) {
         if self.session_collapse_motions.is_empty()
-            && self.pending_session_anchor.is_none()
+            && self.session_scroll_anchor.is_none()
             && self.pending_photo_anchor.is_none()
         {
             return;
         }
         self.session_collapse_motions.clear();
-        self.pending_session_anchor = None;
+        self.session_scroll_anchor = None;
         self.pending_photo_anchor = None;
         self.session_rows = None;
         self.session_rows_key = None;
@@ -613,7 +636,20 @@ impl PhotoBrowser {
     /// the year rail, whose jump is computed from the settled row geometry.
     pub(crate) fn set_pending_photo_anchor(&mut self, photo_index: usize) {
         self.pending_photo_anchor = Some(photo_index);
-        self.pending_session_anchor = None;
+        self.session_scroll_anchor = None;
+    }
+
+    pub(crate) fn set_session_scroll_anchor(&mut self, session_id: i64, viewport_y: f32) {
+        self.session_scroll_anchor = Some(SessionScrollAnchor {
+            session_id,
+            viewport_y,
+            expected_offset: session_scroll_top(&self.session_scroll),
+        });
+        self.pending_photo_anchor = None;
+    }
+
+    pub(crate) fn cancel_session_scroll_anchor(&mut self) {
+        self.session_scroll_anchor = None;
     }
 
     pub(crate) fn top_photo_index(&self, scroll_top: f32) -> Option<usize> {
@@ -705,7 +741,7 @@ impl PhotoBrowser {
             self.collapsed_sessions.insert(id);
             true
         };
-        self.pending_session_anchor = Some(id);
+        self.session_scroll_anchor = None;
         self.pending_photo_anchor = None;
         self.session_rows = None;
         self.session_rows_key = None;
@@ -1803,23 +1839,22 @@ mod tests {
     }
 
     #[test]
-    fn session_layout_reanchors_the_pending_session_after_expiry() {
+    fn a_header_anchor_keeps_its_viewport_y_while_another_session_moves() {
         let now = Instant::now();
         let mut browser = PhotoBrowser::new(session_index(), TEST_ROW_HEIGHT);
-        assert!(browser.toggle_session_collapsed(7));
-        browser.pending_session_anchor = Some(8);
+        let layout = browser.session_layout(4, 200.0, 92.0, 46.0, now);
+        let header_offset = layout.rows.offset_for_session(8).unwrap();
+        set_session_scroll_offset(&browser, header_offset - 100.0);
+        browser.set_session_scroll_anchor(8, 100.0);
         browser.animate_session_collapse(7, true, Duration::from_millis(100), now);
 
         let mid = browser.session_layout(4, 200.0, 92.0, 46.0, now + Duration::from_millis(50));
-        assert_eq!(mid.rows.rows().len(), 4);
-        assert_eq!(session_scroll_top(&browser.session_scroll), 0.0);
-        assert_eq!(browser.pending_session_anchor, Some(8));
-
-        let done = browser.session_layout(4, 200.0, 92.0, 46.0, now + Duration::from_millis(100));
-        assert_eq!(done.rows.rows().len(), 3);
-        let expected = done.rows.offset_for_session(8).unwrap();
-        assert_eq!(session_scroll_top(&browser.session_scroll), expected);
-        assert_eq!(browser.pending_session_anchor, None);
+        let expected = mid
+            .rows
+            .offset_for_session_with_heights(8, &mid.heights)
+            .unwrap()
+            - 100.0;
+        assert_eq!(session_scroll_top(&browser.session_scroll), expected.max(0.0));
     }
 
     #[test]
@@ -1858,10 +1893,11 @@ mod tests {
         let mut browser = PhotoBrowser::new(session_index(), TEST_ROW_HEIGHT);
         assert!(browser.toggle_session_collapsed(7));
         browser.animate_session_collapse(7, true, Duration::from_millis(100), now);
+        browser.set_session_scroll_anchor(8, 100.0);
         let animating = browser.ensure_session_rows(4, 200.0, 92.0, 46.0);
         assert_eq!(animating.rows().len(), 4);
         browser.settle_all_session_collapses();
-        assert!(browser.pending_session_anchor.is_none());
+        assert!(browser.session_scroll_anchor.is_none());
         let settled = browser.ensure_session_rows(4, 200.0, 92.0, 46.0);
         assert!(!Arc::ptr_eq(&animating, &settled));
         assert_eq!(settled.rows().len(), 3);
