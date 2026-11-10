@@ -309,8 +309,11 @@ where
     std::thread::Builder::new()
         .name("ipc-request".to_string())
         .spawn(move || {
-            let _guard = guard;
-            let _ = sender.send(operation());
+            let result = operation();
+            // Release the slot before publishing the result. A caller that
+            // observes completion must also observe the slot as free.
+            drop(guard);
+            let _ = sender.send(result);
         })?;
     match receiver.recv_timeout(timeout) {
         Ok(result) => result,
