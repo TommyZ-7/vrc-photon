@@ -34,7 +34,7 @@ use crate::app::ai::{
 };
 use crate::app::daemon::{autostart_description, open_path};
 use crate::ipc_bridge;
-use crate::ui::components::{dialog_panel, glass_panel, status_progress_bar};
+use crate::ui::components::{card_divider, dialog_panel, glass_panel, status_progress_bar};
 use crate::ui::palette::{
     accent_colors, find_accent, find_main, main_colors, preview_accent, preview_main, readable_on,
     resolve,
@@ -98,18 +98,22 @@ impl App {
                                     .text_color(rgb(p.text))
                                     .child(tr!("settings.library.title")),
                             )
+                            .child(card_divider(&p))
                             .child(self.filter_field(
                                 tr!("settings.library.photo_roots"),
                                 Input::new(&self.photo_root_input),
                             ))
+                            .child(card_divider(&p))
                             .child(self.filter_field(
                                 tr!("settings.library.log_dir"),
                                 Input::new(&self.log_dir_input),
                             ))
+                            .child(card_divider(&p))
                             .child(self.filter_field(
                                 tr!("settings.library.import_dir"),
                                 Input::new(&self.import_dir_input),
                             ))
+                            .child(card_divider(&p))
                             .child(
                                 h_flex()
                                     .gap(px(8.))
@@ -234,6 +238,7 @@ impl App {
                                     .text_color(rgb(p.text))
                                     .child(tr!("settings.world_name.title")),
                             )
+                            .child(card_divider(&p))
                             .child(self.setting_switch(
                                 tr!("settings.world_name.enabled"),
                                 tr!("settings.world_name.hint"),
@@ -242,6 +247,7 @@ impl App {
                                 cx,
                                 |settings, value| settings.world_name_resolution_enabled = value,
                             ))
+                            .child(card_divider(&p))
                             .child(
                                 div()
                                     .text_size(px(10.))
@@ -263,6 +269,7 @@ impl App {
                                     .text_color(rgb(p.text))
                                     .child(tr!("settings.display.title")),
                             )
+                            .child(card_divider(&p))
                             .child(self.setting_switch(
                                 tr!("settings.display.status.label"),
                                 "",
@@ -271,6 +278,7 @@ impl App {
                                 cx,
                                 |settings, value| settings.ui_card_show_status = value,
                             ))
+                            .child(card_divider(&p))
                             .child(self.setting_switch(
                                 tr!("settings.display.world.label"),
                                 "",
@@ -279,6 +287,7 @@ impl App {
                                 cx,
                                 |settings, value| settings.ui_card_show_world = value,
                             ))
+                            .child(card_divider(&p))
                             .child(self.setting_switch(
                                 tr!("settings.display.date.label"),
                                 "",
@@ -287,6 +296,7 @@ impl App {
                                 cx,
                                 |settings, value| settings.ui_card_show_date = value,
                             ))
+                            .child(card_divider(&p))
                             .child(self.setting_switch(
                                 tr!("settings.display.size.label"),
                                 "",
@@ -329,6 +339,7 @@ impl App {
                                             .child(tr!("settings.display.grid_gap.hint")),
                                     ),
                             )
+                            .child(card_divider(&p))
                             .child(
                                 v_flex()
                                     .gap(px(6.))
@@ -379,6 +390,7 @@ impl App {
                                     .text_color(rgb(p.text))
                                     .child(tr!("settings.performance.title")),
                             )
+                            .child(card_divider(&p))
                             .child(
                                 v_flex()
                                     .gap(px(6.))
@@ -454,6 +466,7 @@ impl App {
                                     .text_color(rgb(p.text))
                                     .child(tr!("settings.thumbnail.title")),
                             )
+                            .child(card_divider(&p))
                             .child(
                                 v_flex()
                                     .gap(px(6.))
@@ -480,6 +493,7 @@ impl App {
                                     )
                                     .child(Slider::new(&self.thumbnail_quality_slider).w_full()),
                             )
+                            .child(card_divider(&p))
                             .child(
                                 v_flex()
                                     .gap(px(6.))
@@ -519,6 +533,7 @@ impl App {
                                         }),
                                     )),
                             )
+                            .child(card_divider(&p))
                             .child(
                                 h_flex()
                                     .items_center()
@@ -563,6 +578,7 @@ impl App {
                                     .text_color(rgb(p.text))
                                     .child(tr!("settings.startup.title")),
                             )
+                            .child(card_divider(&p))
                             .child(self.setting_switch(
                                 tr!("settings.startup.autostart"),
                                 autostart_hint,
@@ -571,6 +587,7 @@ impl App {
                                 cx,
                                 |settings, value| settings.autostart = value,
                             ))
+                            .child(card_divider(&p))
                             .child(self.setting_switch(
                                 tr!("settings.startup.tray"),
                                 "",
@@ -579,6 +596,7 @@ impl App {
                                 cx,
                                 |settings, value| settings.tray = value,
                             ))
+                            .child(card_divider(&p))
                             .child(
                                 h_flex()
                                     .items_center()
@@ -654,6 +672,7 @@ impl App {
                     .text_color(rgb(p.text))
                     .child(tr!("settings.language.title")),
             )
+            .child(card_divider(&p))
             .child(h_flex().flex_wrap().gap(px(4.)).children(
                 vrc_photon_i18n::locales().into_iter().map(|locale| {
                     let selected = locale.code == active;
@@ -699,7 +718,9 @@ impl App {
                     .text_color(rgb(p.text))
                     .child(tr!("settings.theme.title")),
             )
+            .child(card_divider(&p))
             .child(self.theme_axis(ThemeAxis::Main, cx))
+            .child(card_divider(&p))
             .child(self.theme_axis(ThemeAxis::Accent, cx))
     }
 
@@ -1108,7 +1129,7 @@ impl App {
             );
 
         if self.ai.install_busy {
-            return card.child(
+            return card.child(card_divider(&p)).child(
                 div()
                     .text_size(px(10.))
                     .text_color(rgb(p.muted))
@@ -1117,7 +1138,7 @@ impl App {
         }
 
         if !has_active {
-            card = card.child(
+            card = card.child(card_divider(&p)).child(
                 div()
                     .text_size(px(10.))
                     .text_color(rgb(p.muted))
@@ -1129,9 +1150,13 @@ impl App {
                 .or_else(|| self.ai.error_of(AiErrorKind::Model))
                 .cloned()
             {
-                card = card.child(self.ai_operation_error_box(&error));
+                card = card
+                    .child(card_divider(&p))
+                    .child(self.ai_operation_error_box(&error));
             }
-            return card.child(self.ai_primary_action_button(view.primary_action, false, cx));
+            return card
+                .child(card_divider(&p))
+                .child(self.ai_primary_action_button(view.primary_action, false, cx));
         }
 
         let install = self
@@ -1152,12 +1177,14 @@ impl App {
             .map(format_bytes)
             .unwrap_or_else(|| tr!("settings.ai.not_downloaded"));
 
-        card = card.child(self.ai_install_meta(&install, &size_label));
+        card = card
+            .child(card_divider(&p))
+            .child(self.ai_install_meta(&install, &size_label));
         if !matches!(
             state,
             AiPluginCardState::Downloading | AiPluginCardState::Verifying
         ) {
-            card = card.child(self.ai_variant_list(cx));
+            card = card.child(card_divider(&p)).child(self.ai_variant_list(cx));
         }
 
         if matches!(
@@ -1165,9 +1192,11 @@ impl App {
             AiPluginCardState::Downloading | AiPluginCardState::Verifying
         ) {
             if let Some(download) = self.ai.download.clone() {
-                card = card.child(self.ai_download_box(&download));
+                card = card
+                    .child(card_divider(&p))
+                    .child(self.ai_download_box(&download));
             }
-            card = card.child(
+            card = card.child(card_divider(&p)).child(
                 h_flex().flex_wrap().items_center().gap(px(8.)).child(
                     Button::new("ai-cancel-download")
                         .label(tr!("settings.ai.cancel"))
@@ -1179,8 +1208,12 @@ impl App {
             state,
             AiPluginCardState::Ready | AiPluginCardState::NeedsProbe
         ) {
-            card = card.child(self.ai_model_path_box(&install, &manifest, &size_label));
-            card = card.child(
+            card = card.child(card_divider(&p)).child(self.ai_model_path_box(
+                &install,
+                &manifest,
+                &size_label,
+            ));
+            card = card.child(card_divider(&p)).child(
                 h_flex()
                     .flex_wrap()
                     .items_center()
@@ -1236,77 +1269,85 @@ impl App {
                 .unwrap_or_else(|| {
                     AiErrorInfo::new(AiErrorKind::Model, "model_download_failed", None)
                 });
-            card = card.child(self.ai_error_box(&error, cx)).child(
-                h_flex()
-                    .flex_wrap()
-                    .items_center()
-                    .gap(px(8.))
-                    .child(self.ai_primary_action_button(view.primary_action, true, cx))
-                    .child(self.ai_action_button(
-                        "ai-error-import",
-                        AiPluginAction::ImportModel,
-                        tr!("settings.ai.import_model"),
-                        false,
-                        false,
-                        cx,
-                    ))
-                    .child(self.ai_action_button(
-                        "ai-error-recheck",
-                        AiPluginAction::Recheck,
-                        tr!("settings.ai.recheck"),
-                        false,
-                        false,
-                        cx,
-                    ))
-                    .child(self.ai_action_button(
-                        "ai-error-uninstall",
-                        AiPluginAction::Uninstall,
-                        tr!("settings.ai.uninstall"),
-                        false,
-                        true,
-                        cx,
-                    )),
-            );
+            card = card
+                .child(card_divider(&p))
+                .child(self.ai_error_box(&error, cx))
+                .child(card_divider(&p))
+                .child(
+                    h_flex()
+                        .flex_wrap()
+                        .items_center()
+                        .gap(px(8.))
+                        .child(self.ai_primary_action_button(view.primary_action, true, cx))
+                        .child(self.ai_action_button(
+                            "ai-error-import",
+                            AiPluginAction::ImportModel,
+                            tr!("settings.ai.import_model"),
+                            false,
+                            false,
+                            cx,
+                        ))
+                        .child(self.ai_action_button(
+                            "ai-error-recheck",
+                            AiPluginAction::Recheck,
+                            tr!("settings.ai.recheck"),
+                            false,
+                            false,
+                            cx,
+                        ))
+                        .child(self.ai_action_button(
+                            "ai-error-uninstall",
+                            AiPluginAction::Uninstall,
+                            tr!("settings.ai.uninstall"),
+                            false,
+                            true,
+                            cx,
+                        )),
+                );
         } else {
-            card = card.child(self.ai_model_box(&manifest, &size_label)).child(
-                h_flex()
-                    .flex_wrap()
-                    .items_center()
-                    .gap(px(8.))
-                    .child(self.ai_primary_action_button(view.primary_action, false, cx))
-                    .child(self.ai_action_button(
-                        "ai-import-model",
-                        AiPluginAction::ImportModel,
-                        tr!("settings.ai.import_model"),
-                        false,
-                        false,
-                        cx,
-                    ))
-                    .child(self.ai_action_button(
-                        "ai-recheck",
-                        AiPluginAction::Recheck,
-                        tr!("settings.ai.recheck"),
-                        false,
-                        false,
-                        cx,
-                    ))
-                    .child(self.ai_action_button(
-                        "ai-import-zip",
-                        AiPluginAction::InstallZip,
-                        tr!("settings.ai.install"),
-                        false,
-                        false,
-                        cx,
-                    ))
-                    .child(self.ai_action_button(
-                        "ai-missing-uninstall",
-                        AiPluginAction::Uninstall,
-                        tr!("settings.ai.uninstall"),
-                        false,
-                        true,
-                        cx,
-                    )),
-            );
+            card = card
+                .child(card_divider(&p))
+                .child(self.ai_model_box(&manifest, &size_label))
+                .child(card_divider(&p))
+                .child(
+                    h_flex()
+                        .flex_wrap()
+                        .items_center()
+                        .gap(px(8.))
+                        .child(self.ai_primary_action_button(view.primary_action, false, cx))
+                        .child(self.ai_action_button(
+                            "ai-import-model",
+                            AiPluginAction::ImportModel,
+                            tr!("settings.ai.import_model"),
+                            false,
+                            false,
+                            cx,
+                        ))
+                        .child(self.ai_action_button(
+                            "ai-recheck",
+                            AiPluginAction::Recheck,
+                            tr!("settings.ai.recheck"),
+                            false,
+                            false,
+                            cx,
+                        ))
+                        .child(self.ai_action_button(
+                            "ai-import-zip",
+                            AiPluginAction::InstallZip,
+                            tr!("settings.ai.install"),
+                            false,
+                            false,
+                            cx,
+                        ))
+                        .child(self.ai_action_button(
+                            "ai-missing-uninstall",
+                            AiPluginAction::Uninstall,
+                            tr!("settings.ai.uninstall"),
+                            false,
+                            true,
+                            cx,
+                        )),
+                );
         }
 
         if state != AiPluginCardState::Error
@@ -1316,7 +1357,9 @@ impl App {
                 .or_else(|| self.ai.error_of(AiErrorKind::Model))
                 .cloned()
         {
-            card = card.child(self.ai_operation_error_box(&error));
+            card = card
+                .child(card_divider(&p))
+                .child(self.ai_operation_error_box(&error));
         }
 
         card

@@ -25,12 +25,12 @@ use vrc_photon_i18n::{tr, tr_args};
 
 use crate::app::App;
 use crate::app::daemon::{format_timestamp, open_path};
-use crate::ui::components::{glass_panel, manual_option_row};
+use crate::ui::components::{card_divider, glass_panel, manual_option_row};
 use crate::ui::theme::*;
 
 /// Phase 2 adds the automatic-send section to this body, so the bound is
 /// generous enough that the newer content is not clipped by the animation.
-const DISCORD_BODY_MAX: f32 = 900.0;
+const DISCORD_BODY_MAX: f32 = 1200.0;
 
 /// The database read and the card both cap the history at the newest rows;
 /// the design keeps 500 terminal rows and shows the latest 100.
@@ -202,6 +202,7 @@ impl App {
         let body = v_flex()
             .pt(px(12.))
             .gap(px(12.))
+            .child(card_divider(&p))
             .when(enabled, |this| {
                 this.child(
                     div()
@@ -214,10 +215,11 @@ impl App {
                         .text_color(rgb(p.red))
                         .child(tr!("integrations.discord.warning")),
                 )
+                .child(card_divider(&p))
             })
             .child(self.webhook_section(webhook.as_deref(), editing, url_error, cx))
             .when_some(stored_webhook_error, |this, error| {
-                this.child(
+                this.child(card_divider(&p)).child(
                     div()
                         .px(px(4.))
                         .text_size(px(10.))
@@ -225,6 +227,7 @@ impl App {
                         .child(error),
                 )
             })
+            .child(card_divider(&p))
             .child(
                 v_flex()
                     .gap(px(6.))
@@ -248,6 +251,7 @@ impl App {
                         ))
                     }),
             )
+            .child(card_divider(&p))
             .child(
                 h_flex().items_center().gap(px(8.)).child(
                     Button::new("discord-test-send")
@@ -257,6 +261,7 @@ impl App {
                         .on_click(cx.listener(|this, _, _, cx| this.send_test_message(cx))),
                 ),
             )
+            .child(card_divider(&p))
             .child(self.discord_toggle_row(
                 "discord-send-original",
                 tr!("integrations.discord.source.prefer_original"),
@@ -265,6 +270,7 @@ impl App {
                 cx,
                 App::set_discord_send_original,
             ))
+            .child(card_divider(&p))
             .child(self.discord_toggle_row(
                 "discord-include-players",
                 tr!("integrations.discord.players.label"),
@@ -273,6 +279,7 @@ impl App {
                 cx,
                 App::set_discord_include_players,
             ))
+            .child(card_divider(&p))
             .child(
                 v_flex()
                     .gap(px(6.))
@@ -341,6 +348,7 @@ impl App {
                             .into_any_element()
                     }),
             )
+            .child(card_divider(&p))
             .child(self.discord_auto_section(cx));
 
         glass_panel(&self.palette)
@@ -444,6 +452,7 @@ impl App {
                             })),
                     ),
             )
+            .child(card_divider(&p))
             .when(waiting > 0, |this| {
                 this.child(
                     div()
@@ -452,6 +461,7 @@ impl App {
                         .text_color(rgb(p.muted_2))
                         .child(tr!("integrations.discord.history.release_hint")),
                 )
+                .child(card_divider(&p))
             })
             .child(if history.is_empty() {
                 div()

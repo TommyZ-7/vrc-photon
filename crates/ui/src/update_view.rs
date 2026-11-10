@@ -391,7 +391,7 @@ mod tests {
 }
 
 use super::ipc_bridge;
-use crate::ui::components::glass_panel;
+use crate::ui::components::{card_divider, glass_panel};
 use crate::ui::theme::Palette;
 use gpui_kit::base::{Disableable as _, StyledExt as _, h_flex, v_flex};
 use gpui_kit::component::Sizable as _;
@@ -1269,18 +1269,21 @@ impl App {
                     )
                     .child(self.badge(status, fg, bg)),
             )
+            .child(card_divider(&p))
             .child(self.meta_row(
                 tr!("update.current_version"),
                 format!("v{}", vrc_photon_update::CURRENT_VERSION),
             ))
+            .child(card_divider(&p))
             .child(self.meta_row(
                 tr!("update.install_kind"),
                 install_label(&install).to_string(),
             ))
+            .child(card_divider(&p))
             .child(self.meta_row(tr!("update.last_checked"), last_checked));
 
         if demo {
-            return card.child(
+            return card.child(card_divider(&p)).child(
                 div()
                     .text_size(px(11.))
                     .text_color(rgb(p.muted))
@@ -1289,7 +1292,7 @@ impl App {
         }
 
         if let Some(notice) = self.update.notice() {
-            card = card.child(
+            card = card.child(card_divider(&p)).child(
                 div()
                     .p(px(10.))
                     .rounded(px(8.))
@@ -1300,7 +1303,7 @@ impl App {
             );
         }
 
-        card = card.child(self.setting_switch(
+        card = card.child(card_divider(&p)).child(self.setting_switch(
             tr!("update.auto_check"),
             tr!("update.auto_check_hint"),
             self.settings.auto_update_check,
@@ -1309,7 +1312,7 @@ impl App {
             |settings, value| settings.auto_update_check = value,
         ));
 
-        card = card.child(
+        card = card.child(card_divider(&p)).child(
             h_flex().flex_wrap().gap(px(8.)).child(
                 Button::new("update-check")
                     .label(tr!("update.check_now"))
@@ -1321,11 +1324,15 @@ impl App {
             ),
         );
 
-        card = card.child(self.update_phase_view(&phase, cx));
+        if !matches!(&phase, UpdatePhase::Idle) {
+            card = card
+                .child(card_divider(&p))
+                .child(self.update_phase_view(&phase, cx));
+        }
 
         if should_show_package_command(&install, self.update.system_apply_available, has_asset) {
             if let Some(command) = package_command(&install) {
-                card = card.child(
+                card = card.child(card_divider(&p)).child(
                     v_flex()
                         .gap(px(4.))
                         .child(
@@ -1343,7 +1350,7 @@ impl App {
                         ),
                 );
             } else {
-                card = card.child(
+                card = card.child(card_divider(&p)).child(
                     div()
                         .text_size(px(10.))
                         .text_color(rgb(p.muted_2))
@@ -1351,7 +1358,7 @@ impl App {
                 );
             }
         } else if matches!(install, InstallKind::SystemPackage { .. }) {
-            card = card.child(
+            card = card.child(card_divider(&p)).child(
                 div()
                     .text_size(px(10.))
                     .text_color(rgb(p.muted_2))
@@ -1363,7 +1370,7 @@ impl App {
                 | InstallKind::WindowsOther
                 | InstallKind::WindowsPerMachine { .. }
         ) {
-            card = card.child(
+            card = card.child(card_divider(&p)).child(
                 div()
                     .text_size(px(10.))
                     .text_color(rgb(p.muted_2))

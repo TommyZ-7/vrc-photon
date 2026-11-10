@@ -51,6 +51,14 @@ pub(crate) fn card_header(palette: &Palette) -> Div {
         .border_color(rgba(palette.highlight))
 }
 
+/// Hairline between two top-level items of a settings or integrations card.
+///
+/// The divider is a card child, so its width follows the card's horizontal
+/// padding and it keeps the same inset as the items around it.
+pub(crate) fn card_divider(palette: &Palette) -> Div {
+    div().h(px(1.)).w_full().bg(rgba(palette.line_soft))
+}
+
 pub(crate) fn glass_panel(palette: &Palette) -> Div {
     let p = palette;
     div()

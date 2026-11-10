@@ -20,7 +20,7 @@ use crate::app::daemon::{
 use crate::app::deletion::{
     deletion_actions, deletion_blocked_label, deletion_reason_label, deletion_status_label,
 };
-use crate::ui::components::glass_panel;
+use crate::ui::components::{card_divider, glass_panel};
 use crate::ui::daemon_error::daemon_error_message;
 use crate::ui::shell::{scan_progress_label, scan_progress_ratio};
 use crate::ui::theme::*;
@@ -581,6 +581,7 @@ impl App {
                     .text_color(rgb(p.text))
                     .child(tr!("dashboard.log.title")),
             )
+            .child(card_divider(&p))
             .child(
                 v_flex()
                     .gap(px(6.))
@@ -598,6 +599,7 @@ impl App {
                             .child(tr!("dashboard.log.location_missing")),
                     }),
             )
+            .child(card_divider(&p))
             .child(
                 v_flex()
                     .gap(px(4.))
@@ -621,7 +623,7 @@ impl App {
                     ),
             );
         if dir.is_some() {
-            card = card.child(
+            card = card.child(card_divider(&p)).child(
                 h_flex().items_center().gap(px(12.)).child(
                     Button::new("open-logs-folder")
                         .label(tr!("dashboard.log.open_folder"))
@@ -630,7 +632,7 @@ impl App {
                 ),
             );
         } else {
-            card = card.child(
+            card = card.child(card_divider(&p)).child(
                 div()
                     .text_size(px(10.))
                     .text_color(rgb(p.muted_2))
