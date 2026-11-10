@@ -90,6 +90,7 @@ cargo build -p vrc-photon-daemon
 - [開発環境の構築](docs/development.md)
 - [リリースとパッケージ](docs/release.md)
 - [AIタグ付けプラグイン](docs/ai-tagging/README.md)
+- [MCPサーバー](docs/mcp.md)
 - [ロードマップ](docs/roadmap.md)
 - [コントリビューション](CONTRIBUTING.md)
 
