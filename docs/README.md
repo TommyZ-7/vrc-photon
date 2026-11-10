@@ -18,6 +18,7 @@
 | [troubleshooting.md](troubleshooting.md) | よくある不具合と調査手順 | サポート・開発者 |
 | [security-privacy.md](security-privacy.md) | ローカルデータ、ログ、個人情報の扱い | 全員 |
 | [ai-tagging/README.md](ai-tagging/README.md) | AI タグ付けプラグインの導入・GPU 要件・プライバシー・トラブルシューティング | 利用者・サポート |
+| [mcp.md](mcp.md) | MCP サーバーの利用手順、配布形式ごとの実行ファイル、提供ツール | 利用者 |
 | [roadmap.md](roadmap.md) | 残作業、優先度、受け入れ条件 | 企画・開発者 |
 | [adr/README.md](adr/README.md) | 設計判断の記録（ADR） | 全員 |
 

@@ -58,7 +58,8 @@ AppImage に同梱した MCP サーバーを MCP クライアントから使う�
 `./vrc-photon_<version>_x86_64.AppImage --appimage-extract` で展開し、
 `squashfs-root/usr/bin/vrc-photon-mcp` を実行する。deb / pacman / NSIS では
 `vrc-photon-mcp`（Windows は `vrc-photon-mcp.exe`）が他のバイナリと同じ場所に
-インストールされる。
+インストールされる。クライアントからの設定方法と提供ツールは
+[mcp.md](mcp.md) を参照。
 
 `Packager.toml` の設定:
 
