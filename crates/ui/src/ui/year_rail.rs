@@ -125,7 +125,8 @@ impl RailList {
                 row_height,
                 ..
             } => first_visible_photo(self.scroll_top(), *columns, *row_height, total),
-            Self::Sessions { rows, .. } => rows
+            Self::Sessions { browser, .. } => browser
+                .borrow()
                 .top_photo_index(self.scroll_top())
                 .unwrap_or(0)
                 .min(total - 1),
@@ -251,6 +252,9 @@ impl YearRail {
         let max_offset = self.list.max_offset();
         let offset = self.list.scroll_offset_for_photo(photo_row, max_offset);
         self.list.set_offset(offset);
+        if let RailList::Sessions { browser, .. } = &self.list {
+            browser.borrow_mut().note_programmatic_scroll();
+        }
         // The gallery month header and the morph's card bounds are computed
         // during `App::render`. Setting the offset repaints the list only, so
         // notify the containing view as well; otherwise a rail jump leaves the

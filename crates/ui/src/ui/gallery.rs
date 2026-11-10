@@ -1227,7 +1227,9 @@ fn render_session_grid(
         .tab_stop(true)
         .on_scroll({
             let app = shared.app.clone();
+            let browser = shared.browser.clone();
             move |_, window, cx| {
+                browser.borrow_mut().note_session_scroll();
                 if let Some(app_entity) = app.upgrade() {
                     app_entity.update(cx, |app, cx| {
                         app.close_photo_context_menu_for_lifecycle(window, cx);
@@ -1288,6 +1290,14 @@ fn render_session_grid(
         .child(wrapper)
         .child(driver)
         .into_any_element()
+}
+
+/// Approximate height of the session list viewport inside the gallery card.
+/// Used only to keep a partially clipped header inside the visible area.
+fn session_grid_viewport_height(window: &Window) -> f32 {
+    let content = content_viewport(window);
+    (f32::from(content.height) - GALLERY_HEADER_HEIGHT - GALLERY_PAD_TOP - GALLERY_PAD_BOTTOM)
+        .max(SESSION_HEADER_ROW_HEIGHT)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1418,10 +1428,11 @@ fn render_session_header(
         } else {
             tr!("session.collapse")
         })
-        .on_click(move |_, _, cx| {
+        .on_click(move |_, window, cx| {
+            let viewport_height = session_grid_viewport_height(window);
             if let Some(app_entity) = app_weak.upgrade() {
                 app_entity.update(cx, |app, cx| {
-                    app.toggle_session_collapsed(session_id, cx);
+                    app.toggle_session_collapsed(session_id, viewport_height, cx);
                 });
             }
         });

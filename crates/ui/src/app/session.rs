@@ -28,6 +28,22 @@ fn collapse_motion_duration(reduce_motion: bool) -> Option<Duration> {
     (!reduce_motion).then_some(MOTION_BASE)
 }
 
+/// Keeps a clicked header at its current viewport position, nudging it into
+/// view only when it is partially clipped.
+fn keep_header_viewport_y(y: f32, header_height: f32, viewport_height: f32) -> f32 {
+    if y < 0.0 {
+        0.0
+    } else if y + header_height > viewport_height {
+        (viewport_height - header_height).max(0.0)
+    } else {
+        y
+    }
+}
+
+fn header_scroll_offset(header_offset: f32, viewport_y: f32) -> f32 {
+    (header_offset - viewport_y).max(0.0)
+}
+
 impl App {
     pub(crate) fn set_photos_view_mode(&mut self, mode: PhotosViewMode, cx: &mut Context<Self>) {
         if self.settings.ui_photos_view_mode == mode {
@@ -185,35 +201,61 @@ impl App {
         }
     }
 
-    pub(crate) fn toggle_session_collapsed(&mut self, session_id: i64, cx: &mut Context<Self>) {
-        let (columns, row_height, old_offset) = {
+    pub(crate) fn toggle_session_collapsed(
+        &mut self,
+        session_id: i64,
+        viewport_height: f32,
+        cx: &mut Context<Self>,
+    ) {
+        let now = Instant::now();
+        let (columns, row_height) = {
             let browser = self.library.borrow();
-            let offset = browser
-                .session_rows
-                .as_ref()
-                .and_then(|rows| rows.offset_for_session(session_id))
-                .unwrap_or(0.0);
-            (browser.columns.max(1), browser.row_height, offset)
+            (browser.columns.max(1), browser.row_height)
         };
         let mut browser = self.library.borrow_mut();
-        let collapsed = browser.toggle_session_collapsed(session_id);
-        if let Some(duration) = collapse_motion_duration(cx.reduce_motion()) {
-            browser.animate_session_collapse(session_id, collapsed, duration, Instant::now());
-        } else {
-            browser.settle_session_collapse(session_id);
-        }
-        let layout = browser.session_layout(
+        let before = browser.session_layout(
             columns,
             row_height,
             SESSION_HEADER_ROW_HEIGHT + CARD_ROW_GAP,
             SESSION_DATE_LABEL_ROW_HEIGHT + CARD_ROW_GAP,
-            Instant::now(),
+            now,
         );
-        let offset = layout
+        let header_offset = before
             .rows
-            .offset_for_session_with_heights(session_id, &layout.heights)
-            .unwrap_or(old_offset);
-        set_session_scroll_offset(&browser, offset);
+            .offset_for_session_with_heights(session_id, &before.heights)
+            .unwrap_or(0.0);
+        let viewport_y = keep_header_viewport_y(
+            header_offset - session_scroll_top(&browser.session_scroll),
+            SESSION_HEADER_ROW_HEIGHT,
+            viewport_height,
+        );
+
+        let collapsed = browser.toggle_session_collapsed(session_id);
+        let animating = if let Some(duration) = collapse_motion_duration(cx.reduce_motion()) {
+            browser.animate_session_collapse(session_id, collapsed, duration, now);
+            true
+        } else {
+            browser.settle_session_collapse(session_id);
+            false
+        };
+
+        let after = browser.session_layout(
+            columns,
+            row_height,
+            SESSION_HEADER_ROW_HEIGHT + CARD_ROW_GAP,
+            SESSION_DATE_LABEL_ROW_HEIGHT + CARD_ROW_GAP,
+            now,
+        );
+        let header_offset = after
+            .rows
+            .offset_for_session_with_heights(session_id, &after.heights)
+            .unwrap_or(header_offset);
+        set_session_scroll_offset(&browser, header_scroll_offset(header_offset, viewport_y));
+        if animating {
+            browser.set_session_scroll_anchor(session_id, viewport_y);
+        } else {
+            browser.cancel_session_scroll_anchor();
+        }
         drop(browser);
         cx.notify();
     }
@@ -291,9 +333,27 @@ impl App {
 
 #[cfg(test)]
 mod tests {
-    use super::{collapse_motion_duration, next_view_mode};
+    use super::{
+        collapse_motion_duration, header_scroll_offset, keep_header_viewport_y, next_view_mode,
+    };
     use crate::ui::theme::MOTION_BASE;
     use vrc_photon_core::settings::PhotosViewMode;
+
+    #[test]
+    fn a_visible_session_header_keeps_its_viewport_position() {
+        assert_eq!(keep_header_viewport_y(320.0, 78.0, 700.0), 320.0);
+    }
+
+    #[test]
+    fn a_partially_hidden_session_header_is_scrolled_minimally_into_view() {
+        assert_eq!(keep_header_viewport_y(-12.0, 78.0, 700.0), 0.0);
+        assert_eq!(keep_header_viewport_y(650.0, 78.0, 700.0), 622.0);
+    }
+
+    #[test]
+    fn the_header_offset_uses_the_anchor_viewport_y() {
+        assert_eq!(header_scroll_offset(500.0, 320.0), 180.0);
+    }
 
     #[test]
     fn view_mode_toggle_alternates_between_timeline_and_sessions() {
