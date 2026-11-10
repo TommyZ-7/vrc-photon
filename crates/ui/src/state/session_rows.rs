@@ -70,6 +70,7 @@ pub(crate) struct SessionRows {
 }
 
 impl SessionRows {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn build(
         entries: &[PhotoIndexEntry],
         columns: usize,
@@ -727,10 +728,7 @@ mod tests {
         let heights = rows.heights_with_collapse(&HashMap::from([(7, 0.25)]));
         // Header 40, first run 2 photos, date label 20, unlinked photo 1,
         // continuation 44 * 0.75, split session photo 1.
-        assert_eq!(
-            heights,
-            vec![40.0, 75.0, 75.0, 20.0, 100.0, 33.0, 75.0]
-        );
+        assert_eq!(heights, vec![40.0, 75.0, 75.0, 20.0, 100.0, 33.0, 75.0]);
     }
 
     #[test]

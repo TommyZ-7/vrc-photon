@@ -1536,10 +1536,11 @@ fn render_session_continuation(
         .and_then(|summary| summary.world_name.clone())
         .filter(|name| !name.is_empty())
         .unwrap_or_else(|| tr!("session.unknown_world"));
-    let world = summary
-        .is_none()
-        .then(|| tr!("session.loading"))
-        .unwrap_or(world);
+    let world = if summary.is_none() {
+        tr!("session.loading")
+    } else {
+        world
+    };
 
     h_flex()
         .h(px(SESSION_CONTINUATION_ROW_HEIGHT))
@@ -1576,7 +1577,8 @@ fn render_session_continuation(
         .into_any_element()
 }
 
-fn render_session_date_label(app: &App, day: i32, photo_count: usize) -> AnyElement {    let p = app.palette;
+fn render_session_date_label(app: &App, day: i32, photo_count: usize) -> AnyElement {
+    let p = app.palette;
     let line = || div().h(px(1.)).flex_1().bg(rgba(p.line_soft));
     h_flex()
         .h(px(SESSION_DATE_LABEL_ROW_HEIGHT))
