@@ -175,7 +175,7 @@ crates/ui/src/
   app/
     cli.rs                # LaunchOptions/parse_args/timing
     lifecycle.rs          # 3秒更新、IPC、再読込、画面切替、サイドバー/インスペクタ
-    photos.rs             # 選択、サムネイル/プレビュー要求、ライブラリ状態
+    photos.rs             # 選択、サムネイル要求、フル画像デコード、ライブラリ状態
     search.rs             # 検索実行・結果適用
     compression.rs        # プロファイル/手動圧縮
     discord.rs            # Discord 設定・送信 enqueue・履歴更新

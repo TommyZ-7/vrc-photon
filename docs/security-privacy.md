@@ -24,8 +24,7 @@
 | AI プラグイン | インストール済み variant / version、manifest、probe 結果 | `plugins/` / DB |
 | AI モデル | `model` / `mmproj` の GGUF ファイル | `plugins/<plugin_id>/models/<revision>/` |
 | AI タグ | presence、人数、場所、タグ別確率、実行環境 | `photo_ai` / `photo_ai_tags` |
-| サムネイル | 256px WebP | `thumbnails/` |
-| プレビュー | 1200px WebP | `previews/` |
+| サムネイル | 設定に従う 256/384/512px WebP | `thumbnails/` |
 | 更新 | ダウンロードした成果物、適用ジョブ（署名対象の `latest.json` を含む）、結果、ヘルパーのログ | `updates/` |
 
 Discord の Webhook URL は `AppSettings` の JSON とは別の `app_settings`
