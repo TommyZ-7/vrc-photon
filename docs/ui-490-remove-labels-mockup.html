@@ -1,0 +1,545 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VRC PhotoN — 余計な表記の削除モック (#490)</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%230d1420'/%3E%3Ccircle cx='16' cy='16' r='7' fill='none' stroke='%238bcbff' stroke-width='2'/%3E%3C/svg%3E">
+<style>
+  :root {
+    color-scheme: dark;
+    --font: "Inter", "Noto Sans JP", "Hiragino Sans", "Yu Gothic UI", system-ui, -apple-system, sans-serif;
+    --text: #eef4ff;
+    --muted: #a8b4ca;
+    --dim: #7f8ba3;
+    --faint: #5e6a81;
+    --accent: #8bcbff;
+    --blue: #5aa9ff;
+    --green: #7ee2b8;
+    --rose: #ff94a8;
+    --amber: #f4c878;
+    --line: rgba(255, 255, 255, 0.105);
+    --line-strong: rgba(255, 255, 255, 0.17);
+    --line-soft: rgba(255, 255, 255, 0.065);
+    --panel: #0d1420;
+    --panel-deep: #080d15;
+    --panel-inner: #111927;
+    --panel-raised: #121a28;
+    --r-card: 22px;
+    --r-inner: 16px;
+    --r-ui: 12px;
+  }
+
+  * { box-sizing: border-box; }
+  html { overflow-x: hidden; }
+  body {
+    margin: 0;
+    min-width: 320px;
+    background: #05070d;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -2;
+    background:
+      radial-gradient(ellipse 58% 54% at 10% 2%, rgba(54, 107, 255, 0.28), transparent 66%),
+      radial-gradient(ellipse 46% 52% at 92% 6%, rgba(255, 86, 181, 0.12), transparent 68%),
+      radial-gradient(ellipse 52% 48% at 64% 104%, rgba(30, 202, 178, 0.10), transparent 68%),
+      linear-gradient(140deg, #04060c 0%, #0a0f1e 44%, #060811 100%);
+  }
+
+  .page { width: min(1400px, calc(100% - 48px)); margin: 0 auto; padding: 44px 0 80px; }
+  .masthead { display: flex; align-items: flex-start; justify-content: space-between; gap: 28px; margin-bottom: 28px; }
+  .eyebrow { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; }
+  .issue-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border: 1px solid rgba(139,203,255,.24); border-radius: 999px; background: rgba(139,203,255,.08); color: var(--accent); font-size: 10px; letter-spacing: .08em; }
+  h1 { margin: 11px 0 9px; font-size: clamp(25px, 3vw, 36px); line-height: 1.22; letter-spacing: -.035em; font-weight: 620; }
+  .lede { max-width: 820px; margin: 0; color: var(--muted); font-size: 13px; }
+  .lede b { color: var(--text); font-weight: 560; }
+  .meta-card { flex: none; min-width: 250px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 16px; background: rgba(13,20,32,.72); }
+  .meta-row { display: flex; justify-content: space-between; gap: 18px; padding: 4px 0; color: var(--dim); font-size: 11px; }
+  .meta-row b { color: var(--text); font-weight: 550; }
+  .meta-row + .meta-row { border-top: 1px solid var(--line-soft); }
+
+  .section-label { display: flex; align-items: baseline; gap: 12px; margin: 42px 0 14px; }
+  .section-label h2 { margin: 0; font-size: 15px; font-weight: 580; letter-spacing: -.01em; }
+  .section-label span { color: var(--dim); font-size: 11px; }
+  .section-note { max-width: 900px; margin: -4px 0 16px; color: var(--dim); font-size: 11.5px; }
+
+  .decision-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 18px 0 6px; }
+  .decision { padding: 13px 14px; border: 1px solid var(--line); border-radius: 14px; background: rgba(14,21,34,.72); }
+  .decision .q { color: var(--accent); font-size: 10px; letter-spacing: .08em; }
+  .decision h3 { margin: 5px 0 6px; font-size: 12px; font-weight: 580; }
+  .decision p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
+  .decision .alt { display: block; margin-top: 7px; color: var(--faint); font-size: 10.5px; }
+  .decision .ok { display: inline-block; margin-top: 8px; padding: 2px 7px; border-radius: 999px; color: var(--green); background: rgba(126,226,184,.07); border: 1px solid rgba(126,226,184,.18); font-size: 9.5px; }
+
+  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 22px; }
+  .panel { border: 1px solid var(--line); border-radius: var(--r-card); background: linear-gradient(180deg, rgba(17,25,39,.78), rgba(9,14,23,.9)); padding: 16px; box-shadow: 0 20px 60px rgba(0,0,0,.22); }
+  .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 2px 4px 13px; }
+  .panel-title { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 560; }
+  .panel-note { color: var(--dim); font-size: 10.5px; }
+  .tag { padding: 2px 7px; border-radius: 999px; font-size: 9.5px; letter-spacing: .04em; }
+  .tag.before { color: var(--dim); background: rgba(255,255,255,.04); border: 1px solid var(--line-soft); }
+  .tag.after { color: var(--green); background: rgba(126,226,184,.07); border: 1px solid rgba(126,226,184,.18); }
+  .state-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
+  .state-dot.after { background: var(--green); box-shadow: 0 0 0 4px rgba(126,226,184,.09); }
+
+  .stage { position: relative; min-height: 280px; overflow: hidden; border: 1px solid var(--line-soft); border-radius: var(--r-inner); background: var(--panel-deep); padding: 16px; }
+  .stage.column { display: flex; justify-content: center; align-items: flex-start; }
+  .stage.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
+
+  .ui-card { width: 100%; max-width: 330px; padding: 12px; border: 1px solid rgba(255,255,255,.09); border-radius: 15px; background: linear-gradient(180deg, #121a28, #0c121d); box-shadow: inset 0 1px 0 rgba(255,255,255,.04); }
+  .ui-card.wide { max-width: none; }
+  .ui-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+  .ui-label { color: var(--muted); font-size: 10px; font-weight: 600; letter-spacing: .02em; }
+  .ui-hint { color: var(--faint); font-size: 9.5px; }
+  .ui-title { font-size: 12px; font-weight: 600; }
+  .ui-sub { color: var(--faint); font-size: 9.5px; margin-top: 1px; }
+  .ui-divider { height: 1px; background: rgba(255,255,255,.06); margin: 10px 0; }
+  .ui-section { margin-top: 12px; }
+  .ui-section:first-child { margin-top: 0; }
+  .ui-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 5px 0; }
+  .ui-row.stack { align-items: flex-start; }
+  .ui-row .left { min-width: 0; }
+  .ui-row .right { flex: none; color: var(--faint); font-size: 9.5px; }
+  .ui-muted { color: var(--muted); font-size: 10px; }
+  .ui-faint { color: var(--faint); font-size: 9.5px; }
+  .ui-green { color: var(--green); }
+  .ui-blue { color: var(--accent); }
+  .ui-amber { color: var(--amber); }
+  .ui-rose { color: var(--rose); }
+  .ui-chiprow { display: flex; flex-wrap: wrap; gap: 4px; }
+  .ui-chip { padding: 2px 7px; border-radius: 999px; border: 1px solid rgba(126,226,184,.28); background: rgba(126,226,184,.08); color: var(--green); font-size: 9.5px; }
+  .ui-chip.tag { color: var(--muted); background: rgba(255,255,255,.04); border-color: rgba(255,255,255,.1); }
+  .ui-btn { display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-height: 22px; padding: 2px 9px; border-radius: 7px; border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.04); color: var(--muted); font-size: 9.5px; }
+  .ui-btn.primary { border-color: rgba(139,203,255,.28); background: rgba(139,203,255,.1); color: var(--accent); }
+  .ui-btn.ghost { background: transparent; }
+  .ui-switch { width: 28px; height: 15px; border-radius: 999px; background: rgba(255,255,255,.12); position: relative; flex: none; }
+  .ui-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 11px; height: 11px; border-radius: 50%; background: var(--muted); }
+  .ui-switch.on { background: rgba(126,226,184,.22); }
+  .ui-switch.on::after { left: 15px; background: var(--green); }
+  .ui-box { padding: 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,.07); background: rgba(255,255,255,.025); }
+  .ui-box.amber { border-color: rgba(244,200,120,.28); background: rgba(244,200,120,.07); color: var(--amber); }
+  .ui-box.green { border-color: rgba(126,226,184,.24); background: rgba(126,226,184,.055); }
+  .ui-box.dim { color: var(--faint); }
+  .ui-radio { display: flex; gap: 8px; align-items: flex-start; padding: 6px 0; }
+  .ui-radio .dot { width: 12px; height: 12px; margin-top: 2px; border-radius: 50%; border: 1px solid rgba(255,255,255,.25); flex: none; }
+  .ui-radio.on .dot { border-color: var(--accent); box-shadow: inset 0 0 0 3px #0c121d; background: var(--accent); }
+  .ui-progress { height: 4px; border-radius: 999px; background: rgba(255,255,255,.08); overflow: hidden; }
+  .ui-progress > i { display: block; width: 58%; height: 100%; background: var(--accent); border-radius: inherit; }
+
+  .removed { position: relative; color: var(--rose); background: rgba(255,148,168,.06); border: 1px dashed rgba(255,148,168,.42); border-radius: 5px; padding: 0 4px; text-decoration: line-through; text-decoration-thickness: 1px; text-decoration-color: rgba(255,148,168,.7); }
+  .removed-block { border: 1px dashed rgba(255,148,168,.42); background: rgba(255,148,168,.045); border-radius: 8px; padding: 7px 8px; color: var(--rose); }
+  .removed-block .ui-faint, .removed-block .ui-muted { color: rgba(255,148,168,.62); }
+  .annotation { display: flex; gap: 7px; margin-top: 10px; color: var(--dim); font-size: 10px; line-height: 1.55; }
+  .annotation b { color: var(--muted); font-weight: 560; }
+  .badge-row { display: flex; flex-wrap: wrap; gap: 5px; margin: 6px 0 10px; }
+  .badge { padding: 2px 7px; border-radius: 999px; font-size: 9.5px; color: var(--dim); background: rgba(255,255,255,.035); border: 1px solid rgba(255,255,255,.075); }
+  .badge.keep { color: var(--green); background: rgba(126,226,184,.06); border-color: rgba(126,226,184,.16); }
+  .badge.drop { color: var(--rose); background: rgba(255,148,168,.06); border-color: rgba(255,148,168,.18); }
+  .empty-strip { height: 120px; border-radius: 12px; border: 1px dashed rgba(255,255,255,.09); background: rgba(255,255,255,.012); }
+  .option-label { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; color: var(--muted); font-size: 10px; font-weight: 560; }
+  .option-label .tag { font-weight: 400; }
+  .mini-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
+  .thumb { aspect-ratio: 3 / 2; border-radius: 7px; background: linear-gradient(135deg, #1d3557, #0b1727); border: 1px solid rgba(255,255,255,.05); }
+  .thumb.t2 { background: linear-gradient(135deg, #2a153a, #10111d); }
+  .thumb.t3 { background: linear-gradient(135deg, #0f3532, #081717); }
+  .thumb.t4 { background: linear-gradient(135deg, #38231b, #160f0c); }
+  .thumb.t5 { background: linear-gradient(135deg, #1d2a49, #0b1020); }
+  .thumb.t6 { background: linear-gradient(135deg, #2d1c2f, #120b15); }
+
+  .footer-note { margin-top: 40px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 16px; background: rgba(13,20,32,.7); color: var(--muted); font-size: 11.5px; }
+  .footer-note b { color: var(--text); }
+  .footer-note ul { margin: 8px 0 0; padding-left: 18px; }
+  .footer-note li { margin: 3px 0; }
+
+  @media (max-width: 1100px) {
+    .decision-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 860px) {
+    .masthead { flex-direction: column; }
+    .meta-card { width: 100%; }
+    .compare { grid-template-columns: 1fr; }
+    .stage.grid2 { grid-template-columns: 1fr; }
+    .decision-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="masthead">
+    <div>
+      <div class="eyebrow"><span class="issue-chip">#490</span><span>UI cleanup · removal only</span></div>
+      <h1>余計な表記を削除する</h1>
+      <p class="lede">
+        ラベル・ヒント・ツールチップ・注記を削除し、<b>ja / en の i18n キーと呼び出し側</b>も取り除く。
+        削除で見出し・カード・セクション・キュー行の中身が空になる場合は、その領域ごと削除する。
+        エラー、同意・ライセンス、破壊的操作の警告は対象外。
+      </p>
+    </div>
+    <div class="meta-card">
+      <div class="meta-row"><span>対象</span><b>写真 / ダッシュボード / 設定 / 連携 / 圧縮 / 検索</b></div>
+      <div class="meta-row"><span>変更</span><b>削除のみ（新規文言なし）</b></div>
+      <div class="meta-row"><span>PR</span><b>docs 1 + 実装 1</b></div>
+      <div class="meta-row"><span>状態</span><b>承認待ち</b></div>
+    </div>
+  </header>
+
+  <div class="section-label"><h2>承認ポイント</h2><span>見た目が変わる判断だけを抜き出す</span></div>
+  <div class="decision-grid">
+    <div class="decision">
+      <div class="q">Q1 · viewer.close</div>
+      <h3>「閉じる」に変更</h3>
+      <p>クイックルックと通知モーダルの両方で「Esc」だけを外す。キーは残す。</p>
+      <span class="ok">推奨</span>
+      <span class="alt">代替: アイコンのみ / 新しいキーを追加</span>
+    </div>
+    <div class="decision">
+      <div class="q">Q2 · 自動起動</div>
+      <h3>systemd 時は説明なし</h3>
+      <p>「systemd 管理で起動中…」を削除。ログイン時起動の説明も出さない。</p>
+      <span class="ok">推奨</span>
+      <span class="alt">代替: daemon.autostart.login にフォールバック</span>
+    </div>
+    <div class="decision">
+      <div class="q">Q3 · 未選択インスペクタ</div>
+      <h3>列幅は残して空にする</h3>
+      <p>案内カードだけを削除。写真選択時のギャラリー幅の変化を避ける。</p>
+      <span class="ok">推奨</span>
+      <span class="alt">代替: 列ごと隠してギャラリーを広げる</span>
+    </div>
+    <div class="decision">
+      <div class="q">Q4 · 通知なし</div>
+      <h3>モーダルを開かない</h3>
+      <p>「対応が必要な通知はありません」を削除。通知対象がないときは開かない。</p>
+      <span class="ok">推奨</span>
+      <span class="alt">代替: ヘッダーだけの空モーダル</span>
+    </div>
+  </div>
+
+  <div class="section-label"><h2>1. Photos — インスペクタ</h2><span>選択中 / 未選択 / 空セクション</span></div>
+  <p class="section-note">選択中はヘッダー・AI タグ・圧縮履歴・メモの 4 か所。空状態のブロックと、中身がなくなる見出し・カードを削除する。</p>
+  <div class="compare">
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title"><span class="state-dot"></span>変更前</div><span class="tag before">BEFORE</span></div>
+      <div class="stage column">
+        <div class="ui-card">
+          <div class="ui-header"><span class="ui-label">選択中</span><span class="removed">Space で開く</span></div>
+          <div class="ui-section">
+            <div class="ui-header"><span class="ui-label ui-green">AIタグ</span><span class="removed">読み取り専用</span></div>
+            <div class="removed-block" style="margin-top:6px">
+              <div class="ui-muted">AIタグ未生成</div>
+              <div class="ui-faint">「AIタグを再生成」で作成</div>
+            </div>
+          </div>
+          <div class="ui-section">
+            <div class="ui-label">圧縮履歴</div>
+            <div class="removed-block" style="margin-top:6px"><span class="ui-faint">まだ圧縮されていません</span></div>
+          </div>
+          <div class="ui-section">
+            <div class="ui-header"><span class="ui-label">メモ</span><span class="ui-btn ghost">編集</span></div>
+            <div class="removed-block" style="margin-top:6px"><span class="ui-faint">メモはまだありません</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="annotation"><b>削除:</b> ヘッダー右のショートカット、AI の空状態、圧縮履歴の空文、メモの空ボックス。</div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title"><span class="state-dot after"></span>変更後</div><span class="tag after">AFTER</span></div>
+      <div class="stage column">
+        <div class="ui-card">
+          <div class="ui-header"><span class="ui-label">選択中</span></div>
+          <div class="ui-section">
+            <div class="ui-header"><span class="ui-label ui-green">AIタグ</span></div>
+          </div>
+          <div class="ui-section">
+            <div class="ui-header"><span class="ui-label">メモ</span><span class="ui-btn ghost">編集</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="annotation"><b>残す:</b> 「選択中」、AI 見出し、メモ見出しと編集。空の圧縮履歴セクションは出さない。</div>
+    </div>
+  </div>
+
+  <div class="compare">
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title"><span class="state-dot"></span>未選択（変更前）</div><span class="tag before">BEFORE</span></div>
+      <div class="stage column">
+        <div class="ui-card" style="min-height:190px; display:flex; flex-direction:column; justify-content:center; gap:5px; text-align:left;">
+          <div class="ui-title">写真を選択してください</div>
+          <div class="ui-faint">ライブラリから写真を選ぶと、ここに情報が表示されます。</div>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title"><span class="state-dot after"></span>未選択（変更後）</div><span class="tag after">AFTER</span></div>
+      <div class="stage" style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+        <div>
+          <div class="option-label">A. 列を残す <span class="tag after">推奨</span></div>
+          <div class="empty-strip"></div>
+          <div class="annotation">ギャラリー幅は変わらない。空のカードは描かない。</div>
+        </div>
+        <div>
+          <div class="option-label">B. 列ごと隠す</div>
+          <div class="mini-grid" style="grid-template-columns:repeat(4,1fr)">
+            <div class="thumb"></div><div class="thumb t2"></div><div class="thumb t3"></div><div class="thumb t4"></div>
+            <div class="thumb t5"></div><div class="thumb t6"></div><div class="thumb"></div><div class="thumb t2"></div>
+          </div>
+          <div class="annotation">写真選択でインスペクタが現れ、ギャラリー幅が変わる。</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-label"><h2>2. ダッシュボード</h2><span>AI カード / ログ / 削除待ち</span></div>
+  <p class="section-note">AI カードのアイコンとサブタイトル、待機中・準備不足の補足、状態ラベルを削除する。ログの 24 時間注記はアンバーのカードごと削除する。</p>
+  <div class="compare">
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title"><span class="state-dot"></span>変更前</div><span class="tag before">BEFORE</span></div>
+      <div class="stage grid2">
+        <div class="ui-card">
+          <div class="ui-header" style="justify-content:flex-start; gap:8px;">
+            <div style="width:26px;height:26px;border-radius:8px;background:rgba(139,203,255,.1);display:grid;place-items:center;color:var(--accent);font-size:13px;">🤖</div>
+            <div style="flex:1;min-width:0;">
+              <div class="ui-title">AIタグ付け</div>
+              <div class="ui-faint">ローカル推論 · 待機中 / 実行中 / 失敗</div>
+            </div>
+            <span class="removed" style="font-size:9px;">待機中</span>
+          </div>
+          <div class="ui-chiprow" style="margin:6px 0 8px;">
+            <span class="ui-chip tag">待機 0</span><span class="ui-chip tag">処理中 0</span><span class="ui-chip tag">失敗 0</span>
+          </div>
+          <div class="removed-block"><span class="ui-faint">新しい写真を待っています。</span></div>
+        </div>
+        <div class="ui-card">
+          <div class="ui-title">ログ</div>
+          <div class="ui-faint" style="margin-top:2px;">保存先 / ファイル</div>
+          <div class="ui-box amber" style="margin-top:8px; font-size:9px;">VRChat本体は出力ログを24時間で削除します。アプリ側には解析済みイベントだけを保存します。</div>
+          <div class="ui-row" style="margin-top:8px;"><span class="ui-btn">ログフォルダを開く</span><span class="ui-faint">OSのファイラーで開きます</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title"><span class="state-dot after"></span>変更後</div><span class="tag after">AFTER</span></div>
+      <div class="stage grid2">
+        <div class="ui-card">
+          <div class="ui-header" style="justify-content:flex-start; gap:8px;">
+            <div style="flex:1;min-width:0;">
+              <div class="ui-title">AIタグ付け</div>
+            </div>
+          </div>
+          <div class="ui-chiprow" style="margin:6px 0 0;">
+            <span class="ui-chip tag">待機 0</span><span class="ui-chip tag">処理中 0</span><span class="ui-chip tag">失敗 0</span>
+          </div>
+        </div>
+        <div class="ui-card">
+          <div class="ui-title">ログ</div>
+          <div class="ui-faint" style="margin-top:2px;">保存先 / ファイル</div>
+          <div class="ui-row" style="margin-top:8px;"><span class="ui-btn">ログフォルダを開く</span></div>
+        </div>
+      </div>
+      <div class="annotation"><b>残す:</b> AI のタイトル・件数・設定/連携ボタン、ログの保存先とボタン。状態ラベルは出さない。</div>
+    </div>
+  </div>
+
+  <div class="section-label"><h2>3. 設定</h2><span>表示 / 起動 / フッター / AI</span></div>
+  <p class="section-note">スイッチの説明だけを削除し、ラベルと操作は残す。共通ヘルパーは空説明のとき説明ノードと余白を描画しない。</p>
+  <div class="compare">
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title"><span class="state-dot"></span>変更前</div><span class="tag before">BEFORE</span></div>
+      <div class="stage">
+        <div class="ui-card wide">
+          <div class="ui-label">表示（ライブラリ・検索）</div>
+          <div class="ui-row"><div class="left"><div class="ui-muted">圧縮状態</div><div class="ui-faint">写真カード左下の圧縮状態ラベルを表示します</div></div><span class="ui-switch on"></span></div>
+          <div class="ui-row"><div class="left"><div class="ui-muted">ワールド名</div><div class="ui-faint">カードのワールド名を表示します</div></div><span class="ui-switch on"></span></div>
+          <div class="ui-divider"></div>
+          <div class="ui-row"><div class="left"><div class="ui-muted">自動起動</div><div class="ui-faint">systemd 管理で起動中。サービス利用時はOFF推奨</div></div><span class="ui-switch on"></span></div>
+          <div class="ui-row"><div class="left"><div class="ui-muted">トレイ常駐</div><div class="ui-faint">UIを閉じても監視を継続</div></div><span class="ui-switch on"></span></div>
+          <div class="ui-divider"></div>
+          <div class="ui-box amber" style="font-size:9px;">モデルの準備は完了していますが、プラグインの probe が未実行です。「再確認」で状態を更新してください。</div>
+          <div class="ui-row" style="margin-top:10px;"><span class="ui-btn">設定を再読込</span><span class="ui-faint">言語: 日本語 · サムネイルキャッシュ上限: 無制限</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title"><span class="state-dot after"></span>変更後</div><span class="tag after">AFTER</span></div>
+      <div class="stage">
+        <div class="ui-card wide">
+          <div class="ui-label">表示（ライブラリ・検索）</div>
+          <div class="ui-row"><div class="left"><div class="ui-muted">圧縮状態</div></div><span class="ui-switch on"></span></div>
+          <div class="ui-row"><div class="left"><div class="ui-muted">ワールド名</div></div><span class="ui-switch on"></span></div>
+          <div class="ui-divider"></div>
+          <div class="ui-row"><div class="left"><div class="ui-muted">自動起動</div></div><span class="ui-switch on"></span></div>
+          <div class="ui-row"><div class="left"><div class="ui-muted">トレイ常駐</div></div><span class="ui-switch on"></span></div>
+          <div class="ui-divider"></div>
+          <div class="ui-row"><span class="ui-btn">設定を再読込</span></div>
+        </div>
+      </div>
+      <div class="annotation"><b>削除:</b> 表示 4 件の説明、自動起動・トレイの説明、probe 警告、フッター要約。<b>残す:</b> スイッチ、再読込、AI の再確認ボタン。</div>
+    </div>
+  </div>
+
+  <div class="section-label"><h2>4. 連携・自動 / Discord</h2><span>AI / 自動圧縮 / クリップボード / 送信タイミング</span></div>
+  <p class="section-note">カード見出しのサブタイトルと、スイッチ・ラジオの説明を削除する。選択肢のラベルと操作は変えない。</p>
+  <div class="compare">
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title"><span class="state-dot"></span>変更前</div><span class="tag before">BEFORE</span></div>
+      <div class="stage grid2">
+        <div class="ui-card">
+          <div class="ui-title">AIタグ付け</div>
+          <div class="ui-faint">ローカル推論で人数・場所・シーンタグを生成します</div>
+          <div class="ui-row" style="margin-top:8px;"><div class="left"><div class="ui-muted">有効化</div><div class="ui-faint">AIタグ付けジョブの実行を許可します</div></div><span class="ui-switch on"></span></div>
+          <div class="ui-row"><div class="left"><div class="ui-muted">自動</div><div class="ui-faint">新しい写真を自動で処理します</div></div><span class="ui-switch on"></span></div>
+          <div class="ui-row"><div class="left"><div class="ui-muted">バックログ</div><div class="ui-faint">既存の未処理写真を待機に積みます</div></div><span class="ui-switch"></span></div>
+        </div>
+        <div class="ui-card">
+          <div class="ui-title">送信タイミング</div>
+          <div class="ui-radio on"><span class="dot"></span><div><div class="ui-muted">自動送信しません</div><div class="ui-faint">手動で送ったときだけ送信します</div></div></div>
+          <div class="ui-radio"><span class="dot"></span><div><div class="ui-muted">圧縮後すぐ</div><div class="ui-faint">圧縮が完了したら送信します</div></div></div>
+          <div class="ui-radio"><span class="dot"></span><div><div class="ui-muted">しばらく待ってから</div><div class="ui-faint">一定時間まとめて送信します</div></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title"><span class="state-dot after"></span>変更後</div><span class="tag after">AFTER</span></div>
+      <div class="stage grid2">
+        <div class="ui-card">
+          <div class="ui-title">AIタグ付け</div>
+          <div class="ui-row" style="margin-top:8px;"><div class="left"><div class="ui-muted">有効化</div></div><span class="ui-switch on"></span></div>
+          <div class="ui-row"><div class="left"><div class="ui-muted">自動</div></div><span class="ui-switch on"></span></div>
+          <div class="ui-row"><div class="left"><div class="ui-muted">バックログ</div></div><span class="ui-switch"></span></div>
+        </div>
+        <div class="ui-card">
+          <div class="ui-title">送信タイミング</div>
+          <div class="ui-radio on"><span class="dot"></span><div><div class="ui-muted">自動送信しません</div></div></div>
+          <div class="ui-radio"><span class="dot"></span><div><div class="ui-muted">圧縮後すぐ</div></div></div>
+          <div class="ui-radio"><span class="dot"></span><div><div class="ui-muted">しばらく待ってから</div></div></div>
+        </div>
+      </div>
+      <div class="annotation"><b>残す:</b> 見出し、全スイッチ、選択肢のラベル、選択状態、実行ボタン。</div>
+    </div>
+  </div>
+
+  <div class="section-label"><h2>5. 圧縮 / 手動圧縮</h2><span>ロスレス品質 / 保存ヒント / キュー / ダイアログ</span></div>
+  <p class="section-note">空になるコールアウトと固定高のキュー行は領域ごと削除する。ロスレス時の品質は操作の無効状態だけで示す。</p>
+  <div class="compare">
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title"><span class="state-dot"></span>変更前</div><span class="tag before">BEFORE</span></div>
+      <div class="stage">
+        <div class="ui-card wide">
+          <div class="ui-row"><span class="ui-muted">品質</span><span style="display:flex;gap:5px;align-items:center;color:var(--faint)"><span class="ui-btn ghost">−</span><b style="color:var(--text)">82</b><span class="ui-btn ghost">＋</span><span class="ui-faint">ロスレスでは品質指定を使用しません</span></span></div>
+          <div class="ui-box dim" style="margin-top:10px; font-size:9px;">変更は即時保存されます。サフィックスの使用不可文字は _ に置換されます。手動圧縮の出力先と元画像の扱いは実行時に選べます。</div>
+          <div class="ui-divider"></div>
+          <div class="ui-label">圧縮キュー</div>
+          <div class="ui-box dim" style="margin-top:5px; font-size:9px;">失敗は最新の100件のみ表示しています（再試行は上限内のすべてが対象です）</div>
+          <div class="ui-row" style="font-size:9px;color:var(--faint);"><span>photo_001.webp</span><span>失敗</span></div>
+          <div class="ui-divider"></div>
+          <div class="ui-title">手動圧縮 <span class="ui-faint" style="font-size:9px">3 枚を対象</span></div>
+          <div class="ui-faint" style="font-size:9px;margin-top:3px;">プロファイルと元画像の扱いを確認して実行します。</div>
+          <div class="ui-row" style="margin-top:6px;"><span class="ui-muted">指定したフォルダに出力</span><span class="ui-faint">実行のたびに出力先を選びます</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title"><span class="state-dot after"></span>変更後</div><span class="tag after">AFTER</span></div>
+      <div class="stage">
+        <div class="ui-card wide">
+          <div class="ui-row"><span class="ui-muted">品質</span><span style="display:flex;gap:5px;align-items:center;color:var(--faint)"><span class="ui-btn ghost">−</span><b style="color:var(--text)">82</b><span class="ui-btn ghost">＋</span></span></div>
+          <div class="ui-divider"></div>
+          <div class="ui-label">圧縮キュー</div>
+          <div class="ui-row" style="font-size:9px;color:var(--faint);margin-top:5px;"><span>photo_001.webp</span><span>失敗</span></div>
+          <div class="ui-divider"></div>
+          <div class="ui-title">手動圧縮 <span class="ui-faint" style="font-size:9px">3 枚を対象</span></div>
+          <div class="ui-row" style="margin-top:6px;"><span class="ui-muted">指定したフォルダに出力</span><span class="ui-btn ghost">フォルダを選択</span></div>
+        </div>
+      </div>
+      <div class="annotation"><b>削除:</b> ロスレス注記、保存ヒントの箱、失敗ヒント行、ダイアログ説明、フォルダ行の説明。</div>
+    </div>
+  </div>
+
+  <div class="section-label"><h2>6. 検索 / 取り込み</h2><span>フィルター / AI タグ / エラー / 取り込み先</span></div>
+  <p class="section-note">見出しや操作の下に付く 1 行説明だけを削除する。フィルター、チップ、ボタン、パス表示は残す。</p>
+  <div class="compare">
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title"><span class="state-dot"></span>変更前</div><span class="tag before">BEFORE</span></div>
+      <div class="stage grid2">
+        <div class="ui-card">
+          <div class="ui-title">絞り込み</div>
+          <div class="ui-faint">カテゴリ間はAND、カテゴリ内はOR</div>
+          <div class="ui-box dim" style="margin-top:8px;font-size:9px;">ワールド / プレイヤー / タグ</div>
+          <div class="ui-label" style="margin-top:10px;">AI タグ</div>
+          <div class="ui-chiprow" style="margin-top:5px;"><span class="ui-chip">海</span><span class="ui-chip">夕方</span></div>
+          <div class="ui-faint" style="margin-top:5px;">選択したタグのいずれかに一致（OR）。タグ欄とは別条件です。</div>
+        </div>
+        <div class="ui-card">
+          <div class="ui-title">取り込み先</div>
+          <div class="ui-muted" style="margin-top:4px;">D:\VRChat\Photos</div>
+          <div class="ui-faint">設定 &gt; ライブラリ &gt; 取り込み先で変更できます。</div>
+          <div class="ui-divider"></div>
+          <div class="ui-rose" style="font-size:9.5px;">写真一覧を読み込めませんでした</div>
+          <div class="ui-faint">リボンの「再読込」で再試行できます。</div>
+          <div class="ui-btn primary" style="margin-top:5px;">再試行</div>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title"><span class="state-dot after"></span>変更後</div><span class="tag after">AFTER</span></div>
+      <div class="stage grid2">
+        <div class="ui-card">
+          <div class="ui-title">絞り込み</div>
+          <div class="ui-box dim" style="margin-top:8px;font-size:9px;">ワールド / プレイヤー / タグ</div>
+          <div class="ui-label" style="margin-top:10px;">AI タグ</div>
+          <div class="ui-chiprow" style="margin-top:5px;"><span class="ui-chip">海</span><span class="ui-chip">夕方</span></div>
+        </div>
+        <div class="ui-card">
+          <div class="ui-title">取り込み先</div>
+          <div class="ui-muted" style="margin-top:4px;">D:\VRChat\Photos</div>
+          <div class="ui-divider"></div>
+          <div class="ui-rose" style="font-size:9.5px;">写真一覧を読み込めませんでした</div>
+          <div class="ui-btn primary" style="margin-top:5px;">再試行</div>
+        </div>
+      </div>
+      <div class="annotation"><b>残す:</b> 検索フィルター、AI チップ、パス、エラー文、再試行ボタン。</div>
+    </div>
+  </div>
+
+  <div class="section-label"><h2>7. 文字だけの削除</h2><span>レイアウト判断が不要な項目</span></div>
+  <div class="panel" style="padding:18px 20px;">
+    <div class="badge-row">
+      <span class="badge drop">サイドバー: 変更を監視しています</span>
+      <span class="badge drop">サイドバー: 取り込み結果がここに残ります</span>
+      <span class="badge drop">ツールチップ: 未実行のジョブをすべて圧縮します</span>
+      <span class="badge drop">ツールチップ: デーモンに再スキャンを要求します</span>
+      <span class="badge drop">AI タグピッカーの説明</span>
+      <span class="badge drop">タグ別閾値の説明</span>
+      <span class="badge drop">言語 / テーマ / サムネイル / 起動の注記</span>
+      <span class="badge drop">AI インストール / ダウンロード / variant の注記</span>
+      <span class="badge drop">検索の OR 注記</span>
+      <span class="badge drop">AI ジョブの 3 件上限 / 空ヒント</span>
+      <span class="badge drop">Discord 履歴の説明</span>
+      <span class="badge drop">自動圧縮 / クリップボードのサブタイトル</span>
+    </div>
+    <div class="annotation" style="margin-top:4px;">これらは表示ノードを削除するだけで、外側の見出し・カード・操作は残る。空になる見出し・領域は上の各セクションで領域ごと削除する。</div>
+  </div>
+
+  <div class="footer-note">
+    <b>承認時にお願いしたいこと</b>
+    <ul>
+      <li>Q1〜Q4 の推奨案で進めてよいか（特に Q3 の未選択インスペクタの列幅維持）。</li>
+      <li>「文字だけの削除」に挙げた項目以外で、領域ごと消したいものがないか。</li>
+      <li>`viewer.close` を通知モーダルにも適用してよいか（両方とも「閉じる」になる）。</li>
+    </ul>
+    実装は、このモックと設計・計画の承認後に開始します。docs PR では `docs/ui.md` の該当記述も更新します。
+  </div>
+
+</div>
+</body>
+</html>
