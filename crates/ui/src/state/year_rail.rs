@@ -548,6 +548,7 @@ mod tests {
             200.0,
             92.0,
             46.0,
+            44.0,
             &HashSet::new(),
             &HashSet::new(),
         );
@@ -557,7 +558,16 @@ mod tests {
         assert_eq!(session_rail_scroll_offset(&rows, 99, 10_000.0), 0.0);
 
         let collapsed = HashSet::from([1]);
-        let rows = SessionRows::build(&entries, 2, 200.0, 92.0, 46.0, &collapsed, &HashSet::new());
+        let rows = SessionRows::build(
+            &entries,
+            2,
+            200.0,
+            92.0,
+            46.0,
+            44.0,
+            &collapsed,
+            &HashSet::new(),
+        );
         assert_eq!(
             session_rail_scroll_offset(&rows, 1, 10_000.0),
             -rows.offset_for_session(1).unwrap()
@@ -578,6 +588,7 @@ mod tests {
             200.0,
             92.0,
             46.0,
+            44.0,
             &HashSet::new(),
             &HashSet::new(),
         );

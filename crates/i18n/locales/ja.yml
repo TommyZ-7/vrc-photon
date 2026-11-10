@@ -472,6 +472,8 @@ session.unlinked_date: "%{date} ・ セッションに属さない写真 %{count
 session.unknown_world: "不明なワールド"
 session.loading: "読み込み中"
 session.summary_failed: "セッション情報を取得できません"
+session.continued: "続き"
+session.continued_count: "%{count}枚"
 session.collapse: "折りたたむ"
 session.expand: "展開する"
 date.unknown_day: "日付不明"

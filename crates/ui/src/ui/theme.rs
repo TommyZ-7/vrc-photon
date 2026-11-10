@@ -46,6 +46,7 @@ pub(crate) const GALLERY_HEADER_HEIGHT: f32 = 42.0;
 /// [`CARD_ROW_GAP`] when it hands these to the virtual list.
 pub(crate) const SESSION_HEADER_ROW_HEIGHT: f32 = 78.0;
 pub(crate) const SESSION_DATE_LABEL_ROW_HEIGHT: f32 = 30.0;
+pub(crate) const SESSION_CONTINUATION_ROW_HEIGHT: f32 = 44.0;
 pub(crate) const GALLERY_PAD_X: f32 = 12.0;
 pub(crate) const GALLERY_PAD_TOP: f32 = 10.0;
 pub(crate) const GALLERY_PAD_BOTTOM: f32 = 12.0;
