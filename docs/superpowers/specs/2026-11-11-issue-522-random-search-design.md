@@ -1,7 +1,7 @@
 # MCP ランダム抽出ツール `random_search_photos` 設計
 
 - Issue: #522
-- Status: 承認済み
+- Status: 承認済み・実装完了
 - Date: 2026-11-11
 
 ## 目的

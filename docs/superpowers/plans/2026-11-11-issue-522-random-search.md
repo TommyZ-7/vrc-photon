@@ -1,6 +1,6 @@
 # MCP ランダム抽出ツール Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** MCP に `random_search_photos` を追加し、`search_photos` と同じ条件の集合から `limit` 件を seed で再現可能に無作為抽出する。
 
@@ -59,7 +59,7 @@
 - Produces (private): `Db::photo_ids_text(&self, filter: &PhotoTextFilter) -> Result<Vec<i64>>`
 - Produces (private): `fn splitmix64(value: u64) -> u64`
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 `crates/core/src/db.rs` の `mod tests` に追加する。
 
@@ -156,12 +156,12 @@ assert_limit_contract("random_photos_text", |limit| {
 });
 ```
 
-- [ ] **Step 2: テストが失敗することを確認する**
+- [x] **Step 2: テストが失敗することを確認する**
 
 Run: `cargo test -p vrc-photon-core random_photos_text -- --nocapture`
 Expected: FAIL（`random_photos_text` が存在しない）
 
-- [ ] **Step 3: `RandomPhotoSample` と抽選処理を実装する**
+- [x] **Step 3: `RandomPhotoSample` と抽選処理を実装する**
 
 `crates/core/src/model.rs` の `PhotoTextFilter` の近くに追加する。
 
@@ -219,12 +219,12 @@ impl Db {
 }
 ```
 
-- [ ] **Step 4: テストが通ることを確認する**
+- [x] **Step 4: テストが通ることを確認する**
 
 Run: `cargo test -p vrc-photon-core random_photos_text && cargo test -p vrc-photon-core limits_agree`
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add crates/core/src/model.rs crates/core/src/db.rs
@@ -249,7 +249,7 @@ git commit -m "feat(core): add deterministic random photo sampling"
 - Produces: `Response::RandomPhotos { result: RandomPhotoSearch }`
 - Produces: `PROTOCOL_VERSION == 8`
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 `crates/ipc/src/protocol.rs` の `library_requests_round_trip_with_their_wire_tags` に追加する。
 
@@ -306,12 +306,12 @@ fn protocol_version_is_eight() {
 }
 ```
 
-- [ ] **Step 2: テストが失敗することを確認する**
+- [x] **Step 2: テストが失敗することを確認する**
 
 Run: `cargo test -p vrc-photon-ipc random_`
 Expected: FAIL（`RandomSearchPhotos` / `RandomPhotoSearch` が存在しない）
 
-- [ ] **Step 3: 型とメッセージを追加する**
+- [x] **Step 3: 型とメッセージを追加する**
 
 `crates/ipc/src/library.rs` の `PhotoSearch` の後に追加する。
 
@@ -354,12 +354,12 @@ RandomPhotos {
 `crates/ipc/src/protocol.rs` 冒頭の `use crate::library::{...}` に `RandomPhotoSearch` を加える。
 `crates/ipc/src/lib.rs` の `PROTOCOL_VERSION` を `8` にする。
 
-- [ ] **Step 4: テストが通ることを確認する**
+- [x] **Step 4: テストが通ることを確認する**
 
 Run: `cargo test -p vrc-photon-ipc`
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add crates/ipc/src/library.rs crates/ipc/src/protocol.rs crates/ipc/src/lib.rs
@@ -380,7 +380,7 @@ git commit -m "feat(ipc): add random photo search messages"
 - Produces (private): `fn random_seed() -> u64`
 - Produces: `const MAX_RANDOM_LIMIT: u32 = 200;`
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 `crates/daemon/src/ipc_server.rs` の `mod tests` に追加する。
 
@@ -468,12 +468,12 @@ fn random_search_photos_clamps_the_limit() {
 }
 ```
 
-- [ ] **Step 2: テストが失敗することを確認する**
+- [x] **Step 2: テストが失敗することを確認する**
 
 Run: `cargo test -p vrc-photon-daemon random_search_photos`
 Expected: FAIL（`RandomSearchPhotos` の match がない）
 
-- [ ] **Step 3: ハンドラと seed 生成を実装する**
+- [x] **Step 3: ハンドラと seed 生成を実装する**
 
 `MAX_LIBRARY_LIMIT` の近くに追加する。
 
@@ -572,12 +572,12 @@ Request::RandomSearchPhotos {
 
 import に `RandomPhotoSearch` を加える。
 
-- [ ] **Step 4: テストが通ることを確認する**
+- [x] **Step 4: テストが通ることを確認する**
 
 Run: `cargo test -p vrc-photon-daemon random_search_photos random_seed && cargo test -p vrc-photon-daemon search_photos`
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add crates/daemon/src/ipc_server.rs
@@ -599,7 +599,7 @@ git commit -m "feat(daemon): serve random photo search"
 - Produces: `DaemonClient::random_search_photos(&self, query: RandomSearchPhotosQuery) -> Result<RandomPhotoSearch, DaemonError>`
 - Produces: MCP ツール `random_search_photos`
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 `crates/mcp/src/server.rs` の `mod tests` に追加する。`vrc_photon_ipc` の import に `RandomPhotoSearch` を加えること。
 
@@ -750,12 +750,12 @@ async fn random_search_photos_reports_daemon_unavailable() {
 
 既存の `tool_router_lists_all_five_tools` を `tool_router_lists_all_six_tools` に改名し、期待リストへ `"random_search_photos"` を追加する。
 
-- [ ] **Step 2: テストが失敗することを確認する**
+- [x] **Step 2: テストが失敗することを確認する**
 
 Run: `cargo test -p vrc-photon-mcp random_search_photos && cargo test -p vrc-photon-mcp tool_router`
 Expected: FAIL（`RandomSearchPhotosParams` / `random_search_photos` が存在しない）
 
-- [ ] **Step 3: MCP クライアントとツールを実装する**
+- [x] **Step 3: MCP クライアントとツールを実装する**
 
 `crates/mcp/src/client.rs` に追加する。
 
@@ -864,12 +864,12 @@ async fn random_search_photos(
 
 import を `use crate::client::{DaemonClient, DaemonError, RandomSearchPhotosQuery, SearchPhotosQuery};` に更新する。
 
-- [ ] **Step 4: テストが通ることを確認する**
+- [x] **Step 4: テストが通ることを確認する**
 
 Run: `cargo test -p vrc-photon-mcp`
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add crates/mcp/src/client.rs crates/mcp/src/server.rs
@@ -887,22 +887,22 @@ git commit -m "feat(mcp): add random_search_photos tool"
 - Consumes: Task 1〜4 の成果
 - Produces: CI green の PR
 
-- [ ] **Step 1: フォーマットを確認する**
+- [x] **Step 1: フォーマットを確認する**
 
 Run: `cargo fmt --all -- --check`
 Expected: 差分なし
 
-- [ ] **Step 2: clippy を確認する**
+- [x] **Step 2: clippy を確認する**
 
 Run: `cargo clippy --workspace --all-targets -- -D warnings`
 Expected: 警告なし
 
-- [ ] **Step 3: 全テストを確認する**
+- [x] **Step 3: 全テストを確認する**
 
 Run: `cargo test --workspace`
 Expected: PASS
 
-- [ ] **Step 4: 最終コミットと PR 作成**
+- [x] **Step 4: 最終コミットと PR 作成**
 
 ```bash
 git add -A
@@ -912,7 +912,7 @@ gh pr create --title "feat: MCP にランダム抽出ツール random_search_pho
   --body "Closes #522" --label enhancement
 ```
 
-- [ ] **Step 5: CI を監視して green ならマージする**
+- [x] **Step 5: CI を監視して green ならマージする**
 
 `ci-watch` スキルに従い、最新の CI run を完了まで監視する。green なら
 `gh pr merge <n> --merge` でマージし、`main` に戻って pull する。
