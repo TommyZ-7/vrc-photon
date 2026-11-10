@@ -71,7 +71,15 @@ pub(crate) const DIALOG_VIEWPORT_MARGIN: f32 = 24.0;
 pub(crate) fn dialog_max_height(content_height: f32) -> f32 {
     (content_height - DIALOG_VIEWPORT_MARGIN * 2.0).clamp(0.0, 720.0)
 }
+/// Right gutter shared by the year rail and the overlay scrollbar.
 pub(crate) const RAIL_WIDTH: f32 = 20.0;
+/// Inner horizontal padding of a session header card.
+pub(crate) const SESSION_HEADER_PAD_X: f32 = 14.0;
+/// Hit target of the triangle-only collapse toggle.
+pub(crate) const SESSION_TOGGLE_SIZE: f32 = 36.0;
+/// Distance from the header card's right content edge to the control group.
+/// 50 px keeps the toggle and the ongoing badge left of the 80 px month pill.
+pub(crate) const SESSION_HEADER_CONTROL_INSET: f32 = 50.0;
 pub(crate) const MOTION_FAST: Duration = Duration::from_millis(160);
 pub(crate) const MOTION_BASE: Duration = Duration::from_millis(220);
 pub(crate) const MOTION_SLOW: Duration = Duration::from_millis(300);
@@ -633,6 +641,17 @@ pub(crate) fn apply_profile_format(profile: &mut CompressionProfile, format: Com
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_session_control_inset_clears_the_year_rail_pill() {
+        let content_right = RAIL_WIDTH + SESSION_HEADER_PAD_X;
+        let pill_left = crate::state::year_rail::RAIL_PILL_WIDTH
+            + crate::state::year_rail::RAIL_PILL_RIGHT_MARGIN;
+        assert!(
+            content_right + SESSION_HEADER_CONTROL_INSET >= pill_left,
+            "controls would sit under the month pill"
+        );
+    }
 
     #[test]
     fn content_bounds_convert_card_bounds_into_overlay_space() {
