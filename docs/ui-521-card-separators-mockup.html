@@ -1,0 +1,730 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VRC PhotoN — 設定・連携カードの項目区切り線 モック (#521)</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --font: "Inter", "Noto Sans JP", "Hiragino Sans", "Yu Gothic UI", system-ui, -apple-system, sans-serif;
+    --mono: "SFMono-Regular", "Cascadia Code", Consolas, "Liberation Mono", monospace;
+    --text: #eef4ff;
+    --muted: #a8b4ca;
+    --dim: #7f8ba3;
+    --faint: #5e6a81;
+    --accent: #8bcbff;
+    --accent-strong: #2f7fd8;
+    --green: #7ee2b8;
+    --amber: #f4c878;
+    --red: #ff94a8;
+    --line: rgba(255, 255, 255, 0.105);
+    --line-soft: rgba(255, 255, 255, 0.075);
+    --line-strong: rgba(255, 255, 255, 0.17);
+    --bg: #05070d;
+    --panel-card: #0b111c;
+    --panel-2: #111927;
+    --panel-deep: #080d15;
+    --shadow: rgba(0, 0, 0, 0.42);
+    --r-card: 17px;
+    --r-inner: 10px;
+    --ease: cubic-bezier(0.22, 0.8, 0.24, 1);
+  }
+  * { box-sizing: border-box; }
+  html { overflow-x: hidden; }
+  body {
+    margin: 0;
+    min-width: 320px;
+    background:
+      radial-gradient(ellipse 56% 46% at 8% 0%, rgba(54, 107, 255, 0.22), transparent 66%),
+      radial-gradient(ellipse 44% 40% at 96% 6%, rgba(255, 86, 181, 0.09), transparent 68%),
+      radial-gradient(ellipse 48% 42% at 62% 102%, rgba(30, 202, 178, 0.07), transparent 68%),
+      linear-gradient(140deg, #04060c 0%, #0a0f1e 44%, #060811 100%);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  .page { width: min(1280px, calc(100% - 48px)); margin: 0 auto; padding: 42px 0 86px; }
+
+  /* masthead */
+  .masthead { display: flex; align-items: flex-start; justify-content: space-between; gap: 30px; margin-bottom: 34px; }
+  .eyebrow { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; color: var(--muted); font-size: 10px; letter-spacing: .15em; text-transform: uppercase; }
+  .issue-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border: 1px solid rgba(139,203,255,.24); border-radius: 999px; background: rgba(139,203,255,.08); color: var(--accent); font-size: 10px; letter-spacing: .08em; }
+  h1 { margin: 12px 0 10px; font-size: clamp(26px, 3.2vw, 38px); line-height: 1.2; letter-spacing: -.035em; font-weight: 640; }
+  .lede { max-width: 790px; margin: 0; color: var(--muted); font-size: 13px; }
+  .lede b { color: var(--text); font-weight: 560; }
+  .meta-card { flex: none; width: 286px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 16px; background: rgba(13,20,32,.72); box-shadow: inset 0 1px 0 rgba(255,255,255,.03); }
+  .meta-row { display: flex; justify-content: space-between; gap: 18px; padding: 5px 0; color: var(--dim); font-size: 11px; }
+  .meta-row + .meta-row { border-top: 1px solid rgba(255,255,255,.055); }
+  .meta-row b { color: var(--text); font-weight: 550; text-align: right; }
+  .meta-row b.wait { color: var(--amber); }
+
+  /* sections */
+  .section { margin-top: 46px; }
+  .section-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 16px; }
+  .section-head .heading { display: flex; align-items: baseline; gap: 11px; }
+  .num { color: var(--accent); font-family: var(--mono); font-size: 10px; letter-spacing: .08em; }
+  .section-head h2 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -.015em; }
+  .section-head h2 span { color: var(--dim); font-weight: 400; font-size: 12px; margin-left: 8px; }
+  .section-head p { margin: 0; max-width: 660px; color: var(--muted); font-size: 11.5px; text-align: right; }
+
+  /* rule cards */
+  .rule-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+  .rule { position: relative; padding: 15px 15px 14px; border: 1px solid var(--line); border-radius: 14px; background: rgba(13,20,32,.62); }
+  .rule-no { position: absolute; top: 13px; right: 14px; color: var(--faint); font-family: var(--mono); font-size: 10px; }
+  .rule h3 { margin: 0 0 7px; padding-right: 22px; font-size: 12.5px; font-weight: 600; }
+  .rule p { margin: 0; color: var(--muted); font-size: 10.5px; line-height: 1.65; }
+  .rule p b { color: var(--text); font-weight: 560; }
+  .rule-demo { margin-top: 11px; padding: 10px 11px; border-radius: 9px; background: var(--panel-deep); border: 1px solid rgba(255,255,255,.05); }
+  .rule-demo .demo-row { display: flex; align-items: center; justify-content: space-between; color: var(--dim); font-size: 9.5px; }
+  .rule-demo .demo-row + .sep { margin: 7px 0; }
+  .measure { display: flex; align-items: center; gap: 6px; margin-top: 8px; color: var(--faint); font-family: var(--mono); font-size: 9px; }
+  .measure::before, .measure::after { content: ""; height: 1px; background: var(--line); flex: 1; }
+
+  /* cards (actual UI scale) */
+  .stage { padding: 22px; border: 1px solid var(--line); border-radius: 22px; background: rgba(8,13,21,.5); }
+  .stack { display: flex; flex-direction: column; gap: 12px; }
+  .card {
+    padding: 14px;
+    border: 1px solid rgba(255,255,255,.075);
+    border-radius: var(--r-card);
+    background: var(--panel-card);
+    box-shadow: 0 18px 44px var(--shadow), inset 0 1px 0 rgba(255,255,255,.035);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .card.gap-10 { gap: 10px; }
+  .card-title { font-size: 13px; font-weight: 600; color: var(--text); }
+  .card-sub { margin-top: 2px; color: var(--dim); font-size: 10px; }
+  .card-head { display: flex; align-items: center; gap: 12px; }
+  .card-head .grow { flex: 1; min-width: 0; }
+  .sep { height: 1px; width: 100%; background: var(--line-soft); flex: none; }
+  .sep.existing { background: rgba(255,255,255,.09); position: relative; }
+  .sep.existing::after { content: "既存"; position: absolute; right: 2px; top: -15px; color: var(--faint); font-size: 8px; letter-spacing: .08em; }
+
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 2px 0; }
+  .row-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .row-label { color: var(--text); font-size: 12px; }
+  .row-hint { color: var(--dim); font-size: 10px; }
+  .row-label.dim { color: var(--muted); }
+
+  .switch { width: 32px; height: 18px; flex: none; border-radius: 999px; border: 1px solid rgba(139,203,255,.5); background: rgba(139,203,255,.28); position: relative; }
+  .switch::after { content: ""; position: absolute; top: 2px; left: 16px; width: 12px; height: 12px; border-radius: 50%; background: var(--accent); transition: transform .16s var(--ease); }
+  .switch.off { border-color: rgba(255,255,255,.12); background: rgba(255,255,255,.08); }
+  .switch.off::after { left: 2px; background: var(--dim); }
+
+  .slider-block { display: flex; flex-direction: column; gap: 6px; }
+  .slider-head { display: flex; align-items: baseline; gap: 6px; font-size: 12px; }
+  .slider-head .grow { flex: 1; }
+  .slider-value { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .track { position: relative; height: 4px; border-radius: 999px; background: rgba(255,255,255,.09); margin: 6px 2px 3px; }
+  .track .fill { position: absolute; top: 0; left: 0; bottom: 0; border-radius: 999px; background: var(--accent); }
+  .track .knob { position: absolute; top: 50%; width: 12px; height: 12px; border-radius: 50%; background: var(--accent); border: 2px solid var(--panel-card); transform: translate(-50%, -50%); }
+  .hint { color: var(--dim); font-size: 10px; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+  .chip { padding: 5px 9px; border-radius: 8px; color: var(--muted); font-size: 11px; font-weight: 500; }
+  .chip.on { background: rgba(139,203,255,.16); color: var(--accent); }
+
+  .btn { height: 26px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--line-strong); background: #162031; color: var(--text); display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 520; white-space: nowrap; }
+  .btn.primary { border-color: rgba(139,203,255,.4); background: rgba(139,203,255,.16); color: #dff3ff; }
+  .btn.ghost { background: transparent; color: var(--muted); }
+  .btn.danger { background: transparent; color: var(--red); border-color: rgba(255,148,168,.24); }
+  .btn.small { height: 24px; padding: 0 8px; font-size: 10px; }
+
+  .input { height: 30px; display: flex; align-items: center; padding: 0 9px; border: 1px solid var(--line-strong); border-radius: 8px; background: rgba(8,13,21,.6); color: var(--muted); font-size: 11px; }
+  .input .placeholder { color: var(--faint); }
+
+  .warning { padding: 10px 12px; border: 1px solid rgba(255,148,168,.22); border-radius: 8px; background: rgba(255,148,168,.075); color: #ffb9c6; font-size: 10px; }
+  .warning.amber { border-color: rgba(244,200,120,.2); background: rgba(244,200,120,.07); color: var(--amber); }
+
+  .option-list { display: flex; flex-direction: column; gap: 4px; }
+  .option { display: flex; align-items: center; gap: 8px; padding: 7px 9px; border: 1px solid rgba(255,255,255,.055); border-radius: 8px; background: var(--panel-2); color: var(--muted); font-size: 10.5px; }
+  .option .grow { flex: 1; min-width: 0; }
+  .option .sub { color: var(--dim); font-size: 9px; }
+  .radio { width: 12px; height: 12px; flex: none; border-radius: 50%; border: 1px solid rgba(255,255,255,.26); }
+  .radio.on { border-color: var(--accent); background: var(--accent); box-shadow: inset 0 0 0 3px var(--panel-2); }
+
+  .badge { display: inline-flex; align-items: center; height: 19px; padding: 0 7px; border-radius: 999px; font-size: 9px; font-weight: 600; }
+  .badge.green { color: var(--green); background: rgba(126,226,184,.1); border: 1px solid rgba(126,226,184,.2); }
+  .badge.amber { color: var(--amber); background: rgba(244,200,120,.1); border: 1px solid rgba(244,200,120,.2); }
+
+  .webhook-row { display: flex; align-items: center; gap: 8px; }
+  .webhook-state { flex: 1; min-width: 0; padding: 6px 10px; border-radius: 8px; background: var(--panel-2); color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .profile-line { color: var(--muted); font-size: 10px; }
+
+  .job-panel { display: flex; flex-direction: column; gap: 7px; padding: 10px; border-radius: 10px; background: var(--panel-2); }
+  .job-stats { display: flex; gap: 16px; }
+  .stat { display: flex; align-items: baseline; gap: 5px; }
+  .stat span { color: var(--dim); font-size: 9px; }
+  .stat b { color: var(--text); font-size: 12px; font-weight: 600; }
+  .job-panel .empty { color: var(--muted); font-size: 10.5px; }
+  .job-progress { height: 4px; border-radius: 999px; background: rgba(255,255,255,.08); overflow: hidden; }
+  .job-progress i { display: block; width: 58%; height: 100%; background: var(--accent); border-radius: inherit; }
+
+  .history-list { display: flex; flex-direction: column; }
+  .history-row { padding: 9px 4px; border-bottom: 1px solid rgba(255,255,255,.07); display: flex; flex-direction: column; gap: 5px; }
+  .history-row:last-child { border-bottom: 0; }
+  .history-top { display: flex; align-items: center; gap: 8px; }
+  .history-name { flex: 1; min-width: 0; color: var(--text); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .history-meta { color: var(--dim); font-size: 10px; }
+  .history-foot { display: flex; align-items: center; gap: 8px; color: var(--dim); font-size: 9.5px; }
+  .history-foot .grow { flex: 1; }
+
+  /* comparison */
+  .compare { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+  .compare-col { min-width: 0; }
+  .compare-label { display: inline-flex; align-items: center; gap: 7px; margin-bottom: 9px; color: var(--dim); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; }
+  .compare-label::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
+  .compare-label.after { color: var(--accent); }
+  .compare-label.after::before { background: var(--accent); box-shadow: 0 0 0 4px rgba(139,203,255,.1); }
+  .callout { margin-top: 14px; display: flex; gap: 10px; padding: 11px 13px; border-left: 2px solid rgba(139,203,255,.45); border-radius: 0 9px 9px 0; background: rgba(139,203,255,.045); color: var(--muted); font-size: 10.5px; }
+  .callout b { color: var(--text); font-weight: 600; }
+
+  /* card grids */
+  .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; align-items: start; }
+  .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
+  .grid-2 > .stack, .grid-3 > .stack { min-width: 0; }
+  .caption { margin: 9px 2px 0; color: var(--dim); font-size: 10px; }
+  .caption b { color: var(--muted); font-weight: 560; }
+
+  /* table */
+  .table-wrap { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: rgba(10,16,26,.55); }
+  table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
+  thead th { padding: 10px 12px; border-bottom: 1px solid var(--line); background: rgba(255,255,255,.025); color: var(--dim); font-size: 9.5px; font-weight: 500; letter-spacing: .06em; text-align: left; text-transform: uppercase; white-space: nowrap; }
+  tbody td { padding: 9px 12px; border-bottom: 1px solid rgba(255,255,255,.05); color: var(--muted); vertical-align: top; }
+  tbody tr:last-child td { border-bottom: 0; }
+  tbody td b { color: var(--text); font-weight: 550; }
+  tbody td .muted { color: var(--faint); }
+  tbody td .keep { color: var(--green); }
+  .out-of-scope { margin-top: 12px; display: flex; gap: 9px; color: var(--dim); font-size: 10.5px; }
+  .out-of-scope b { color: var(--muted); font-weight: 560; }
+
+  /* notes / approval */
+  .notes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .note-card { padding: 14px 15px; border: 1px solid var(--line); border-radius: 13px; background: rgba(13,20,32,.55); }
+  .note-card h3 { margin: 0 0 7px; font-size: 12px; font-weight: 600; }
+  .note-card ul { margin: 0; padding-left: 17px; color: var(--muted); font-size: 10.5px; }
+  .note-card li { margin: 4px 0; }
+  .note-card code { color: var(--accent); font-family: var(--mono); font-size: 9.5px; }
+  .approval { margin-top: 42px; padding: 19px 21px; border: 1px solid rgba(139,203,255,.22); border-radius: 16px; background: rgba(139,203,255,.045); }
+  .approval h2 { margin: 0 0 7px; font-size: 15px; font-weight: 600; }
+  .approval p { margin: 0 0 10px; color: var(--muted); font-size: 11.5px; }
+  .approval ol { margin: 0; padding-left: 21px; color: var(--muted); font-size: 11px; }
+  .approval li { margin: 6px 0; }
+  .approval li b { color: var(--text); font-weight: 560; }
+  .approval .foot { margin: 13px 0 0; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.07); color: var(--dim); font-size: 10px; }
+
+  @media (max-width: 1060px) {
+    .rule-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .masthead { flex-direction: column; }
+    .meta-card { width: 100%; max-width: 420px; }
+  }
+  @media (max-width: 820px) {
+    .page { width: min(100% - 28px, 720px); padding-top: 28px; }
+    .compare, .grid-2, .grid-3 { grid-template-columns: 1fr; }
+    .section-head { flex-direction: column; align-items: flex-start; }
+    .section-head p { text-align: left; }
+    .notes { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 560px) {
+    .rule-grid { grid-template-columns: 1fr; }
+    .stage { padding: 13px; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="masthead">
+    <div>
+      <div class="eyebrow">
+        <span class="issue-chip">ISSUE #521</span>
+        <span>UI REVIEW / CARD SEPARATORS</span>
+      </div>
+      <h1>設定・連携カードに項目ごとの区切り線を追加</h1>
+      <p class="lede">
+        設定画面と「連携・自動」画面の各カードに、項目間の薄い区切り線を入れます。
+        <b>カードの内側余白・項目構成・既存のグループ境界線は維持</b>し、線の追加だけを行います。
+        このページは実装前のモックです。
+      </p>
+    </div>
+    <aside class="meta-card">
+      <div class="meta-row"><span>対象画面</span><b>設定 / 連携・自動</b></div>
+      <div class="meta-row"><span>変更種別</span><b>UI polish</b></div>
+      <div class="meta-row"><span>線のトークン</span><b>palette.line_soft</b></div>
+      <div class="meta-row"><span>状態</span><b class="wait">モック確認待ち</b></div>
+      <div class="meta-row"><span>実装</span><b>未着手</b></div>
+    </aside>
+  </header>
+
+  <section class="section">
+    <div class="section-head">
+      <div class="heading"><span class="num">01</span><h2>適用ルール</h2></div>
+      <p>既存のカード表現（14px パディング / 12px ギャップ）を変えず、子要素の間に 1px の線を挿入します。</p>
+    </div>
+    <div class="rule-grid">
+      <article class="rule">
+        <span class="rule-no">A</span>
+        <h3>線の見た目</h3>
+        <p>高さ <b>1px</b>、色は既存の <b>palette.line_soft</b>。カードの枠線と同じ薄さで、主張しない区切りにします。</p>
+        <div class="rule-demo">
+          <div class="demo-row"><span>圧縮状態</span><span class="switch" style="transform:scale(.72);transform-origin:right"></span></div>
+          <div class="sep"></div>
+          <div class="demo-row"><span>ワールド名</span><span class="switch" style="transform:scale(.72);transform-origin:right"></span></div>
+        </div>
+      </article>
+      <article class="rule">
+        <span class="rule-no">B</span>
+        <h3>内側の余白に揃える</h3>
+        <p>線はカードの端から端までではなく、<b>内側の 14px パディングの内側</b>（コンテンツ幅）に揃えます。左右の余白はカード枠と平行になります。</p>
+        <div class="rule-demo">
+          <div style="margin:0 10px"><div class="demo-row"><span>コンテンツ幅</span><span>14px inset</span></div><div class="sep" style="margin-top:7px"></div></div>
+          <div class="measure">左右 14px</div>
+        </div>
+      </article>
+      <article class="rule">
+        <span class="rule-no">C</span>
+        <h3>最後の項目の下には引かない</h3>
+        <p>区切り線は<b>項目と項目の間</b>だけ。カード内の最後の要素の下には追加せず、カード下の余白を二重に見せません。</p>
+        <div class="rule-demo">
+          <div class="demo-row"><span>自動起動</span><span class="switch" style="transform:scale(.72);transform-origin:right"></span></div>
+          <div class="sep"></div>
+          <div class="demo-row"><span>トレイ常駐</span><span class="switch" style="transform:scale(.72);transform-origin:right"></span></div>
+          <div style="height:10px"></div>
+          <div class="demo-row" style="color:var(--faint)"><span>（線なし）</span><span>末尾</span></div>
+        </div>
+      </article>
+      <article class="rule">
+        <span class="rule-no">D</span>
+        <h3>見出しも 1 項目</h3>
+        <p>カード見出しと最初の設定項目の間にも線を入れます。見出しは項目の一部として扱い、見出しだけを浮かせません。</p>
+        <div class="rule-demo">
+          <div class="demo-row" style="color:var(--text);font-weight:600"><span>表示（ライブラリ・検索）</span></div>
+          <div class="sep"></div>
+          <div class="demo-row"><span>圧縮状態</span><span class="switch" style="transform:scale(.72);transform-origin:right"></span></div>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-head">
+      <div class="heading"><span class="num">02</span><h2>設定画面 — 表示カード <span>変更前 / 変更後</span></h2></div>
+      <p>トグル群とスライダー群の間にある既存の境界線は残します。その位置には新しい線を重ねず、1 本として扱います。</p>
+    </div>
+    <div class="stage">
+      <div class="compare">
+        <div class="compare-col">
+          <div class="compare-label">変更前</div>
+          <div class="card">
+            <div class="card-title">表示（ライブラリ・検索）</div>
+            <div class="row"><span class="row-label">圧縮状態</span><span class="switch"></span></div>
+            <div class="row"><span class="row-label">ワールド名</span><span class="switch"></span></div>
+            <div class="row"><span class="row-label">日付</span><span class="switch"></span></div>
+            <div class="row"><span class="row-label">サイズ</span><span class="switch"></span></div>
+            <div class="sep existing"></div>
+            <div class="slider-block">
+              <div class="slider-head"><span>グリッド間隔</span><span class="grow"></span><span class="slider-value">12 px</span></div>
+              <div class="track"><span class="fill" style="width:38%"></span><span class="knob" style="left:38%"></span></div>
+              <div class="hint">カード同士のすき間（0〜32 px）</div>
+            </div>
+            <div class="slider-block">
+              <div class="slider-head"><span>カードの角丸</span><span class="grow"></span><span class="slider-value">18 px</span></div>
+              <div class="track"><span class="fill" style="width:75%"></span><span class="knob" style="left:75%"></span></div>
+              <div class="hint">写真カードの角丸（0〜24 px）</div>
+            </div>
+          </div>
+        </div>
+        <div class="compare-col">
+          <div class="compare-label after">変更後</div>
+          <div class="card">
+            <div class="card-title">表示（ライブラリ・検索）</div>
+            <div class="sep"></div>
+            <div class="row"><span class="row-label">圧縮状態</span><span class="switch"></span></div>
+            <div class="sep"></div>
+            <div class="row"><span class="row-label">ワールド名</span><span class="switch"></span></div>
+            <div class="sep"></div>
+            <div class="row"><span class="row-label">日付</span><span class="switch"></span></div>
+            <div class="sep"></div>
+            <div class="row"><span class="row-label">サイズ</span><span class="switch"></span></div>
+            <div class="sep existing"></div>
+            <div class="slider-block">
+              <div class="slider-head"><span>グリッド間隔</span><span class="grow"></span><span class="slider-value">12 px</span></div>
+              <div class="track"><span class="fill" style="width:38%"></span><span class="knob" style="left:38%"></span></div>
+              <div class="hint">カード同士のすき間（0〜32 px）</div>
+            </div>
+            <div class="sep"></div>
+            <div class="slider-block">
+              <div class="slider-head"><span>カードの角丸</span><span class="grow"></span><span class="slider-value">18 px</span></div>
+              <div class="track"><span class="fill" style="width:75%"></span><span class="knob" style="left:75%"></span></div>
+              <div class="hint">写真カードの角丸（0〜24 px）</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="callout">
+        <span>◆</span>
+        <div><b>既存のグループ境界線はそのまま。</b> トグル群とスライダー群の間は、現在の 1px ラインをそのまま区切りとして使います。新しい区切り線を足して 2 本にしないため、変更後もこの境界だけは「既存」の 1 本です。</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-head">
+      <div class="heading"><span class="num">03</span><h2>設定画面 — ほかのカード <span>変更後</span></h2></div>
+      <p>見出し・設定行・複合ブロックを 1 項目ずつ区切ります。スライダーのラベルと値、注記は同じ項目内にまとめます。</p>
+    </div>
+    <div class="grid-3">
+      <div class="stack">
+        <div class="card">
+          <div class="card-title">起動</div>
+          <div class="sep"></div>
+          <div class="row">
+            <div class="row-copy"><span class="row-label">自動起動</span><span class="row-hint">ログイン時にバックグラウンドで起動します</span></div>
+            <span class="switch"></span>
+          </div>
+          <div class="sep"></div>
+          <div class="row"><span class="row-label">トレイ常駐</span><span class="switch"></span></div>
+          <div class="sep"></div>
+          <div class="row">
+            <div class="row-copy"><span class="row-label">アニメーションを減らす</span><span class="row-hint">画面遷移とカードの動きを抑制します</span></div>
+            <span class="switch"></span>
+          </div>
+        </div>
+        <p class="caption"><b>4 項目。</b> 最下部の「アニメーションを減らす」の下には線を引かない。</p>
+      </div>
+
+      <div class="stack">
+        <div class="card">
+          <div class="card-title">サムネイル</div>
+          <div class="sep"></div>
+          <div class="slider-block">
+            <div class="slider-head"><span>画質</span><span class="grow"></span><span class="slider-value">80</span></div>
+            <div class="track"><span class="fill" style="width:80%"></span><span class="knob" style="left:80%"></span></div>
+          </div>
+          <div class="sep"></div>
+          <div class="slider-block">
+            <div class="slider-head"><span>解像度</span><span class="grow"></span></div>
+            <div class="chips">
+              <span class="chip">320 px</span>
+              <span class="chip on">640 px</span>
+              <span class="chip">1280 px</span>
+            </div>
+          </div>
+          <div class="sep"></div>
+          <div class="row">
+            <span class="row-hint">現在: 1,248件 · 86.2 MB</span>
+            <span class="btn small ghost">キャッシュを全削除</span>
+          </div>
+        </div>
+        <p class="caption"><b>4 項目。</b> 画質スライダーのラベルと値は 1 項目として扱う。</p>
+      </div>
+
+      <div class="stack">
+        <div class="card gap-10">
+          <div class="card-title">ログ</div>
+          <div class="sep"></div>
+          <div class="row-copy">
+            <span class="hint">保存先</span>
+            <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">~/.local/share/vrc-photon/logs</span>
+          </div>
+          <div class="sep"></div>
+          <div class="row-copy">
+            <span class="hint">ファイル</span>
+            <span style="font-family:var(--mono);font-size:10px;color:var(--dim)">UI: ui.log · デーモン: daemon.log</span>
+          </div>
+          <div class="sep"></div>
+          <div class="row"><span class="btn small">ログフォルダを開く</span></div>
+        </div>
+        <p class="caption"><b>4 項目。</b> ログカードの既存 10px ギャップは変更しない。</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-head">
+      <div class="heading"><span class="num">04</span><h2>連携・自動画面 — 各カード <span>変更後</span></h2></div>
+      <p>詳細ペインのカードが対象です。左側のマスター一覧、プロファイル一覧や送信履歴の行内区切りは対象外とします。</p>
+    </div>
+    <div class="grid-2">
+      <div class="stack">
+      <div class="stack">
+        <div class="card">
+          <div class="card-head">
+            <span class="card-title grow">Discord 連携</span>
+            <span class="switch"></span>
+          </div>
+          <div class="sep"></div>
+          <div class="warning">非公開インスタンスで撮影した写真も送信対象になります。Webhook の投稿先を確認してください。</div>
+          <div class="sep"></div>
+          <div class="webhook-row">
+            <span class="webhook-state">Webhook URL 設定済み · ••••••••3f9a</span>
+            <span class="btn small">変更</span>
+            <span class="btn small danger">削除</span>
+          </div>
+          <div class="sep"></div>
+          <div class="row-copy">
+            <span class="row-label">送信先名</span>
+            <div class="input" style="margin-top:5px"><span>Discord</span></div>
+          </div>
+          <div class="sep"></div>
+          <div class="row"><span class="btn small">テスト送信</span></div>
+          <div class="sep"></div>
+          <div class="row">
+            <div class="row-copy"><span class="row-label">原画を優先</span><span class="row-hint">20 MiB を超える原画は連携用プロファイルの出力へフォールバックします</span></div>
+            <span class="switch"></span>
+          </div>
+          <div class="sep"></div>
+          <div class="row">
+            <div class="row-copy"><span class="row-label">プレイヤー名を含める</span><span class="row-hint">埋め込みに参加プレイヤー名を追加します（既定はオフ）</span></div>
+            <span class="switch off"></span>
+          </div>
+          <div class="sep"></div>
+          <div class="row-copy">
+            <span class="row-label">連携用プロファイル</span>
+            <span class="row-hint">Discord へ送る画像の圧縮に使うプロファイルを1つ選びます</span>
+            <span class="profile-line" style="margin-top:3px">選択中: Discord用WebP</span>
+            <div class="option-list" style="margin-top:6px">
+              <div class="option"><span class="radio"></span><span class="grow">標準</span><span class="sub">JPEG · 85</span></div>
+              <div class="option"><span class="radio on"></span><span class="grow">Discord用WebP</span><span class="sub">WebP · 80</span></div>
+            </div>
+          </div>
+          <div class="sep"></div>
+          <div class="row-copy">
+            <span class="row-label">自動送信</span>
+            <span class="row-hint">新しい写真を検出すると、自動で Discord へ送信します</span>
+            <div class="option-list" style="margin-top:6px">
+              <div class="option"><span class="radio"></span><span class="grow">オフ</span></div>
+              <div class="option"><span class="radio on"></span><span class="grow">即時</span></div>
+              <div class="option"><span class="radio"></span><span class="grow">待機</span></div>
+            </div>
+            <div class="warning amber" style="margin-top:6px">非公開インスタンスで撮影した写真も自動送信の対象です。</div>
+          </div>
+        </div>
+        <p class="caption"><b>9 項目（条件付き表示を含む）。</b> 警告は表示中のみ 1 項目として数える。プロファイル一覧の行内には線を追加しない。</p>
+      </div>
+
+      <div class="stack">
+        <div class="card">
+          <div class="card-head">
+            <span class="card-title grow">自動圧縮</span>
+            <span class="switch"></span>
+          </div>
+          <div class="sep"></div>
+          <div class="row">
+            <div class="row-copy"><span class="row-label">新規写真をすぐに圧縮</span></div>
+            <span class="switch"></span>
+          </div>
+          <div class="sep"></div>
+          <div class="row">
+            <div class="row-copy"><span class="row-label">自動圧縮後に元画像を保持</span><span class="row-hint">OFFにすると自動圧縮の成功後、元画像をOSゴミ箱へ移動します</span></div>
+            <span class="switch"></span>
+          </div>
+          <div class="sep"></div>
+          <div class="row-copy">
+            <span class="row-label">対象プロファイル</span>
+            <span class="row-hint">チェックしたプロファイルで自動圧縮のジョブを投入します</span>
+            <div class="option-list" style="margin-top:6px">
+              <div class="option"><span class="radio on"></span><span class="grow">標準</span><span class="sub">JPEG · 85</span></div>
+              <div class="option"><span class="radio"></span><span class="grow">Discord用WebP</span><span class="sub">WebP · 80</span></div>
+            </div>
+          </div>
+        </div>
+        <p class="caption"><b>4 項目。</b> 元画像保持の警告が表示された場合は、その警告も 1 項目として区切る。</p>
+      </div>
+      </div>
+
+      <div class="stack">
+      <div class="stack">
+        <div class="card">
+          <div class="card-head">
+            <div class="grow">
+              <div class="card-title">AI タグ付け</div>
+              <div class="card-sub">ローカル推論で人数・場所・シーンタグを生成します</div>
+            </div>
+          </div>
+          <div class="sep"></div>
+          <div class="row"><span class="row-label">有効化</span><span class="switch"></span></div>
+          <div class="sep"></div>
+          <div class="row"><span class="row-label">自動</span><span class="switch"></span></div>
+          <div class="sep"></div>
+          <div class="row"><span class="row-label">バックログ</span><span class="switch"></span></div>
+          <div class="sep"></div>
+          <div class="row-copy">
+            <span class="row-label">バックエンド</span>
+            <div class="chips" style="margin-top:5px">
+              <span class="chip">自動</span>
+              <span class="chip on">CUDA</span>
+              <span class="chip">CPU</span>
+            </div>
+          </div>
+          <div class="sep"></div>
+          <div class="job-panel">
+            <div class="job-stats">
+              <div class="stat"><span>待機</span><b>12</b></div>
+              <div class="stat"><span>実行中</span><b>1</b></div>
+              <div class="stat"><span>失敗</span><b>0</b></div>
+            </div>
+            <div class="job-progress"><i></i></div>
+            <div class="empty">人物の有無を確認中 · 58%</div>
+          </div>
+          <div class="sep"></div>
+          <div class="row"><span class="btn small">設定を開く</span></div>
+        </div>
+        <p class="caption"><b>7 項目。</b> ジョブ詳細パネルの内部（統計・進捗・ジョブ行）は 1 項目としてまとめる。</p>
+      </div>
+
+      <div class="stack">
+        <div class="card">
+          <div class="card-head">
+            <span class="card-title grow">クリップボード</span>
+            <span class="switch"></span>
+          </div>
+          <div class="sep"></div>
+          <div class="hint">クリップボード圧縮に使うプロファイルを1つ選びます</div>
+          <div class="sep"></div>
+          <div class="option-list">
+            <div class="option"><span class="radio on"></span><span class="grow">標準</span><span class="sub">JPEG · 85</span></div>
+            <div class="option"><span class="radio"></span><span class="grow">Discord用WebP</span><span class="sub">WebP · 80</span></div>
+          </div>
+        </div>
+        <p class="caption"><b>3 項目。</b> プロファイルが空の場合は「圧縮プロファイルがありません」を 1 項目として表示。</p>
+
+        <div class="card">
+          <div class="card-head">
+            <span class="card-title grow">送信履歴</span>
+            <span class="badge amber">待機 2</span>
+            <span class="btn small primary">待機をすべて送信</span>
+            <span class="btn small ghost">履歴を消去</span>
+          </div>
+          <div class="sep"></div>
+          <div class="history-list">
+            <div class="history-row">
+              <div class="history-top">
+                <span class="badge green">送信済み</span>
+                <span class="history-name">VRChat_2026-11-10_21-42-18.123_1920x1080.png</span>
+                <span class="history-meta">21:43</span>
+              </div>
+              <div class="history-foot"><span>原画</span><span>試行回数: 1</span><span class="grow"></span><span>Discord で開く</span></div>
+            </div>
+            <div class="history-row">
+              <div class="history-top">
+                <span class="badge amber">待機</span>
+                <span class="history-name">VRChat_2026-11-10_21-40-02.551_1920x1080.png</span>
+                <span class="history-meta">21:41</span>
+              </div>
+              <div class="history-foot"><span>表示用圧縮版</span><span class="grow"></span><span>取消</span></div>
+            </div>
+            <div class="history-row">
+              <div class="history-top">
+                <span class="badge" style="color:var(--muted);background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1)">取消</span>
+                <span class="history-name">テスト送信</span>
+                <span class="history-meta">21:38</span>
+              </div>
+              <div class="history-foot"><span>原画</span><span class="grow"></span><span>再送</span></div>
+            </div>
+          </div>
+        </div>
+        <p class="caption"><b>3 項目。</b> 見出し行・待機ヒント（表示時）・履歴リストの間を区切る。履歴行の既存ボーダーはそのまま。</p>
+      </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-head">
+      <div class="heading"><span class="num">05</span><h2>適用範囲と区切り位置</h2></div>
+      <p>「項目」は各カードの最上位の子要素です。複合ブロックの内部は分割せず、1 項目として扱います。</p>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>画面</th><th>カード</th><th>区切りの対象（上から）</th><th>備考</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>設定</td><td><b>言語</b></td><td>見出し / 言語チップ群</td><td>2 項目</td></tr>
+          <tr><td>設定</td><td><b>テーマ</b></td><td>見出し / メインカラー / サブカラー</td><td>3 項目</td></tr>
+          <tr><td>設定</td><td><b>ライブラリ</b></td><td>見出し / 写真フォルダ / ログフォルダ / 取り込み先 / 保存行</td><td>5 項目。保存行のヒントは同一項目内</td></tr>
+          <tr><td>設定</td><td><b>AI タグ付け</b></td><td>見出し / 状態・variant 一覧 / モデル情報 / 操作行 / エラー表示</td><td>インストール状態により可変。表示中の子要素の間だけに挿入</td></tr>
+          <tr><td>設定</td><td><b>ワールド名解決</b></td><td>見出し / 有効化 / プライバシー注記</td><td>3 項目</td></tr>
+          <tr><td>設定</td><td><b>表示</b></td><td>見出し / 4 トグル / <span class="keep">[既存のグループ境界線]</span> / グリッド間隔 / カード角丸</td><td><span class="keep">既存境界線をそのまま使用</span>。その位置に新しい線は足さない</td></tr>
+          <tr><td>設定</td><td><b>パフォーマンス</b></td><td>見出し / 最大 FPS 設定</td><td>2 項目。ラベル・ヒント・FPS チップは同一項目内</td></tr>
+          <tr><td>設定</td><td><b>サムネイル</b></td><td>見出し / 画質 / 解像度 / キャッシュ行</td><td>4 項目</td></tr>
+          <tr><td>設定</td><td><b>起動</b></td><td>見出し / 自動起動 / トレイ常駐 / アニメーションを減らす</td><td>4 項目</td></tr>
+          <tr><td>設定</td><td><b>アップデート</b></td><td>見出し / 3 つのメタ行 / 通知 / 自動確認 / 確認ボタン / 状態表示 / パッケージ案内</td><td>状態により可変。表示中の子要素の間だけに挿入</td></tr>
+          <tr><td>設定</td><td><b>ログ</b></td><td>見出し / 保存先 / ファイル / 開くボタン</td><td>4 項目。既存の 10px ギャップは維持</td></tr>
+          <tr><td>連携・自動</td><td><b>Discord 連携</b></td><td>見出し / 警告 / Webhook / 送信先 / テスト送信 / 原画を優先 / プレイヤー名 / 連携用プロファイル / 自動送信</td><td>9 項目。警告は表示時のみ</td></tr>
+          <tr><td>連携・自動</td><td><b>送信履歴</b></td><td>見出し / 待機ヒント / 履歴リスト</td><td>履歴行の既存ボーダーは維持</td></tr>
+          <tr><td>連携・自動</td><td><b>自動圧縮</b></td><td>見出し / 即時圧縮 / 元画像保持 / 警告 / 対象プロファイル</td><td>警告は表示時のみ</td></tr>
+          <tr><td>連携・自動</td><td><b>AI タグ付け</b></td><td>見出し / 有効化 / 自動 / バックログ / バックエンド / ジョブ詳細 / 設定を開く</td><td>未準備時は 見出し / 案内 / 設定を開く</td></tr>
+          <tr><td>連携・自動</td><td><b>クリップボード</b></td><td>見出し / 説明 / プロファイル一覧</td><td>3 項目</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="out-of-scope">
+      <span>対象外:</span>
+      <span><b>連携・自動の左側マスター一覧カード</b>（ナビゲーションのため）、<b>送信履歴の各行</b>、<b>プロファイル一覧の各行</b>、モーダル・トースト・ダイアログ。</span>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-head">
+      <div class="heading"><span class="num">06</span><h2>実装メモ</h2></div>
+      <p>承認後に実装する内容。データ・保存処理・文言・カード幅は変更しません。</p>
+    </div>
+    <div class="notes">
+      <article class="note-card">
+        <h3>共通ヘルパー</h3>
+        <ul>
+          <li><code>components.rs</code> に区切り線ヘルパーを追加し、全カードで同じ見た目にする。</li>
+          <li><code>h(px(1.)).w_full().bg(rgba(p.line_soft))</code>。カードの子要素として挿入するため、左右は自動的に 14px パディングの内側になる。</li>
+          <li>カードの <code>p(px(14.))</code> と <code>gap(px(12.))</code> は変更しない。</li>
+        </ul>
+      </article>
+      <article class="note-card">
+        <h3>挿入ルール</h3>
+        <ul>
+          <li>各カードの最上位の子要素の間に 1 本ずつ。最後の子要素の後には挿入しない。</li>
+          <li>条件付き要素（警告・エラー・ダウンロード進捗など）は、表示されている場合のみ項目として数える。</li>
+          <li>表示カードの既存 <code>div().h(px(1.)).bg(...)</code> は残し、その境界には新しい線を追加しない。</li>
+        </ul>
+      </article>
+      <article class="note-card">
+        <h3>確認範囲</h3>
+        <ul>
+          <li>設定画面: 表示・起動・サムネイル・ログを含む全カードをスクロールして確認。</li>
+          <li>連携・自動画面: Discord / 自動圧縮 / AI タグ付け / クリップボード / 送信履歴の各セクション。</li>
+          <li>ライトテーマでも <code>line_soft</code> が背景から浮きすぎないことを確認。</li>
+        </ul>
+      </article>
+      <article class="note-card">
+        <h3>変更しないもの</h3>
+        <ul>
+          <li>カードの並び順・幅・角丸・背景・影・パディング・ギャップ。</li>
+          <li>設定値、保存処理、表示条件、文言、アイコン、スイッチの動作。</li>
+          <li>マスター一覧、履歴行、プロファイル行、モーダルの既存区切り。</li>
+        </ul>
+      </article>
+    </div>
+  </section>
+
+  <footer class="approval">
+    <h2>このモックで実装を進めてよいか確認してください</h2>
+    <p>特に次の 3 点を確認してください。</p>
+    <ol>
+      <li><b>カード見出しの下にも線を入れる</b>（見出しを 1 項目として扱う）。</li>
+      <li><b>表示カードの既存グループ境界線は 1 本のまま残す</b>（トグル群とスライダー群の間に新しい線を重ねない）。</li>
+      <li><b>左側のマスター一覧、履歴行、プロファイル行の区切りは対象外</b>とする。</li>
+    </ol>
+    <p class="foot">修正がある場合は、線の位置・本数・濃さ（<code>line_soft</code> より薄くする等）を指定してください。承認後に実装ブランチを作成し、各画面のスクリーンショットで回帰確認します。</p>
+  </footer>
+
+</div>
+</body>
+</html>
