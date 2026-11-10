@@ -18,6 +18,29 @@ pub const UI_CARD_RADIUS_MIN: u8 = 0;
 pub const UI_CARD_RADIUS_MAX: u8 = 24;
 pub const UI_CARD_RADIUS_DEFAULT: u8 = 13;
 
+fn clamp_u8(value: f32, min: u8, max: u8, default: u8) -> u8 {
+    if value.is_finite() {
+        value.round().clamp(f32::from(min), f32::from(max)) as u8
+    } else {
+        default
+    }
+}
+
+/// Converts a slider value to the stored grid-gap range.
+pub fn clamp_grid_gap(value: f32) -> u8 {
+    clamp_u8(value, UI_GRID_GAP_MIN, UI_GRID_GAP_MAX, UI_GRID_GAP_DEFAULT)
+}
+
+/// Converts a slider value to the stored card-radius range.
+pub fn clamp_card_radius(value: f32) -> u8 {
+    clamp_u8(
+        value,
+        UI_CARD_RADIUS_MIN,
+        UI_CARD_RADIUS_MAX,
+        UI_CARD_RADIUS_DEFAULT,
+    )
+}
+
 /// Keeps the last JSON that failed to parse so a later save cannot destroy
 /// the only copy of the user's settings. The value is overwritten on the next
 /// parse failure.
@@ -766,6 +789,20 @@ mod tests {
         assert!(settings.ui_card_show_date);
         assert!(settings.ui_card_show_size);
         assert_eq!(settings.ui_card_size, CardSize::Medium);
+    }
+
+    #[test]
+    fn grid_display_slider_values_round_and_clamp() {
+        assert_eq!(clamp_grid_gap(14.4), 14);
+        assert_eq!(clamp_grid_gap(14.6), 15);
+        assert_eq!(clamp_grid_gap(-1.0), UI_GRID_GAP_MIN);
+        assert_eq!(clamp_grid_gap(99.0), UI_GRID_GAP_MAX);
+        assert_eq!(clamp_grid_gap(f32::NAN), UI_GRID_GAP_DEFAULT);
+        assert_eq!(clamp_card_radius(12.4), 12);
+        assert_eq!(clamp_card_radius(12.6), 13);
+        assert_eq!(clamp_card_radius(-1.0), UI_CARD_RADIUS_MIN);
+        assert_eq!(clamp_card_radius(99.0), UI_CARD_RADIUS_MAX);
+        assert_eq!(clamp_card_radius(f32::NAN), UI_CARD_RADIUS_DEFAULT);
     }
 
     #[test]

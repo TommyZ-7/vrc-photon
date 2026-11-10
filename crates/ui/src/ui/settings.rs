@@ -294,7 +294,76 @@ impl App {
                                 true,
                                 cx,
                                 |settings, value| settings.ui_card_show_size = value,
-                            )),
+                            ))
+                            .child(div().h(px(1.)).bg(rgba(p.line_soft)))
+                            .child(
+                                v_flex()
+                                    .gap(px(6.))
+                                    .child(
+                                        h_flex()
+                                            .items_baseline()
+                                            .gap(px(6.))
+                                            .child(
+                                                div()
+                                                    .text_size(px(12.))
+                                                    .text_color(rgb(p.text))
+                                                    .child(tr!("settings.display.grid_gap.label")),
+                                            )
+                                            .child(div().flex_1())
+                                            .child(
+                                                div()
+                                                    .text_size(px(12.))
+                                                    .font_semibold()
+                                                    .text_color(rgb(p.text))
+                                                    .child(format!(
+                                                        "{} px",
+                                                        self.settings.ui_grid_gap
+                                                    )),
+                                            ),
+                                    )
+                                    .child(Slider::new(&self.grid_gap_slider).w_full())
+                                    .child(
+                                        div()
+                                            .text_size(px(10.))
+                                            .text_color(rgb(p.muted_2))
+                                            .child(tr!("settings.display.grid_gap.hint")),
+                                    ),
+                            )
+                            .child(
+                                v_flex()
+                                    .gap(px(6.))
+                                    .child(
+                                        h_flex()
+                                            .items_baseline()
+                                            .gap(px(6.))
+                                            .child(
+                                                div()
+                                                    .text_size(px(12.))
+                                                    .text_color(rgb(p.text))
+                                                    .child(tr!(
+                                                        "settings.display.card_radius.label"
+                                                    )),
+                                            )
+                                            .child(div().flex_1())
+                                            .child(
+                                                div()
+                                                    .text_size(px(12.))
+                                                    .font_semibold()
+                                                    .text_color(rgb(p.text))
+                                                    .child(format!(
+                                                        "{} px",
+                                                        self.settings.ui_card_radius
+                                                    )),
+                                            ),
+                                    )
+                                    .child(Slider::new(&self.card_radius_slider).w_full())
+                                    .child(
+                                        div()
+                                            .text_size(px(10.))
+                                            .text_color(rgb(p.muted_2))
+                                            .child(tr!("settings.display.card_radius.hint")),
+                                    ),
+                            ),
                     )
                     .child(
                         glass_panel(&self.palette)
@@ -891,6 +960,14 @@ impl App {
         if search.pending_anchor.is_none() {
             search.pending_anchor = search_anchor;
         }
+    }
+
+    /// Persists a grid-gap or card-radius change once the slider is released.
+    pub(crate) fn save_grid_display_settings(&mut self, cx: &mut Context<Self>) {
+        if let Err(error) = self.settings.save(&self.db) {
+            tracing::warn!(%error, "cannot save grid display settings");
+        }
+        cx.notify();
     }
 
     /// Persists a thumbnail quality or size change. The in-memory images were
