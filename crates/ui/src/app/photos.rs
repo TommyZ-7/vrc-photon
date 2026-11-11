@@ -21,6 +21,7 @@ use vrc_photon_ipc::Request as IpcRequest;
 
 use crate::app::cli::log_timing;
 use crate::app::demo::demo_thumb_path;
+use crate::app::live::{SelectedMetaSnapshot, collect_selected_meta_snapshot};
 use crate::app::{App, Screen};
 use crate::state::decode_budget;
 use crate::state::display_image::{display_key, should_apply_image};
@@ -47,28 +48,28 @@ impl App {
     /// Reloads the metadata for a photo without decoding its display image.
     /// Favorite and tag edits use this so the inspector does not flash.
     pub(crate) fn load_selected_meta(&mut self, id: i64) {
-        self.selected = Some(id);
-        self.selected_photo = match self.db.photo_by_id(id) {
-            Ok(photo) => photo,
-            Err(error) => {
-                tracing::warn!(%error, photo_id = id, "cannot load selected photo");
-                None
-            }
-        };
-        self.selected_players = self.db.photo_players(id).unwrap_or_else(|error| {
-            tracing::warn!(%error, photo_id = id, "cannot load selected photo players");
-            Vec::new()
-        });
-        self.selected_tags = self.db.photo_tags(id).unwrap_or_else(|error| {
-            tracing::warn!(%error, photo_id = id, "cannot load selected photo tags");
-            Vec::new()
-        });
-        self.selected_derivatives = self.db.derivatives_for_photo(id).unwrap_or_else(|error| {
-            tracing::warn!(%error, photo_id = id, "cannot load photo derivatives");
-            Vec::new()
-        });
-        self.load_selected_ai(id);
-        if self.note_edit_id.is_some_and(|edit_id| edit_id != id) {
+        let snapshot = collect_selected_meta_snapshot(&self.db, id);
+        self.apply_selected_meta(snapshot);
+    }
+
+    /// Applies metadata that was read on a background connection.
+    pub(crate) fn apply_selected_meta(&mut self, snapshot: SelectedMetaSnapshot) {
+        self.selected = Some(snapshot.id);
+        self.selected_photo = snapshot.photo;
+        self.selected_players = snapshot.players;
+        self.selected_tags = snapshot.tags;
+        self.selected_derivatives = snapshot.derivatives;
+        self.selected_ai = snapshot.ai;
+        self.selected_ai_tags = snapshot.ai_tags;
+        self.ai_tag_focused = None;
+        // The inspector and Quick Look share this cache. Any reload (a
+        // selection change, a tagging result, or a threshold/tag edit that
+        // refreshes the selected photo) must invalidate it.
+        self.ai_meta_revision = self.ai_meta_revision.wrapping_add(1);
+        if self
+            .note_edit_id
+            .is_some_and(|edit_id| edit_id != snapshot.id)
+        {
             self.note_edit_id = None;
         }
     }

@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use gpui_kit::component::notification::NotificationType;
 use gpui_kit::*;
-use vrc_photon_core::model::{LibraryStats, PhotoSort, QueueStatus};
+use vrc_photon_core::model::{CompressionProfile, LibraryStats, PhotoSort, QueueStatus};
 use vrc_photon_core::settings::AppSettings;
 use vrc_photon_i18n::{tr, tr_args};
 use vrc_photon_ipc::{
@@ -15,6 +15,7 @@ use vrc_photon_ipc::{
 };
 
 use crate::app::cli::log_timing;
+use crate::app::live::{AuxSnapshot, LiveRefreshRequest, collect_library_snapshot};
 use crate::app::{App, Screen};
 use crate::ipc_bridge;
 use crate::state::photo_browser::{apply_library_index, sync_search_mirror};
@@ -597,7 +598,8 @@ impl App {
 
     /// Rebuilds the visible library snapshot and records the revision that
     /// triggered it. `observed_revision` must be read before the snapshot
-    /// query so a concurrent commit cannot be swallowed.
+    /// query so a concurrent commit cannot be swallowed. File-backed
+    /// databases apply the revision when the background snapshot lands.
     pub(crate) fn apply_library_snapshot(
         &mut self,
         observed_revision: Option<i64>,
@@ -618,11 +620,16 @@ impl App {
             self.mark_library_dirty();
             return false;
         }
-        if let Some(revision) = observed_revision {
-            self.last_library_revision = self.last_library_revision.max(revision);
+        // A background rebuild records the observed revision when its
+        // snapshot lands. Claiming it here would swallow a failed rebuild and
+        // suppress the retry.
+        if !self.library_loading {
+            if let Some(revision) = observed_revision {
+                self.last_library_revision = self.last_library_revision.max(revision);
+            }
+            self.count_debounce.reset();
+            self.revision_debounce.reset();
         }
-        self.count_debounce.reset();
-        self.revision_debounce.reset();
         true
     }
 
@@ -641,10 +648,10 @@ impl App {
         );
         match action {
             ScanRefresh::Snapshot => {
-                // A full index rebuild already reloads stats, jobs, and the
-                // monitor through `reload_aux`; scheduling a second snapshot
-                // here would duplicate those queries. A failed rebuild still
-                // needs the side panels refreshed.
+                // A full index rebuild carries the stats, jobs, and monitor
+                // in the same background snapshot; scheduling a second live
+                // pass here would duplicate those queries. A failed rebuild
+                // refreshes the side panels from the live path instead.
                 if !self.apply_library_snapshot(revision, cx) {
                     self.refresh_live_async(cx);
                 }
@@ -774,12 +781,16 @@ impl App {
         }
     }
 
-    /// Refreshes side panels without touching the library snapshot or pages.
+    /// Refreshes every side panel. Used by the synchronous demo path and by
+    /// actions that need both the aggregates and the settings/theme refresh.
     pub(crate) fn reload_aux(&mut self, cx: &mut Context<Self>) {
-        self.reload_profiles();
-        if self.profile_index >= self.profiles.len() {
-            self.profile_index = 0;
-        }
+        self.reload_aux_live(cx);
+        self.reload_aux_ui(cx);
+    }
+
+    /// Recomputes the expensive library aggregates on the UI thread.
+    /// File-backed rebuilds collect these on the library reader instead.
+    fn reload_aux_live(&mut self, cx: &mut Context<Self>) {
         match self.db.stats() {
             Ok(stats) => {
                 self.stats = stats;
@@ -810,14 +821,64 @@ impl App {
             .into_iter()
             .collect();
         self.reload_job_state(cx);
+    }
+
+    /// Refreshes profiles, settings, Discord history, the daemon monitor, and
+    /// the selected photo. No library-wide aggregate runs here.
+    pub(crate) fn reload_aux_ui(&mut self, cx: &mut Context<Self>) {
+        self.reload_profiles();
+        if self.profile_index >= self.profiles.len() {
+            self.profile_index = 0;
+        }
+        let settings = settings_after_reload(&self.settings, AppSettings::load(&self.db));
+        self.apply_loaded_settings(settings, cx);
         self.reload_send_history(cx);
+        self.refresh_monitor();
+        if let Some(id) = self.selected {
+            self.load_selected_meta(id);
+        }
+    }
+
+    /// Applies the side-panel part of a full background rebuild.
+    pub(crate) fn apply_aux_snapshot(&mut self, aux: AuxSnapshot, cx: &mut Context<Self>) {
+        let mut notify = false;
+        if let Some(profiles) = aux.profiles {
+            self.apply_profiles(profiles);
+            notify = true;
+        }
+        if let Some(settings) = aux.settings {
+            self.apply_loaded_settings(settings, cx);
+            notify = true;
+        }
+        if aux.send_history.is_some() || aux.send_waiting_count.is_some() {
+            self.apply_send_history(aux.send_history, aux.send_waiting_count, cx);
+            notify = true;
+        }
+        if let Some(selected) = aux.selected
+            && self.selected == Some(selected.id)
+        {
+            self.apply_selected_meta(selected);
+            notify = true;
+        }
+        if notify {
+            cx.notify();
+        }
+    }
+
+    fn apply_profiles(&mut self, profiles: Vec<CompressionProfile>) {
+        self.profiles = profiles;
+        if self.profile_index >= self.profiles.len() {
+            self.profile_index = 0;
+        }
+    }
+
+    fn apply_loaded_settings(&mut self, mut settings: AppSettings, cx: &mut Context<Self>) {
         let previous_language = self.settings.language.clone();
         let previous_auto_compress = self.settings.auto_compress;
         let previous_ai_tagging_enabled = self.settings.ai_tagging_enabled;
         let previous_clipboard_enabled = self.settings.clipboard_enabled;
         let previous_discord_enabled = self.settings.discord_enabled;
         let previous_thumbnail_spec = self.settings.thumbnail_spec();
-        let mut settings = settings_after_reload(&self.settings, AppSettings::load(&self.db));
         settings.language = vrc_photon_i18n::set_locale(&settings.language);
         let language_changed = settings.language != previous_language;
         self.settings = settings;
@@ -866,10 +927,6 @@ impl App {
             self.palette = palette;
             apply_component_theme(self.palette, cx);
         }
-        self.refresh_monitor();
-        if let Some(id) = self.selected {
-            self.load_selected_meta(id);
-        }
     }
 
     /// Applies a resolved palette to the app, the component widgets, and the
@@ -886,14 +943,81 @@ impl App {
 
     /// Rebuilds the ordered library snapshot and its page cache.
     ///
+    /// File-backed databases collect the index and every side-panel read on
+    /// the dedicated library reader; the UI thread only applies the finished
+    /// snapshot. In-memory demo databases keep the synchronous path because
+    /// they have no second handle and only hold a handful of rows.
+    ///
     /// With `preserve_anchor`, the photo at the top-left of the first visible
     /// row stays at the top after the rebuild. A root change or an explicit
     /// reset passes `false` to return the grid to the first row.
     ///
-    /// On a query error the previous snapshot, pages, and scroll offset stay
-    /// mounted and `library_error` exposes the retry action. Returns `true`
-    /// when the snapshot was replaced.
+    /// Returns `true` when a rebuild ran synchronously or was scheduled. On a
+    /// query error the previous snapshot, pages, and scroll offset stay
+    /// mounted and `library_error` exposes the retry action.
     pub(crate) fn reload_library(&mut self, preserve_anchor: bool, cx: &mut Context<Self>) -> bool {
+        if self.library_reader.is_none() {
+            return self.reload_library_sync(preserve_anchor, cx);
+        }
+        self.request_library_reload(preserve_anchor, cx);
+        true
+    }
+
+    fn request_library_reload(&mut self, preserve_anchor: bool, cx: &mut Context<Self>) {
+        self.pending_library_reload = Some(preserve_anchor);
+        if self.library_reload.request() == LiveRefreshRequest::StartNow {
+            self.spawn_library_reload(cx);
+        }
+    }
+
+    fn spawn_library_reload(&mut self, cx: &mut Context<Self>) {
+        let Some(preserve_anchor) = self.pending_library_reload.take() else {
+            return;
+        };
+        let Some(reader) = self.library_reader.clone() else {
+            self.reload_library_sync(preserve_anchor, cx);
+            return;
+        };
+        let anchor = preserve_anchor
+            .then(|| self.capture_top_photo(false))
+            .flatten();
+        let stats_revision = self.stats_revision;
+        let selected_id = self.selected;
+        self.library_loading = true;
+        cx.spawn(async move |this, cx| {
+            let snapshot = cx
+                .background_executor()
+                .spawn(async move {
+                    reader
+                        .query(|db| Ok(collect_library_snapshot(db, stats_revision, selected_id)))
+                        .ok()
+                })
+                .await;
+            this.update(cx, |this, cx| {
+                let follow_up = this.library_reload.finish();
+                match snapshot {
+                    Some(snapshot) => this.apply_library_snapshot_from_background(
+                        snapshot,
+                        preserve_anchor,
+                        anchor,
+                        cx,
+                    ),
+                    None => {
+                        this.library_loading = false;
+                        this.note_library_error("photos.index_error", cx);
+                        this.refresh_live_async(cx);
+                    }
+                }
+                if follow_up {
+                    this.spawn_library_reload(cx);
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn reload_library_sync(&mut self, preserve_anchor: bool, cx: &mut Context<Self>) -> bool {
         let anchor = preserve_anchor
             .then(|| self.capture_top_photo(false))
             .flatten();
