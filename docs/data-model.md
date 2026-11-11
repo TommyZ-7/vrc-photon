@@ -29,8 +29,8 @@ PRAGMA busy_timeout = 5000;
 ```
 
 - `user_version` でスキーマバージョンを管理する。
-- 現在のバージョンは **15**。このビルドが理解できる最大値でもあり、
-  `user_version` が 16 以上の DB は `Db::open` / `Db::open_read_only` の
+- 現在のバージョンは **18**。このビルドが理解できる最大値でもあり、
+  `user_version` が 19 以上の DB は `Db::open` / `Db::open_read_only` の
   どちらでも型付きエラーで拒否する（古いアプリで新スキーマを書き換えない）。
 - マイグレーションは `Db::migrate` で起動時に自動実行する。
 
@@ -767,6 +767,9 @@ Discord 関連の既定値:
 | 13 | AI プラグイン・カタログ・AI 結果・タグ付けジョブのテーブル追加（`plugin_installations`、`plugin_state`、`ai_tag_definitions`、`ai_tag_thresholds`、`photo_ai`、`photo_ai_tags`、`tagging_jobs`） |
 | 14 | 取得・一覧用インデックス追加（`idx_jobs_claim`、`idx_jobs_created`、`idx_sessions_started`、`idx_sessions_ended`） |
 | 15 | `photos.link_attempts` / `photos.link_next_retry_at` と `idx_photos_link_retry` 追加（未リンク写真の再試行バックオフ） |
+| 16 | `ai_tag_definitions.tag_group` 追加（雰囲気タグのグループ） |
+| 17 | `idx_context_session` 追加（セッション要約の `photo_context.session_id` 検索） |
+| 18 | `photos.captured_month` / `photos.captured_day` の生成列追加（一覧・年レール用） |
 
 V4以降は `IMMEDIATE` トランザクションで適用する。UIとデーモンが同時に起動しても、書き込みロックで直列化し、`user_version` と列・テーブルの存在を再確認してから進めるため、中断後の再実行でも安全。
 
@@ -777,13 +780,19 @@ v14 はインデックス追加だけで、テーブル・行・既存インデ�
 v15 は `link_attempts`（既定 0）と `link_next_retry_at`（NULL）を追加し、
 `status IN ('present','replaced')` の部分インデックス `idx_photos_link_retry` を作る。
 既存行は「未試行・即時再試行可能」として移行される。
+v16 は `ai_tag_definitions.tag_group` を既定空文字で追加する。
+v17 は `idx_context_session` を作り、セッション要約の検索を索引化する。
+v18 は `photos` を再作成し、`captured_at_utc` から月・日を計算する STORED
+生成列 `captured_month` / `captured_day` を追加する。SQLite は生成列を
+`ALTER TABLE` で追加できないため、外部キーを一時的に無効化して行と
+インデックスをコピーする。途中で失敗した場合は再実行できる。
 
 v9 は fresh DB では v1 で作成済みの `idx_jobs_photo_profile` を
 `CREATE INDEX IF NOT EXISTS` で再確認するだけで実質 no-op になる。古い DB で
 インデックスが欠けている場合だけ補う。
 ロールバック時はテーブルやインデックスを残しても既存機能は動く。
 
-`user_version` がこのビルドの最大値（15）より大きい DB は、書き込みを始める前に
+`user_version` がこのビルドの最大値（18）より大きい DB は、書き込みを始める前に
 `CoreError::Invalid` で拒否する。読み取り専用の `open_read_only` も同じ検査を行う。
 
 追加手順:
