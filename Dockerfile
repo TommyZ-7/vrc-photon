@@ -30,6 +30,8 @@ RUN apt-get update \
         libxkbcommon-x11-dev \
         libvulkan-dev \
         ninja-build \
+        patchelf \
         pkg-config \
         squashfs-tools \
+        zsync \
     && rm -rf /var/lib/apt/lists/*
