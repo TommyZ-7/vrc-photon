@@ -28,6 +28,7 @@ use vrc_photon_ipc::Event;
 
 use crate::discord_http::{SendImage, SendOutcome, SendRequest, SendTransport};
 use crate::ipc_server::EventBus;
+use crate::lock::lock_db;
 use crate::signals::JobSignal;
 
 /// Error details are capped before they reach the outbox or an event.
@@ -107,7 +108,7 @@ pub(crate) fn process_next_send(
     now: i64,
 ) -> Result<ProcessOutcome> {
     let Some(entry) = ({
-        let db = db.lock().unwrap();
+        let db = lock_db(db);
         claim_ready_send(&db, now)?
     }) else {
         return Ok(ProcessOutcome::Idle);
@@ -117,7 +118,7 @@ pub(crate) fn process_next_send(
     // it, otherwise it would block the photo's deletion forever and look stuck
     // in the history.
     let plan = {
-        let db = db.lock().unwrap();
+        let db = lock_db(db);
         match plan_claimed_send(&db, &entry) {
             Ok(plan) => plan,
             Err(error) => {
@@ -163,7 +164,7 @@ pub(crate) fn process_next_send(
         Ok(prepared) => prepared,
         Err(failure) => {
             let update = {
-                let db = db.lock().unwrap();
+                let db = lock_db(db);
                 let update = record_failure(&db, &entry, &destination, failure)?;
                 prune_history(&db, entry.id);
                 update
@@ -180,7 +181,7 @@ pub(crate) fn process_next_send(
     let outcome = transport.send(&request);
 
     let update = {
-        let db = db.lock().unwrap();
+        let db = lock_db(db);
         let update = record_outcome(&db, &entry, &destination, now, outcome, source, profile_id)?;
         if update.status.is_terminal() {
             prune_history(&db, entry.id);
@@ -416,7 +417,7 @@ pub(crate) fn worker_loop(
     transport: Arc<dyn SendTransport>,
 ) {
     {
-        let db = db.lock().unwrap();
+        let db = lock_db(&db);
         if let Err(error) = recover_interrupted_sends(&db) {
             tracing::warn!(%error, "cannot recover interrupted Discord sends");
         }
