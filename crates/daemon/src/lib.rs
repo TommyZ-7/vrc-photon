@@ -246,6 +246,9 @@ impl LogPass {
 
 pub struct Daemon {
     db: Arc<Mutex<Db>>,
+    /// Read-only connection for IPC reads; falls back to `db` when opening one
+    /// is not possible.
+    read_db: Arc<Mutex<Db>>,
     /// Shared transient-memory budget for the compression workers.
     compression_budget: Arc<MemoryBudget>,
     settings: AppSettings,
@@ -482,7 +485,20 @@ impl Daemon {
                 }
             });
 
+        let read_db = match Db::open_read_only(&db_path) {
+            Ok(read_db) => Some(read_db),
+            Err(error) => {
+                tracing::warn!(
+                    %error,
+                    "cannot open read-only library database; IPC reads will use the writer"
+                );
+                None
+            }
+        };
         let db = Arc::new(Mutex::new(db));
+        let read_db = read_db
+            .map(|read_db| Arc::new(Mutex::new(read_db)))
+            .unwrap_or_else(|| db.clone());
         let events = EventBus::default();
         let ai_data_dir = vrc_photon_core::data_dir().unwrap_or_else(|| PathBuf::from("."));
         let ai_plugin_keys = vrc_photon_ai_host::effective_plugin_keys();
@@ -502,6 +518,7 @@ impl Daemon {
 
         Ok(Self {
             db,
+            read_db,
             compression_budget: Arc::new(MemoryBudget::new(COMPRESSION_MEMORY_BUDGET_BYTES)),
             settings,
             status: Arc::new(Mutex::new(DaemonStatus::default())),
@@ -1214,6 +1231,7 @@ impl Daemon {
             tagging: self.tagging.clone(),
             tagging_control: self.tagging_control.clone(),
             db: self.db.clone(),
+            read_db: self.read_db.clone(),
         };
         match IpcServer::start(endpoint, control) {
             Ok(server) => self.ipc = Some(server),
