@@ -8,12 +8,12 @@ VRC PhotoN がバイナリに含むサードパーティ製クレートと、そ
 
 | ライセンス | 名称 | クレート数 |
 |---|---|---:|
-| MIT | MIT License | 780 |
+| MIT | MIT License | 782 |
 | Apache-2.0 | Apache License 2.0 | 58 |
 | ISC | ISC License | 26 |
 | Unicode-3.0 | Unicode License v3 | 23 |
 | BSD-3-Clause | BSD 3-Clause "New" or "Revised" License | 16 |
-| GPL-3.0-or-later | GNU General Public License v3.0 or later | 13 |
+| GPL-3.0-or-later | GNU General Public License v3.0 or later | 14 |
 | BSD-2-Clause | BSD 2-Clause "Simplified" License | 5 |
 | 0BSD | BSD Zero Clause License | 4 |
 | MPL-2.0 | Mozilla Public License 2.0 | 3 |
@@ -1593,7 +1593,7 @@ Apache License
    See the License for the specific language governing permissions and
    limitations under the License.
 ```
-### blake3 1.8.7, gl_generator 0.14.0, gpui-fast-apple 0.1.14, gpui-fast-linux 0.1.14, gpui-fast-macos 0.1.14, gpui-fast-macros 0.1.14, gpui-fast-platform 0.1.14, gpui-fast-web 0.1.14, gpui-fast-wgpu 0.1.14, gpui-fast-windows 0.1.14, gpui-fast 0.1.14, gpui-kit-assets 0.9.1, gpui-kit 0.9.1, interprocess 2.4.7, khronos_api 3.1.0, rmcp-macros 3.9.0, rmcp 3.9.0, rpassword 7.5.4, rtoolbox 0.0.6, ryu 1.0.23, spirv 0.4.0+sdk-1.4.341.0, sync_wrapper 1.0.2
+### gpui-fast 0.1.14, gpui-fast-macros 0.1.14, gpui-fast-wgpu 0.1.14, gpui-fast-windows 0.1.14, blake3 1.8.7, gl_generator 0.14.0, gpui-fast-apple 0.1.14, gpui-fast-linux 0.1.14, gpui-fast-macos 0.1.14, gpui-fast-platform 0.1.14, gpui-fast-web 0.1.14, gpui-kit-assets 0.9.1, gpui-kit 0.9.1, interprocess 2.4.7, khronos_api 3.1.0, rmcp-macros 3.9.0, rmcp 3.9.0, rpassword 7.5.4, rtoolbox 0.0.6, ryu 1.0.23, spirv 0.4.0+sdk-1.4.341.0, sync_wrapper 1.0.2
 
 ```
 Apache License
@@ -3656,7 +3656,7 @@ the library.  If this is what you want to do, use the GNU Lesser General
 Public License instead of this License.  But first, please read
 <https://www.gnu.org/licenses/why-not-lgpl.html>.
 ```
-### vrc-photon-ai-host 0.13.0, vrc-photon-ai-mock-sidecar 0.13.0, vrc-photon-ai-protocol 0.13.0, vrc-photon-core 0.13.0, vrc-photon-daemon 0.13.0, vrc-photon-i18n 0.13.0, vrc-photon-ipc 0.13.0, vrc-photon-mcp 0.13.0, vrc-photon-release-tool 0.13.0, vrc-photon-ui 0.13.0, vrc-photon-update 0.13.0
+### vrc-photon-ai-host 0.13.4, vrc-photon-ai-mock-sidecar 0.13.4, vrc-photon-ai-protocol 0.13.4, vrc-photon-core 0.13.4, vrc-photon-daemon 0.13.4, vrc-photon-i18n 0.13.4, vrc-photon-ipc 0.13.4, vrc-photon-mcp 0.13.4, vrc-photon-release-tool 0.13.4, vrc-photon-signing 0.13.4, vrc-photon-ui 0.13.4, vrc-photon-update 0.13.4
 
 ```
 GNU GENERAL PUBLIC LICENSE
@@ -7206,7 +7206,7 @@ DEALINGS IN THE SOFTWARE.
 
 
 ```
-### aligned 0.4.3, heapless 0.9.3
+### aligned 0.4.3, cty 0.2.2, heapless 0.9.3
 
 ```
 Copyright (c) 2017 Jorge Aparicio
@@ -10127,6 +10127,32 @@ Permission is hereby granted, free of charge, to any person obtaining a copy of 
 The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
 THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+```
+### jpeg-decoder 0.3.2
+
+```
+MIT License
+
+Copyright (c) 2016 The jpeg-decoder Developers
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 ```
 ### precomputed-hash 0.1.1
