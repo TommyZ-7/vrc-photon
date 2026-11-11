@@ -17,6 +17,7 @@ use vrc_photon_update::{
 
 use crate::app::App;
 use crate::app::daemon::{open_path, restart_daemon_after_update, start_daemon};
+use crate::ui::theme::format_bytes;
 
 #[cfg(test)]
 mod tests {
@@ -1549,22 +1550,6 @@ fn update_downloading_view(palette: &Palette, received: u64, total: Option<u64>)
                         .bg(rgb(p.accent)),
                 ),
         )
-}
-
-fn format_bytes(bytes: u64) -> String {
-    const KB: f64 = 1024.0;
-    const MB: f64 = KB * 1024.0;
-    const GB: f64 = MB * 1024.0;
-    let value = bytes as f64;
-    if value < KB {
-        format!("{bytes} B")
-    } else if value < MB {
-        format!("{:.1} KB", value / KB)
-    } else if value < GB {
-        format!("{:.1} MB", value / MB)
-    } else {
-        format!("{:.1} GB", value / GB)
-    }
 }
 
 fn last_checked_label(checked_at: Option<i64>) -> String {
