@@ -32,7 +32,7 @@ use crate::world_name::{
 
 /// Highest schema version this build understands. A database with a newer
 /// `user_version` was written by a future release and must not be opened.
-const SCHEMA_VERSION: i64 = 17;
+const SCHEMA_VERSION: i64 = 18;
 
 const SCHEMA_V1: &str = r#"
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -95,6 +95,20 @@ CREATE TABLE IF NOT EXISTS photos (
     note TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
+    captured_month INTEGER GENERATED ALWAYS AS (
+        COALESCE(
+            CAST(strftime('%Y%m', captured_at_local) AS INTEGER),
+            CAST(strftime('%Y%m', captured_at_utc, 'unixepoch') AS INTEGER),
+            0
+        )
+    ) STORED,
+    captured_day INTEGER GENERATED ALWAYS AS (
+        COALESCE(
+            CAST(strftime('%Y%m%d', captured_at_local) AS INTEGER),
+            CAST(strftime('%Y%m%d', captured_at_utc, 'unixepoch') AS INTEGER),
+            0
+        )
+    ) STORED,
     UNIQUE(root_id, rel_path)
 );
 
@@ -462,6 +476,84 @@ CREATE INDEX IF NOT EXISTS idx_photos_link_retry ON photos(link_next_retry_at)
 const SCHEMA_V17_CONTEXT_SESSION_INDEX: &str =
     "CREATE INDEX IF NOT EXISTS idx_context_session ON photo_context(session_id);";
 
+/// Rebuilds `photos` with the stored capture month/day columns.
+///
+/// SQLite cannot add a STORED generated column with `ALTER TABLE ADD COLUMN`,
+/// so the table is recreated with the exact final shape. All non-generated
+/// columns are copied, then every index is recreated. `migrate_v18` disables
+/// foreign keys around this batch so dropping the old table is allowed.
+const SCHEMA_V18_PHOTOS_GENERATED: &str = r#"
+CREATE TABLE photos_v18 (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    root_id INTEGER NOT NULL REFERENCES library_roots(id) ON DELETE CASCADE,
+    rel_path TEXT NOT NULL,
+    abs_path TEXT NOT NULL UNIQUE,
+    file_name TEXT NOT NULL,
+    captured_at_utc INTEGER NOT NULL,
+    captured_at_local TEXT NOT NULL,
+    tz_offset_sec INTEGER NOT NULL,
+    width INTEGER NOT NULL,
+    height INTEGER NOT NULL,
+    file_size INTEGER NOT NULL,
+    mtime INTEGER NOT NULL,
+    blake3 TEXT,
+    status TEXT NOT NULL DEFAULT 'present',
+    is_favorite INTEGER NOT NULL DEFAULT 0,
+    note TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    display_derivative_id INTEGER REFERENCES derivatives(id) ON DELETE SET NULL,
+    link_attempts INTEGER NOT NULL DEFAULT 0,
+    link_next_retry_at INTEGER,
+    captured_month INTEGER GENERATED ALWAYS AS (
+        COALESCE(
+            CAST(strftime('%Y%m', captured_at_local) AS INTEGER),
+            CAST(strftime('%Y%m', captured_at_utc, 'unixepoch') AS INTEGER),
+            0
+        )
+    ) STORED,
+    captured_day INTEGER GENERATED ALWAYS AS (
+        COALESCE(
+            CAST(strftime('%Y%m%d', captured_at_local) AS INTEGER),
+            CAST(strftime('%Y%m%d', captured_at_utc, 'unixepoch') AS INTEGER),
+            0
+        )
+    ) STORED,
+    UNIQUE(root_id, rel_path)
+);
+
+INSERT INTO photos_v18 (
+    id, root_id, rel_path, abs_path, file_name, captured_at_utc,
+    captured_at_local, tz_offset_sec, width, height, file_size, mtime,
+    blake3, status, is_favorite, note, created_at, updated_at,
+    display_derivative_id, link_attempts, link_next_retry_at
+)
+SELECT
+    id, root_id, rel_path, abs_path, file_name, captured_at_utc,
+    captured_at_local, tz_offset_sec, width, height, file_size, mtime,
+    blake3, status, is_favorite, note, created_at, updated_at,
+    display_derivative_id, link_attempts, link_next_retry_at
+FROM photos;
+
+DROP TABLE photos;
+ALTER TABLE photos_v18 RENAME TO photos;
+
+CREATE INDEX IF NOT EXISTS idx_photos_captured ON photos(captured_at_utc DESC);
+CREATE INDEX IF NOT EXISTS idx_photos_favorite ON photos(is_favorite) WHERE is_favorite = 1;
+CREATE INDEX IF NOT EXISTS idx_photos_blake3 ON photos(blake3);
+CREATE INDEX IF NOT EXISTS idx_photos_captured_id
+    ON photos(captured_at_utc DESC, id DESC)
+    WHERE status IN ('present', 'replaced');
+CREATE INDEX IF NOT EXISTS idx_photos_move_match
+    ON photos(status, file_size, captured_at_utc);
+CREATE INDEX IF NOT EXISTS idx_photos_link_retry ON photos(link_next_retry_at)
+    WHERE status IN ('present', 'replaced');
+
+DELETE FROM sqlite_sequence WHERE name IN ('photos', 'photos_v18');
+INSERT INTO sqlite_sequence(name, seq)
+    SELECT 'photos', COALESCE(MAX(id), 0) FROM photos;
+"#;
+
 /// Backoff applied after consecutive failed link attempts: one hour, six
 /// hours, one day, then weekly. Later attempts keep the weekly interval.
 const LINK_RETRY_BACKOFF_SECONDS: [i64; 4] = [3_600, 21_600, 86_400, 604_800];
@@ -522,20 +614,6 @@ fn splitmix64(value: u64) -> u64 {
     z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
     z ^ (z >> 31)
 }
-
-/// Local capture month as YYYYMM, falling back to the UTC capture time and
-/// finally to 0 when neither can be parsed.
-const PHOTO_MONTH: &str = "COALESCE(\
-    CAST(strftime('%Y%m', p.captured_at_local) AS INTEGER), \
-    CAST(strftime('%Y%m', p.captured_at_utc, 'unixepoch') AS INTEGER), \
-    0)";
-
-/// Local capture day as YYYYMMDD, falling back to the UTC capture time and
-/// finally to 0 when neither can be parsed.
-const PHOTO_DAY: &str = "COALESCE(\
-    CAST(strftime('%Y%m%d', p.captured_at_local) AS INTEGER), \
-    CAST(strftime('%Y%m%d', p.captured_at_utc, 'unixepoch') AS INTEGER), \
-    0)";
 
 pub struct Db {
     conn: Connection,
@@ -719,6 +797,9 @@ impl Db {
         }
         if version < 17 {
             self.migrate_v17()?;
+        }
+        if version < 18 {
+            self.migrate_v18()?;
         }
         Ok(())
     }
@@ -1164,6 +1245,57 @@ impl Db {
         Ok(())
     }
 
+    /// Adds the stored capture month/day columns.
+    ///
+    /// Fresh databases get them from [`SCHEMA_V1`]. Older databases need a
+    /// table rebuild because SQLite refuses `ALTER TABLE ADD COLUMN ... STORED`.
+    fn migrate_v18(&self) -> Result<()> {
+        let version: i64 = self
+            .conn
+            .pragma_query_value(None, "user_version", |row| row.get(0))?;
+        if version >= 18 {
+            return Ok(());
+        }
+
+        let has_generated: bool = self.conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM pragma_table_info('photos') \
+             WHERE name = 'captured_month')",
+            [],
+            |row| row.get(0),
+        )?;
+        if has_generated {
+            let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
+            tx.execute(
+                "INSERT OR REPLACE INTO schema_migrations(version, applied_at) VALUES (18, ?1)",
+                params![now_string()],
+            )?;
+            tx.pragma_update(None, "user_version", 18)?;
+            tx.commit()?;
+            return Ok(());
+        }
+
+        // `DROP TABLE photos` is only allowed while foreign keys are off, and
+        // the pragma is a no-op inside a transaction.
+        self.conn.pragma_update(None, "foreign_keys", "OFF")?;
+        let result = (|| -> Result<()> {
+            let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
+            tx.execute_batch(SCHEMA_V18_PHOTOS_GENERATED)?;
+            tx.execute(
+                "INSERT OR REPLACE INTO schema_migrations(version, applied_at) VALUES (18, ?1)",
+                params![now_string()],
+            )?;
+            tx.pragma_update(None, "user_version", 18)?;
+            tx.commit()?;
+            Ok(())
+        })();
+        let restored = self.conn.pragma_update(None, "foreign_keys", "ON");
+        match (result, restored) {
+            (Err(error), _) => Err(error),
+            (Ok(()), Err(error)) => Err(error.into()),
+            (Ok(()), Ok(())) => Ok(()),
+        }
+    }
+
     pub fn connection(&self) -> &Connection {
         &self.conn
     }
@@ -1278,11 +1410,7 @@ impl Db {
     /// `photo_context` join is 1:1 and keeps every `PhotoSort` executable,
     /// including world order.
     pub fn photo_index(&self, sort: PhotoSort) -> Result<Vec<PhotoIndexEntry>> {
-        let order = photo_order(sort);
-        let sql = format!(
-            "SELECT p.id, p.captured_at_utc, {PHOTO_MONTH}, {PHOTO_DAY}, c.session_id\
-             {PHOTO_FROM} WHERE {VISIBLE_STATUS} ORDER BY {order}"
-        );
+        let sql = photo_index_sql(sort);
         let mut stmt = self.conn.prepare_cached(&sql)?;
         let rows = stmt.query_map([], row_to_photo_index)?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
@@ -1304,7 +1432,7 @@ impl Db {
     ) -> Result<Vec<PhotoIndexEntry>> {
         let (where_sql, mut values) = build_text_filter(filter);
         let sql = format!(
-            "SELECT p.id, p.captured_at_utc, {PHOTO_MONTH}, {PHOTO_DAY}, c.session_id\
+            "SELECT p.id, p.captured_at_utc, p.captured_month, p.captured_day, c.session_id\
              {PHOTO_FROM} WHERE {where_sql} \
              ORDER BY p.captured_at_utc DESC, p.id DESC LIMIT ?"
         );
@@ -6079,6 +6207,14 @@ fn reapply_thresholds(conn: &Connection, plugin_id: &str) -> Result<usize> {
     Ok(updated)
 }
 
+fn photo_index_sql(sort: PhotoSort) -> String {
+    let order = photo_order(sort);
+    format!(
+        "SELECT p.id, p.captured_at_utc, p.captured_month, p.captured_day, c.session_id\
+         {PHOTO_FROM} WHERE {VISIBLE_STATUS} ORDER BY {order}"
+    )
+}
+
 fn photo_order(sort: PhotoSort) -> &'static str {
     match sort {
         PhotoSort::Newest => "p.captured_at_utc DESC, p.id DESC",
@@ -6470,6 +6606,32 @@ mod tests {
         Catalog, ModelState, TagDefinition, TaggingErrorCode, TaggingJobStatus, TaggingStage,
     };
 
+    /// The v1 photos shape without the v18 generated columns, used by tests
+    /// that simulate an older database with a partial schema.
+    const TEST_PRE_V18_PHOTOS: &str = r#"
+CREATE TABLE photos (
+    id INTEGER PRIMARY KEY,
+    root_id INTEGER NOT NULL DEFAULT 1,
+    rel_path TEXT NOT NULL DEFAULT '',
+    abs_path TEXT NOT NULL,
+    file_name TEXT NOT NULL DEFAULT '',
+    captured_at_utc INTEGER NOT NULL DEFAULT 0,
+    captured_at_local TEXT NOT NULL DEFAULT '',
+    tz_offset_sec INTEGER NOT NULL DEFAULT 0,
+    width INTEGER NOT NULL DEFAULT 0,
+    height INTEGER NOT NULL DEFAULT 0,
+    file_size INTEGER NOT NULL DEFAULT 0,
+    mtime INTEGER NOT NULL DEFAULT 0,
+    blake3 TEXT,
+    status TEXT NOT NULL DEFAULT 'present',
+    is_favorite INTEGER NOT NULL DEFAULT 0,
+    note TEXT,
+    created_at TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL DEFAULT '',
+    display_derivative_id INTEGER
+);
+"#;
+
     fn sample_photo(root_id: i64, path: &str, ts: i64) -> NewPhoto {
         NewPhoto {
             root_id,
@@ -6706,7 +6868,7 @@ mod tests {
             .conn
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 17);
+        assert_eq!(version, 18);
     }
 
     #[test]
@@ -6752,7 +6914,7 @@ mod tests {
             .conn
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 17);
+        assert_eq!(version, 18);
         let author_columns: i64 = db
             .conn
             .query_row(
@@ -6804,7 +6966,7 @@ mod tests {
             }
             for handle in handles {
                 let opened = handle.join().unwrap();
-                assert_eq!(opened.unwrap().unwrap(), 17);
+                assert_eq!(opened.unwrap().unwrap(), 18);
             }
         }
     }
@@ -6816,7 +6978,7 @@ mod tests {
             .conn
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 17);
+        assert_eq!(version, 18);
         let has_output_dir: bool = db
             .conn
             .query_row(
@@ -6836,7 +6998,7 @@ mod tests {
             .connection()
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 17);
+        assert_eq!(version, 18);
         let table: i64 = db
             .connection()
             .query_row(
@@ -7964,7 +8126,7 @@ mod tests {
             .conn
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 17);
+        assert_eq!(version, 18);
 
         let recorded: i64 = db
             .conn
@@ -8007,7 +8169,7 @@ mod tests {
             .conn
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 17);
+        assert_eq!(version, 18);
         let retry_column: i64 = db
             .conn
             .query_row(
@@ -8074,7 +8236,7 @@ mod tests {
             .conn
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 17);
+        assert_eq!(version, 18);
 
         let jobs = db.list_jobs(10).unwrap();
         assert_eq!(jobs.len(), 1);
@@ -8107,7 +8269,7 @@ mod tests {
             .conn
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 17);
+        assert_eq!(version, 18);
         assert_eq!(db.list_jobs(10).unwrap()[0].retry_count, 2);
 
         let tables: i64 = db
@@ -10062,7 +10224,7 @@ mod tests {
             .conn
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 17);
+        assert_eq!(version, 18);
         let exists: bool = db
             .conn
             .query_row(
@@ -10094,7 +10256,7 @@ mod tests {
             .conn
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 17);
+        assert_eq!(version, 18);
         let table: i64 = db
             .conn
             .query_row(
@@ -10193,10 +10355,9 @@ mod tests {
         let path = dir.path().join("library.db");
         {
             let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(TEST_PRE_V18_PHOTOS).unwrap();
             conn.execute_batch(
                 "CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);\
-                 CREATE TABLE photos (id INTEGER PRIMARY KEY, abs_path TEXT NOT NULL, \
-                     status TEXT NOT NULL DEFAULT 'present');\
                  CREATE TABLE sessions (\
                      id INTEGER PRIMARY KEY, started_at INTEGER NOT NULL, ended_at INTEGER);\
                  CREATE TABLE compression_jobs (\
@@ -10214,7 +10375,7 @@ mod tests {
             .connection()
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 17);
+        assert_eq!(version, 18);
         let abs_path: String = db
             .connection()
             .query_row("SELECT abs_path FROM photos WHERE id = 42", [], |row| {
@@ -10271,7 +10432,7 @@ mod tests {
             .connection()
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 17);
+        assert_eq!(version, 18);
         for index in [
             "idx_jobs_claim",
             "idx_jobs_created",
@@ -10342,12 +10503,10 @@ mod tests {
         let path = dir.path().join("library.db");
         {
             let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(TEST_PRE_V18_PHOTOS).unwrap();
             conn.execute_batch(
                 "CREATE TABLE schema_migrations (\
                      version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);\
-                 CREATE TABLE photos (\
-                     id INTEGER PRIMARY KEY, abs_path TEXT NOT NULL, \
-                     status TEXT NOT NULL DEFAULT 'present');\
                  CREATE TABLE photo_context (\
                      photo_id INTEGER PRIMARY KEY, session_id INTEGER);\
                  INSERT INTO photos(id, abs_path) VALUES (42, '/photos/keep.png');\
@@ -10362,7 +10521,7 @@ mod tests {
             .connection()
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 17);
+        assert_eq!(version, 18);
         let (attempts, next_retry, status): (i64, Option<i64>, String) = db
             .connection()
             .query_row(
@@ -10496,7 +10655,7 @@ mod tests {
             .connection()
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 17);
+        assert_eq!(version, 18);
         let columns: Vec<String> = db
             .connection()
             .prepare_cached("SELECT name FROM pragma_table_info('ai_tag_definitions')")
@@ -10752,6 +10911,7 @@ mod tests {
         let path = dir.path().join("library.db");
         {
             let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(TEST_PRE_V18_PHOTOS).unwrap();
             conn.execute_batch(
                 "CREATE TABLE schema_migrations (\
                      version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);\
@@ -10759,9 +10919,6 @@ mod tests {
                      id INTEGER PRIMARY KEY, started_at INTEGER NOT NULL, ended_at INTEGER);\
                  CREATE TABLE compression_jobs (\
                      id TEXT PRIMARY KEY, status TEXT NOT NULL, created_at TEXT NOT NULL);\
-                 CREATE TABLE photos (\
-                     id INTEGER PRIMARY KEY, abs_path TEXT NOT NULL, \
-                     status TEXT NOT NULL DEFAULT 'present');\
                  CREATE TABLE photo_context (\
                      photo_id INTEGER PRIMARY KEY, session_id INTEGER);\
                  PRAGMA user_version = 13;",
@@ -10775,7 +10932,7 @@ mod tests {
             .connection()
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 17);
+        assert_eq!(version, 18);
         for index in [
             "idx_jobs_claim",
             "idx_jobs_created",
@@ -14766,5 +14923,185 @@ mod tests {
         assert_eq!(sample.total, 1);
         assert_eq!(sample.photos.len(), 1);
         assert_eq!(sample.photos[0].id, ids[2]);
+    }
+
+    #[test]
+    fn photo_index_sql_uses_stored_month_and_day() {
+        let sql = photo_index_sql(PhotoSort::Newest);
+        assert!(!sql.contains("strftime"));
+        assert!(sql.contains("p.captured_month"));
+        assert!(sql.contains("p.captured_day"));
+    }
+
+    #[test]
+    fn generated_month_and_day_match_the_legacy_formula() {
+        let db = Db::open_in_memory().unwrap();
+        let root = db.add_root("/photos", "reference").unwrap();
+        db.upsert_photo(&photo_at(
+            root,
+            "/photos/a.png",
+            1_700_000_000,
+            "2026-11-11 12:00:00.000",
+        ))
+        .unwrap();
+        db.upsert_photo(&photo_at(
+            root,
+            "/photos/b.png",
+            1_700_000_000,
+            "not-a-date",
+        ))
+        .unwrap();
+
+        let mut stmt = db
+            .connection()
+            .prepare(
+                "SELECT captured_month, \
+                    COALESCE(\
+                        CAST(strftime('%Y%m', captured_at_local) AS INTEGER), \
+                        CAST(strftime('%Y%m', captured_at_utc, 'unixepoch') AS INTEGER), \
+                        0), \
+                 captured_day, \
+                    COALESCE(\
+                        CAST(strftime('%Y%m%d', captured_at_local) AS INTEGER), \
+                        CAST(strftime('%Y%m%d', captured_at_utc, 'unixepoch') AS INTEGER), \
+                        0) \
+                 FROM photos ORDER BY id",
+            )
+            .unwrap();
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, i64>(3)?,
+                ))
+            })
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap();
+        assert_eq!(rows.len(), 2);
+        for (month, legacy_month, day, legacy_day) in rows {
+            assert_eq!(month, legacy_month);
+            assert_eq!(day, legacy_day);
+        }
+    }
+
+    #[test]
+    fn migration_v18_preserves_rows_children_indexes_and_sequence() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("library.db");
+        let (photo_id, derivative_id) = {
+            let db = Db::open(&path).unwrap();
+            let root = db.add_root("/photos", "reference").unwrap();
+            let id = db
+                .upsert_photo(&photo_at(
+                    root,
+                    "/photos/a.png",
+                    1_700_000_000,
+                    "2026-11-11 12:00:00.000",
+                ))
+                .unwrap();
+            let derivative = db
+                .add_derivative(id, "/photos/a.webp", "webp", 16, 10, 8, "p", "replace")
+                .unwrap();
+            assert!(db.set_replaced(id, derivative).unwrap());
+            db.request_deletion(&[id], DeletionReason::Manual, false)
+                .unwrap();
+
+            // Simulate the v17 shape: the generated columns did not exist yet.
+            db.connection()
+                .execute_batch(
+                    "ALTER TABLE photos DROP COLUMN captured_month;
+                     ALTER TABLE photos DROP COLUMN captured_day;
+                     PRAGMA user_version = 17;",
+                )
+                .unwrap();
+            (id, derivative)
+        };
+
+        let db = Db::open(&path).unwrap();
+        let version: i64 = db
+            .connection()
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 18);
+
+        let photo = db.photo_by_id(photo_id).unwrap().unwrap();
+        assert_eq!(photo.display_derivative_id, Some(derivative_id));
+        assert_eq!(db.derivatives_for_photo(photo_id).unwrap().len(), 1);
+        assert!(db.active_deletion_request(photo_id).unwrap().is_some());
+
+        for index in [
+            "idx_photos_captured",
+            "idx_photos_favorite",
+            "idx_photos_blake3",
+            "idx_photos_captured_id",
+            "idx_photos_move_match",
+            "idx_photos_link_retry",
+        ] {
+            let exists: bool = db
+                .connection()
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM sqlite_master \
+                     WHERE type = 'index' AND name = ?1)",
+                    params![index],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert!(exists, "missing index {index}");
+        }
+
+        let violations: i64 = db
+            .connection()
+            .query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(violations, 0);
+
+        let root_id: i64 = db
+            .connection()
+            .query_row(
+                "SELECT root_id FROM photos WHERE id = ?1",
+                params![photo_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let new_id = db
+            .upsert_photo(&sample_photo(root_id, "/photos/b.png", 1_700_000_001))
+            .unwrap();
+        assert!(new_id > photo_id);
+    }
+
+    #[test]
+    fn bundled_sqlite_supports_strftime_in_stored_generated_columns() {
+        let db = Db::open_in_memory().unwrap();
+        db.connection()
+            .execute_batch(
+                "CREATE TABLE probe (
+                    local TEXT NOT NULL,
+                    utc INTEGER NOT NULL,
+                    month INTEGER GENERATED ALWAYS AS (
+                        COALESCE(
+                            CAST(strftime('%Y%m', local) AS INTEGER),
+                            CAST(strftime('%Y%m', utc, 'unixepoch') AS INTEGER),
+                            0
+                        )
+                    ) STORED
+                );
+                INSERT INTO probe(local, utc) VALUES ('2026-11-11 12:00:00.000', 0);
+                INSERT INTO probe(local, utc) VALUES ('not-a-date', 0);",
+            )
+            .unwrap();
+        let month: i64 = db
+            .connection()
+            .query_row(
+                "SELECT month FROM probe WHERE local LIKE '2026%'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(month, 202611);
     }
 }
