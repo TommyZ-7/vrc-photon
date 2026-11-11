@@ -48,6 +48,7 @@ png = "0.18"
 quick-xml = "0.42"
 thiserror = "2"
 imgref = "1"
+jpeg-decoder = "0.3"
 jpegxl-rs = { version = "0.16", features = ["vendored"] }
 ravif = { version = "0.13", default-features = false }
 rgb = { version = "0.8", features = ["bytemuck"] }

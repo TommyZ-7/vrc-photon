@@ -10,8 +10,6 @@ use gpui_kit::RenderImage;
 use smallvec::SmallVec;
 use vrc_photon_core::thumbnail::{self, ThumbnailSpec};
 
-use crate::ui::theme::average_bgra;
-
 /// Decoded RGBA bytes the in-memory thumbnail cache may retain. The count cap
 /// below only bounds bookkeeping overhead; the byte budget is what keeps the
 /// cache from growing with a large thumbnail size. Photos and search share
@@ -544,6 +542,14 @@ where
     };
     let mut path = ensured.path;
     let mut generated_bytes = ensured.created.then_some(ensured.bytes);
+    if let Some(image) = ensured.image {
+        let (color, image) = rgba_to_bgra_with_average(image);
+        return Some(DecodedThumbnail {
+            color,
+            image,
+            generated_bytes,
+        });
+    }
     match decode_thumbnail_file(id, &path) {
         Some((color, image)) => {
             if !ensured.created {
@@ -588,6 +594,14 @@ where
             if ensured.created {
                 generated_bytes = Some(ensured.bytes);
             }
+            if let Some(image) = ensured.image {
+                let (color, image) = rgba_to_bgra_with_average(image);
+                return Some(DecodedThumbnail {
+                    color,
+                    image,
+                    generated_bytes,
+                });
+            }
         }
         Ok(None) => {
             tracing::debug!(
@@ -626,9 +640,7 @@ where
 
 fn decode_thumbnail_file(_id: i64, path: &Path) -> Option<(u32, image::RgbaImage)> {
     let buffer = vrc_photon_core::image_decode::decode_image(path)?.into_rgba8();
-    let buffer = rgba_to_bgra(buffer);
-    let color = average_bgra(buffer.as_raw());
-    Some((color, buffer))
+    Some(rgba_to_bgra_with_average(buffer))
 }
 
 /// Builds a GPUI image from a decoded buffer. Must run on the UI thread.
@@ -645,6 +657,34 @@ pub(crate) fn rgba_to_bgra(mut rgba: image::RgbaImage) -> image::RgbaImage {
         pixel.0.swap(0, 2);
     }
     rgba
+}
+
+/// Swaps RGBA to BGRA and computes the average visible color in one pass.
+///
+/// The color is RGB packed as `0xRRGGBB`, matching [`average_bgra`]. Pixels
+/// with an alpha below 8 are excluded from the average but still converted.
+pub(crate) fn rgba_to_bgra_with_average(mut rgba: image::RgbaImage) -> (u32, image::RgbaImage) {
+    let mut blue = 0u64;
+    let mut green = 0u64;
+    let mut red = 0u64;
+    let mut count = 0u64;
+    for pixel in rgba.pixels_mut() {
+        let [r, g, b, a] = pixel.0;
+        pixel.0 = [b, g, r, a];
+        if a >= 8 {
+            blue += u64::from(b);
+            green += u64::from(g);
+            red += u64::from(r);
+            count += 1;
+        }
+    }
+    if count == 0 {
+        return (0, rgba);
+    }
+    let blue = (blue / count) as u32;
+    let green = (green / count) as u32;
+    let red = (red / count) as u32;
+    ((red << 16) | (green << 8) | blue, rgba)
 }
 
 #[cfg(test)]
@@ -671,6 +711,62 @@ mod tests {
         let source = image::RgbaImage::from_pixel(1, 1, image::Rgba([10, 20, 30, 40]));
         let converted = rgba_to_bgra(source);
         assert_eq!(converted.get_pixel(0, 0).0, [30, 20, 10, 40]);
+    }
+
+    #[test]
+    fn rgba_to_bgra_with_average_swaps_channels_and_averages_visible_pixels() {
+        let source =
+            image::RgbaImage::from_raw(3, 1, vec![255, 0, 0, 255, 0, 0, 255, 255, 0, 255, 0, 0])
+                .unwrap();
+
+        let (color, converted) = rgba_to_bgra_with_average(source);
+
+        assert_eq!(
+            converted.as_raw(),
+            &[0, 0, 255, 255, 255, 0, 0, 255, 0, 255, 0, 0],
+            "BGRA channels are swapped in the same pass"
+        );
+        assert_eq!(
+            color, 0x7f007f,
+            "the transparent green pixel is excluded from the average"
+        );
+    }
+
+    #[test]
+    fn generated_thumbnail_uses_the_returned_pixels_without_decoding_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let generated =
+            image::RgbaImage::from_raw(2, 1, vec![10, 20, 30, 255, 40, 50, 60, 255]).unwrap();
+        let ensure = |_id: i64, _source: &Path, _cache: &Path, _spec: ThumbnailSpec| {
+            Ok(Some(thumbnail::EnsuredThumbnail {
+                path: dir.path().join("generated.webp"),
+                created: true,
+                bytes: 42,
+                image: Some(generated.clone()),
+            }))
+        };
+        let decode = |_id: i64, _path: &Path| -> Option<(u32, image::RgbaImage)> {
+            panic!("a generated thumbnail must not be read back from disk")
+        };
+
+        let decoded = decode_thumbnail_with(
+            1,
+            Path::new("/no/such/cache.webp"),
+            Path::new("/no/such/source.png"),
+            Some(dir.path()),
+            ThumbnailSpec::default(),
+            ensure,
+            decode,
+        )
+        .expect("generated thumbnail");
+
+        assert_eq!(decoded.generated_bytes, Some(42));
+        assert_eq!(decoded.color, 0x19232d);
+        assert_eq!(
+            decoded.image.get_pixel(0, 0).0,
+            [30, 20, 10, 255],
+            "the returned pixels are already BGRA"
+        );
     }
 
     #[test]
@@ -993,12 +1089,14 @@ mod tests {
                     path: missing.clone(),
                     created: false,
                     bytes: 10,
+                    image: None,
                 }))
             } else {
                 Ok(Some(thumbnail::EnsuredThumbnail {
                     path: regenerated.clone(),
                     created: true,
                     bytes: 10,
+                    image: None,
                 }))
             }
         };
@@ -1040,6 +1138,7 @@ mod tests {
                     path: cache_path.clone(),
                     created: false,
                     bytes: 10,
+                    image: None,
                 }))
             } else {
                 // The repair removed the corrupt entry; a second generation
@@ -1050,6 +1149,7 @@ mod tests {
                     path: repaired,
                     created: true,
                     bytes: 10,
+                    image: None,
                 }))
             }
         };

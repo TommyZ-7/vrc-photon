@@ -3943,6 +3943,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "jpeg-decoder"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "00810f1d8b74be64b13dbf3db89ac67740615d6c891f0e7b6179326533011a07"
+dependencies = [
+ "rayon",
+]
+
+[[package]]
 name = "jpegxl-rs"
 version = "0.16.0+libjxl-0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8250,6 +8259,7 @@ dependencies = [
  "dirs 7.0.0",
  "image",
  "imgref",
+ "jpeg-decoder",
  "jpegxl-rs",
  "libc",
  "libmimalloc-sys",
