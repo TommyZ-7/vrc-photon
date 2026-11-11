@@ -32,8 +32,8 @@ protocol=$(read_const \
     's/^pub const PROTOCOL_VERSION: u32 = \([0-9][0-9]*\);$/\1/p' \
     PROTOCOL_VERSION)
 schema=$(read_const \
-    crates/core/src/db.rs \
-    's/^const SCHEMA_VERSION: i64 = \([0-9][0-9]*\);$/\1/p' \
+    crates/core/src/db/schema.rs \
+    's/^.*const SCHEMA_VERSION: i64 = \([0-9][0-9]*\);$/\1/p' \
     SCHEMA_VERSION)
 thumb_entries=$(read_const \
     crates/ui/src/state/thumbnail.rs \

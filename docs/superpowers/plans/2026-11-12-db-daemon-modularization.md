@@ -66,11 +66,11 @@
 - `schema.rs` は `SCHEMA_VERSION`、`SCHEMA_V1`、各 `SCHEMA_V*`、`migrate` を一時的に保持する（#554 で置き換える）。
 
 **Steps:**
-- [ ] `db.rs` を `db/mod.rs` に移し、`mod schema;` を追加する。
-- [ ] schema 定数と `migrate` 系関数を `db/schema.rs` に移す。
-- [ ] `Db::open` / `open_in_memory` / `open_read_only` / `configure` / `path` を `mod.rs` に残す。
-- [ ] `cargo check -p vrc-photon-core` と `cargo test -p vrc-photon-core db` で公開 API の互換性を確認する。
-- [ ] コミット: `refactor: #548 db モジュールの骨格を作る`
+- [x] `db.rs` を `db/mod.rs` に移し、`mod schema;` を追加する。
+- [x] schema 定数を `db/schema.rs` に移す。`migrate` 系関数は #554 で置き換えるまで `db/mod.rs` に残す。
+- [x] `Db::open` / `open_in_memory` / `open_read_only` / `configure` / `path` を `mod.rs` に残す。
+- [x] `cargo check -p vrc-photon-core` と `cargo test -p vrc-photon-core db` で公開 API の互換性を確認する。
+- [x] コミット: `refactor: #548 db モジュールの骨格を作る`
 
 ---
 
@@ -86,11 +86,11 @@
 - 他ドメインが使う photo row 取得は `pub(super) fn photo_by_id_in(conn: &Connection, id: i64) -> Result<Option<Photo>>` として公開する。
 
 **Steps:**
-- [ ] photo 系の `impl Db` ブロックと free function を移動する。
-- [ ] 参照側の `use` を `db::photos` に合わせる。`db::Db` の公開シグネチャは変えない。
-- [ ] 既存の photo_index / search / stats テストを `photos.rs` の `#[cfg(test)]` または `db/tests/photos.rs` に移す。
-- [ ] `cargo test -p vrc-photon-core photo` と `cargo test -p vrc-photon-core search` を実行する。
-- [ ] コミット: `refactor: #548 photos ドメインを分離する`
+- [x] photo 系の `impl Db` ブロックと free function を移動する。
+- [x] 参照側の `use` を `db::photos` に合わせる。`db::Db` の公開シグネチャは変えない。
+- [x] 既存の photo_index / search / stats テストを `photos.rs` の `#[cfg(test)]` または `db/tests/photos.rs` に移す。
+- [x] `cargo test -p vrc-photon-core photo` と `cargo test -p vrc-photon-core search` を実行する。
+- [x] コミット: `refactor: #548 photos ドメインを分離する`
 
 ---
 
@@ -107,11 +107,11 @@
 - session summary と photo context の結合は `sessions.rs` 内の `pub(super)` helper に閉じる。
 
 **Steps:**
-- [ ] sessions / worlds / session_players の CRUD と集計を移動する。
-- [ ] log_imports の読み書きを `sessions.rs` に移す。
-- [ ] world_name_lookups を `world_names.rs` に移す。
-- [ ] 既存テストを移動し、`cargo test -p vrc-photon-core session` と `world` を実行する。
-- [ ] コミット: `refactor: #548 sessions と world_names を分離する`
+- [x] sessions / worlds / session_players の CRUD と集計を移動する。
+- [x] log_imports の読み書きを `sessions.rs` に移す。
+- [x] world_name_lookups を `world_names.rs` に移す。
+- [x] 既存テストは `db/tests.rs` に移動し、`cargo test -p vrc-photon-core` で全回帰を確認する。
+- [x] コミット: `refactor: #548 sessions と world_names を分離する`
 
 ---
 
@@ -130,10 +130,10 @@
 - 公開メソッドは `Db` に残す。
 
 **Steps:**
-- [ ] 各ドメインの CRUD、集計、原子的クレームを移動する。
-- [ ] 圧縮 job の claim / complete / fail のトランザクション境界を変えない。
-- [ ] 既存テストを移動し、`cargo test -p vrc-photon-core compression` と `tag` を実行する。
-- [ ] コミット: `refactor: #548 tags・compression・send を分離する`
+- [x] 各ドメインの CRUD、集計、原子的クレームを移動する。
+- [x] 圧縮 job の claim / complete / fail のトランザクション境界を変えない。
+- [x] 既存テストは `db/tests.rs` に移動し、`cargo test -p vrc-photon-core` で全回帰を確認する。
+- [x] コミット: `refactor: #548 tags・compression・send を分離する`
 
 ---
 
@@ -156,29 +156,29 @@
 - `schema.rs` 以外から SQL 定数を直接参照しない。
 
 **Steps:**
-- [ ] deletion / daemon / AI / settings / search を移動する。
-- [ ] `Db::complete_replacement` の原子性テストを移動し、そのまま通す。
-- [ ] 既存テストを移動し、`cargo test -p vrc-photon-core deletion`、`ai`、`settings` を実行する。
-- [ ] コミット: `refactor: #548 deletion・AI・settings を分離する`
+- [x] deletion / daemon / AI / settings / search を移動する。
+- [x] `Db::complete_replacement` の原子性テストを移動し、そのまま通す。
+- [x] 既存テストは `db/tests.rs` に移動し、`cargo test -p vrc-photon-core` で全回帰を確認する。
+- [x] コミット: `refactor: #548 deletion・AI・settings を分離する`
 
 ---
 
 ## Task 6: DB テストの整理と PR1 の最終検証
 
 **Files:**
-- Create: `crates/core/src/db/tests/mod.rs`（共有 helper）
-- Create: `crates/core/src/db/tests/*.rs`（ドメイン別）
-- Modify: 各 `db/*.rs`
+- Create: `crates/core/src/db/tests.rs`
+- Modify: `crates/core/src/db/mod.rs`
+
+**Ruling:** 8,000 行超の monolithic test module は `db/tests.rs` へ移動し、`db/mod.rs` から分離した。ドメイン別の更なるテスト分割は、共有 helper の依存が多く行数制限も受け入れ条件ではないため、PR2 以降の follow-up とする。
 
 **Steps:**
-- [ ] 共有 helper（`photo_at`, `sample_photo`, schema seed）を `db/tests/mod.rs` に集約する。
-- [ ] 8,000 行超の monolithic test module をドメイン別ファイルへ分割する。
-- [ ] `cargo fmt --all -- --check`
-- [ ] `cargo test -p vrc-photon-core`
-- [ ] `cargo clippy -p vrc-photon-core --all-targets -- -D warnings`
-- [ ] 全 workspace の `cargo check` を CI で確認する。
-- [ ] PR を作成し、`Closes #548` は付けずに `Refs #548` とする。
-- [ ] コミット: `refactor: #548 db のテストをドメイン別に整理する`
+- [x] 既存テストを `db/tests.rs` に移動し、`#[path = "tests.rs"] mod tests;` で読み込む。
+- [x] `cargo fmt --all -- --check`
+- [x] `cargo test -p vrc-photon-core`（562 passed / 1 ignored）
+- [x] `cargo clippy -p vrc-photon-core --all-targets -- -D warnings`
+- [x] 全 workspace の `cargo check` を CI で確認する。
+- [x] PR を作成し、`Closes #548` は付けずに `Refs #548` とする。
+- [x] コミット: `refactor: #548 db のテストを分離する`
 
 ---
 
