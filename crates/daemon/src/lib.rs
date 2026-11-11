@@ -35,6 +35,7 @@ mod ai_e2e;
 mod discord;
 mod discord_http;
 mod ipc_server;
+mod lock;
 pub(crate) mod plugin;
 mod signals;
 mod supervisor;
@@ -47,6 +48,7 @@ mod world_name_http;
 mod world_names;
 use discord_http::UreqTransport;
 use ipc_server::{EventBus, IpcControl, IpcServer, status_snapshot, tagging_status};
+use lock::{lock_db, lock_status};
 use plugin::{AI_PLUGIN_ID, PluginService};
 use signals::{JobSignal, WakeSignal};
 use tagging::{TaggingControl, TaggingWorker, TaggingWorkerConfig};
@@ -582,17 +584,14 @@ impl Daemon {
     /// Discord delivery stay active: the former serves UI browsing and the
     /// latter is an outbound queue independent of library processing.
     pub fn set_paused(&self, paused: bool) {
-        let changed = match self.status.lock() {
-            Ok(mut status) => {
-                if status.paused == paused {
-                    false
-                } else {
-                    status.paused = paused;
-                    true
-                }
-            }
-            Err(_) => false,
+        let mut status = lock_status(&self.status);
+        let changed = if status.paused == paused {
+            false
+        } else {
+            status.paused = paused;
+            true
         };
+        drop(status);
         self.paused.store(paused, Ordering::Relaxed);
         if changed {
             self.notify_workers();
@@ -620,8 +619,10 @@ impl Daemon {
     }
 
     fn publish_status(&self) {
-        let status = status_snapshot(&mut self.status.lock().unwrap());
-        self.events.publish(Event::StatusChanged { status });
+        let mut status = lock_status(&self.status);
+        let snapshot = status_snapshot(&mut status);
+        self.events
+            .publish(Event::StatusChanged { status: snapshot });
     }
 
     pub fn settings(&self) -> &AppSettings {
@@ -673,7 +674,7 @@ impl Daemon {
             return Ok(());
         }
         {
-            let db = self.db.lock().unwrap();
+            let db = lock_db(&self.db);
             db.record_daemon_error_i18n(operation, message, message_key, message_args, detail)?;
         }
         self.last_errors.insert(operation, signature);
@@ -689,7 +690,7 @@ impl Daemon {
             return Ok(());
         }
         {
-            let db = self.db.lock().unwrap();
+            let db = lock_db(&self.db);
             db.clear_daemon_error(operation)?;
         }
         self.last_errors.remove(&operation);
@@ -717,7 +718,7 @@ impl Daemon {
     fn poll_commands_with_initial(&mut self, initial_scan: Option<bool>) -> Result<()> {
         let mut commands = std::mem::take(&mut self.deferred_commands);
         {
-            let db = self.db.lock().unwrap();
+            let db = lock_db(&self.db);
             commands.extend(db.take_daemon_commands()?);
         }
         if commands.is_empty() {
@@ -770,7 +771,7 @@ impl Daemon {
     /// corrected path or switch takes effect without restarting the daemon.
     fn reload_settings(&mut self) -> Result<()> {
         let mut settings = {
-            let db = self.db.lock().unwrap();
+            let db = lock_db(&self.db);
             AppSettings::load(&db)?
         };
         settings.language = vrc_photon_i18n::normalize(&settings.language);
@@ -896,7 +897,7 @@ impl Daemon {
     pub fn run_once(&mut self) -> Result<()> {
         self.repair_open_sessions()?;
         let initial_scan = {
-            let db = self.db.lock().unwrap();
+            let db = lock_db(&self.db);
             db.count_photos()? == 0
         };
         self.poll_commands_with_initial(Some(initial_scan))?;
@@ -913,7 +914,7 @@ impl Daemon {
         }
         for id in &thumbnail_ids {
             let path = {
-                let db = self.db.lock().unwrap();
+                let db = lock_db(&self.db);
                 match db.photo_by_id(*id) {
                     Ok(photo) => photo.map(|photo| photo.effective_path().to_string()),
                     Err(error) => {
@@ -966,7 +967,7 @@ impl Daemon {
     pub fn compress_pending(&mut self) -> Result<()> {
         loop {
             let jobs = {
-                let db = self.db.lock().unwrap();
+                let db = lock_db(&self.db);
                 db.next_pending_photo_jobs()?
             };
             if jobs.is_empty() {
@@ -983,7 +984,7 @@ impl Daemon {
     /// method exists for in-process callers and tests.
     pub fn release_ai_backlog(&mut self) -> Result<usize> {
         let released = {
-            let db = self.db.lock().unwrap();
+            let db = lock_db(&self.db);
             db.release_waiting_tagging_jobs(AI_PLUGIN_ID)?
         };
         self.tagging.notify();
@@ -1012,7 +1013,7 @@ impl Daemon {
             return Ok(());
         }
         let initial_scan = {
-            let db = self.db.lock().unwrap();
+            let db = lock_db(&self.db);
             db.count_photos()? == 0
         };
         self.poll_commands_with_initial(Some(initial_scan))?;
@@ -1197,7 +1198,7 @@ impl Daemon {
                     "no VRChat photo folder detected; set VRC_PHOTON_DIR or configure settings"
                 );
             } else {
-                let db = self.db.lock().unwrap();
+                let db = lock_db(&self.db);
                 self.settings.save(&db)?;
             }
         }
@@ -1223,7 +1224,7 @@ impl Daemon {
                 continue;
             };
             let root_id = {
-                let db = self.db.lock().unwrap();
+                let db = lock_db(&self.db);
                 db.add_root(&root.to_string_lossy(), "reference")?
             };
             if path.is_file() {
@@ -1233,7 +1234,7 @@ impl Daemon {
                 let mut new_photo = scanned.into_new_photo(root_id);
                 let abs_path = new_photo.abs_path.clone();
                 let existing = {
-                    let db = self.db.lock().unwrap();
+                    let db = lock_db(&self.db);
                     db.photo_by_path(&abs_path)?
                 };
                 let existed = existing.is_some();
@@ -1252,7 +1253,7 @@ impl Daemon {
 
                 if !existed {
                     let candidate = {
-                        let db = self.db.lock().unwrap();
+                        let db = lock_db(&self.db);
                         db.find_rebind_candidate(&new_photo)?
                     };
                     if let Some(candidate) = candidate {
@@ -1260,7 +1261,7 @@ impl Daemon {
                         let rebound = if old_path_exists {
                             false
                         } else {
-                            let db = self.db.lock().unwrap();
+                            let db = lock_db(&self.db);
                             db.rebind_photo(candidate.id, &new_photo)?
                         };
                         if rebound {
@@ -1272,7 +1273,7 @@ impl Daemon {
                 }
 
                 let id = {
-                    let db = self.db.lock().unwrap();
+                    let db = lock_db(&self.db);
                     db.upsert_photo(&new_photo)?
                 };
                 changed = true;
@@ -1282,7 +1283,7 @@ impl Daemon {
                 }
             } else {
                 let photo = {
-                    let db = self.db.lock().unwrap();
+                    let db = lock_db(&self.db);
                     db.photo_by_path(&path.to_string_lossy())?
                 };
                 let Some(photo) = photo else {
@@ -1290,7 +1291,7 @@ impl Daemon {
                 };
                 if photo.status == PhotoStatus::Present {
                     let marked = {
-                        let db = self.db.lock().unwrap();
+                        let db = lock_db(&self.db);
                         db.mark_missing_if_path(photo.id, &photo.abs_path)?
                     };
                     if marked {
@@ -1304,7 +1305,7 @@ impl Daemon {
         // batch. Only after every addition has had a chance to rebind do we
         // promote a derivative for rows that are still missing.
         {
-            let db = self.db.lock().unwrap();
+            let db = lock_db(&self.db);
             for photo_id in missing_ids {
                 if let Some(photo) = db.photo_by_id(photo_id)?
                     && photo.status == PhotoStatus::Missing
@@ -1319,7 +1320,7 @@ impl Daemon {
         }
         if self.settings.auto_compress && !new_ids.is_empty() {
             {
-                let db = self.db.lock().unwrap();
+                let db = lock_db(&self.db);
                 enqueue_auto_jobs(
                     &db,
                     &new_ids,
@@ -1331,7 +1332,7 @@ impl Daemon {
         }
         if !new_ids.is_empty() {
             let tagging_enqueued = {
-                let db = self.db.lock().unwrap();
+                let db = lock_db(&self.db);
                 enqueue_auto_tagging(&db, &new_ids, &self.settings, tagging_ready)?
             };
             if tagging_enqueued > 0 {
@@ -1352,7 +1353,7 @@ impl Daemon {
         if !new_ids.is_empty() {
             self.link_unlinked()?;
             let enqueued = {
-                let db = self.db.lock().unwrap();
+                let db = lock_db(&self.db);
                 match discord::enqueue_auto_sends(&db, &new_ids) {
                     Ok(count) => count,
                     Err(error) => {
@@ -1404,7 +1405,7 @@ impl Daemon {
 
     fn begin_scan(&self, roots: usize, target: Option<String>) {
         {
-            let mut status = self.status.lock().unwrap();
+            let mut status = lock_status(&self.status);
             status.scanning = true;
             status.scan_phase = Some(IpcScanPhase::Walking);
             status.scan_processed = 0;
@@ -1433,7 +1434,7 @@ impl Daemon {
             Err(_) => (0, 0, 0, 0, true),
         };
         {
-            let mut status = self.status.lock().unwrap();
+            let mut status = lock_status(&self.status);
             status.scanning = false;
             status.scan_phase = None;
             status.scan_processed = found;
@@ -1464,7 +1465,7 @@ impl Daemon {
         let root_count = roots.len();
         if !roots.is_empty() {
             let initial_scan = {
-                let db = self.db.lock().unwrap();
+                let db = lock_db(&self.db);
                 initial_scan_override.unwrap_or(full_scan && db.count_photos()? == 0)
             };
             let mut changed = false;
@@ -1476,7 +1477,7 @@ impl Daemon {
                 }
                 let root_number = index + 1;
                 {
-                    let mut status = self.status.lock().unwrap();
+                    let mut status = lock_status(&self.status);
                     status.scan_root = root_number;
                     status.scan_roots = root_count;
                     status.scan_phase = Some(IpcScanPhase::Walking);
@@ -1492,11 +1493,11 @@ impl Daemon {
                     continue;
                 }
                 let root_id = {
-                    let db = self.db.lock().unwrap();
+                    let db = lock_db(&self.db);
                     db.add_root(&root.to_string_lossy(), "reference")?
                 };
                 let existing = {
-                    let db = self.db.lock().unwrap();
+                    let db = lock_db(&self.db);
                     db.photos_for_root(root_id)?
                 };
                 let indexed_before = report.indexed;
@@ -1532,7 +1533,7 @@ impl Daemon {
                     // Keep the write lock bounded even when a large library
                     // contains many deleted photos.
                     for chunk in existing.chunks(500) {
-                        let db = self.db.lock().unwrap();
+                        let db = lock_db(&self.db);
                         for (id, path) in chunk {
                             if !seen.contains(path.as_str()) && !rebound.contains(id) {
                                 match db.mark_missing_if_path(*id, path) {
@@ -1569,7 +1570,7 @@ impl Daemon {
             // Give every root a chance to rebind a moved file before falling
             // back to a compressed derivative for a missing original.
             for chunk in missing_ids.chunks(500) {
-                let db = self.db.lock().unwrap();
+                let db = lock_db(&self.db);
                 for photo_id in chunk {
                     if let Some(photo) = db.photo_by_id(*photo_id)?
                         && photo.status == PhotoStatus::Missing
@@ -1580,7 +1581,7 @@ impl Daemon {
                 }
             }
             if changed {
-                let db = self.db.lock().unwrap();
+                let db = lock_db(&self.db);
                 db.bump_library_revision()?;
             }
             if self.settings.auto_compress
@@ -1588,7 +1589,7 @@ impl Daemon {
                 && (!initial_scan || self.settings.auto_compress_backlog)
             {
                 let enqueued = {
-                    let db = self.db.lock().unwrap();
+                    let db = lock_db(&self.db);
                     enqueue_auto_jobs(
                         &db,
                         &report.new_ids,
@@ -1601,7 +1602,7 @@ impl Daemon {
             }
             if !report.new_ids.is_empty() {
                 let tagging_enqueued = {
-                    let db = self.db.lock().unwrap();
+                    let db = lock_db(&self.db);
                     enqueue_auto_tagging(&db, &report.new_ids, &self.settings, tagging_ready)?
                 };
                 if tagging_enqueued > 0 {
@@ -1616,7 +1617,7 @@ impl Daemon {
         }
         if !report.new_ids.is_empty() {
             let enqueued = {
-                let db = self.db.lock().unwrap();
+                let db = lock_db(&self.db);
                 match discord::enqueue_auto_sends(&db, &report.new_ids) {
                     Ok(count) => count,
                     Err(error) => {
@@ -1718,7 +1719,7 @@ impl Daemon {
                     None
                 }
             });
-        let db = self.db.lock().unwrap();
+        let db = lock_db(&self.db);
         let sessions = db.open_sessions()?;
         let now = chrono::Utc::now().timestamp();
         let mut repaired = 0;
@@ -1792,7 +1793,7 @@ impl Daemon {
 
         let now = chrono::Utc::now().timestamp();
         let (ended_at, closed) = {
-            let db = self.db.lock().unwrap();
+            let db = lock_db(&self.db);
             let ended_at = self
                 .log_tail
                 .as_ref()
@@ -1881,14 +1882,14 @@ impl Daemon {
             .unwrap_or(true);
         if new_tail {
             if let Some(mut previous) = self.log_tail.take() {
-                let db = self.db.lock().unwrap();
+                let db = lock_db(&self.db);
                 let now = chrono::Utc::now().timestamp();
                 let started_at = previous.ingestor.session_started_at().unwrap_or(now);
                 let finish_at = session_end_time(&db, &previous.path, started_at, now);
                 previous.ingestor.finish(&db, finish_at)?;
             }
             let (offset, ingestor) = {
-                let db = self.db.lock().unwrap();
+                let db = lock_db(&self.db);
                 let offset = db.log_offset(&path_string)?.unwrap_or(0);
                 let open_session = db
                     .open_sessions()?
@@ -1941,7 +1942,7 @@ impl Daemon {
             let mut failure = None;
             let mut stop = false;
             let result = {
-                let db = self.db.lock().unwrap();
+                let db = lock_db(&self.db);
                 db.in_transaction(|db| {
                     for (line, line_end) in chunk {
                         match ingestor.ingest_line(db, line) {
@@ -2002,7 +2003,7 @@ impl Daemon {
             next = chunk_end;
         }
         if pass.failure.is_none() && tail.offset != new_offset {
-            let db = self.db.lock().unwrap();
+            let db = lock_db(&self.db);
             db.set_log_offset(&path_string, size, mtime, new_offset, PARSER_VERSION)?;
             drop(db);
             tail.offset = new_offset;
@@ -2017,7 +2018,7 @@ impl Daemon {
     /// ingestion and watcher paths keep honoring the backoff.
     fn make_unlinked_photos_due(&self) -> Result<usize> {
         let changed = {
-            let db = self.db.lock().unwrap();
+            let db = lock_db(&self.db);
             db.make_unlinked_photos_due()?
         };
         if changed > 0 {
@@ -2031,7 +2032,7 @@ impl Daemon {
 
     fn link_unlinked(&mut self) -> Result<()> {
         let result = {
-            let db = self.db.lock().unwrap();
+            let db = lock_db(&self.db);
             linker::relink_unlinked(&db, 2000)
         };
         match result {
@@ -2062,7 +2063,7 @@ impl Daemon {
     /// `compressed` directory, so the daemon checks these paths periodically.
     fn verify_replaced_assets(&mut self) -> Result<()> {
         let rows = {
-            let db = self.db.lock().unwrap();
+            let db = lock_db(&self.db);
             db.display_derivative_paths(100_000)?
         };
         // Stat every asset without the database lock so a slow or disconnected
@@ -2072,7 +2073,7 @@ impl Daemon {
         if missing.is_empty() {
             return Ok(());
         }
-        let db = self.db.lock().unwrap();
+        let db = lock_db(&self.db);
         db.in_transaction(|db| {
             for photo_id in missing {
                 db.mark_missing(photo_id)?;
@@ -2086,7 +2087,7 @@ impl Daemon {
 
     fn refresh_status(&self) -> Result<()> {
         let (world_name, players, photo_count, pending_jobs, pending_sends) = {
-            let db = self.db.lock().unwrap();
+            let db = lock_db(&self.db);
             let now = chrono::Utc::now().timestamp();
             let session = db.session_at(now)?;
             let (world_name, players) = if let Some(session) = &session {
@@ -2108,7 +2109,7 @@ impl Daemon {
         // block above released the lock. The cached values keep IPC snapshots
         // cheap and lock-order safe.
         let (pending_tagging_jobs, tagging_ready) = tagging_status(&self.db, &self.plugin);
-        let mut status = self.status.lock().unwrap();
+        let mut status = lock_status(&self.status);
         status.watching = self.settings.log_dir.is_some();
         status.world_name = world_name;
         status.players = players;
@@ -2125,17 +2126,14 @@ impl Daemon {
     }
 
     fn write_heartbeat(&mut self) {
-        match self.db.lock() {
-            Ok(db) => {
-                if let Err(error) = db.set_setting(
-                    "daemon_heartbeat",
-                    &chrono::Utc::now().timestamp().to_string(),
-                ) {
-                    tracing::warn!(%error, "cannot write daemon heartbeat");
-                }
-            }
-            Err(error) => tracing::warn!(%error, "cannot lock database for heartbeat"),
+        let db = lock_db(&self.db);
+        if let Err(error) = db.set_setting(
+            "daemon_heartbeat",
+            &chrono::Utc::now().timestamp().to_string(),
+        ) {
+            tracing::warn!(%error, "cannot write daemon heartbeat");
         }
+        drop(db);
         self.last_heartbeat = std::time::Instant::now();
     }
 
@@ -2153,13 +2151,9 @@ impl Daemon {
                 std::process::id(),
             )
         };
-        match self.db.lock() {
-            Ok(db) => {
-                if let Err(error) = db.set_setting("daemon_supervisor", supervisor) {
-                    tracing::warn!(%error, "cannot record daemon supervisor");
-                }
-            }
-            Err(error) => tracing::warn!(%error, "cannot lock database for supervisor"),
+        let db = lock_db(&self.db);
+        if let Err(error) = db.set_setting("daemon_supervisor", supervisor) {
+            tracing::warn!(%error, "cannot record daemon supervisor");
         }
     }
 
@@ -2179,7 +2173,7 @@ impl Daemon {
 
     fn refresh_autostart_setting(&mut self) {
         let enabled = {
-            let db = self.db.lock().unwrap();
+            let db = lock_db(&self.db);
             match AppSettings::load(&db) {
                 Ok(settings) => settings.autostart,
                 Err(error) => {
@@ -2202,7 +2196,7 @@ impl Daemon {
     /// backfill when the switch turns on.
     fn refresh_compression_settings(&mut self) {
         let loaded = {
-            let db = self.db.lock().unwrap();
+            let db = lock_db(&self.db);
             match AppSettings::load(&db) {
                 Ok(settings) => Some(settings),
                 Err(error) => {
@@ -2249,7 +2243,7 @@ impl Daemon {
     /// that still has no name. Lookup failures stay out of `daemon_errors`:
     /// the feature is best-effort and must not surface as a user-facing fault.
     fn enqueue_world_name_backfill(&self) {
-        let db = self.db.lock().unwrap();
+        let db = lock_db(&self.db);
         if let Err(error) = db.backfill_photo_context_world_names() {
             tracing::warn!(%error, "cannot backfill photo context world names");
         }
@@ -2391,9 +2385,9 @@ impl Daemon {
                     %error,
                     "cannot spawn long-lived worker; daemon continues without it"
                 );
-                if let Ok(mut status) = self.status.lock() {
-                    status.last_worker_error = Some(format!("{name}: {error}"));
-                }
+                let mut status = lock_status(&self.status);
+                status.last_worker_error = Some(format!("{name}: {error}"));
+                drop(status);
                 None
             }
         }
@@ -2447,9 +2441,9 @@ impl Daemon {
             if let Some(handle) = handle {
                 self.thumbnail_tx = Some(tx.clone());
                 self.thumbnail_handle = Some(handle);
-                if let Ok(db) = self.db.lock()
-                    && let Ok(photos) =
-                        db.list_photos(5000, 0, vrc_photon_core::model::PhotoSort::Newest)
+                let db = lock_db(&self.db);
+                if let Ok(photos) =
+                    db.list_photos(5000, 0, vrc_photon_core::model::PhotoSort::Newest)
                 {
                     for photo in photos {
                         if let Err(error) = tx.send(photo.id) {
@@ -2461,6 +2455,7 @@ impl Daemon {
                         }
                     }
                 }
+                drop(db);
                 for id in std::mem::take(&mut self.deferred_thumbnail_ids) {
                     if let Err(error) = tx.send(id) {
                         tracing::debug!(
@@ -2607,10 +2602,7 @@ impl Daemon {
             return;
         }
         let commands = std::mem::take(&mut self.deferred_commands);
-        let db = match self.db.lock() {
-            Ok(db) => db,
-            Err(poisoned) => poisoned.into_inner(),
-        };
+        let db = lock_db(&self.db);
         for command in commands {
             if let Err(error) = db.request_daemon_command(command) {
                 tracing::warn!(%error, "cannot requeue daemon command deferred while paused");
@@ -2626,7 +2618,7 @@ impl Daemon {
         self.sends.notify();
         self.world_names.notify();
         if let Some(mut tail) = self.log_tail.take() {
-            let db = self.db.lock().unwrap();
+            let db = lock_db(&self.db);
             let now = chrono::Utc::now().timestamp();
             let started_at = tail.ingestor.session_started_at().unwrap_or(now);
             let ended_at = session_end_time(&db, &tail.path, started_at, now);
@@ -2701,7 +2693,7 @@ impl ScanObserver {
         self.last_emit = Instant::now();
         let indexed = self.indexed_before + progress.indexed;
         {
-            let mut status = self.status.lock().unwrap();
+            let mut status = lock_status(&self.status);
             status.scan_phase = Some(phase);
             status.scan_processed = progress.processed;
             status.scan_total = progress.total;
@@ -3049,7 +3041,7 @@ fn thumbnail_loop(
                 let external = external_bytes.swap(0, Ordering::Relaxed);
                 budget.note_external(external);
                 let path = {
-                    let db = db.lock().unwrap();
+                    let db = lock_db(&db);
                     match db.photo_by_id(id) {
                         Ok(photo) => photo.map(|photo| photo.effective_path().to_string()),
                         Err(error) => {
@@ -3121,7 +3113,7 @@ fn hash_loop(db: Arc<Mutex<Db>>, running: Arc<AtomicBool>, paused: Arc<AtomicBoo
             continue;
         }
         let rows = {
-            let Ok(db) = db.lock() else { break };
+            let db = lock_db(&db);
             match db.photos_without_hash(16) {
                 Ok(rows) => rows,
                 Err(error) => {
@@ -3132,9 +3124,9 @@ fn hash_loop(db: Arc<Mutex<Db>>, running: Arc<AtomicBool>, paused: Arc<AtomicBoo
         };
         if rows.is_empty() {
             if hashed_since_idle {
-                if let Ok(db) = db.lock() {
-                    let _ = db.bump_library_revision();
-                }
+                let db = lock_db(&db);
+                let _ = db.bump_library_revision();
+                drop(db);
                 hashed_since_idle = false;
             }
             thread::sleep(Duration::from_secs(2));
@@ -3147,9 +3139,8 @@ fn hash_loop(db: Arc<Mutex<Db>>, running: Arc<AtomicBool>, paused: Arc<AtomicBoo
             }
             match hashing::file_blake3(Path::new(&path)) {
                 Ok(Some(hash)) => {
-                    if let Ok(db) = db.lock()
-                        && let Err(error) = db.set_photo_blake3(photo_id, &hash)
-                    {
+                    let db = lock_db(&db);
+                    if let Err(error) = db.set_photo_blake3(photo_id, &hash) {
                         tracing::warn!(%error, photo_id, "cannot store photo hash");
                     } else {
                         hashed_since_idle = true;
@@ -3195,7 +3186,7 @@ fn deletion_loop(
 /// were not forced.
 fn cancel_tagging_for_forced_deletions(db: &Arc<Mutex<Db>>) -> Result<()> {
     let cancelled = {
-        let db = db.lock().unwrap();
+        let db = lock_db(db);
         db.cancel_tagging_for_forced_deletions()?
     };
     if cancelled > 0 {
@@ -3210,7 +3201,7 @@ fn cancel_tagging_for_forced_deletions(db: &Arc<Mutex<Db>>) -> Result<()> {
 fn run_deletions_once(db: &Arc<Mutex<Db>>) -> Result<usize> {
     cancel_tagging_for_forced_deletions(db)?;
     let requests = {
-        let db = db.lock().unwrap();
+        let db = lock_db(db);
         db.pending_deletion_requests(100)?
     };
     let mut executed = 0;
@@ -3220,7 +3211,7 @@ fn run_deletions_once(db: &Arc<Mutex<Db>>) -> Result<usize> {
             // manual after collection. Only block when the stored reason is
             // still unknown.
             let blocked = {
-                let db = db.lock().unwrap();
+                let db = lock_db(db);
                 db.block_deletion_if_unknown(pending.id)?
             };
             if blocked {
@@ -3233,14 +3224,14 @@ fn run_deletions_once(db: &Arc<Mutex<Db>>) -> Result<usize> {
             continue;
         }
         let blocked = {
-            let db = db.lock().unwrap();
+            let db = lock_db(db);
             db.block_deletion_if_jobs_failed(pending.id)?
         };
         if blocked {
             continue;
         }
         let claimed = {
-            let db = db.lock().unwrap();
+            let db = lock_db(db);
             db.claim_deletion(pending.id)?
         };
         if let Some(request) = claimed {
@@ -3263,7 +3254,7 @@ fn execute_deletion(db: &Arc<Mutex<Db>>, request: &DeletionRequest) -> Result<()
         anyhow::bail!("unknown deletion reason");
     }
     let (photo, targets) = {
-        let db = db.lock().unwrap();
+        let db = lock_db(db);
         let Some(photo) = db.photo_by_id(request.photo_id)? else {
             db.complete_deletion(request.id)?;
             db.bump_library_revision()?;
@@ -3306,7 +3297,7 @@ fn execute_deletion(db: &Arc<Mutex<Db>>, request: &DeletionRequest) -> Result<()
         if let Err(error) = trash::delete(&path)
             && path.exists()
         {
-            let db = db.lock().unwrap();
+            let db = lock_db(db);
             db.block_deletion(request.id, "file_error", Some(&error.to_string()))?;
             return Err(anyhow::anyhow!(
                 "cannot move {} to trash: {error}",
@@ -3316,7 +3307,7 @@ fn execute_deletion(db: &Arc<Mutex<Db>>, request: &DeletionRequest) -> Result<()
     }
 
     {
-        let db = db.lock().unwrap();
+        let db = lock_db(db);
         if request.reason == DeletionReason::Manual {
             db.complete_manual_deletion(photo.id)?;
         }
@@ -3348,7 +3339,7 @@ fn worker_loop(
             continue;
         }
         let batch = {
-            let db = db.lock().unwrap();
+            let db = lock_db(&db);
             match db.next_pending_photo_jobs() {
                 Ok(batch) => {
                     last_poll_error = None;
@@ -3446,7 +3437,8 @@ fn fail_claimed_jobs(
 ) -> Vec<JobOutcome> {
     let mut outcomes = Vec::with_capacity(jobs.len());
     for job in jobs {
-        let status = match db.lock().unwrap().fail_job_if_active(&job.id, message) {
+        let db = lock_db(db);
+        let status = match db.fail_job_if_active(&job.id, message) {
             Ok(status) => status.unwrap_or(QueueStatus::Failed),
             Err(error) => {
                 tracing::error!(
@@ -3457,6 +3449,7 @@ fn fail_claimed_jobs(
                 QueueStatus::Failed
             }
         };
+        drop(db);
         outcomes.push(JobOutcome {
             job: job.clone(),
             error: (status == QueueStatus::Failed).then(|| message.to_string()),
@@ -3477,7 +3470,7 @@ fn process_photo_batch_inner(
     debug_assert!(jobs.iter().all(|job| job.photo_id == first.photo_id));
 
     let photo = {
-        let db = db.lock().unwrap();
+        let db = lock_db(db);
         db.photo_by_id(first.photo_id)?
     };
     let Some(photo) = photo else {
@@ -3492,7 +3485,7 @@ fn process_photo_batch_inner(
         && source_path == Path::new(&photo.abs_path)
         && let Ok(Some(hash)) = hashing::file_blake3(&source_path)
     {
-        db.lock().unwrap().set_photo_blake3(photo.id, &hash)?;
+        lock_db(db).set_photo_blake3(photo.id, &hash)?;
     }
 
     let Some(image) = vrc_photon_core::image_decode::decode_image(&source_path) else {
@@ -3505,15 +3498,9 @@ fn process_photo_batch_inner(
 
     let mut outcomes = Vec::with_capacity(jobs.len());
     for (index, job) in jobs.iter().enumerate() {
-        if index > 0 && db.lock().unwrap().photo_has_forced_deletion(photo.id)? {
+        if index > 0 && lock_db(db).photo_has_forced_deletion(photo.id)? {
             for remaining in &jobs[index..] {
-                db.lock().unwrap().update_job(
-                    &remaining.id,
-                    QueueStatus::Cancelled,
-                    0.0,
-                    None,
-                    None,
-                )?;
+                lock_db(db).update_job(&remaining.id, QueueStatus::Cancelled, 0.0, None, None)?;
                 outcomes.push(JobOutcome {
                     job: remaining.clone(),
                     status: QueueStatus::Cancelled,
@@ -3522,9 +3509,7 @@ fn process_photo_batch_inner(
             }
             break;
         }
-        db.lock()
-            .unwrap()
-            .update_job(&job.id, QueueStatus::Processing, 0.05, None, None)?;
+        lock_db(db).update_job(&job.id, QueueStatus::Processing, 0.05, None, None)?;
         match process_decoded_job(db, &photo, &source_path, &image, job, thumbnail_dir) {
             Ok(()) => outcomes.push(JobOutcome {
                 job: job.clone(),
@@ -3534,13 +3519,9 @@ fn process_photo_batch_inner(
             Err(error) => {
                 let message = error.to_string();
                 tracing::error!(job = %job.id, %error, "compression failed");
-                if let Err(update_error) = db.lock().unwrap().update_job(
-                    &job.id,
-                    QueueStatus::Failed,
-                    0.0,
-                    Some(&message),
-                    None,
-                ) {
+                if let Err(update_error) =
+                    lock_db(db).update_job(&job.id, QueueStatus::Failed, 0.0, Some(&message), None)
+                {
                     tracing::error!(
                         job = %job.id,
                         %update_error,
@@ -3566,9 +3547,7 @@ fn fail_batch(
     let mut outcomes = Vec::with_capacity(jobs.len());
     for job in jobs {
         tracing::error!(job = %job.id, %error, "compression failed");
-        db.lock()
-            .unwrap()
-            .update_job(&job.id, QueueStatus::Failed, 0.0, Some(error), None)?;
+        lock_db(db).update_job(&job.id, QueueStatus::Failed, 0.0, Some(error), None)?;
         outcomes.push(JobOutcome {
             job: job.clone(),
             status: QueueStatus::Failed,
@@ -3587,7 +3566,7 @@ fn process_decoded_job(
     thumbnail_dir: Option<&Path>,
 ) -> Result<()> {
     let mut profile = {
-        let db = db.lock().unwrap();
+        let db = lock_db(db);
         db.list_profiles()?
             .into_iter()
             .find(|profile| profile.id == job.profile_id)
@@ -3609,7 +3588,7 @@ fn process_decoded_job(
     {
         anyhow::bail!("compressed output is missing or empty");
     }
-    let db = db.lock().unwrap();
+    let db = lock_db(db);
     db.add_derivative(
         photo.id,
         &result.output_path.to_string_lossy(),
