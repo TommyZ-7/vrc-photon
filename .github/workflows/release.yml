@@ -48,33 +48,26 @@ jobs:
     needs: changes
     if: needs.changes.outputs.bundle == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ghcr.io/tommyz-7/vrc-photon-ci:ubuntu-24.04-v1
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    env:
+      # The job container has no /dev/fuse. Make linuxdeploy's plugin AppImage
+      # extract itself before running instead of trying to mount it.
+      APPIMAGE_EXTRACT_AND_RUN: "1"
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           fetch-tags: true
-
-      - name: Install Linux dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential \
-            pkg-config \
-            cmake \
-            ninja-build \
-            clang \
-            libxkbcommon-dev \
-            libxkbcommon-x11-dev \
-            libx11-xcb-dev \
-            libxcb-xkb-dev \
-            libwayland-dev \
-            libvulkan-dev \
-            libx11-dev \
-            libxcb1-dev \
-            libfontconfig1-dev \
-            libfreetype6-dev \
-            squashfs-tools \
-            file
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -119,8 +112,12 @@ jobs:
           PACKAGE_VERSION: ${{ steps.package-version.outputs.version }}
         run: |
           set -euo pipefail
+          # The job runs in a container, so $PWD is /__w/... and cannot be
+          # bind-mounted by the host Docker daemon. GitHub maps /__w to
+          # /home/runner/work on the host.
+          host_workspace="/home/runner/work/${GITHUB_REPOSITORY#*/}/${GITHUB_REPOSITORY#*/}"
           docker run --rm -e PACKAGE_VERSION \
-            -v "$PWD/dist:/dist" -w /dist archlinux:base-devel bash -c '
+            -v "$host_workspace/dist:/dist" -w /dist archlinux:base-devel bash -c '
             set -euxo pipefail
             owner=$(stat -c "%u:%g" /dist)
             trap "chown -R $owner /dist" EXIT
@@ -223,6 +220,7 @@ jobs:
       - name: Verify polkit policy
         run: |
           set -euo pipefail
+          host_workspace="/home/runner/work/${GITHUB_REPOSITORY#*/}/${GITHUB_REPOSITORY#*/}"
           policy="usr/share/polkit-1/actions/com.tommyz.vrc-photon.update.policy"
           deb=$(ls dist/*.deb)
           pkg=$(ls dist/vrc-photon-[0-9]*.pkg.tar.zst)
@@ -234,7 +232,7 @@ jobs:
           grep -q 'org.freedesktop.policykit.exec.path' "$tmp/deb/$policy"
           grep -q 'org.freedesktop.policykit.exec.path.*/usr/bin/vrc-photon-updater' "$tmp/deb/$policy" \
             || { echo "unexpected pkexec path in $policy"; exit 1; }
-          docker run --rm -v "$PWD/dist:/dist" archlinux:base-devel bash -c "
+          docker run --rm -v "$host_workspace/dist:/dist" archlinux:base-devel bash -c "
             set -euo pipefail
             package=/dist/$(basename "$pkg")
             pacman -Qlp \"\$package\" | grep -q '$policy$'

@@ -55,32 +55,25 @@ jobs:
   test:
     needs: changes
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ghcr.io/tommyz-7/vrc-photon-ci:ubuntu-24.04-v1
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+      # Match the hosted runner user so workspace files and permission tests
+      # see a normal non-root owner.
+      options: --user 1001:1001
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - name: Docs-only fast pass
         if: needs.changes.outputs.docs_only == 'true'
         run: echo "Docs-only change, skipping heavy checks."
-
-      - name: Install Linux dependencies
-        if: needs.changes.outputs.docs_only != 'true'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential \
-            pkg-config \
-            cmake \
-            ninja-build \
-            clang \
-            libxkbcommon-dev \
-            libxkbcommon-x11-dev \
-            libx11-xcb-dev \
-            libxcb-xkb-dev \
-            libwayland-dev \
-            libvulkan-dev \
-            libx11-dev \
-            libxcb1-dev \
-            libfontconfig1-dev \
-            libfreetype6-dev
 
       - name: Install Rust
         if: needs.changes.outputs.docs_only != 'true'
