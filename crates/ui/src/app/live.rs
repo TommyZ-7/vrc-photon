@@ -30,6 +30,22 @@ use crate::state::photo_browser::PhotoIndex;
 use crate::ui::notifications::{FailureNotice, deletion_blocked_transition, failure_transition};
 
 const POLL_INTERVAL: Duration = Duration::from_secs(3);
+/// While the IPC connection is alive it pushes change events, so the poller
+/// only needs a slow heartbeat instead of the disconnected fallback.
+const IPC_POLL_INTERVAL: Duration = Duration::from_secs(30);
+
+/// Cadence for the background live poller.
+///
+/// Connected clients learn about changes through the daemon event stream;
+/// polling is just a safety net. Without a connection the UI has no event
+/// source and keeps the three-second heartbeat.
+pub(crate) fn live_poll_interval(ipc_connected: bool) -> Duration {
+    if ipc_connected {
+        IPC_POLL_INTERVAL
+    } else {
+        POLL_INTERVAL
+    }
+}
 
 /// Coalescing gate shared by the three-second poller and event-driven
 /// refreshes.
@@ -153,7 +169,12 @@ impl App {
         // timer tick and an IPC burst can never collect two snapshots at once.
         cx.spawn(async move |this, cx| {
             loop {
-                cx.background_executor().timer(POLL_INTERVAL).await;
+                let interval =
+                    match this.update(cx, |this, _| live_poll_interval(this.ipc_connected)) {
+                        Ok(interval) => interval,
+                        Err(_) => break,
+                    };
+                cx.background_executor().timer(interval).await;
                 if this
                     .update(cx, |this, cx| this.refresh_live_async(cx))
                     .is_err()
@@ -658,8 +679,9 @@ fn collect_monitor(db: &Db) -> MonitorSnapshot {
 mod tests {
     use super::{
         DeletionSnapshot, LiveRefreshGate, LiveRefreshRequest, apply_deletion_snapshot,
-        collect_library_snapshot, collect_live_snapshot, deletion_update,
+        collect_library_snapshot, collect_live_snapshot, deletion_update, live_poll_interval,
     };
+    use std::time::Duration;
     use vrc_photon_core::db::Db;
     use vrc_photon_core::model::{
         DeletionCounts, DeletionReason, DeletionRequest, DeletionStatus, NewPhoto,
@@ -851,6 +873,20 @@ mod tests {
         assert!(
             snapshot.duplicate_ids.expect("duplicate ids").is_empty(),
             "a single photo is not a duplicate"
+        );
+    }
+
+    #[test]
+    fn poll_interval_backs_off_while_ipc_is_connected() {
+        assert_eq!(
+            live_poll_interval(false),
+            Duration::from_secs(3),
+            "without an event stream the UI keeps the fast fallback"
+        );
+        assert_eq!(
+            live_poll_interval(true),
+            Duration::from_secs(30),
+            "the IPC event stream lets the heartbeat back off"
         );
     }
 
