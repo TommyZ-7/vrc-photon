@@ -144,6 +144,10 @@ pub struct App {
     /// Reusable read-only connection for background UI queries. `None` when
     /// the UI runs on an in-memory demo database.
     pub(crate) background_reader: Option<Arc<BackgroundReader>>,
+    /// Dedicated read-only connection for full library rebuilds and the live
+    /// poller. Keeping it separate from `background_reader` stops a 100k-row
+    /// index query from blocking search suggestions.
+    pub(crate) library_reader: Option<Arc<BackgroundReader>>,
     pub(crate) screen: Screen,
     pub(crate) sidebar_collapsed: bool,
     pub(crate) sidebar_status_tab: SidebarStatusTab,
@@ -397,6 +401,21 @@ pub struct App {
     /// Coalescing gate for the background live refresh. The three-second
     /// poller and IPC-triggered refreshes share it.
     pub(crate) live_refresh: LiveRefreshGate,
+    /// Coalescing gate for full library rebuilds. A rebuild can take longer
+    /// than the quiet period that requests it, so overlapping requests are
+    /// folded into one follow-up pass.
+    pub(crate) library_reload: LiveRefreshGate,
+    /// Preservation mode for the latest queued rebuild, if one is waiting for
+    /// the in-flight pass to finish.
+    pub(crate) pending_library_reload: Option<bool>,
+    /// A full rebuild is running on the background executor. The first frame
+    /// keeps the previous (possibly empty) snapshot mounted until it lands.
+    pub(crate) library_loading: bool,
+    /// The startup rebuild must select the first photo and report an empty
+    /// library once the background snapshot arrives.
+    pub(crate) pending_initial_select: bool,
+    /// Focus the photo grid after the async startup snapshot has been applied.
+    pub(crate) initial_focus_pending: bool,
     pub(crate) monitor_world: Option<String>,
     pub(crate) monitor_instance: Option<String>,
     pub(crate) monitor_players: Vec<String>,
@@ -1066,9 +1085,11 @@ impl App {
             )
         });
         let background_reader = BackgroundReader::for_database(&db);
+        let library_reader = BackgroundReader::for_database(&db);
         let mut app = Self {
             db,
             background_reader,
+            library_reader,
             screen: Screen::Photos,
             sidebar_collapsed: initial_settings.ui_sidebar_collapsed,
             sidebar_status_tab: SidebarStatusTab::Compression,
@@ -1284,6 +1305,11 @@ impl App {
             compression_refresh_scheduled: false,
             compression_library_refresh_pending: false,
             live_refresh: LiveRefreshGate::default(),
+            library_reload: LiveRefreshGate::default(),
+            pending_library_reload: None,
+            library_loading: false,
+            pending_initial_select: false,
+            initial_focus_pending: false,
             monitor_world: None,
             monitor_instance: None,
             monitor_players: Vec::new(),
@@ -1357,6 +1383,9 @@ impl App {
         };
         app.ensure_profiles();
         app.ai.apply_snapshot(ai::collect_ai_snapshot(&app.db));
+        // The file-backed startup index is built on the library reader; the
+        // first selection and the empty-library toast wait for that snapshot.
+        app.pending_initial_select = app.library_reader.is_some();
         app.reload_all(true, cx);
         app.apply_palette(app.palette, cx);
         if let Some(message) = message {
@@ -1366,7 +1395,10 @@ impl App {
                 app.toast_error(message, cx);
             }
         }
-        if app.library_error.is_none() && app.library.borrow().index.total == 0 {
+        if !app.library_loading
+            && app.library_error.is_none()
+            && app.library.borrow().index.total == 0
+        {
             app.toast_info(tr!("app.empty_library"), cx);
         }
         if let Some(notice) = app.update.notice() {
@@ -1379,7 +1411,9 @@ impl App {
             .entries
             .first()
             .map(|entry| entry.id);
-        if let Some(id) = first_photo_id {
+        if !app.library_loading
+            && let Some(id) = first_photo_id
+        {
             app.select_photo(id, cx);
             // The grid is not mounted until the first frame, so focus it once
             // the initial render has attached it to the focus tree.
@@ -1471,6 +1505,9 @@ impl App {
 
 impl Render for App {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if std::mem::take(&mut self.initial_focus_pending) {
+            window.focus(&self.photo_grid_focus, cx);
+        }
         self.render_epoch = self.render_epoch.wrapping_add(1);
         self.queue_thumbnail_removals();
         let pending = self.pending_atlas_drops.clone();
