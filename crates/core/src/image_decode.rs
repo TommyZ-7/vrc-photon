@@ -88,6 +88,103 @@ fn decode_full_fallback(source: &Path) -> Option<RgbaImage> {
     }
 }
 
+/// Decodes a thumbnail-sized image without expanding the full source.
+///
+/// JPEGs use the decoder's IDCT scaling (1/2, 1/4, 1/8) so a large photo is
+/// never allocated at full resolution. Other formats decode normally and are
+/// scaled with the same fast integer filter as before.
+pub(crate) fn decode_thumbnail_image(source: &Path, max_size: u32) -> Option<RgbaImage> {
+    if matches!(
+        normalized_extension(source).as_deref(),
+        Some("jpg" | "jpeg")
+    ) && let Some(image) = decode_jpeg_scaled(source, max_size)
+    {
+        let orientation = jpeg_orientation(source);
+        return Some(finish_thumbnail_image(image, orientation, max_size));
+    }
+    let image = decode_image(source)?.into_rgba8();
+    Some(finish_thumbnail_image(
+        image,
+        Orientation::NoTransforms,
+        max_size,
+    ))
+}
+
+/// Decodes a JPEG with the smallest IDCT scale that still covers `max_size`.
+///
+/// The returned pixels are still in the stored orientation; the caller applies
+/// EXIF orientation before the final resize. CMYK and 16-bit JPEGs fall back
+/// to the full decoder because their pixel format needs a color conversion
+/// this path does not implement.
+fn decode_jpeg_scaled(source: &Path, max_size: u32) -> Option<RgbaImage> {
+    let file = fs::File::open(source).ok()?;
+    let mut decoder = jpeg_decoder::Decoder::new(std::io::BufReader::new(file));
+    decoder.set_max_decoding_buffer_size(MAX_DECODE_ALLOC_BYTES as usize);
+    decoder.read_info().ok()?;
+    let info = decoder.info()?;
+    let width = u32::from(info.width);
+    let height = u32::from(info.height);
+    if !within_pixel_limit(width, height) {
+        return reject_too_many_pixels(source, width, height);
+    }
+    let requested = max_size.min(u32::from(u16::MAX)) as u16;
+    decoder.scale(requested, requested).ok()?;
+    let pixels = decoder.decode().ok()?;
+    let info = decoder.info()?;
+    let width = u32::from(info.width);
+    let height = u32::from(info.height);
+    let rgba = match info.pixel_format {
+        jpeg_decoder::PixelFormat::L8 => expand_l8_to_rgba(pixels, width, height)?,
+        jpeg_decoder::PixelFormat::RGB24 => expand_rgb24_to_rgba(pixels, width, height)?,
+        _ => return None,
+    };
+    RgbaImage::from_raw(width, height, rgba)
+}
+
+fn jpeg_orientation(source: &Path) -> Orientation {
+    open_decoder(source)
+        .and_then(|mut decoder| decoder.orientation().ok())
+        .unwrap_or(Orientation::NoTransforms)
+}
+
+fn expand_l8_to_rgba(pixels: Vec<u8>, width: u32, height: u32) -> Option<Vec<u8>> {
+    let count = usize::try_from(width)
+        .ok()?
+        .checked_mul(usize::try_from(height).ok()?)?;
+    if pixels.len() != count {
+        return None;
+    }
+    let mut rgba = Vec::with_capacity(count.checked_mul(4)?);
+    for value in pixels {
+        rgba.extend_from_slice(&[value, value, value, 255]);
+    }
+    Some(rgba)
+}
+
+fn expand_rgb24_to_rgba(pixels: Vec<u8>, width: u32, height: u32) -> Option<Vec<u8>> {
+    let count = usize::try_from(width)
+        .ok()?
+        .checked_mul(usize::try_from(height).ok()?)?;
+    if pixels.len() != count.checked_mul(3)? {
+        return None;
+    }
+    let mut rgba = Vec::with_capacity(count.checked_mul(4)?);
+    for pixel in pixels.chunks_exact(3) {
+        rgba.extend_from_slice(&[pixel[0], pixel[1], pixel[2], 255]);
+    }
+    Some(rgba)
+}
+
+/// Applies EXIF orientation and fits the result into a square thumbnail box.
+///
+/// Unlike [`finish_full_image`], this matches the old thumbnail behavior of
+/// scaling small sources up to the box as well.
+fn finish_thumbnail_image(image: RgbaImage, orientation: Orientation, max_size: u32) -> RgbaImage {
+    let mut image = DynamicImage::ImageRgba8(image);
+    image.apply_orientation(orientation);
+    image.thumbnail(max_size, max_size).into_rgba8()
+}
+
 /// Decodes an 8-bit image through one allocation sized for RGBA.
 ///
 /// The decoder writes its native bytes into the spare capacity, then the
@@ -693,6 +790,24 @@ mod tests {
             file.set_len(MAX_COMPRESSED_FILE_BYTES + 1).unwrap();
             assert!(decode_image(&path).is_none(), "{name} should be rejected");
         }
+    }
+
+    #[test]
+    fn thumbnail_decode_scales_large_jpegs_before_pixel_decode() {
+        let dir = tempdir().unwrap();
+        let source = RgbaImage::from_pixel(2048, 1024, Rgba([20, 40, 60, 255]));
+        let path = dir.path().join("large.jpg");
+        test_support::write_jpeg_with_orientation(&path, &source, 1);
+
+        let scaled = decode_jpeg_scaled(&path, 256).expect("scaled JPEG");
+        assert_eq!(
+            scaled.dimensions(),
+            (256, 128),
+            "the 1/8 IDCT output is decoded instead of the full source"
+        );
+
+        let thumbnail = decode_thumbnail_image(&path, 256).expect("thumbnail");
+        assert_eq!(thumbnail.dimensions(), (256, 128));
     }
 
     #[test]
