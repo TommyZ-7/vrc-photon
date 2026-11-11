@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VRC PhotoN — サムネイル設定の BC7 化 モック (#579)</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --font: "Inter", "Noto Sans JP", "Hiragino Sans", "Yu Gothic UI", system-ui, -apple-system, sans-serif;
+    --text: #eef4ff;
+    --muted: #a8b4ca;
+    --dim: #7f8ba3;
+    --faint: #5e6a81;
+    --accent: #8bcbff;
+    --accent-strong: #2f7fd8;
+    --green: #7ee2b8;
+    --red: #ff8e9e;
+    --line: rgba(255, 255, 255, 0.105);
+    --line-soft: rgba(255, 255, 255, 0.065);
+    --bg: #05070d;
+    --panel: #0d1420;
+    --panel-deep: #080d15;
+    --panel-inner: #111927;
+    --panel-card: #0b111c;
+    --shadow: rgba(0, 0, 0, 0.45);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-width: 320px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -2;
+    background:
+      radial-gradient(ellipse 58% 54% at 10% 2%, rgba(54, 107, 255, 0.28), transparent 66%),
+      radial-gradient(ellipse 46% 52% at 92% 6%, rgba(255, 86, 181, 0.12), transparent 68%),
+      radial-gradient(ellipse 52% 48% at 64% 104%, rgba(30, 202, 178, 0.10), transparent 68%),
+      linear-gradient(140deg, #04060c 0%, #0a0f1e 44%, #060811 100%);
+  }
+  .page { width: min(1120px, calc(100% - 48px)); margin: 0 auto; padding: 44px 0 76px; }
+  .masthead { display: flex; align-items: flex-start; justify-content: space-between; gap: 28px; margin-bottom: 30px; }
+  .eyebrow { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; }
+  .issue-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border: 1px solid rgba(139,203,255,.24); border-radius: 999px; background: rgba(139,203,255,.08); color: var(--accent); font-size: 10px; letter-spacing: .08em; }
+  h1 { margin: 11px 0 9px; font-size: clamp(25px, 3vw, 34px); line-height: 1.22; letter-spacing: -.035em; font-weight: 620; }
+  .lede { max-width: 780px; margin: 0; color: var(--muted); font-size: 13px; }
+  .lede b { color: var(--text); font-weight: 560; }
+  .meta-card { flex: none; min-width: 258px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 16px; background: rgba(13,20,32,.72); }
+  .meta-row { display: flex; justify-content: space-between; gap: 18px; padding: 4px 0; color: var(--dim); font-size: 11px; }
+  .meta-row b { color: var(--text); font-weight: 550; }
+  .meta-row + .meta-row { border-top: 1px solid var(--line-soft); }
+  .stage { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 34px; }
+  .panel { border: 1px solid var(--line-soft); border-radius: 22px; background: var(--panel-card); box-shadow: 0 18px 44px var(--shadow); overflow: hidden; }
+  .panel-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--line-soft); background: rgba(17,25,39,.72); }
+  .panel-head .dot { width: 7px; height: 7px; border-radius: 999px; background: var(--accent); box-shadow: 0 0 0 4px rgba(139,203,255,.10); }
+  .panel-head .dot.old { background: var(--faint); box-shadow: 0 0 0 4px rgba(94,106,129,.10); }
+  .panel-head b { font-size: 12.5px; font-weight: 600; }
+  .panel-head span { margin-left: auto; color: var(--faint); font-size: 10px; letter-spacing: .06em; }
+  .panel-body { padding: 18px; }
+  .settings-card { border: 1px solid var(--line-soft); border-radius: 17px; background: var(--panel-inner); padding: 14px; }
+  .card-title { margin: 0; font-size: 13px; font-weight: 600; }
+  .divider { height: 1px; margin: 12px 0; background: var(--line-soft); }
+  .field-label { color: var(--text); font-size: 12px; }
+  .field-row { display: flex; align-items: baseline; gap: 6px; }
+  .field-value { margin-left: auto; color: var(--text); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .slider { height: 3px; margin: 12px 0 4px; border-radius: 999px; background: linear-gradient(90deg, rgba(139,203,255,.70), rgba(139,203,255,.16)); position: relative; }
+  .slider::after { content: ""; position: absolute; top: -5.5px; left: 80%; width: 14px; height: 14px; border-radius: 999px; border: 2px solid var(--accent-strong); background: #dceeff; box-shadow: 0 0 0 4px rgba(47,127,216,.16); }
+  .preset-row { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+  .preset { padding: 5px 9px; border-radius: 8px; border: 1px solid transparent; background: transparent; color: var(--muted); font: inherit; font-size: 11px; cursor: default; font-variant-numeric: tabular-nums; }
+  .preset.active { border-color: rgba(139,203,255,.35); background: rgba(139,203,255,.16); color: var(--accent); font-weight: 500; }
+  .hint { margin: 8px 0 0; color: var(--dim); font-size: 10px; }
+  .usage-row { display: flex; align-items: center; gap: 8px; padding-top: 2px; }
+  .usage { flex: 1; color: var(--muted); font-size: 10px; }
+  .button { padding: 5px 10px; border-radius: 8px; border: 1px solid var(--line); background: rgba(255,255,255,.04); color: var(--text); font: inherit; font-size: 10.5px; cursor: default; }
+  .annotation { margin-top: 14px; padding: 11px 13px; border-radius: 12px; border: 1px solid var(--line-soft); background: rgba(8,13,21,.55); color: var(--muted); font-size: 11px; }
+  .annotation b { color: var(--text); font-weight: 560; }
+  .tag { display: inline-flex; align-items: center; padding: 1px 7px; margin-right: 5px; border-radius: 999px; font-size: 9px; letter-spacing: .05em; vertical-align: 1px; }
+  .tag.removed { border: 1px solid rgba(255,142,158,.30); background: rgba(255,142,158,.10); color: var(--red); }
+  .tag.changed { border: 1px solid rgba(126,226,184,.28); background: rgba(126,226,184,.10); color: var(--green); }
+  .notes { margin-top: 34px; display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .note { padding: 16px 18px; border: 1px solid var(--line-soft); border-radius: 16px; background: rgba(13,20,32,.55); }
+  .note h2 { margin: 0 0 8px; font-size: 13px; font-weight: 600; }
+  .note p { margin: 0; color: var(--muted); font-size: 11.5px; }
+  .note ul { margin: 8px 0 0; padding-left: 18px; color: var(--muted); font-size: 11.5px; }
+  .note li + li { margin-top: 3px; }
+  @media (max-width: 860px) {
+    .stage, .notes { grid-template-columns: 1fr; }
+    .masthead { flex-direction: column; }
+    .meta-card { width: 100%; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="masthead">
+    <div>
+      <div class="eyebrow"><span class="issue-chip">#579</span> settings / thumbnails</div>
+      <h1>サムネイル設定の BC7 化</h1>
+      <p class="lede">
+        画質設定を削除し、解像度を <b>16:9 の固定キャンバス</b>として選ぶモック。
+        変更すると全サムネイルを再生成するため、その注意書きを解像度の下に置く。
+      </p>
+    </div>
+    <aside class="meta-card">
+      <div class="meta-row"><span>対象画面</span><b>設定 → サムネイル</b></div>
+      <div class="meta-row"><span>既定</span><b>384×216</b></div>
+      <div class="meta-row"><span>削除</span><b>画質スライダー</b></div>
+      <div class="meta-row"><span>保存形式</span><b>BC7 / Texture2DArray</b></div>
+    </aside>
+  </header>
+
+  <main class="stage">
+    <section class="panel">
+      <div class="panel-head">
+        <span class="dot old"></span>
+        <b>変更前</b>
+        <span>WebP / 画質 + 長辺</span>
+      </div>
+      <div class="panel-body">
+        <div class="settings-card">
+          <h3 class="card-title">サムネイル</h3>
+          <div class="divider"></div>
+          <div class="field-row">
+            <span class="field-label">画質</span>
+            <span class="field-value">80</span>
+          </div>
+          <div class="slider" aria-hidden="true"></div>
+          <div class="divider"></div>
+          <div class="field-row"><span class="field-label">解像度</span></div>
+          <div class="preset-row">
+            <span class="preset">256 px</span>
+            <span class="preset active">384 px</span>
+            <span class="preset">512 px</span>
+          </div>
+          <div class="divider"></div>
+          <div class="usage-row">
+            <span class="usage">現在: 12,480件 · 620 MB</span>
+            <span class="button">キャッシュを全削除</span>
+          </div>
+        </div>
+        <div class="annotation">
+          <span class="tag removed">削除</span>
+          画質は BC7 では指定できないため、スライダーごとなくなる。
+          長辺指定も 16:9 キャンバス寸法へ変わる。
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <span class="dot"></span>
+        <b>変更後（提案）</b>
+        <span>BC7 / 16:9 キャンバス</span>
+      </div>
+      <div class="panel-body">
+        <div class="settings-card">
+          <h3 class="card-title">サムネイル</h3>
+          <div class="divider"></div>
+          <div class="field-row"><span class="field-label">解像度</span></div>
+          <div class="preset-row">
+            <span class="preset">256×144</span>
+            <span class="preset active">384×216</span>
+            <span class="preset">512×288</span>
+          </div>
+          <p class="hint">変更すると、すべてのサムネイルを新しい寸法で再生成します。</p>
+          <div class="divider"></div>
+          <div class="usage-row">
+            <span class="usage">現在: 12,480件 · 1.0 GB</span>
+            <span class="button">キャッシュを全削除</span>
+          </div>
+        </div>
+        <div class="annotation">
+          <span class="tag changed">変更</span>
+          解像度ボタンの表示を <b>幅×高さ</b> にする。画質行とその区切り線を削除。
+          再生成の注意書きを1行追加する。
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <section class="notes">
+    <div class="note">
+      <h2>操作と反映</h2>
+      <ul>
+        <li>解像度を選ぶと即座に保存し、旧キャッシュを全削除する。</li>
+        <li>表示中のサムネイルは新しい配列で作り直す。</li>
+        <li>再生成は表示された写真から順に行う。全件を一括生成はしない。</li>
+        <li>数値は保存形式の変更に伴う一例。実測値は実装後に記録する。</li>
+      </ul>
+    </div>
+    <div class="note">
+      <h2>確認したいこと</h2>
+      <p>
+        既定を 384×216 に上げ、注意書きを追加する案。文言・配置・
+        「再生成」の表現に問題がなければ、この形で実装する。
+      </p>
+    </div>
+  </section>
+</div>
+</body>
+</html>
