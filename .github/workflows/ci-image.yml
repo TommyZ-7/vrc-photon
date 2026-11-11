@@ -2,7 +2,7 @@ name: CI Image
 
 on:
   push:
-    branches: [main, ci/591-ci-container]
+    branches: [main]
     paths:
       - Dockerfile
       - .dockerignore
