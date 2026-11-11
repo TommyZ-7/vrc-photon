@@ -5,7 +5,9 @@
 # known vulnerabilities and unsound advisories fail the build, while
 # informational "unmaintained" advisories do not. A second, non-blocking CI
 # step runs the same check without `-A unmaintained` so the full list stays
-# visible in the job log.
+# visible in the job log. A third blocking step runs
+# `cargo deny check licenses bans sources` against the allow lists below and
+# the same accepted-license set as about.toml.
 #
 # Known follow-up (2026-11-05): the full check reports these unmaintained
 # transitive crates from the advisory database:
@@ -19,3 +21,48 @@
 # Default RustSec database. Kept explicit so the source of the audit is clear.
 db-urls = ["https://github.com/rustsec/advisory-db"]
 ignore = []
+
+[licenses]
+# The accepted set mirrors about.toml, which generates the shipped
+# THIRD-PARTY-NOTICES.md. Keep both lists in sync so a new dependency is
+# reviewed for licensing before it can enter the graph.
+confidence-threshold = 0.8
+allow = [
+    "MIT",
+    "MIT-0",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Unlicense",
+    "CC0-1.0",
+    "0BSD",
+    "BSL-1.0",
+    "NCSA",
+    "CDLA-Permissive-2.0",
+    "GPL-3.0-or-later",
+]
+
+[bans]
+# Duplicate versions are common while upstream crates migrate, so surface
+# them as warnings. Wildcard dependencies are allowed in this workspace
+# because path crates are versioned together.
+multiple-versions = "warn"
+wildcards = "allow"
+
+[sources]
+# Only crates.io and the two reviewed gpui forks may supply dependencies.
+unknown-registry = "deny"
+unknown-git = "deny"
+# Git patches must stay pinned to a commit so an update cannot silently
+# change the reviewed fork content.
+required-git-spec = "rev"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = [
+    "https://github.com/TommyZ-7/gpui-kit",
+    "https://github.com/TommyZ-7/gpui-fast",
+]
