@@ -137,11 +137,6 @@ impl ThumbnailCache {
         std::mem::take(&mut self.removed)
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn generation(&self) -> u64 {
-        self.generation
-    }
-
     /// Discards every decoded image and retry marker. Decodes already in
     /// flight keep their slots and finish under their old generation; their
     /// results are ignored, but a new decode cannot start until they release
@@ -161,7 +156,7 @@ impl ThumbnailCache {
         self.failed.clear();
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn begin(&mut self, id: i64) -> bool {
         self.begin_ticket(id).is_some()
     }
@@ -264,19 +259,7 @@ impl ThumbnailCache {
         )
     }
 
-    /// Legacy generation check used by tests and callers without a ticket.
-    #[allow(dead_code)]
-    pub(crate) fn insert_if_generation(
-        &mut self,
-        generation: u64,
-        id: i64,
-        image: Arc<RenderImage>,
-        color: u32,
-    ) -> bool {
-        let photo_generation = self.photo_generation(id);
-        self.insert_if_generations(generation, photo_generation, id, image, color)
-    }
-
+    #[cfg(test)]
     fn insert_if_generations(
         &mut self,
         generation: u64,
@@ -361,7 +344,7 @@ impl ThumbnailCache {
         self.fail_if_generations(ticket.generation, ticket.photo_generation, id);
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn fail_if_generation(&mut self, generation: u64, id: i64) {
         let photo_generation = self.photo_generation(id);
         self.fail_if_generations(generation, photo_generation, id);

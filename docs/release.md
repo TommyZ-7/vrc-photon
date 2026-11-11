@@ -206,7 +206,7 @@ Required check名を変更した場合は、GitHubのbranch protectionも更新�
 - [ ] `Cargo.toml` と `Cargo.lock` のバージョンが一致
 - [ ] CI / Release（PR）が緑
 - [ ] `docs/roadmap.md` の未解決事項を確認
-- [ ] 破壊的DB変更がない、またはマイグレーションがある
+- [ ] 破壊的DB変更がない、または旧DBの扱い（v18のみ・v1〜v17は自動移行せず明示エラー）がリリースノートに明記されている
 - [ ] パッケージ生成物にUIとデーモンの両方が入っている
 - [ ] deb / pacman に `usr/lib/systemd/user/vrc-photon-daemon.service` が入っている
 - [ ] アイコンとdesktop entryが入っている
@@ -225,7 +225,8 @@ Required check名を変更した場合は、GitHubのbranch protectionも更新�
 - 不具合のあるリリースは、修正版を新しいパッチバージョンで出す。
 - 既存タグの付け替えはしない。
 - GitHub Releaseを非公開/削除する場合も、タグは残す。ユーザーの明示指示が必要。
-- DBマイグレーションは前方互換を基本とし、ダウングレードは保証しない。
+- DB は v18 のみをサポートする。v1〜v17 は自動移行せず、明示エラーで開かない。
+  アップグレード前にバックアップを案内し、ダウングレードは保証しない。
 
 ## 10. 自動アップデートの署名と配信
 

@@ -8,32 +8,6 @@ use vrc_photon_ai_protocol::{
     Catalog, ModelState, TagDefinition, TaggingErrorCode, TaggingJobStatus, TaggingStage,
 };
 
-/// The v1 photos shape without the v18 generated columns, used by tests
-/// that simulate an older database with a partial schema.
-const TEST_PRE_V18_PHOTOS: &str = r#"
-CREATE TABLE photos (
-    id INTEGER PRIMARY KEY,
-    root_id INTEGER NOT NULL DEFAULT 1,
-    rel_path TEXT NOT NULL DEFAULT '',
-    abs_path TEXT NOT NULL,
-    file_name TEXT NOT NULL DEFAULT '',
-    captured_at_utc INTEGER NOT NULL DEFAULT 0,
-    captured_at_local TEXT NOT NULL DEFAULT '',
-    tz_offset_sec INTEGER NOT NULL DEFAULT 0,
-    width INTEGER NOT NULL DEFAULT 0,
-    height INTEGER NOT NULL DEFAULT 0,
-    file_size INTEGER NOT NULL DEFAULT 0,
-    mtime INTEGER NOT NULL DEFAULT 0,
-    blake3 TEXT,
-    status TEXT NOT NULL DEFAULT 'present',
-    is_favorite INTEGER NOT NULL DEFAULT 0,
-    note TEXT,
-    created_at TEXT NOT NULL DEFAULT '',
-    updated_at TEXT NOT NULL DEFAULT '',
-    display_derivative_id INTEGER
-);
-"#;
-
 fn sample_photo(root_id: i64, path: &str, ts: i64) -> NewPhoto {
     NewPhoto {
         root_id,
@@ -203,144 +177,6 @@ fn insert_deletion_request(db: &Db, photo_id: i64, reason: &str, status: &str) {
         .unwrap();
 }
 
-/// Builds a version-3 database file directly from the V1-V3 DDL with one
-/// failed compression job. When `retry_count` is set, the retry column is
-/// added too, simulating an upgrade interrupted after the ALTER.
-fn seed_version_3_database(path: &Path, retry_count: Option<i64>) {
-    let conn = Connection::open(path).unwrap();
-    conn.execute_batch(SCHEMA_V1).unwrap();
-    conn.execute_batch(SCHEMA_V2).unwrap();
-    conn.execute_batch(SCHEMA_V3).unwrap();
-    for version in 1..=3 {
-        conn.execute(
-            "INSERT INTO schema_migrations(version, applied_at) VALUES (?1, ?2)",
-            params![version, now_string()],
-        )
-        .unwrap();
-    }
-    conn.execute(
-        "INSERT INTO library_roots(path, kind, created_at) VALUES ('/photos', 'reference', ?1)",
-        params![now_string()],
-    )
-    .unwrap();
-    conn.execute(
-        "INSERT INTO photos(root_id, rel_path, abs_path, file_name, captured_at_utc, \
-                captured_at_local, tz_offset_sec, width, height, file_size, mtime, blake3, \
-                status, created_at, updated_at) \
-             VALUES (1, 'a.png', '/photos/a.png', 'a.png', 100, '2026-10-21 21:14:03', 32400, \
-                3840, 2160, 12400000, 100, NULL, 'present', ?1, ?1)",
-        params![now_string()],
-    )
-    .unwrap();
-    conn.execute(
-        "INSERT INTO compression_jobs(id, photo_id, profile_id, status, progress, error, \
-                output_path, policy, created_at, started_at, finished_at) \
-             VALUES ('job-1', 1, 'p', 'failed', 0, 'boom', NULL, 'keep', ?1, ?1, ?1)",
-        params![now_string()],
-    )
-    .unwrap();
-    if let Some(count) = retry_count {
-        conn.execute_batch(SCHEMA_V4_RETRY_COUNT).unwrap();
-        conn.execute(
-            "UPDATE compression_jobs SET retry_count = ?1 WHERE id = 'job-1'",
-            params![count],
-        )
-        .unwrap();
-    }
-    conn.pragma_update(None, "user_version", 3).unwrap();
-}
-
-#[test]
-fn interrupted_v1_migration_recovers() {
-    // The V1 DDL committed but the crash hit before user_version moved:
-    // the database still reports version 0 with the tables present.
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("photos.db");
-    {
-        let conn = Connection::open(&path).unwrap();
-        conn.execute_batch(SCHEMA_V1).unwrap();
-    }
-    let db = Db::open(&path).unwrap();
-    let version: i64 = db
-        .conn
-        .pragma_query_value(None, "user_version", |row| row.get(0))
-        .unwrap();
-    assert_eq!(version, 18);
-}
-
-#[test]
-fn interrupted_v2_migration_recovers() {
-    // The V2 ALTER committed but user_version stayed at 1: the old
-    // autocommit runner failed the next open with a duplicate column.
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("photos.db");
-    {
-        let conn = Connection::open(&path).unwrap();
-        conn.execute_batch(SCHEMA_V1).unwrap();
-        conn.execute(
-            "INSERT INTO schema_migrations(version, applied_at) VALUES (1, ?1)",
-            params![now_string()],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO library_roots(path, kind, created_at) \
-                 VALUES ('/photos', 'reference', ?1)",
-            params![now_string()],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO photos(root_id, rel_path, abs_path, file_name, captured_at_utc, \
-                    captured_at_local, tz_offset_sec, width, height, file_size, mtime, blake3, \
-                    status, created_at, updated_at) \
-                 VALUES (1, 'a.png', '/photos/a.png', 'a.png', 100, '2026-10-21 21:14:03', 32400, \
-                    3840, 2160, 12400000, 100, NULL, 'present', ?1, ?1)",
-            params![now_string()],
-        )
-        .unwrap();
-        conn.execute_batch(SCHEMA_V2).unwrap();
-        conn.execute(
-            "INSERT INTO photo_context(photo_id, link_method, confidence, linked_at, author) \
-                 VALUES (1, 'auto', 0, ?1, 'alice')",
-            params![now_string()],
-        )
-        .unwrap();
-        conn.pragma_update(None, "user_version", 1).unwrap();
-    }
-    let db = Db::open(&path).unwrap();
-    let version: i64 = db
-        .conn
-        .pragma_query_value(None, "user_version", |row| row.get(0))
-        .unwrap();
-    assert_eq!(version, 18);
-    let author_columns: i64 = db
-        .conn
-        .query_row(
-            "SELECT COUNT(*) FROM pragma_table_info('photo_context') WHERE name = 'author'",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert_eq!(author_columns, 1);
-    let author: String = db
-        .conn
-        .query_row(
-            "SELECT author FROM photo_context WHERE photo_id = 1",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert_eq!(author, "alice");
-    let recorded: i64 = db
-        .conn
-        .query_row(
-            "SELECT COUNT(*) FROM schema_migrations WHERE version = 2",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert_eq!(recorded, 1);
-}
-
 #[test]
 fn concurrent_open_of_a_fresh_database_succeeds() {
     // UI and daemon opening the same new database at once must both
@@ -366,56 +202,6 @@ fn concurrent_open_of_a_fresh_database_succeeds() {
             assert_eq!(opened.unwrap().unwrap(), 18);
         }
     }
-}
-
-#[test]
-fn migration_v6_adds_job_output_dir() {
-    let db = Db::open_in_memory().unwrap();
-    let version: i64 = db
-        .conn
-        .pragma_query_value(None, "user_version", |row| row.get(0))
-        .unwrap();
-    assert_eq!(version, 18);
-    let has_output_dir: bool = db
-        .conn
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM pragma_table_info('compression_jobs') \
-                 WHERE name = 'output_dir')",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert!(has_output_dir);
-}
-
-#[test]
-fn migration_v7_adds_deletion_requests() {
-    let db = Db::open_in_memory().unwrap();
-    let version: i64 = db
-        .connection()
-        .pragma_query_value(None, "user_version", |row| row.get(0))
-        .unwrap();
-    assert_eq!(version, 18);
-    let table: i64 = db
-        .connection()
-        .query_row(
-            "SELECT COUNT(*) FROM sqlite_master \
-                 WHERE type = 'table' AND name = 'deletion_requests'",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert_eq!(table, 1);
-    let index: i64 = db
-        .connection()
-        .query_row(
-            "SELECT COUNT(*) FROM sqlite_master \
-                 WHERE type = 'index' AND name = 'idx_deletion_requests_active'",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert_eq!(index, 1);
 }
 
 #[test]
@@ -1514,171 +1300,6 @@ fn retry_is_rejected_while_deletion_is_running() {
             .status,
         QueueStatus::Failed
     );
-}
-
-#[test]
-fn migration_adds_captured_id_index() {
-    let db = Db::open_in_memory().unwrap();
-    let version: i64 = db
-        .conn
-        .pragma_query_value(None, "user_version", |row| row.get(0))
-        .unwrap();
-    assert_eq!(version, 18);
-
-    let recorded: i64 = db
-        .conn
-        .query_row(
-            "SELECT version FROM schema_migrations WHERE version = 3",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert_eq!(recorded, 3);
-
-    let sql: String = db
-        .conn
-        .query_row(
-            "SELECT sql FROM sqlite_master \
-                 WHERE type = 'index' AND name = 'idx_photos_captured_id'",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    let normalized = sql
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .to_lowercase();
-    assert!(
-        normalized.contains("on photos(captured_at_utc desc, id desc)"),
-        "{sql}"
-    );
-    assert!(
-        normalized.contains("where status in ('present', 'replaced')"),
-        "{sql}"
-    );
-}
-
-#[test]
-fn migration_adds_retry_count_and_daemon_tables() {
-    let db = Db::open_in_memory().unwrap();
-    let version: i64 = db
-        .conn
-        .pragma_query_value(None, "user_version", |row| row.get(0))
-        .unwrap();
-    assert_eq!(version, 18);
-    let retry_column: i64 = db
-        .conn
-        .query_row(
-            "SELECT COUNT(*) FROM pragma_table_info('compression_jobs') WHERE name = 'retry_count'",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert_eq!(retry_column, 1);
-    let tables: i64 = db
-        .conn
-        .query_row(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' \
-                 AND name IN ('daemon_errors', 'daemon_commands')",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert_eq!(tables, 2);
-}
-
-#[test]
-fn migration_v5_adds_display_derivative_and_visible_index() {
-    let db = Db::open_in_memory().unwrap();
-    let column: i64 = db
-        .conn
-        .query_row(
-            "SELECT COUNT(*) FROM pragma_table_info('photos') \
-                 WHERE name = 'display_derivative_id'",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert_eq!(column, 1);
-
-    let sql: String = db
-        .conn
-        .query_row(
-            "SELECT sql FROM sqlite_master \
-                 WHERE type = 'index' AND name = 'idx_photos_captured_id'",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    let normalized = sql
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .to_lowercase();
-    assert!(
-        normalized.contains("status in ('present', 'replaced')"),
-        "{sql}"
-    );
-}
-
-#[test]
-fn migration_upgrades_version_3_database_with_existing_jobs() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("library.db");
-    seed_version_3_database(&path, None);
-
-    let db = Db::open(&path).unwrap();
-    let version: i64 = db
-        .conn
-        .pragma_query_value(None, "user_version", |row| row.get(0))
-        .unwrap();
-    assert_eq!(version, 18);
-
-    let jobs = db.list_jobs(10).unwrap();
-    assert_eq!(jobs.len(), 1);
-    assert_eq!(jobs[0].id, "job-1");
-    assert_eq!(jobs[0].status, QueueStatus::Failed);
-    assert_eq!(jobs[0].retry_count, 0);
-
-    let tables: i64 = db
-        .conn
-        .query_row(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' \
-                 AND name IN ('daemon_errors', 'daemon_commands')",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert_eq!(tables, 2);
-}
-
-#[test]
-fn migration_v4_recovers_from_interrupted_upgrade() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("library.db");
-    // The ALTER committed but user_version stayed at 3 and the daemon
-    // tables are missing, as if the process died mid-upgrade.
-    seed_version_3_database(&path, Some(2));
-
-    let db = Db::open(&path).unwrap();
-    let version: i64 = db
-        .conn
-        .pragma_query_value(None, "user_version", |row| row.get(0))
-        .unwrap();
-    assert_eq!(version, 18);
-    assert_eq!(db.list_jobs(10).unwrap()[0].retry_count, 2);
-
-    let tables: i64 = db
-        .conn
-        .query_row(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' \
-                 AND name IN ('daemon_errors', 'daemon_commands')",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert_eq!(tables, 2);
 }
 
 #[test]
@@ -3597,474 +3218,6 @@ fn legacy_daemon_errors_have_no_key_or_args() {
 }
 
 #[test]
-fn v10_migration_preserves_pre_v10_daemon_errors() {
-    let db = Db::open_in_memory().unwrap();
-    db.connection()
-        .execute_batch(
-            "ALTER TABLE daemon_errors DROP COLUMN message_key;\
-                 ALTER TABLE daemon_errors DROP COLUMN message_args;",
-        )
-        .unwrap();
-    db.connection()
-        .pragma_update(None, "user_version", 9)
-        .unwrap();
-    db.connection()
-        .execute(
-            "INSERT INTO daemon_errors(operation, message, detail, occurred_at, attempts) \
-                 VALUES ('scan', 'legacy scan error', '/photos', \
-                 '2026-10-31T00:00:00+00:00', 2)",
-            [],
-        )
-        .unwrap();
-
-    db.migrate_v10().unwrap();
-
-    let errors = db.daemon_errors().unwrap();
-    assert_eq!(errors.len(), 1);
-    assert_eq!(errors[0].message, "legacy scan error");
-    assert_eq!(errors[0].detail.as_deref(), Some("/photos"));
-    assert!(errors[0].message_key.is_none());
-    assert!(errors[0].message_args.is_none());
-}
-
-#[test]
-fn migrate_v10_adds_columns_and_is_retryable() {
-    let db = Db::open_in_memory().unwrap();
-    db.connection()
-        .pragma_update(None, "user_version", 9)
-        .unwrap();
-    db.migrate_v10().unwrap();
-    db.migrate_v10().unwrap();
-
-    let has_key: bool = db
-        .connection()
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM pragma_table_info('daemon_errors') \
-                 WHERE name = 'message_key')",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    let has_args: bool = db
-        .connection()
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM pragma_table_info('daemon_errors') \
-                 WHERE name = 'message_args')",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert!(has_key);
-    assert!(has_args);
-}
-
-#[test]
-fn migration_v11_adds_send_outbox() {
-    let db = Db::open_in_memory().unwrap();
-    let version: i64 = db
-        .conn
-        .pragma_query_value(None, "user_version", |r| r.get(0))
-        .unwrap();
-    assert_eq!(version, 18);
-    let exists: bool = db
-        .conn
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='send_outbox')",
-            [],
-            |r| r.get(0),
-        )
-        .unwrap();
-    assert!(exists);
-}
-
-#[test]
-fn migration_v11_is_retryable() {
-    let db = Db::open_in_memory().unwrap();
-    db.conn.pragma_update(None, "user_version", 10).unwrap();
-    db.migrate_v11().unwrap();
-    db.migrate_v11().unwrap();
-    let version: i64 = db
-        .conn
-        .pragma_query_value(None, "user_version", |r| r.get(0))
-        .unwrap();
-    assert_eq!(version, 11);
-}
-
-#[test]
-fn migration_v12_adds_world_name_lookups() {
-    let db = Db::open_in_memory().unwrap();
-    let version: i64 = db
-        .conn
-        .pragma_query_value(None, "user_version", |row| row.get(0))
-        .unwrap();
-    assert_eq!(version, 18);
-    let table: i64 = db
-        .conn
-        .query_row(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='world_name_lookups'",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert_eq!(table, 1);
-    let index: i64 = db
-            .conn
-            .query_row(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_world_name_lookups_due'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
-    assert_eq!(index, 1);
-}
-
-#[test]
-fn migration_v12_is_retryable() {
-    let db = Db::open_in_memory().unwrap();
-    db.conn.pragma_update(None, "user_version", 11).unwrap();
-    db.migrate_v12().unwrap();
-    db.migrate_v12().unwrap();
-    let version: i64 = db
-        .conn
-        .pragma_query_value(None, "user_version", |row| row.get(0))
-        .unwrap();
-    assert_eq!(version, 12);
-}
-
-#[test]
-fn migrate_v13_adds_ai_tables_and_is_retryable() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("library.db");
-    let db = Db::open(&path).unwrap();
-    db.connection()
-        .pragma_update(None, "user_version", 12)
-        .unwrap();
-    assert!(db.migrate_v13().is_ok());
-    assert!(db.migrate_v13().is_ok());
-    let version: i64 = db
-        .connection()
-        .pragma_query_value(None, "user_version", |row| row.get(0))
-        .unwrap();
-    assert_eq!(version, 13);
-    assert!(db.active_plugin_installation(AI_PLUGIN).unwrap().is_none());
-
-    for table in [
-        "plugin_installations",
-        "plugin_state",
-        "ai_tag_definitions",
-        "ai_tag_thresholds",
-        "photo_ai",
-        "photo_ai_tags",
-        "tagging_jobs",
-    ] {
-        let exists: bool = db
-            .connection()
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1)",
-                params![table],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert!(exists, "missing table {table}");
-    }
-    for index in [
-        "idx_plugin_installations_one_active",
-        "idx_photo_ai_tags_applied",
-        "idx_photo_ai_people",
-        "idx_tagging_jobs_status",
-        "idx_tagging_jobs_claim",
-        "idx_tagging_jobs_photo",
-        "idx_tagging_jobs_plugin_status",
-        "idx_tagging_jobs_active_list",
-        "idx_tagging_jobs_active",
-    ] {
-        let exists: bool = db
-            .connection()
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?1)",
-                params![index],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert!(exists, "missing index {index}");
-    }
-}
-
-#[test]
-fn migration_v13_upgrades_a_v12_database_and_preserves_photos() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("library.db");
-    {
-        let conn = Connection::open(&path).unwrap();
-        conn.execute_batch(TEST_PRE_V18_PHOTOS).unwrap();
-        conn.execute_batch(
-                "CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);\
-                 CREATE TABLE sessions (\
-                     id INTEGER PRIMARY KEY, started_at INTEGER NOT NULL, ended_at INTEGER);\
-                 CREATE TABLE compression_jobs (\
-                     id TEXT PRIMARY KEY, status TEXT NOT NULL, created_at TEXT NOT NULL);\
-                 CREATE TABLE photo_context (\
-                     photo_id INTEGER PRIMARY KEY, session_id INTEGER);\
-                 INSERT INTO photos(id, abs_path) VALUES (42, '/photos/keep.png');\
-                 PRAGMA user_version = 12;",
-            )
-            .unwrap();
-    }
-
-    let db = Db::open(&path).unwrap();
-    let version: i64 = db
-        .connection()
-        .pragma_query_value(None, "user_version", |row| row.get(0))
-        .unwrap();
-    assert_eq!(version, 18);
-    let abs_path: String = db
-        .connection()
-        .query_row("SELECT abs_path FROM photos WHERE id = 42", [], |row| {
-            row.get(0)
-        })
-        .unwrap();
-    assert_eq!(abs_path, "/photos/keep.png");
-    let jobs_table: bool = db
-        .connection()
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM sqlite_master \
-                 WHERE type = 'table' AND name = 'tagging_jobs')",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert!(jobs_table);
-}
-
-#[test]
-fn migration_v13_recovers_from_partial_schema() {
-    let db = Db::open_in_memory().unwrap();
-    db.connection()
-        .execute_batch("DROP TABLE photo_ai_tags")
-        .unwrap();
-    db.connection()
-        .pragma_update(None, "user_version", 12)
-        .unwrap();
-
-    db.migrate_v13().unwrap();
-    db.migrate_v13().unwrap();
-
-    let version: i64 = db
-        .conn
-        .pragma_query_value(None, "user_version", |row| row.get(0))
-        .unwrap();
-    assert_eq!(version, 13);
-    let exists: bool = db
-        .conn
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM sqlite_master \
-                 WHERE type = 'table' AND name = 'photo_ai_tags')",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert!(exists);
-}
-
-#[test]
-fn fresh_database_is_v17_and_has_the_link_retry_columns() {
-    let db = Db::open_in_memory().unwrap();
-    let version: i64 = db
-        .connection()
-        .pragma_query_value(None, "user_version", |row| row.get(0))
-        .unwrap();
-    assert_eq!(version, 18);
-    for index in [
-        "idx_jobs_claim",
-        "idx_jobs_created",
-        "idx_sessions_started",
-        "idx_sessions_ended",
-        "idx_photos_link_retry",
-    ] {
-        let exists: bool = db
-            .connection()
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM sqlite_master \
-                     WHERE type = 'index' AND name = ?1)",
-                params![index],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert!(exists, "missing index {index}");
-    }
-    for column in ["link_attempts", "link_next_retry_at"] {
-        let exists: bool = db
-            .connection()
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM pragma_table_info('photos') WHERE name = ?1)",
-                params![column],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert!(exists, "missing column {column}");
-    }
-}
-
-#[test]
-fn migration_v17_is_retryable() {
-    let db = Db::open_in_memory().unwrap();
-    db.connection()
-        .execute_batch(
-            "DROP INDEX IF EXISTS idx_context_session;\
-                 DELETE FROM schema_migrations WHERE version = 17;",
-        )
-        .unwrap();
-    db.connection()
-        .pragma_update(None, "user_version", 16)
-        .unwrap();
-
-    db.migrate_v17().unwrap();
-    db.migrate_v17().unwrap();
-
-    let version: i64 = db
-        .conn
-        .pragma_query_value(None, "user_version", |row| row.get(0))
-        .unwrap();
-    assert_eq!(version, 17);
-    let exists: bool = db
-        .conn
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM sqlite_master \
-                 WHERE type = 'index' AND name = 'idx_context_session')",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert!(exists);
-}
-
-#[test]
-fn migration_v15_upgrades_a_v14_database_and_preserves_photos() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("library.db");
-    {
-        let conn = Connection::open(&path).unwrap();
-        conn.execute_batch(TEST_PRE_V18_PHOTOS).unwrap();
-        conn.execute_batch(
-            "CREATE TABLE schema_migrations (\
-                     version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);\
-                 CREATE TABLE photo_context (\
-                     photo_id INTEGER PRIMARY KEY, session_id INTEGER);\
-                 INSERT INTO photos(id, abs_path) VALUES (42, '/photos/keep.png');\
-                 PRAGMA user_version = 14;",
-        )
-        .unwrap();
-        conn.execute_batch(SCHEMA_V13_AI_TAGGING).unwrap();
-    }
-
-    let db = Db::open(&path).unwrap();
-    let version: i64 = db
-        .connection()
-        .pragma_query_value(None, "user_version", |row| row.get(0))
-        .unwrap();
-    assert_eq!(version, 18);
-    let (attempts, next_retry, status): (i64, Option<i64>, String) = db
-        .connection()
-        .query_row(
-            "SELECT link_attempts, link_next_retry_at, status FROM photos WHERE id = 42",
-            [],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-        )
-        .unwrap();
-    assert_eq!(attempts, 0);
-    assert_eq!(next_retry, None);
-    assert_eq!(status, "present");
-    let exists: bool = db
-        .connection()
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM sqlite_master \
-                 WHERE type = 'index' AND name = 'idx_photos_link_retry')",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert!(exists);
-    let recorded: i64 = db
-        .connection()
-        .query_row(
-            "SELECT COUNT(*) FROM schema_migrations WHERE version = 15",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert_eq!(recorded, 1);
-}
-
-#[test]
-fn migration_v15_is_retryable() {
-    let db = Db::open_in_memory().unwrap();
-    db.connection()
-        .execute_batch("DROP INDEX idx_photos_link_retry;")
-        .unwrap();
-    db.connection()
-        .pragma_update(None, "user_version", 14)
-        .unwrap();
-
-    // The columns already exist, so both runs take the column-check path;
-    // the missing index is recreated either way.
-    db.migrate_v15().unwrap();
-    db.migrate_v15().unwrap();
-
-    let version: i64 = db
-        .conn
-        .pragma_query_value(None, "user_version", |row| row.get(0))
-        .unwrap();
-    assert_eq!(version, 15);
-    let exists: bool = db
-        .conn
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM sqlite_master \
-                 WHERE type = 'index' AND name = 'idx_photos_link_retry')",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert!(exists);
-}
-
-#[test]
-fn migration_v15_completes_a_partial_upgrade() {
-    let db = Db::open_in_memory().unwrap();
-    db.connection()
-        .execute_batch(
-            "DROP INDEX idx_photos_link_retry;\
-                 ALTER TABLE photos DROP COLUMN link_next_retry_at;",
-        )
-        .unwrap();
-    db.connection()
-        .pragma_update(None, "user_version", 14)
-        .unwrap();
-
-    db.migrate_v15().unwrap();
-
-    let column_exists: bool = db
-        .conn
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM pragma_table_info('photos') \
-                 WHERE name = 'link_next_retry_at')",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert!(column_exists);
-    let index_exists: bool = db
-        .conn
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM sqlite_master \
-                 WHERE type = 'index' AND name = 'idx_photos_link_retry')",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert!(index_exists);
-}
-
-#[test]
 fn photo_context_session_id_has_an_index() {
     let db = Db::open_in_memory().unwrap();
     let version: i64 = db
@@ -4087,69 +3240,6 @@ fn photo_context_session_id_has_an_index() {
         sql.to_lowercase().contains("on photo_context(session_id)"),
         "{sql}"
     );
-}
-
-#[test]
-fn schema_v16_adds_ai_tag_group_and_keeps_rows() {
-    let db = Db::open_in_memory().unwrap();
-    let version: i64 = db
-        .connection()
-        .pragma_query_value(None, "user_version", |row| row.get(0))
-        .unwrap();
-    assert_eq!(version, 18);
-    let columns: Vec<String> = db
-        .connection()
-        .prepare_cached("SELECT name FROM pragma_table_info('ai_tag_definitions')")
-        .unwrap()
-        .query_map([], |row| row.get(0))
-        .unwrap()
-        .collect::<rusqlite::Result<_>>()
-        .unwrap();
-    assert!(columns.iter().any(|name| name == "tag_group"));
-}
-
-#[test]
-fn migration_v16_is_retryable_and_keeps_existing_rows() {
-    let db = Db::open_in_memory().unwrap();
-    db.sync_ai_catalog(AI_PLUGIN, &ai_catalog("2026-11-03.1", 0.5, 0.5))
-        .unwrap();
-
-    // Simulate a v15 database that already has catalog rows.
-    db.connection()
-        .execute_batch(
-            "ALTER TABLE ai_tag_definitions DROP COLUMN tag_group;\
-                 DELETE FROM schema_migrations WHERE version = 16;",
-        )
-        .unwrap();
-    db.connection()
-        .pragma_update(None, "user_version", 15)
-        .unwrap();
-
-    db.migrate_v16().unwrap();
-    db.migrate_v16().unwrap();
-
-    let version: i64 = db
-        .conn
-        .pragma_query_value(None, "user_version", |row| row.get(0))
-        .unwrap();
-    assert_eq!(version, 16);
-    let column_exists: bool = db
-        .conn
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM pragma_table_info('ai_tag_definitions') \
-                 WHERE name = 'tag_group')",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert!(column_exists);
-    let definitions = db.ai_tag_definitions(AI_PLUGIN).unwrap();
-    assert_eq!(definitions.len(), 3);
-    let sea = definitions
-        .iter()
-        .find(|definition| definition.tag_key == "sea")
-        .unwrap();
-    assert_eq!(sea.tag_group, "");
 }
 
 #[test]
@@ -4344,87 +3434,6 @@ fn make_unlinked_photos_due_clears_only_unlinked_photos() {
         )
         .unwrap();
     assert_eq!(linked_retry, Some(99_999));
-}
-
-#[test]
-fn migration_v14_upgrades_a_v13_database() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("library.db");
-    {
-        let conn = Connection::open(&path).unwrap();
-        conn.execute_batch(TEST_PRE_V18_PHOTOS).unwrap();
-        conn.execute_batch(
-            "CREATE TABLE schema_migrations (\
-                     version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);\
-                 CREATE TABLE sessions (\
-                     id INTEGER PRIMARY KEY, started_at INTEGER NOT NULL, ended_at INTEGER);\
-                 CREATE TABLE compression_jobs (\
-                     id TEXT PRIMARY KEY, status TEXT NOT NULL, created_at TEXT NOT NULL);\
-                 CREATE TABLE photo_context (\
-                     photo_id INTEGER PRIMARY KEY, session_id INTEGER);\
-                 PRAGMA user_version = 13;",
-        )
-        .unwrap();
-        conn.execute_batch(SCHEMA_V13_AI_TAGGING).unwrap();
-    }
-
-    let db = Db::open(&path).unwrap();
-    let version: i64 = db
-        .connection()
-        .pragma_query_value(None, "user_version", |row| row.get(0))
-        .unwrap();
-    assert_eq!(version, 18);
-    for index in [
-        "idx_jobs_claim",
-        "idx_jobs_created",
-        "idx_sessions_started",
-        "idx_sessions_ended",
-    ] {
-        let exists: bool = db
-            .connection()
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM sqlite_master \
-                     WHERE type = 'index' AND name = ?1)",
-                params![index],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert!(exists, "missing index {index}");
-    }
-    let recorded: i64 = db
-        .connection()
-        .query_row(
-            "SELECT COUNT(*) FROM schema_migrations WHERE version = 14",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert_eq!(recorded, 1);
-}
-
-#[test]
-fn migration_v14_is_retryable() {
-    let db = Db::open_in_memory().unwrap();
-    db.connection()
-        .execute_batch(
-            "DROP INDEX idx_jobs_claim;\
-                 DROP INDEX idx_jobs_created;\
-                 DROP INDEX idx_sessions_started;\
-                 DROP INDEX idx_sessions_ended;",
-        )
-        .unwrap();
-    db.connection()
-        .pragma_update(None, "user_version", 13)
-        .unwrap();
-
-    db.migrate_v14().unwrap();
-    db.migrate_v14().unwrap();
-
-    let version: i64 = db
-        .conn
-        .pragma_query_value(None, "user_version", |row| row.get(0))
-        .unwrap();
-    assert_eq!(version, 14);
 }
 
 #[test]
@@ -7137,62 +6146,6 @@ fn daemon_scan_root_commands_deduplicate_per_path() {
 }
 
 #[test]
-fn migration_v8_adds_the_command_payload_column() {
-    let db = Db::open_in_memory().unwrap();
-    let has_payload: bool = db
-        .conn
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM pragma_table_info('daemon_commands') \
-                 WHERE name = 'payload')",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert!(has_payload);
-
-    // A crash after ALTER but before user_version must be safe to retry.
-    db.conn.pragma_update(None, "user_version", 7).unwrap();
-    db.migrate_v8().unwrap();
-    let version: i64 = db
-        .conn
-        .pragma_query_value(None, "user_version", |row| row.get(0))
-        .unwrap();
-    assert_eq!(version, 8);
-}
-
-#[test]
-fn migration_v9_adds_the_job_photo_profile_index() {
-    let db = Db::open_in_memory().unwrap();
-    let index_sql: String = db
-        .conn
-        .query_row(
-            "SELECT sql FROM sqlite_master \
-                 WHERE type = 'index' AND name = 'idx_jobs_photo_profile'",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    let normalized = index_sql
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .to_lowercase();
-    assert!(
-        normalized.contains("on compression_jobs(photo_id, profile_id)"),
-        "{index_sql}"
-    );
-
-    // A crash after the DDL but before user_version must be safe to retry.
-    db.conn.pragma_update(None, "user_version", 8).unwrap();
-    db.migrate_v9().unwrap();
-    let version: i64 = db
-        .conn
-        .pragma_query_value(None, "user_version", |row| row.get(0))
-        .unwrap();
-    assert_eq!(version, 9);
-}
-
-#[test]
 fn unknown_daemon_rows_are_ignored() {
     let db = Db::open_in_memory().unwrap();
     db.connection()
@@ -8450,93 +7403,6 @@ fn generated_month_and_day_match_the_legacy_formula() {
 }
 
 #[test]
-fn migration_v18_preserves_rows_children_indexes_and_sequence() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("library.db");
-    let (photo_id, derivative_id) = {
-        let db = Db::open(&path).unwrap();
-        let root = db.add_root("/photos", "reference").unwrap();
-        let id = db
-            .upsert_photo(&photo_at(
-                root,
-                "/photos/a.png",
-                1_700_000_000,
-                "2026-11-11 12:00:00.000",
-            ))
-            .unwrap();
-        let derivative = db
-            .add_derivative(id, "/photos/a.webp", "webp", 16, 10, 8, "p", "replace")
-            .unwrap();
-        assert!(db.set_replaced(id, derivative).unwrap());
-        db.request_deletion(&[id], DeletionReason::Manual, false)
-            .unwrap();
-
-        // Simulate the v17 shape: the generated columns did not exist yet.
-        db.connection()
-            .execute_batch(
-                "ALTER TABLE photos DROP COLUMN captured_month;
-                     ALTER TABLE photos DROP COLUMN captured_day;
-                     PRAGMA user_version = 17;",
-            )
-            .unwrap();
-        (id, derivative)
-    };
-
-    let db = Db::open(&path).unwrap();
-    let version: i64 = db
-        .connection()
-        .pragma_query_value(None, "user_version", |row| row.get(0))
-        .unwrap();
-    assert_eq!(version, 18);
-
-    let photo = db.photo_by_id(photo_id).unwrap().unwrap();
-    assert_eq!(photo.display_derivative_id, Some(derivative_id));
-    assert_eq!(db.derivatives_for_photo(photo_id).unwrap().len(), 1);
-    assert!(db.active_deletion_request(photo_id).unwrap().is_some());
-
-    for index in [
-        "idx_photos_captured",
-        "idx_photos_favorite",
-        "idx_photos_blake3",
-        "idx_photos_captured_id",
-        "idx_photos_move_match",
-        "idx_photos_link_retry",
-    ] {
-        let exists: bool = db
-            .connection()
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM sqlite_master \
-                     WHERE type = 'index' AND name = ?1)",
-                params![index],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert!(exists, "missing index {index}");
-    }
-
-    let violations: i64 = db
-        .connection()
-        .query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |row| {
-            row.get(0)
-        })
-        .unwrap();
-    assert_eq!(violations, 0);
-
-    let root_id: i64 = db
-        .connection()
-        .query_row(
-            "SELECT root_id FROM photos WHERE id = ?1",
-            params![photo_id],
-            |row| row.get(0),
-        )
-        .unwrap();
-    let new_id = db
-        .upsert_photo(&sample_photo(root_id, "/photos/b.png", 1_700_000_001))
-        .unwrap();
-    assert!(new_id > photo_id);
-}
-
-#[test]
 fn bundled_sqlite_supports_strftime_in_stored_generated_columns() {
     let db = Db::open_in_memory().unwrap();
     db.connection()
@@ -8565,4 +7431,115 @@ fn bundled_sqlite_supports_strftime_in_stored_generated_columns() {
         )
         .unwrap();
     assert_eq!(month, 202611);
+}
+
+#[test]
+fn fresh_database_is_initialized_to_v18() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("library.db");
+    let db = Db::open(&path).unwrap();
+
+    let version: i64 = db
+        .connection()
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, 18);
+
+    let tables: i64 = db
+        .connection()
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' \
+             AND name IN ('photos', 'library_roots', 'photo_ai', 'send_outbox')",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(tables, 4);
+
+    let generated: i64 = db
+        .connection()
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_xinfo('photos') \
+             WHERE name IN ('captured_month', 'captured_day')",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(generated, 2);
+
+    let migrations_table: i64 = db
+        .connection()
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master \
+             WHERE type = 'table' AND name = 'schema_migrations'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(migrations_table, 0);
+}
+
+#[test]
+fn existing_v18_database_opens_without_reinitializing() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("library.db");
+    let db = Db::open(&path).unwrap();
+    db.connection()
+        .execute(
+            "INSERT INTO app_settings(key, value) VALUES ('marker', 'keep') \
+             ON CONFLICT(key) DO UPDATE SET value = 'keep'",
+            [],
+        )
+        .unwrap();
+    drop(db);
+
+    let db = Db::open(&path).unwrap();
+    let value: String = db
+        .connection()
+        .query_row(
+            "SELECT value FROM app_settings WHERE key = 'marker'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(value, "keep");
+}
+
+#[test]
+fn v17_database_is_rejected_without_modification() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("library.db");
+    {
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE legacy_marker(value TEXT); \
+             INSERT INTO legacy_marker(value) VALUES ('keep');",
+        )
+        .unwrap();
+        conn.pragma_update(None, "user_version", 17).unwrap();
+    }
+    let before = std::fs::read(&path).unwrap();
+
+    let error = match Db::open(&path) {
+        Ok(_) => panic!("expected the v17 database to be rejected"),
+        Err(error) => error,
+    };
+    let CoreError::Invalid(message) = error else {
+        panic!("expected an explicit schema error, got {error:?}");
+    };
+    assert!(message.contains("17"), "{message}");
+    assert!(message.contains("cannot be migrated"), "{message}");
+
+    let after = std::fs::read(&path).unwrap();
+    assert_eq!(before, after, "the rejected database must not be modified");
+
+    let conn = Connection::open(&path).unwrap();
+    let version: i64 = conn
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, 17);
+    let marker: String = conn
+        .query_row("SELECT value FROM legacy_marker", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(marker, "keep");
 }

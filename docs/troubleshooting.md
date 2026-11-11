@@ -264,7 +264,7 @@ sudo apt-get install -f
   - `vrc-photon.log`: UIのログ
   - `vrc-photon-daemon.log`: デーモンのログ
 - 起動時に10 MiB以上だったファイルは `vrc-photon.log.1` のような `.1` へ退避し、新しいファイルを作る。実行中はローテーションしない。
-- `RUST_LOG` は既定フィルタより優先される。既定は `info,<crate>=debug`（UIは `vrc_photonn`、デーモンは `vrc_photon_daemon`）。
+- `RUST_LOG` は既定フィルタより優先される。既定は `info,<crate>=debug`（UIは `vrc_photon`、デーモンは `vrc_photon_daemon`）。
 - ダッシュボードと設定画面の「ログ」カードに保存先と2つのファイル名を表示する。「ログフォルダを開く」でOSのファイラーを開ける。
 - データディレクトリを特定できない場合、ログはstderrだけで動作し、カードに「ログフォルダを特定できません」「ファイルへのログ出力は利用できません」と出る。
 - データディレクトリは解決できるがログファイルを開けない場合もログはstderrだけで動作する。ただしカードは保存先とファイル名を表示したままになる。

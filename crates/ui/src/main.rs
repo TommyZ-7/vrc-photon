@@ -46,7 +46,7 @@ fn exit_startup_failure(context: &str, error: impl std::fmt::Display) -> ! {
 
 fn main() {
     vrc_photon_core::memory::configure_allocator();
-    if logging::init("vrc-photon", "info,vrc_photonn=debug").is_none() {
+    if logging::init("vrc-photon", "info,vrc_photon=debug").is_none() {
         tracing::warn!("file logging is unavailable; using stderr only");
     }
     if timing_enabled() {
