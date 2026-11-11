@@ -3631,38 +3631,48 @@ fn process_decoded_job(
     {
         anyhow::bail!("compressed output is missing or empty");
     }
-    let db = lock_db(db);
-    db.add_derivative(
-        photo.id,
-        &result.output_path.to_string_lossy(),
-        result.format.as_str(),
-        result.width,
-        result.height,
-        result.compressed_size,
-        &profile.id,
-        &job.policy,
-    )?;
-    let current_status = db.photo_by_id(photo.id)?.map(|row| row.status);
-    if job.policy == "replace" && current_status != Some(PhotoStatus::Deleting) {
-        let derivatives = db.derivatives_for_photo(photo.id)?;
-        let profiles = db.list_profiles()?;
-        let preferred = preferred_display_derivative(&derivatives, &profiles)
-            .context("no displayable derivative after compression")?;
+    let preferred_derivative = {
+        let db = lock_db(db);
+        db.add_derivative(
+            photo.id,
+            &result.output_path.to_string_lossy(),
+            result.format.as_str(),
+            result.width,
+            result.height,
+            result.compressed_size,
+            &profile.id,
+            &job.policy,
+        )?;
+        let current_status = db.photo_by_id(photo.id)?.map(|row| row.status);
+        if job.policy == "replace" && current_status != Some(PhotoStatus::Deleting) {
+            let derivatives = db.derivatives_for_photo(photo.id)?;
+            let profiles = db.list_profiles()?;
+            Some(
+                preferred_display_derivative(&derivatives, &profiles)
+                    .context("no displayable derivative after compression")?
+                    .id,
+            )
+        } else {
+            None
+        }
+    };
+    if let Some(preferred_id) = preferred_derivative {
         // The displayed file is about to change. Drop every cached thumbnail
         // for this photo before publishing `replaced`, so the next display
         // request regenerates from the derivative instead of showing the old
-        // original. Failures are non-fatal: the source stamp still invalidates
-        // a stale entry on the next read.
+        // original. The file removal runs without the database lock; failures
+        // are non-fatal because the source stamp still invalidates a stale
+        // entry on the next read.
         if let Some(cache_dir) = thumbnail_dir
             && let Err(error) = thumbnail::remove_thumbnail_files_in(cache_dir, photo.id)
         {
             tracing::warn!(photo_id = photo.id, %error, "cannot invalidate thumbnail cache");
         }
-        if !db.set_replaced(photo.id, preferred.id)? {
-            anyhow::bail!("derivative was not attached to the photo");
-        }
-        db.request_deletion(&[photo.id], DeletionReason::AutoReplace, false)?;
+        let db = lock_db(db);
+        db.complete_replacement(photo.id, preferred_id)?;
+        drop(db);
     }
+    let db = lock_db(db);
     db.update_job(
         &job.id,
         QueueStatus::Completed,
