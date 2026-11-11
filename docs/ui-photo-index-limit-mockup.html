@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VRC PhotoN — 写真一覧の表示上限トースト モック (#546)</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --font: "Inter", "Noto Sans JP", "Hiragino Sans", "Yu Gothic UI", system-ui, -apple-system, sans-serif;
+    --mono: "SFMono-Regular", "Cascadia Code", Consolas, "Liberation Mono", monospace;
+    --text: #eef4ff;
+    --muted: #a8b4ca;
+    --dim: #7f8ba3;
+    --faint: #5e6a81;
+    --accent: #8bcbff;
+    --line: rgba(255, 255, 255, 0.105);
+    --line-soft: rgba(255, 255, 255, 0.075);
+    --bg: #05070d;
+    --panel-card: #0b111c;
+    --panel-2: #111927;
+    --panel-deep: #080d15;
+    --shadow: rgba(0, 0, 0, 0.42);
+    --r-card: 17px;
+    --ease: cubic-bezier(0.22, 0.8, 0.24, 1);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    min-width: 320px;
+    background:
+      radial-gradient(ellipse 56% 46% at 8% 0%, rgba(54, 107, 255, 0.22), transparent 66%),
+      radial-gradient(ellipse 44% 40% at 96% 6%, rgba(255, 86, 181, 0.09), transparent 68%),
+      radial-gradient(ellipse 48% 42% at 62% 102%, rgba(30, 202, 178, 0.07), transparent 68%),
+      linear-gradient(140deg, #04060c 0%, #0a0f1e 44%, #060811 100%);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  .page { width: min(1280px, calc(100% - 48px)); margin: 0 auto; padding: 42px 0 86px; }
+  .masthead { display: flex; align-items: flex-start; justify-content: space-between; gap: 30px; margin-bottom: 26px; }
+  .eyebrow { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; color: var(--muted); font-size: 10px; letter-spacing: .15em; text-transform: uppercase; }
+  .issue-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border: 1px solid rgba(139,203,255,.24); border-radius: 999px; background: rgba(139,203,255,.08); color: var(--accent); font-size: 10px; letter-spacing: .08em; }
+  h1 { margin: 12px 0 10px; font-size: clamp(26px, 3.2vw, 38px); line-height: 1.2; letter-spacing: -.035em; font-weight: 640; }
+  .lede { max-width: 790px; margin: 0; color: var(--muted); font-size: 13px; }
+  .lede b { color: var(--text); font-weight: 560; }
+  .meta-card { flex: none; width: 286px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 16px; background: rgba(13,20,32,.72); box-shadow: inset 0 1px 0 rgba(255,255,255,.03); }
+  .meta-row { display: flex; justify-content: space-between; gap: 18px; padding: 5px 0; color: var(--dim); font-size: 11px; }
+  .meta-row + .meta-row { border-top: 1px solid rgba(255,255,255,.055); }
+  .meta-row b { color: var(--text); font-weight: 550; text-align: right; }
+  .meta-row b.wait { color: #f4c878; }
+
+  .stage {
+    position: relative;
+    margin-top: 26px;
+    padding: 22px;
+    border: 1px solid var(--line);
+    border-radius: 22px;
+    background: rgba(8,13,21,.5);
+    min-height: 620px;
+    overflow: hidden;
+  }
+  .stage-label { position: absolute; top: 14px; left: 22px; color: var(--faint); font-family: var(--mono); font-size: 9px; letter-spacing: .12em; text-transform: uppercase; }
+  .app-bar { display: flex; align-items: center; gap: 14px; padding: 12px 16px; margin: 18px 0 16px; border: 1px solid var(--line-soft); border-radius: 14px; background: rgba(11,17,28,.86); }
+  .app-title { font-weight: 600; letter-spacing: -.01em; }
+  .app-title span { color: var(--dim); font-weight: 400; font-size: 11px; margin-left: 8px; }
+  .app-search { flex: 1; height: 28px; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--panel-deep); color: var(--dim); font-size: 10px; display: flex; align-items: center; padding: 0 10px; }
+  .app-count { color: var(--dim); font-size: 10px; white-space: nowrap; }
+
+  .grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+  .tile {
+    aspect-ratio: 4 / 3;
+    border: 1px solid var(--line-soft);
+    border-radius: 10px;
+    background:
+      linear-gradient(135deg, rgba(139,203,255,.12), transparent 44%),
+      linear-gradient(315deg, rgba(255,86,181,.10), transparent 50%),
+      var(--panel-2);
+    position: relative;
+    overflow: hidden;
+  }
+  .tile::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, transparent 56%, rgba(0,0,0,.38));
+  }
+  .tile .cap { position: absolute; left: 7px; bottom: 5px; z-index: 1; color: rgba(238,244,255,.72); font-family: var(--mono); font-size: 8px; letter-spacing: .02em; }
+  .tile:nth-child(3n) { background: linear-gradient(135deg, rgba(126,226,184,.10), transparent 48%), var(--panel-2); }
+  .tile:nth-child(4n) { background: linear-gradient(135deg, rgba(244,200,120,.09), transparent 46%), var(--panel-2); }
+
+  /* gpui-component NotificationList 相当の見た目 */
+  .toast-stack { position: absolute; right: 22px; bottom: 22px; z-index: 5; width: min(380px, calc(100% - 44px)); display: flex; flex-direction: column; gap: 8px; }
+  .toast {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 12px 14px;
+    border: 1px solid rgba(139,203,255,.28);
+    border-radius: 12px;
+    background: rgba(13,20,32,.96);
+    box-shadow: 0 18px 44px var(--shadow), inset 0 1px 0 rgba(255,255,255,.035);
+    animation: toast-in .22s var(--ease) both;
+  }
+  @keyframes toast-in { from { opacity: 0; transform: translateY(8px) scale(.985); } to { opacity: 1; transform: none; } }
+  .toast-icon {
+    flex: none;
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+    border-radius: 50%;
+    border: 1px solid rgba(139,203,255,.5);
+    color: var(--accent);
+    display: grid;
+    place-items: center;
+    font-family: var(--mono);
+    font-size: 10px;
+    line-height: 1;
+  }
+  .toast-body { min-width: 0; }
+  .toast-title { color: var(--text); font-size: 12px; font-weight: 600; letter-spacing: -.005em; }
+  .toast-message { margin-top: 2px; color: var(--muted); font-size: 11px; line-height: 1.5; }
+  .toast-close { margin-left: auto; color: var(--faint); font-size: 12px; line-height: 1; padding: 2px; }
+
+  .note { margin-top: 22px; padding: 14px 16px; border: 1px solid var(--line-soft); border-radius: 14px; background: rgba(13,20,32,.58); color: var(--muted); font-size: 11.5px; }
+  .note b { color: var(--text); font-weight: 560; }
+  .note code { color: var(--accent); font-family: var(--mono); font-size: 10.5px; }
+  @media (max-width: 900px) {
+    .masthead { flex-direction: column; }
+    .meta-card { width: 100%; }
+    .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="masthead">
+    <div>
+      <div class="eyebrow"><span class="issue-chip">#546</span><span>Photo index limit</span></div>
+      <h1>写真一覧の表示上限トースト</h1>
+      <p class="lede">ライブラリが <b>200,000 枚</b>を超えたとき、一覧の先頭 200,000 枚だけを表示していることを <b>既存のトースト通知</b>で 1 回だけ知らせる。バナーや新しい画面は追加しない。</p>
+    </div>
+    <aside class="meta-card">
+      <div class="meta-row"><span>通知種別</span><b>Info</b></div>
+      <div class="meta-row"><span>表示位置</span><b>右下（既存 NotificationList）</b></div>
+      <div class="meta-row"><span>表示回数</span><b class="wait">切り詰め開始時の 1 回</b></div>
+      <div class="meta-row"><span>文言</span><b>ja / en 両方</b></div>
+    </aside>
+  </header>
+
+  <section class="stage">
+    <div class="stage-label">Library — 200,000 / 240,000 photos</div>
+    <div class="app-bar">
+      <div class="app-title">ライブラリ <span>すべての写真</span></div>
+      <div class="app-search">検索</div>
+      <div class="app-count">240,000 枚</div>
+    </div>
+    <div class="grid">
+      <div class="tile"><span class="cap">2026-11-11 21:04</span></div>
+      <div class="tile"><span class="cap">2026-11-11 21:03</span></div>
+      <div class="tile"><span class="cap">2026-11-11 21:02</span></div>
+      <div class="tile"><span class="cap">2026-11-11 21:01</span></div>
+      <div class="tile"><span class="cap">2026-11-11 21:00</span></div>
+      <div class="tile"><span class="cap">2026-11-11 20:58</span></div>
+      <div class="tile"><span class="cap">2026-11-11 20:57</span></div>
+      <div class="tile"><span class="cap">2026-11-11 20:56</span></div>
+      <div class="tile"><span class="cap">2026-11-11 20:55</span></div>
+      <div class="tile"><span class="cap">2026-11-11 20:54</span></div>
+      <div class="tile"><span class="cap">2026-11-11 20:52</span></div>
+      <div class="tile"><span class="cap">2026-11-11 20:51</span></div>
+      <div class="tile"><span class="cap">2026-11-11 20:50</span></div>
+      <div class="tile"><span class="cap">2026-11-11 20:49</span></div>
+      <div class="tile"><span class="cap">2026-11-11 20:48</span></div>
+    </div>
+
+    <div class="toast-stack">
+      <div class="toast">
+        <div class="toast-icon">i</div>
+        <div class="toast-body">
+          <div class="toast-title">表示上限</div>
+          <div class="toast-message">写真が多いため、先頭 200,000 枚のみ表示しています。</div>
+        </div>
+        <div class="toast-close">×</div>
+      </div>
+    </div>
+  </section>
+
+  <div class="note">
+    <b>実装メモ:</b> トーストは既存の <code>toast_info</code> を使い、<code>library_truncated_notified</code> で再読込ごとの連発を防ぐ。文言キーは <code>photos.index_truncated</code>。写真が 200,000 枚以下に戻ったらフラグをリセットする。
+  </div>
+</div>
+</body>
+</html>

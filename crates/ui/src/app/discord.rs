@@ -10,7 +10,7 @@ use gpui_kit::component::WindowExt;
 use gpui_kit::component::button::ButtonVariant;
 use gpui_kit::*;
 use vrc_photon_core::discord::{WebhookUrlError, validate_webhook_url};
-use vrc_photon_core::model::{PhotoStatus, SendKind, SendOrigin, SendStatus};
+use vrc_photon_core::model::{PhotoStatus, SendHistoryEntry, SendKind, SendOrigin, SendStatus};
 use vrc_photon_core::settings::{
     AppSettings, DiscordAutoMode, clear_discord_webhook, save_discord_webhook,
 };
@@ -382,29 +382,42 @@ impl App {
     /// Refreshes the history page and the waiting-queue badge. A queued test
     /// send reports its result once its row reaches a terminal state.
     pub(crate) fn reload_send_history(&mut self, cx: &mut Context<Self>) {
-        match self.db.send_history(100) {
-            Ok(history) => self.send_history = history,
-            Err(error) => tracing::warn!(%error, "cannot load the Discord send history"),
+        let history = match self.db.send_history(100) {
+            Ok(history) => Some(history),
+            Err(error) => {
+                tracing::warn!(%error, "cannot load the Discord send history");
+                None
+            }
+        };
+        let waiting = match self.db.count_waiting_sends() {
+            Ok(count) => Some(count),
+            Err(error) => {
+                tracing::warn!(%error, "cannot count waiting Discord sends");
+                None
+            }
+        };
+        self.apply_send_history(history, waiting, cx);
+    }
+
+    /// Applies send rows that were read on a background connection.
+    pub(crate) fn apply_send_history(
+        &mut self,
+        history: Option<Vec<SendHistoryEntry>>,
+        waiting: Option<i64>,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(history) = history {
+            self.send_history = history;
         }
-        match self.db.count_waiting_sends() {
-            Ok(count) => self.send_waiting_count = count,
-            Err(error) => tracing::warn!(%error, "cannot count waiting Discord sends"),
+        if let Some(count) = waiting {
+            self.send_waiting_count = count;
         }
         if let Some(id) = self.pending_test_send {
-            // The row was just enqueued, so it leads the page; the direct read
-            // only covers a failed history query.
             let status = self
                 .send_history
                 .iter()
                 .find(|entry| entry.entry.id == id)
-                .map(|entry| entry.entry.status)
-                .or_else(|| {
-                    self.db
-                        .send_entry_by_id(id)
-                        .ok()
-                        .flatten()
-                        .map(|entry| entry.status)
-                });
+                .map(|entry| entry.entry.status);
             match status {
                 Some(SendStatus::Sent) => {
                     self.pending_test_send = None;
