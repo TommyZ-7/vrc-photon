@@ -73,6 +73,16 @@ impl Default for EventBus {
 impl EventBus {
     pub(crate) fn publish(&self, event: vrc_photon_ipc::Event) {
         let mut subscribers = self.subscribers.lock().unwrap();
+        if subscribers.len() == 1 {
+            // The usual case is one UI subscriber. Move the event instead of
+            // cloning it for a fan-out that has only one target.
+            match subscribers[0].try_send(event) {
+                Ok(()) => {}
+                Err(TrySendError::Full(_)) => {}
+                Err(TrySendError::Disconnected(_)) => subscribers.clear(),
+            }
+            return;
+        }
         subscribers.retain(|sender| match sender.try_send(event.clone()) {
             Ok(()) => true,
             // The subscriber is behind: drop this event for it, but keep the
@@ -1484,6 +1494,26 @@ mod tests {
             status: StatusSnapshot::default(),
         });
         assert_eq!(bus.subscribers.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn event_bus_delivers_to_a_single_subscriber_and_prunes_it() {
+        let bus = EventBus::default();
+        let subscriber = bus.subscribe();
+
+        bus.publish(Event::StatusChanged {
+            status: StatusSnapshot::default(),
+        });
+        assert!(matches!(
+            subscriber.try_recv(),
+            Ok(Event::StatusChanged { .. })
+        ));
+
+        drop(subscriber);
+        bus.publish(Event::StatusChanged {
+            status: StatusSnapshot::default(),
+        });
+        assert!(bus.subscribers.lock().unwrap().is_empty());
     }
 
     #[test]
