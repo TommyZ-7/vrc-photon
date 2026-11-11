@@ -14,6 +14,7 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use crate::DaemonStatus;
+use crate::lock::lock_status;
 use crate::signals::WakeSignal;
 
 /// Restart delays after a worker panic: 1s, 2s, 5s, 10s, then 30s. A worker
@@ -73,10 +74,9 @@ pub(crate) fn panic_message(payload: &(dyn Any + Send)) -> String {
 /// the log line scrolls away. The status lock is best effort: a panic while it
 /// was held must not stop the supervisor itself.
 pub(crate) fn record_restart(status: &Arc<Mutex<DaemonStatus>>, worker: &str, message: &str) {
-    if let Ok(mut status) = status.lock() {
-        status.worker_restarts = status.worker_restarts.saturating_add(1);
-        status.last_worker_error = Some(format!("{worker}: {message}"));
-    }
+    let mut status = lock_status(status);
+    status.worker_restarts = status.worker_restarts.saturating_add(1);
+    status.last_worker_error = Some(format!("{worker}: {message}"));
 }
 
 /// Spawns a supervised long-lived worker. Returns the spawn error so the

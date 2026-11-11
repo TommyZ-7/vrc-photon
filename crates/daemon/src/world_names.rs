@@ -14,6 +14,7 @@ use vrc_photon_core::world_name::{
     REQUEST_INTERVAL_SECONDS, WorldNameFailure, WorldNameLookup, backoff_seconds,
 };
 
+use crate::lock::lock_db;
 use crate::signals::JobSignal;
 use crate::world_name_http::{WorldNameOutcome, WorldNameTransport};
 
@@ -55,7 +56,7 @@ pub fn process_next_world_name(
     now: i64,
 ) -> Result<Option<WorldNameStep>> {
     let Some(lookup) = ({
-        let db = db.lock().unwrap();
+        let db = lock_db(db);
         db.next_due_world_name_lookup(now)?
     }) else {
         return Ok(None);
@@ -75,7 +76,7 @@ fn record_outcome(
 ) -> Result<WorldNameStep> {
     let world_db_id = lookup.world_db_id;
     let (step, code) = {
-        let db = db.lock().unwrap();
+        let db = lock_db(db);
         match outcome {
             WorldNameOutcome::Found(name) => {
                 db.record_world_name_resolved(world_db_id, &name, now)?;
@@ -188,7 +189,7 @@ pub fn worker_loop(
 ) {
     let mut seen_generation = 0;
     let mut next_request_at = {
-        let db = db.lock().unwrap();
+        let db = lock_db(&db);
         match initial_next_request_at(&db) {
             Ok(value) => value,
             Err(_) => {
@@ -221,7 +222,7 @@ pub fn worker_loop(
         // Check before reserving: an empty queue must not push the next
         // request out by a full interval.
         let due_world_db_id = {
-            let db = db.lock().unwrap();
+            let db = lock_db(&db);
             match db.next_due_world_name_lookup(now) {
                 Ok(lookup) => lookup.map(|lookup| lookup.world_db_id),
                 Err(_) => {
@@ -242,7 +243,7 @@ pub fn worker_loop(
         // the next process waiting the full interval.
         let reserved = now + REQUEST_INTERVAL_SECONDS;
         let reserved_ok = {
-            let db = db.lock().unwrap();
+            let db = lock_db(&db);
             db.set_world_name_next_request_at(reserved).is_ok()
         };
         if !reserved_ok {
@@ -261,7 +262,7 @@ pub fn worker_loop(
                 // A 429 (or a longer 5xx backoff) extends the reservation.
                 if step.next_request_at != reserved {
                     let extended = {
-                        let db = db.lock().unwrap();
+                        let db = lock_db(&db);
                         db.set_world_name_next_request_at(step.next_request_at)
                             .is_ok()
                     };

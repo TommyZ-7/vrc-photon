@@ -21,6 +21,7 @@ use vrc_photon_ipc::{
 };
 
 use crate::DaemonStatus;
+use crate::lock::{lock_db, lock_status};
 use crate::plugin::{AI_PLUGIN_ID, PluginError, PluginService};
 use crate::signals::{JobSignal, WakeSignal};
 use crate::tagging::TaggingControl;
@@ -147,12 +148,13 @@ pub(crate) struct IpcControl {
 
 impl IpcControl {
     fn snapshot(&self) -> StatusSnapshot {
-        status_snapshot(&mut self.status.lock().unwrap())
+        let mut status = lock_status(&self.status);
+        status_snapshot(&mut status)
     }
 
     fn set_paused(&self, paused: bool) {
         {
-            let mut status = self.status.lock().unwrap();
+            let mut status = lock_status(&self.status);
             status.paused = paused;
         }
         self.paused.store(paused, Ordering::Relaxed);
@@ -201,7 +203,7 @@ pub(crate) fn status_snapshot(status: &mut DaemonStatus) -> StatusSnapshot {
 /// Reads the AI tagging status fields without holding the status lock.
 pub(crate) fn tagging_status(db: &Arc<Mutex<Db>>, plugin: &PluginService) -> (i64, bool) {
     let pending_tagging_jobs = {
-        let db = db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let db = lock_db(db);
         match db.tagging_job_counts(AI_PLUGIN_ID) {
             Ok(counts) => counts.unfinished(),
             Err(error) => {
