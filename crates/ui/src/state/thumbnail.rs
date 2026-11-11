@@ -79,6 +79,10 @@ pub(crate) struct DecodeTicket {
 #[derive(Default)]
 pub(crate) struct ThumbnailCache {
     images: HashMap<i64, Arc<RenderImage>>,
+    /// Images removed from the cache whose atlas tiles still need dropping.
+    /// They are kept here because the caller must release the cache borrow
+    /// before it can touch the window.
+    removed: Vec<Arc<RenderImage>>,
     colors: HashMap<i64, u32>,
     /// Monotonic access tick per cached id. `get` updates a single entry
     /// instead of scanning an order list for every visible card.
@@ -129,6 +133,12 @@ impl ThumbnailCache {
         self.disk_refresh_due.drain().collect()
     }
 
+    /// Drains images removed from the cache so the caller can drop their
+    /// atlas tiles after releasing the cache borrow.
+    pub(crate) fn take_removed(&mut self) -> Vec<Arc<RenderImage>> {
+        std::mem::take(&mut self.removed)
+    }
+
     #[allow(dead_code)]
     pub(crate) fn generation(&self) -> u64 {
         self.generation
@@ -141,7 +151,9 @@ impl ThumbnailCache {
     /// even when the settings change mid-decode.
     pub(crate) fn clear(&mut self) {
         self.generation = self.generation.wrapping_add(1);
-        self.images.clear();
+        for (_, image) in self.images.drain() {
+            self.removed.push(image);
+        }
         self.colors.clear();
         self.recency.clear();
         self.image_bytes.clear();
@@ -193,13 +205,32 @@ impl ThumbnailCache {
     pub(crate) fn invalidate(&mut self, id: i64) {
         let generation = self.photo_generation(id).wrapping_add(1);
         self.photo_generations.insert(id, generation);
-        self.remove_entry(id);
+        if let Some(image) = self.remove_entry(id) {
+            self.removed.push(image);
+        }
         self.last_disk_refresh.remove(&id);
         self.disk_refresh_due.remove(&id);
         if self.pending.remove(&id).is_some() {
             self.in_flight = self.in_flight.saturating_sub(1);
         }
         self.failed.remove(&id);
+    }
+
+    /// Drops every trace of a deleted photo, including its atlas-bound image.
+    pub(crate) fn remove_photo(&mut self, id: i64) {
+        if let Some(image) = self.remove_entry(id) {
+            self.removed.push(image);
+        }
+        self.last_disk_refresh.remove(&id);
+        self.disk_refresh_due.remove(&id);
+        if self.pending.remove(&id).is_some() {
+            self.in_flight = self.in_flight.saturating_sub(1);
+        }
+        self.failed.remove(&id);
+        self.photo_generations.remove(&id);
+        if self.pinned == Some(id) {
+            self.pinned = None;
+        }
     }
 
     fn photo_generation(&self, id: i64) -> u64 {
@@ -281,7 +312,9 @@ impl ThumbnailCache {
         if self.pending.remove(&id).is_some() {
             self.in_flight = self.in_flight.saturating_sub(1);
         }
-        self.remove_entry(id);
+        if let Some(old) = self.remove_entry(id) {
+            self.removed.push(old);
+        }
         self.images.insert(id, image);
         self.colors.insert(id, color);
         self.image_bytes.insert(id, bytes);
@@ -372,13 +405,14 @@ impl ThumbnailCache {
         self.recency.insert(id, self.clock);
     }
 
-    fn remove_entry(&mut self, id: i64) {
+    fn remove_entry(&mut self, id: i64) -> Option<Arc<RenderImage>> {
         if let Some(bytes) = self.image_bytes.remove(&id) {
             self.total_bytes = self.total_bytes.saturating_sub(bytes);
         }
-        self.images.remove(&id);
+        let image = self.images.remove(&id);
         self.colors.remove(&id);
         self.recency.remove(&id);
+        image
     }
 
     fn evict(&mut self) {
@@ -393,7 +427,9 @@ impl ThumbnailCache {
                 // when its single image exceeds the budget.
                 break;
             };
-            self.remove_entry(victim);
+            if let Some(image) = self.remove_entry(victim) {
+                self.removed.push(image);
+            }
             self.last_disk_refresh.remove(&victim);
             self.disk_refresh_due.remove(&victim);
         }
@@ -589,7 +625,7 @@ where
 }
 
 fn decode_thumbnail_file(_id: i64, path: &Path) -> Option<(u32, image::RgbaImage)> {
-    let buffer = vrc_photon_core::image_decode::decode_image(path)?.to_rgba8();
+    let buffer = vrc_photon_core::image_decode::decode_image(path)?.into_rgba8();
     let buffer = rgba_to_bgra(buffer);
     let color = average_bgra(buffer.as_raw());
     Some((color, buffer))
@@ -598,7 +634,7 @@ fn decode_thumbnail_file(_id: i64, path: &Path) -> Option<(u32, image::RgbaImage
 /// Builds a GPUI image from a decoded buffer. Must run on the UI thread.
 pub(crate) fn make_render_image(rgba: image::RgbaImage) -> Arc<RenderImage> {
     let frame = image::Frame::new(rgba);
-    Arc::new(RenderImage::new(SmallVec::from_elem(frame, 1)))
+    Arc::new(RenderImage::new(SmallVec::from_buf([frame])))
 }
 
 /// Swaps RGBA to the BGRA order GPUI's `RenderImage` expects. Call this on the
@@ -619,7 +655,15 @@ mod tests {
 
     fn test_render_image() -> Arc<RenderImage> {
         let frame = image::Frame::new(image::RgbaImage::new(1, 1));
-        Arc::new(RenderImage::new(SmallVec::from_elem(frame, 1)))
+        Arc::new(RenderImage::new(SmallVec::from_buf([frame])))
+    }
+
+    #[test]
+    fn make_render_image_moves_the_buffer_without_changing_its_bytes() {
+        let rgba = image::RgbaImage::from_pixel(1, 1, image::Rgba([30, 20, 10, 40]));
+        let image = make_render_image(rgba);
+        assert_eq!(image.frame_count(), 1);
+        assert_eq!(image.as_bytes(0), Some([30, 20, 10, 40].as_slice()));
     }
 
     #[test]
@@ -708,6 +752,45 @@ mod tests {
         assert!(cache.get(2).is_some());
         assert!(cache.get(3).is_some());
         assert!(cache.total_bytes <= THUMB_CACHE_BYTES);
+    }
+
+    #[test]
+    fn eviction_queues_the_removed_image_for_the_atlas() {
+        let mut cache = ThumbnailCache::default();
+        for id in 1..=THUMB_CACHE_ENTRIES as i64 {
+            cache.insert(id, test_render_image(), 0);
+        }
+        cache.insert(999, test_render_image(), 0);
+
+        assert_eq!(cache.take_removed().len(), 1);
+        assert!(cache.take_removed().is_empty());
+    }
+
+    #[test]
+    fn clear_queues_every_cached_image_for_the_atlas() {
+        let mut cache = ThumbnailCache::default();
+        cache.insert(1, test_render_image(), 0);
+        cache.insert(2, test_render_image(), 0);
+
+        cache.clear();
+
+        assert_eq!(cache.take_removed().len(), 2);
+    }
+
+    #[test]
+    fn invalidate_and_remove_photo_queue_their_images() {
+        let mut cache = ThumbnailCache::default();
+        cache.pin(7);
+        cache.insert(7, test_render_image(), 0);
+        cache.invalidate(7);
+        assert_eq!(cache.take_removed().len(), 1);
+
+        cache.insert(8, test_render_image(), 0);
+        cache.pin(8);
+        cache.remove_photo(8);
+        assert_eq!(cache.take_removed().len(), 1);
+        assert_eq!(cache.pinned, None);
+        assert!(cache.get(8).is_none());
     }
 
     #[test]

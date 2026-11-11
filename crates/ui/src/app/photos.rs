@@ -31,6 +31,9 @@ use crate::ui::components::photo_scene_key;
 /// Delay before a partial thumbnail notice batch is reported. Keeps a quiet
 /// gallery's generated files visible to the daemon without one request each.
 const THUMBNAIL_NOTICE_DELAY: Duration = Duration::from_secs(1);
+/// Quiet period before returning freed image pages to the OS. Restarted by
+/// each new decode or scroll event so a burst produces one collection.
+const ALLOCATOR_COLLECT_DELAY: Duration = Duration::from_secs(1);
 
 #[derive(Debug)]
 enum TrashOutcome {
@@ -126,6 +129,39 @@ impl App {
                 // every in-flight slot was busy; a freed slot is its retry.
                 this.retry_pinned_thumbnail(cx);
                 this.notify_thumbnail_loaded(cx);
+                this.schedule_allocator_collect(cx);
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// Returns freed mimalloc pages once image work has been quiet for a
+    /// second. The timer restarts on every new decode or scroll event; the
+    /// actual collection runs on the background executor.
+    pub(crate) fn schedule_allocator_collect(&mut self, cx: &mut Context<Self>) {
+        self.allocator_collect_epoch = self.allocator_collect_epoch.wrapping_add(1);
+        if self.allocator_collect_pending {
+            return;
+        }
+        self.allocator_collect_pending = true;
+        let epoch = self.allocator_collect_epoch;
+        cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(ALLOCATOR_COLLECT_DELAY)
+                .await;
+            this.update(cx, |this, cx| {
+                if this.allocator_collect_epoch != epoch {
+                    this.allocator_collect_pending = false;
+                    this.schedule_allocator_collect(cx);
+                    return;
+                }
+                this.allocator_collect_pending = false;
+                cx.background_executor()
+                    .spawn(async move {
+                        vrc_photon_core::memory::collect_allocator();
+                    })
+                    .detach();
             })
             .ok();
         })
@@ -327,7 +363,9 @@ impl App {
                         && should_apply_image(selected, key)
                         && let Some(rgba) = decoded
                     {
-                        this.full_image = Some(make_render_image(rgba));
+                        if let Some(previous) = this.full_image.replace(make_render_image(rgba)) {
+                            this.queue_atlas_drop(previous);
+                        }
                         this.full_image_key = Some(key);
                     }
                     this.pump_full_image(cx);
@@ -341,7 +379,9 @@ impl App {
     }
 
     pub(crate) fn reset_full_image(&mut self) {
-        self.full_image = None;
+        if let Some(image) = self.full_image.take() {
+            self.queue_atlas_drop(image);
+        }
         self.full_image_key = None;
         self.full_image_queue.cancel_wanted();
     }
@@ -352,7 +392,9 @@ impl App {
         self.reset_full_image();
         self.zoom = Default::default();
         self.zoom_drag = None;
-        self.previous_image = None;
+        if let Some(image) = self.previous_image.take() {
+            self.queue_atlas_drop(image);
+        }
     }
 
     /// Drops the in-memory thumbnail and full image for a photo whose display
@@ -362,7 +404,9 @@ impl App {
         self.thumbnails.borrow_mut().invalidate(id);
         if self.selected == Some(id) {
             self.reset_full_image();
-            self.previous_image = None;
+            if let Some(image) = self.previous_image.take() {
+                self.queue_atlas_drop(image);
+            }
             cx.notify();
         }
     }
@@ -1001,7 +1045,7 @@ impl App {
             self.search_view.borrow_mut().invalidate_pages();
         }
         for id in removed {
-            self.thumbnails.borrow_mut().unpin(*id);
+            self.thumbnails.borrow_mut().remove_photo(*id);
         }
         self.selected_ids.remove_all(removed);
         if self
