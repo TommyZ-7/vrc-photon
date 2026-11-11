@@ -49,6 +49,8 @@ impl LogEvent {
 fn line_regex() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
+        // The pattern is a compile-time literal covered by the log parser
+        // tests; a failure here is a programming error, not log input.
         Regex::new(
             r"^(?P<ts>\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}:\d{2})\s+\w+\s+-\s+\[(?P<topic>[^\]]+)\]\s+(?P<msg>.*)$",
         )
