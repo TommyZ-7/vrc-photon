@@ -575,8 +575,8 @@ pub fn ensure_thumbnail_in_with_status(
     match publish_thumbnail_bytes(&output, &encoded)? {
         PlaceOutcome::Placed => {
             if let Err(error) = cache_metadata::write_stamp(&output, stamp) {
-                // The thumbnail itself is valid; a missing stamp only forces
-                // one regeneration on the next request.
+                // Best effort: the thumbnail itself is valid; a missing stamp
+                // only forces one regeneration on the next request.
                 tracing::warn!(
                     %error,
                     photo_id,

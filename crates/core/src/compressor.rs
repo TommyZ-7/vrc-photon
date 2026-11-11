@@ -58,7 +58,7 @@ pub fn compress_decoded(
     let mut number = 0;
     let output_path = loop {
         let candidate = output_candidate(&output_dir, &base, &extension, source, number);
-        match fs_safe::write_bytes_no_clobber(&candidate, &bytes) {
+        match fs_safe::write_bytes_no_clobber_durable(&candidate, &bytes) {
             Ok(PlaceOutcome::Placed) => break candidate,
             Ok(PlaceOutcome::DestinationExists) => number += 1,
             Err(error) => return Err(CoreError::Io(error)),
