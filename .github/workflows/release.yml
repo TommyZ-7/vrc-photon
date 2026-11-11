@@ -48,33 +48,19 @@ jobs:
     needs: changes
     if: needs.changes.outputs.bundle == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ghcr.io/tommyz-7/vrc-photon-ci:ubuntu-24.04-v1
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           fetch-tags: true
-
-      - name: Install Linux dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential \
-            pkg-config \
-            cmake \
-            ninja-build \
-            clang \
-            libxkbcommon-dev \
-            libxkbcommon-x11-dev \
-            libx11-xcb-dev \
-            libxcb-xkb-dev \
-            libwayland-dev \
-            libvulkan-dev \
-            libx11-dev \
-            libxcb1-dev \
-            libfontconfig1-dev \
-            libfreetype6-dev \
-            squashfs-tools \
-            file
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
