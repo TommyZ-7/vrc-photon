@@ -144,6 +144,9 @@ pub(crate) struct IpcControl {
     pub(crate) tagging: Arc<JobSignal>,
     pub(crate) tagging_control: Arc<TaggingControl>,
     pub(crate) db: Arc<Mutex<Db>>,
+    /// Read-only connection used by search, detail, random, and stats IPC
+    /// requests so a long read does not wait behind the writer.
+    pub(crate) read_db: Arc<Mutex<Db>>,
 }
 
 impl IpcControl {
@@ -700,7 +703,7 @@ fn library_search_response(
     };
     let result = (|| -> vrc_photon_core::Result<PhotoSearch> {
         let db = control
-            .db
+            .read_db
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         let total = db.count_photos_text(&filter)?;
@@ -751,7 +754,7 @@ fn random_library_search_response(
     let seed = seed.unwrap_or_else(random_seed);
     let result = (|| -> vrc_photon_core::Result<RandomPhotoSearch> {
         let db = control
-            .db
+            .read_db
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         let sample = db.random_photos_text(&filter, i64::from(limit), seed)?;
@@ -787,7 +790,7 @@ fn random_seed() -> u64 {
 fn library_photo_response(control: &IpcControl, photo_id: i64) -> Response {
     let result = (|| -> vrc_photon_core::Result<Option<PhotoDetail>> {
         let db = control
-            .db
+            .read_db
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         let Some(photo) = db.photo_by_id(photo_id)? else {
@@ -832,7 +835,7 @@ fn library_worlds_response(control: &IpcControl) -> Response {
 fn library_stats_response(control: &IpcControl) -> Response {
     let result = (|| -> vrc_photon_core::Result<IpcLibraryStats> {
         let db = control
-            .db
+            .read_db
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         let stats = db.stats()?;
@@ -1004,7 +1007,9 @@ mod tests {
     fn test_control_with_keys(keys: Vec<String>) -> (tempfile::TempDir, Endpoint, IpcControl) {
         let dir = tempfile::tempdir().unwrap();
         let endpoint = Endpoint::for_tests(dir.path());
-        let db = Arc::new(Mutex::new(Db::open(dir.path().join("library.db")).unwrap()));
+        let db_path = dir.path().join("library.db");
+        let db = Arc::new(Mutex::new(Db::open(&db_path).unwrap()));
+        let read_db = Arc::new(Mutex::new(Db::open_read_only(&db_path).unwrap()));
         let events = EventBus::default();
         let tagging = Arc::new(JobSignal::default());
         let plugin = PluginService::new(
@@ -1030,8 +1035,47 @@ mod tests {
             tagging: tagging.clone(),
             tagging_control: Arc::new(TaggingControl::new(tagging)),
             db,
+            read_db,
         };
         (dir, endpoint, control)
+    }
+
+    #[test]
+    fn read_connection_is_separate_from_the_writer() {
+        let (_dir, _endpoint, control) = test_control();
+        assert!(!Arc::ptr_eq(&control.db, &control.read_db));
+    }
+
+    #[test]
+    fn search_does_not_wait_for_the_writer_lock() {
+        let (_dir, _endpoint, control) = test_control();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let guard = lock_db(&control.db);
+        let control_ref = &control;
+        std::thread::scope(|scope| {
+            let tx = tx.clone();
+            scope.spawn(move || {
+                let response = library_search_response(
+                    control_ref,
+                    None,
+                    None,
+                    None,
+                    Vec::new(),
+                    None,
+                    None,
+                    false,
+                    10,
+                    0,
+                );
+                let _ = tx.send(matches!(response, Response::Photos { .. }));
+            });
+            let searched_without_waiting = rx.recv_timeout(Duration::from_secs(2)).unwrap_or(false);
+            drop(guard);
+            assert!(
+                searched_without_waiting,
+                "search must use the read connection instead of waiting for the writer"
+            );
+        });
     }
 
     fn seed_library(control: &IpcControl) -> (i64, i64) {
