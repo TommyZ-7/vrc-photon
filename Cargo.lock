@@ -2404,8 +2404,7 @@ dependencies = [
 [[package]]
 name = "gpui-fast"
 version = "0.1.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8c3a7e25e5a4789656da980b0316857acbdb72347b5d890d7d0c549bb9fee72"
+source = "git+https://github.com/TommyZ-7/gpui-fast?rev=a3c3ac550d16bfb70e9f55c2cd46bf9d68cd4b73#a3c3ac550d16bfb70e9f55c2cd46bf9d68cd4b73"
 dependencies = [
  "accesskit",
  "anyhow",
@@ -2596,8 +2595,7 @@ dependencies = [
 [[package]]
 name = "gpui-fast-macros"
 version = "0.1.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "269fc24ab55f85d5fb90ce812b3e6adcf5ad0bdccc79a08aa9ddd88a3a477494"
+source = "git+https://github.com/TommyZ-7/gpui-fast?rev=a3c3ac550d16bfb70e9f55c2cd46bf9d68cd4b73#a3c3ac550d16bfb70e9f55c2cd46bf9d68cd4b73"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
@@ -3518,7 +3516,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.58.0",
+ "windows-core 0.62.2",
 ]
 
 [[package]]
