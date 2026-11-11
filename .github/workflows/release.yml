@@ -62,13 +62,6 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      - name: Show packaging tools
-        run: |
-          for tool in patchelf strip objcopy ldd file mksquashfs zsyncmake desktop-file-validate update-desktop-database gdk-pixbuf-query-loaders glib-compile-schemas update-mime-database; do
-            printf '%-30s ' "$tool"
-            command -v "$tool" || echo MISSING
-          done
-
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 

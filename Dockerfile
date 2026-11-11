@@ -22,6 +22,7 @@ RUN apt-get update \
         jq \
         libfontconfig1-dev \
         libfreetype6-dev \
+        libgdk-pixbuf-2.0-0 \
         libglib2.0-bin \
         libwayland-dev \
         libx11-dev \
@@ -37,4 +38,5 @@ RUN apt-get update \
         shared-mime-info \
         squashfs-tools \
         zsync \
+    && ln -sf /usr/lib/x86_64-linux-gnu/gdk-pixbuf-2.0/gdk-pixbuf-query-loaders /usr/local/bin/gdk-pixbuf-query-loaders \
     && rm -rf /var/lib/apt/lists/*
