@@ -195,11 +195,11 @@
 - ワーカーの依存（`Arc<Mutex<Db>>`, `AtomicBool`, チャネル）は構造体フィールドにまとめ、フリーパラメータの増加を避ける。
 
 **Steps:**
-- [ ] `DaemonStatus`、`LocalizedError`、`Daemon`、`Drop` を `lifecycle.rs` に移す。
-- [ ] scan 関連の関数と `ScanObserver` を `scan.rs` に移す。
-- [ ] `cargo check -p vrc-photon-daemon`
-- [ ] 既存の scan テストを移動し、`cargo test -p vrc-photon-daemon scan` を実行する。
-- [ ] コミット: `refactor: #548 daemon のライフサイクルと scan を分離する`
+- [x] `DaemonStatus`、`LocalizedError`、`Daemon`、`Drop` を `lifecycle.rs` に移す。
+- [x] scan 関連の関数と `ScanObserver` を `scan.rs` に移す。
+- [x] `cargo check -p vrc-photon-daemon`
+- [x] 既存の scan テストを移動し、`cargo test -p vrc-photon-daemon scan` を実行する。
+- [x] コミット: `refactor: #548 daemon のライフサイクルと scan を分離する`
 
 ---
 
@@ -214,9 +214,9 @@
 - `read_new_lines` 系の純粋関数も `logs.rs` に置く。
 
 **Steps:**
-- [ ] log ingestion と session 更新を移動する。
-- [ ] 既存テストを移動し、`cargo test -p vrc-photon-daemon logs` を実行する。
-- [ ] コミット: `refactor: #548 daemon の log ingestion を分離する`
+- [x] log ingestion と session 更新を移動する。
+- [x] 既存テストを移動し、`cargo test -p vrc-photon-daemon logs` を実行する。
+- [x] コミット: `refactor: #548 daemon の log ingestion を分離する`
 
 ---
 
@@ -237,9 +237,9 @@
 - 各モジュールは `pub(super)` の `run` か `Worker` 構造体を公開し、`Daemon` は起動時にそれらを spawn する。
 
 **Steps:**
-- [ ] 各ワーカーを移動し、DB ロックを保持したままファイル I/O しない構造を維持する。
-- [ ] 既存テストを移動し、`cargo test -p vrc-photon-daemon compression`、`thumbnail`、`hash`、`deletion` を実行する。
-- [ ] コミット: `refactor: #548 daemon のワーカーを分離する`
+- [x] 各ワーカーを移動し、DB ロックを保持したままファイル I/O しない構造を維持する。
+- [x] 既存テストを移動し、`cargo test -p vrc-photon-daemon compression`、`thumbnail`、`hash`、`deletion` を実行する。
+- [x] コミット: `refactor: #548 daemon のワーカーを分離する`
 
 ---
 
@@ -250,14 +250,14 @@
 - Modify: `crates/daemon/src/ipc_server.rs`, `crates/daemon/src/tray.rs`, `crates/daemon/src/lib.rs`
 
 **Steps:**
-- [ ] status snapshot / supervisor label / IPC operation mapping を `status.rs` に移す。
-- [ ] `lib.rs` に残った helper を適切なモジュールへ移す。
-- [ ] monolithic test module をドメイン別に分割する。
-- [ ] `cargo fmt --all -- --check`
-- [ ] `cargo test -p vrc-photon-daemon`
-- [ ] `cargo clippy -p vrc-photon-daemon --all-targets -- -D warnings`
-- [ ] PR を作成し、`Closes #548` を付ける。
-- [ ] コミット: `refactor: #548 daemon のテストを整理する`
+- [x] status snapshot / supervisor label / IPC operation mapping を `status.rs` に移す。
+- [x] `lib.rs` に残った helper を適切なモジュールへ移す。
+- [x] monolithic test module をドメイン別に分割する。
+- [x] `cargo fmt --all -- --check`
+- [x] `cargo test -p vrc-photon-daemon`
+- [x] `cargo clippy -p vrc-photon-daemon --all-targets -- -D warnings`
+- [x] PR を作成し、`Closes #548` を付ける。
+- [x] コミット: `refactor: #548 daemon のテストを整理する`
 
 ---
 
