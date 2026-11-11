@@ -15,12 +15,14 @@ RUN apt-get update \
         clang \
         cmake \
         curl \
+        desktop-file-utils \
         docker.io \
         file \
         git \
         jq \
         libfontconfig1-dev \
         libfreetype6-dev \
+        libglib2.0-bin \
         libwayland-dev \
         libx11-dev \
         libx11-xcb-dev \
@@ -32,6 +34,7 @@ RUN apt-get update \
         ninja-build \
         patchelf \
         pkg-config \
+        shared-mime-info \
         squashfs-tools \
         zsync \
     && rm -rf /var/lib/apt/lists/*
