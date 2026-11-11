@@ -169,7 +169,7 @@ fn expand_rgb24_to_rgba(pixels: Vec<u8>, width: u32, height: u32) -> Option<Vec<
         return None;
     }
     let mut rgba = Vec::with_capacity(count.checked_mul(4)?);
-    for pixel in pixels.chunks_exact(3) {
+    for pixel in pixels.as_chunks::<3>().0 {
         rgba.extend_from_slice(&[pixel[0], pixel[1], pixel[2], 255]);
     }
     Some(rgba)

@@ -716,16 +716,20 @@ mod tests {
     #[test]
     fn rgba_to_bgra_with_average_swaps_channels_and_averages_visible_pixels() {
         let source =
-            image::RgbaImage::from_raw(2, 1, vec![255, 0, 0, 255, 0, 0, 255, 255]).unwrap();
+            image::RgbaImage::from_raw(3, 1, vec![255, 0, 0, 255, 0, 0, 255, 255, 0, 255, 0, 0])
+                .unwrap();
 
         let (color, converted) = rgba_to_bgra_with_average(source);
 
         assert_eq!(
             converted.as_raw(),
-            &[0, 0, 255, 255, 255, 0, 0, 255],
+            &[0, 0, 255, 255, 255, 0, 0, 255, 0, 255, 0, 0],
             "BGRA channels are swapped in the same pass"
         );
-        assert_eq!(color, 0x7f007f, "red and blue average to 127 each");
+        assert_eq!(
+            color, 0x7f007f,
+            "the transparent green pixel is excluded from the average"
+        );
     }
 
     #[test]
