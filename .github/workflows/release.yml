@@ -56,6 +56,10 @@ jobs:
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
+    env:
+      # The job container has no /dev/fuse. Make linuxdeploy's plugin AppImage
+      # extract itself before running instead of trying to mount it.
+      APPIMAGE_EXTRACT_AND_RUN: "1"
     steps:
       - uses: actions/checkout@v4
         with:
