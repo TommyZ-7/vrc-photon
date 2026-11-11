@@ -49,6 +49,8 @@ jobs:
           else
             echo "docs_only=true" >> "$GITHUB_OUTPUT"
           fi
+      - name: Check documentation drift
+        run: ./scripts/check-docs-drift.sh
 
   test:
     needs: changes

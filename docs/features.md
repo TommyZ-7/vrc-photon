@@ -252,7 +252,7 @@
 ### 8.1 UI⇔デーモンIPC
 
 - トランスポートはローカルソケット（Unix domain socket / Windows名前付きパイプ）。TCPやネットワーク公開は使わない。
-- プロトコルは改行区切りJSON、`PROTOCOL_VERSION = 5`。接続は `hello` で始まり、バージョン不一致なら接続を閉じる。
+- プロトコルは改行区切りJSON、`PROTOCOL_VERSION = 8`。接続は `hello` で始まり、バージョン不一致なら接続を閉じる。
 - リクエスト: `status`、`wake_commands`、`wake_jobs`、`wake_sends`、`wake_tagging`、`set_paused`、`shutdown`、`subscribe`、`thumbnails_generated`、`clear_thumbnail_cache`。
 - UI操作:
   - ダッシュボードの「再スキャン」は `daemon_commands` に積み、IPC接続中なら `wake_commands` で即時実行する。
@@ -357,7 +357,7 @@
 ## 11. 現行の制約
 
 - 一覧・検索の件数上限はない。100k合成DB（`photo_context` 5万行を含む）でrelease性能（索引61.5 ms、ページ0.72 ms、warm初回フレーム179–187 ms、cold-ish 226–235 ms、空DB cold-ish 158–163 ms）を測定済み。真のOS cold起動（ページキャッシュ破棄後）は未測定。
-- ページキャッシュは最大24ページ（6,144枚）、サムネイルは192件LRU。年レールはX11の実XTest入力で1280×820 / 1440×900の年クリック・レール外ドラッグ・ホイールを確認済み。WaylandはXTestイベントを落とすため未確認。
+- ページキャッシュは最大24ページ（6,144枚）、サムネイルは128件LRU。年レールはX11の実XTest入力で1280×820 / 1440×900の年クリック・レール外ドラッグ・ホイールを確認済み。WaylandはXTestイベントを落とすため未確認。
 - UIは日本語と英語。設定の言語チップで即時切替でき、再起動後も維持する。未訳キーは日本語へフォールバックする。デーモントレイと保存済みのデーモンエラーも同じ設定に従う。
 - UIのキーボードショートカット、圧縮確認モーダルは未実装。
 - ローカルIPC（Unix domain socket / Windows名前付きパイプ、改行区切りJSON）で即時wake-upとイベント配信を行う。UIとデーモンは引き続きSQLiteを共有し、処理エラー（`daemon_errors`）、再実行要求（`daemon_commands`）、送信 outbox（`send_outbox`）の正はDBに置く。IPCはコマンドを挿入せず、`wake_commands` / `wake_jobs` / `wake_sends` でデーモンを起こすだけ。
@@ -371,7 +371,7 @@
 - システムパッケージの自動ロールバックは行わない。失敗時は
   `last-result.json` と `updater.log` を確認して手動で再インストールする。
 - polkit policy の description / message は英語のみ。
-- ディスク上のサムネイルキャッシュはデーモンが `thumbnail_cache_mb` までLRU削除する（0は無制限）。メモリ上の表示サムネイルは192件LRU。
+- ディスク上のサムネイルキャッシュはデーモンが `thumbnail_cache_mb` までLRU削除する（0は無制限）。メモリ上の表示サムネイルは128件LRU。
 - AI タグ付けの実機確認は Linux CPU（M2 E2E）と Linux Vulkan（M1）。
   Windows は M5、CUDA / ROCm は M6。タグ精度・presence・人数の品質検証は未実施。
 - release ビルドは本番鍵でプラグイン ZIP を検証し、debug ビルドは開発用鍵も
