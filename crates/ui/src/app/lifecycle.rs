@@ -5,21 +5,19 @@
 
 use std::time::{Duration, Instant};
 
-use gpui_kit::component::notification::NotificationType;
 use gpui_kit::*;
-use vrc_photon_core::model::{CompressionProfile, LibraryStats, PhotoSort, QueueStatus};
+use vrc_photon_core::model::{CompressionProfile, LibraryStats, PhotoSort};
 use vrc_photon_core::settings::AppSettings;
-use vrc_photon_i18n::{tr, tr_args};
+use vrc_photon_i18n::tr;
 use vrc_photon_ipc::{
     Endpoint, Event as IpcEvent, JobStatus, Request as IpcRequest, ScanPhase as IpcScanPhase,
 };
 
 use crate::app::cli::log_timing;
-use crate::app::live::{AuxSnapshot, LiveRefreshRequest, collect_library_snapshot};
+use crate::app::live::{AuxSnapshot, LiveRefreshRequest, collect_jobs, collect_library_snapshot};
 use crate::app::{App, Screen};
 use crate::ipc_bridge;
 use crate::state::photo_browser::{apply_library_index, sync_search_mirror};
-use crate::ui::notifications::{FailureNotice, failure_transition};
 use crate::ui::palette::{Palette, apply_component_theme, resolve};
 use crate::ui::shell::screen_direction;
 use crate::ui::theme::{MOTION_BASE, MOTION_SIDEBAR, MOTION_SLOW};
@@ -685,81 +683,11 @@ impl App {
     }
 
     pub(crate) fn reload_job_state(&mut self, cx: &mut Context<Self>) {
-        match self.db.list_jobs(20) {
-            Ok(jobs) => self.jobs = jobs,
-            Err(error) => tracing::warn!(%error, "cannot load recent compression jobs"),
-        }
-        match self.db.count_active_jobs() {
-            Ok(count) => self.active_job_count = count,
-            Err(error) => tracing::warn!(%error, "cannot count active compression jobs"),
-        }
-        match self.db.count_jobs(QueueStatus::Waiting) {
-            Ok(count) => self.waiting_job_count = count,
-            Err(error) => tracing::warn!(%error, "cannot count waiting compression jobs"),
-        }
-        match self.db.list_jobs_by_status(QueueStatus::Waiting, 100) {
-            Ok(jobs) => self.waiting_jobs = jobs,
-            Err(error) => tracing::warn!(%error, "cannot load waiting compression jobs"),
-        }
-        let failed_count = match self.db.count_jobs(QueueStatus::Failed) {
-            Ok(count) => {
-                self.failed_job_count = count;
-                Some(count)
-            }
-            Err(error) => {
-                tracing::warn!(%error, "cannot count failed compression jobs");
-                None
-            }
-        };
-        match self.db.list_jobs_by_status(QueueStatus::Failed, 100) {
-            Ok(jobs) => self.failed_jobs = jobs,
-            Err(error) => tracing::warn!(%error, "cannot load failed compression jobs"),
-        }
-        match self.db.count_retryable_failed_jobs() {
-            Ok(count) => self.retryable_failed_count = count,
-            Err(error) => tracing::warn!(%error, "cannot count retryable failed jobs"),
-        }
-        let failed_ids: Vec<i64> = self.failed_jobs.iter().map(|job| job.photo_id).collect();
-        match self.db.photos_by_ids(&failed_ids) {
-            Ok(photos) => {
-                self.failed_job_names = photos
-                    .into_iter()
-                    .map(|photo| (photo.id, photo.file_name))
-                    .collect();
-            }
-            Err(error) => tracing::warn!(%error, "cannot load failed job photo names"),
-        }
-        let daemon_count = match self.db.daemon_errors() {
-            Ok(errors) => {
-                let count = errors.len();
-                self.daemon_errors = errors;
-                Some(count)
-            }
-            Err(error) => {
-                tracing::warn!(%error, "cannot load daemon errors");
-                None
-            }
-        };
-        // Only transition the baseline after both counts were read. A failed
-        // read would otherwise make pre-existing failures look new on the next
-        // successful refresh.
-        if let (Some(failed), Some(daemon)) = (failed_count, daemon_count) {
-            let next = (failed, daemon);
-            for notice in failure_transition(self.failure_baseline, next) {
-                match notice {
-                    FailureNotice::Compression { count } => self.toast_actionable(
-                        NotificationType::Error,
-                        tr_args!("daemon.compression.failures", count = count),
-                        cx,
-                    ),
-                    FailureNotice::Daemon { count } => self.toast_actionable(
-                        NotificationType::Error,
-                        tr_args!("daemon.errors.count", count = count),
-                        cx,
-                    ),
-                }
-            }
-            self.failure_baseline = Some(next);
+        let job_apply = self.apply_job_snapshot(collect_jobs(&self.db));
+        let notified =
+            self.apply_failure_transition(job_apply.failed_count, job_apply.daemon_count, cx);
+        if job_apply.changed || notified {
+            cx.notify();
         }
     }
 

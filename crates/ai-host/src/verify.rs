@@ -1,6 +1,6 @@
 //! Minisign verification for plugin manifests.
 
-use minisign_verify::{PublicKey, Signature};
+pub use vrc_photon_signing::parse_public_keys;
 
 use crate::error::{AiHostError, Result};
 
@@ -17,32 +17,7 @@ pub const PUBLIC_KEY_ENV: &str = "VRC_PHOTON_AI_PLUGIN_PUBLIC_KEY";
 
 /// Verifies a detached minisign signature over the exact manifest bytes.
 pub fn verify_manifest_bytes(manifest: &[u8], signature: &str, keys: &[String]) -> Result<()> {
-    let signature = Signature::decode(signature).map_err(|_| AiHostError::Signature)?;
-    let public_keys: Vec<PublicKey> = keys
-        .iter()
-        .filter_map(|key| PublicKey::from_base64(key.trim()).ok())
-        .collect();
-    if public_keys.is_empty() {
-        return Err(AiHostError::Signature);
-    }
-
-    let mut verifier = public_keys
-        .iter()
-        .find_map(|key| key.verify_stream(&signature).ok())
-        .ok_or(AiHostError::Signature)?;
-    verifier.update(manifest);
-    verifier.finalize().map_err(|_| AiHostError::Signature)
-}
-
-/// Parses a key file. Blank lines and comments are ignored; one key per line.
-pub fn parse_public_keys(text: &str) -> Vec<String> {
-    text.lines()
-        .map(str::trim)
-        .filter(|line| {
-            !line.is_empty() && !line.starts_with('#') && !line.starts_with("untrusted comment:")
-        })
-        .map(str::to_string)
-        .collect()
+    vrc_photon_signing::verify_bytes(manifest, signature, keys).map_err(|_| AiHostError::Signature)
 }
 
 /// Keys bundled with this build. Debug builds use the development key file;

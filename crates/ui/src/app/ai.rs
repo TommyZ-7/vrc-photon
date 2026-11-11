@@ -167,17 +167,14 @@ impl ModelDownloadView {
 /// A complete read of the AI tagging tables.
 #[derive(Default)]
 pub(crate) struct AiSnapshot {
+    /// The live subset shared with the background poller.
+    pub(crate) live: AiLiveSnapshot,
     pub(crate) installations: Vec<PluginInstallation>,
     pub(crate) active: Option<PluginInstallation>,
-    pub(crate) state: Option<PluginState>,
-    pub(crate) probe: Option<Probe>,
     pub(crate) tag_definitions: Vec<AiTagDefinition>,
-    pub(crate) job_counts: JobStatusCounts,
-    pub(crate) active_jobs: Vec<TaggingJob>,
-    pub(crate) active_job_names: HashMap<i64, String>,
 }
 
-/// The subset the three-second live poller collects on its background thread.
+/// The subset the background live poller collects.
 #[derive(Default)]
 pub(crate) struct AiLiveSnapshot {
     pub(crate) job_counts: JobStatusCounts,
@@ -199,15 +196,11 @@ impl AiUiState {
     }
 
     pub(crate) fn apply_snapshot(&mut self, snapshot: AiSnapshot) {
+        self.apply_live_snapshot(snapshot.live);
         self.installations = snapshot.installations;
         self.active = snapshot.active;
-        self.state = snapshot.state;
-        self.probe = snapshot.probe;
         self.tag_definitions = snapshot.tag_definitions;
         self.download = self.state.as_ref().and_then(ModelDownloadView::from_state);
-        self.job_counts = snapshot.job_counts;
-        self.active_jobs = snapshot.active_jobs;
-        self.active_job_names = snapshot.active_job_names;
     }
 
     /// Applies the three-second poller snapshot. Returns whether anything the
@@ -760,16 +753,9 @@ fn active_job_names(db: &Db, jobs: &[TaggingJob]) -> HashMap<i64, String> {
 }
 
 pub(crate) fn collect_ai_snapshot(db: &Db) -> AiSnapshot {
-    let state = db.plugin_state(AI_PLUGIN_ID).unwrap_or_else(|error| {
-        tracing::warn!(%error, "cannot load AI plugin state");
-        None
-    });
-    let active_jobs = db.active_tagging_jobs_for_ui(20).unwrap_or_else(|error| {
-        tracing::warn!(%error, "cannot load active AI tagging jobs");
-        Vec::new()
-    });
-    let active_job_names = active_job_names(db, &active_jobs);
+    let live = collect_ai_live_snapshot(db);
     AiSnapshot {
+        live,
         installations: db
             .list_plugin_installations(AI_PLUGIN_ID)
             .unwrap_or_else(|error| {
@@ -782,18 +768,10 @@ pub(crate) fn collect_ai_snapshot(db: &Db) -> AiSnapshot {
                 tracing::warn!(%error, "cannot load the active AI plugin installation");
                 None
             }),
-        probe: state.as_ref().and_then(probe_from_state),
-        state,
         tag_definitions: db.ai_tag_definitions(AI_PLUGIN_ID).unwrap_or_else(|error| {
             tracing::warn!(%error, "cannot load AI tag definitions");
             Vec::new()
         }),
-        job_counts: db.tagging_job_counts(AI_PLUGIN_ID).unwrap_or_else(|error| {
-            tracing::warn!(%error, "cannot count AI tagging jobs");
-            JobStatusCounts::default()
-        }),
-        active_jobs,
-        active_job_names,
     }
 }
 
@@ -3070,9 +3048,13 @@ mod tests {
 
         let snapshot = collect_ai_snapshot(&db);
 
-        assert_eq!(snapshot.active_jobs.len(), 1);
+        assert_eq!(snapshot.live.active_jobs.len(), 1);
         assert_eq!(
-            snapshot.active_job_names.get(&photo).map(String::as_str),
+            snapshot
+                .live
+                .active_job_names
+                .get(&photo)
+                .map(String::as_str),
             Some("a.png")
         );
     }

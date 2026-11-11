@@ -142,16 +142,23 @@ struct DeletionSnapshot {
 }
 
 #[derive(Default)]
-struct JobSnapshot {
-    jobs: Vec<CompressionJob>,
-    waiting_jobs: Vec<CompressionJob>,
-    failed_jobs: Vec<CompressionJob>,
-    failed_job_names: HashMap<i64, String>,
-    active_job_count: i64,
-    waiting_job_count: i64,
+pub(crate) struct JobSnapshot {
+    jobs: Option<Vec<CompressionJob>>,
+    waiting_jobs: Option<Vec<CompressionJob>>,
+    failed_jobs: Option<Vec<CompressionJob>>,
+    failed_job_names: Option<HashMap<i64, String>>,
+    active_job_count: Option<i64>,
+    waiting_job_count: Option<i64>,
     failed_job_count: Option<i64>,
     retryable_failed_count: Option<i64>,
     daemon_errors: Option<Vec<DaemonError>>,
+}
+
+/// Result of applying a [`JobSnapshot`] to the retained UI state.
+pub(crate) struct JobApply {
+    pub(crate) changed: bool,
+    pub(crate) failed_count: Option<i64>,
+    pub(crate) daemon_count: Option<usize>,
 }
 
 #[derive(Default)]
@@ -299,6 +306,111 @@ impl App {
         cx.notify();
     }
 
+    /// Applies a job snapshot collected by [`collect_jobs`]. Returns the
+    /// display change flag plus the counts the failure-transition notifier
+    /// needs.
+    pub(crate) fn apply_job_snapshot(&mut self, snapshot: JobSnapshot) -> JobApply {
+        let failed_count = snapshot.failed_job_count;
+        let daemon_count = snapshot.daemon_errors.as_ref().map(Vec::len);
+        let changed = snapshot
+            .jobs
+            .as_ref()
+            .is_some_and(|jobs| jobs != &self.jobs)
+            || snapshot
+                .waiting_jobs
+                .as_ref()
+                .is_some_and(|jobs| jobs != &self.waiting_jobs)
+            || snapshot
+                .failed_jobs
+                .as_ref()
+                .is_some_and(|jobs| jobs != &self.failed_jobs)
+            || snapshot
+                .failed_job_names
+                .as_ref()
+                .is_some_and(|names| names != &self.failed_job_names)
+            || snapshot
+                .active_job_count
+                .is_some_and(|count| count != self.active_job_count)
+            || snapshot
+                .waiting_job_count
+                .is_some_and(|count| count != self.waiting_job_count)
+            || failed_count.is_some_and(|count| count != self.failed_job_count)
+            || snapshot
+                .retryable_failed_count
+                .is_some_and(|count| count != self.retryable_failed_count)
+            || snapshot
+                .daemon_errors
+                .as_ref()
+                .is_some_and(|errors| errors != &self.daemon_errors);
+        if changed {
+            if let Some(jobs) = snapshot.jobs {
+                self.jobs = jobs;
+            }
+            if let Some(jobs) = snapshot.waiting_jobs {
+                self.waiting_jobs = jobs;
+            }
+            if let Some(jobs) = snapshot.failed_jobs {
+                self.failed_jobs = jobs;
+            }
+            if let Some(names) = snapshot.failed_job_names {
+                self.failed_job_names = names;
+            }
+            if let Some(count) = snapshot.active_job_count {
+                self.active_job_count = count;
+            }
+            if let Some(count) = snapshot.waiting_job_count {
+                self.waiting_job_count = count;
+            }
+            if let Some(count) = failed_count {
+                self.failed_job_count = count;
+            }
+            if let Some(count) = snapshot.retryable_failed_count {
+                self.retryable_failed_count = count;
+            }
+            if let Some(errors) = snapshot.daemon_errors {
+                self.daemon_errors = errors;
+            }
+        }
+        JobApply {
+            changed,
+            failed_count,
+            daemon_count,
+        }
+    }
+
+    /// Announces newly failed compression jobs or daemon errors. Only
+    /// transitions the baseline after both counts were read; a failed read
+    /// would otherwise make pre-existing failures look new later.
+    pub(crate) fn apply_failure_transition(
+        &mut self,
+        failed: Option<i64>,
+        daemon: Option<usize>,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let (Some(failed), Some(daemon)) = (failed, daemon) else {
+            return false;
+        };
+        let next = (failed, daemon);
+        let mut notified = false;
+        for notice in failure_transition(self.failure_baseline, next) {
+            match notice {
+                FailureNotice::Compression { count } => self.toast_actionable(
+                    NotificationType::Error,
+                    tr_args!("daemon.compression.failures", count = count),
+                    cx,
+                ),
+                FailureNotice::Daemon { count } => self.toast_actionable(
+                    NotificationType::Error,
+                    tr_args!("daemon.errors.count", count = count),
+                    cx,
+                ),
+            }
+            notified = true;
+        }
+        self.failure_baseline = Some(next);
+        notified
+    }
+
     pub(crate) fn apply_live_snapshot(
         &mut self,
         snapshot: LiveSnapshot,
@@ -321,38 +433,8 @@ impl App {
             }
         }
 
-        let failed_count = snapshot.jobs.failed_job_count;
-        let retryable_count = snapshot.jobs.retryable_failed_count;
-        let daemon_count = snapshot.jobs.daemon_errors.as_ref().map(Vec::len);
-        let jobs_changed = self.jobs != snapshot.jobs.jobs
-            || self.waiting_jobs != snapshot.jobs.waiting_jobs
-            || self.failed_jobs != snapshot.jobs.failed_jobs
-            || self.failed_job_names != snapshot.jobs.failed_job_names
-            || self.active_job_count != snapshot.jobs.active_job_count
-            || self.waiting_job_count != snapshot.jobs.waiting_job_count
-            || failed_count.is_some_and(|count| count != self.failed_job_count)
-            || retryable_count.is_some_and(|count| count != self.retryable_failed_count)
-            || snapshot
-                .jobs
-                .daemon_errors
-                .as_ref()
-                .is_some_and(|errors| errors != &self.daemon_errors);
-        if jobs_changed {
-            self.jobs = snapshot.jobs.jobs;
-            self.waiting_jobs = snapshot.jobs.waiting_jobs;
-            self.failed_jobs = snapshot.jobs.failed_jobs;
-            self.failed_job_names = snapshot.jobs.failed_job_names;
-            self.active_job_count = snapshot.jobs.active_job_count;
-            self.waiting_job_count = snapshot.jobs.waiting_job_count;
-            if let Some(count) = failed_count {
-                self.failed_job_count = count;
-            }
-            if let Some(count) = retryable_count {
-                self.retryable_failed_count = count;
-            }
-            if let Some(errors) = snapshot.jobs.daemon_errors {
-                self.daemon_errors = errors;
-            }
+        let job_apply = self.apply_job_snapshot(snapshot.jobs);
+        if job_apply.changed {
             notify = true;
         }
 
@@ -397,26 +479,8 @@ impl App {
             }
         }
 
-        // Only transition the baseline after both counts were read. A failed
-        // read would otherwise make pre-existing failures look new later.
-        if let (Some(failed), Some(daemon)) = (failed_count, daemon_count) {
-            let next = (failed, daemon);
-            for notice in failure_transition(self.failure_baseline, next) {
-                match notice {
-                    FailureNotice::Compression { count } => self.toast_actionable(
-                        NotificationType::Error,
-                        tr_args!("daemon.compression.failures", count = count),
-                        cx,
-                    ),
-                    FailureNotice::Daemon { count } => self.toast_actionable(
-                        NotificationType::Error,
-                        tr_args!("daemon.errors.count", count = count),
-                        cx,
-                    ),
-                }
-                notify = true;
-            }
-            self.failure_baseline = Some(next);
+        if self.apply_failure_transition(job_apply.failed_count, job_apply.daemon_count, cx) {
+            notify = true;
         }
 
         // Selected-photo metadata is refreshed by the actions that change it
@@ -610,29 +674,24 @@ fn apply_deletion_snapshot(
     Some(DeletionApply { changed, blocked })
 }
 
-fn collect_jobs(db: &Db) -> JobSnapshot {
-    let failed_jobs = db
-        .list_jobs_by_status(QueueStatus::Failed, 100)
-        .unwrap_or_default();
-    let failed_ids: Vec<i64> = failed_jobs.iter().map(|job| job.photo_id).collect();
-    let failed_job_names = db
-        .photos_by_ids(&failed_ids)
-        .map(|photos| {
+pub(crate) fn collect_jobs(db: &Db) -> JobSnapshot {
+    let failed_jobs = db.list_jobs_by_status(QueueStatus::Failed, 100).ok();
+    let failed_job_names = failed_jobs.as_ref().and_then(|jobs| {
+        let failed_ids: Vec<i64> = jobs.iter().map(|job| job.photo_id).collect();
+        db.photos_by_ids(&failed_ids).ok().map(|photos| {
             photos
                 .into_iter()
                 .map(|photo| (photo.id, photo.file_name))
                 .collect()
         })
-        .unwrap_or_default();
+    });
     JobSnapshot {
-        jobs: db.list_jobs(20).unwrap_or_default(),
-        waiting_jobs: db
-            .list_jobs_by_status(QueueStatus::Waiting, 100)
-            .unwrap_or_default(),
+        jobs: db.list_jobs(20).ok(),
+        waiting_jobs: db.list_jobs_by_status(QueueStatus::Waiting, 100).ok(),
         failed_jobs,
         failed_job_names,
-        active_job_count: db.count_active_jobs().unwrap_or(0),
-        waiting_job_count: db.count_jobs(QueueStatus::Waiting).unwrap_or(0),
+        active_job_count: db.count_active_jobs().ok(),
+        waiting_job_count: db.count_jobs(QueueStatus::Waiting).ok(),
         failed_job_count: db.count_jobs(QueueStatus::Failed).ok(),
         retryable_failed_count: db.count_retryable_failed_jobs().ok(),
         daemon_errors: db.daemon_errors().ok(),

@@ -28,6 +28,7 @@ tracing.workspace = true
 ureq.workspace = true
 url.workspace = true
 uuid.workspace = true
+vrc-photon-signing = { path = "../signing" }
 
 [dev-dependencies]
 minisign = "0.10"
