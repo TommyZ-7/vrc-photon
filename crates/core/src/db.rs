@@ -573,6 +573,15 @@ impl DbProfile {
         }
     }
 
+    /// Prepared-statement cache slots per connection. The live poller and the
+    /// library queries reuse several dozen fixed statements, so both profiles
+    /// keep the same small cache.
+    const fn statement_cache_capacity(self) -> usize {
+        match self {
+            Self::Service | Self::Ui => 64,
+        }
+    }
+
     const fn mmap_size_bytes(self) -> i64 {
         match self {
             Self::Service => 268_435_456,
@@ -651,6 +660,7 @@ impl Db {
         let _ = conn.pragma_update(None, "cache_size", -profile.cache_size_kib());
         let _ = conn.pragma_update(None, "mmap_size", profile.mmap_size_bytes());
         let _ = conn.pragma_update(None, "temp_store", "MEMORY");
+        conn.set_prepared_statement_cache_capacity(profile.statement_cache_capacity());
         Ok(())
     }
 
@@ -1175,7 +1185,7 @@ impl Db {
     pub fn roots(&self) -> Result<Vec<LibraryRoot>> {
         let mut stmt = self
             .conn
-            .prepare("SELECT id, path, kind FROM library_roots ORDER BY id")?;
+            .prepare_cached("SELECT id, path, kind FROM library_roots ORDER BY id")?;
         let rows = stmt.query_map([], |row| {
             Ok(LibraryRoot {
                 id: row.get(0)?,
@@ -1237,14 +1247,29 @@ impl Db {
 
     pub fn photo_by_id(&self, id: i64) -> Result<Option<Photo>> {
         let sql = format!("SELECT {PHOTO_SELECT}{PHOTO_FROM} WHERE p.id = ?1");
-        let mut stmt = self.conn.prepare(&sql)?;
+        let mut stmt = self.conn.prepare_cached(&sql)?;
         let photo = stmt.query_row(params![id], row_to_photo).optional()?;
         Ok(photo)
     }
 
+    /// Returns only the path a thumbnail reader should open.
+    ///
+    /// This skips the three context joins and the full [`Photo`] row that
+    /// [`Self::photo_by_id`] materializes; replaced photos still resolve to
+    /// their display derivative.
+    pub fn photo_effective_path(&self, id: i64) -> Result<Option<String>> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT COALESCE(d.path, p.abs_path) FROM photos p \
+             LEFT JOIN derivatives d ON d.id = p.display_derivative_id \
+             WHERE p.id = ?1",
+        )?;
+        let path = stmt.query_row(params![id], |row| row.get(0)).optional()?;
+        Ok(path)
+    }
+
     pub fn photo_by_path(&self, path: &str) -> Result<Option<Photo>> {
         let sql = format!("SELECT {PHOTO_SELECT}{PHOTO_FROM} WHERE p.abs_path = ?1");
-        let mut stmt = self.conn.prepare(&sql)?;
+        let mut stmt = self.conn.prepare_cached(&sql)?;
         let photo = stmt.query_row(params![path], row_to_photo).optional()?;
         Ok(photo)
     }
@@ -1258,7 +1283,7 @@ impl Db {
             "SELECT p.id, p.captured_at_utc, {PHOTO_MONTH}, {PHOTO_DAY}, c.session_id\
              {PHOTO_FROM} WHERE {VISIBLE_STATUS} ORDER BY {order}"
         );
-        let mut stmt = self.conn.prepare(&sql)?;
+        let mut stmt = self.conn.prepare_cached(&sql)?;
         let rows = stmt.query_map([], row_to_photo_index)?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
@@ -1284,7 +1309,7 @@ impl Db {
              ORDER BY p.captured_at_utc DESC, p.id DESC LIMIT ?"
         );
         values.push(Value::Integer(clamp_limit(limit)));
-        let mut stmt = self.conn.prepare(&sql)?;
+        let mut stmt = self.conn.prepare_cached(&sql)?;
         let rows = stmt.query_map(params_from_iter(values), row_to_photo_index)?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
@@ -1308,7 +1333,7 @@ impl Db {
              GROUP BY c.world_name \
              ORDER BY photo_count DESC, name COLLATE NOCASE ASC LIMIT ?"
         );
-        let mut stmt = self.conn.prepare(&sql)?;
+        let mut stmt = self.conn.prepare_cached(&sql)?;
         let rows = stmt.query_map(params![like, limit as i64], |row| {
             Ok(SearchSuggestion {
                 name: row.get(0)?,
@@ -1337,7 +1362,7 @@ impl Db {
              GROUP BY pp.display_name \
              ORDER BY photo_count DESC, name COLLATE NOCASE ASC LIMIT ?"
         );
-        let mut stmt = self.conn.prepare(&sql)?;
+        let mut stmt = self.conn.prepare_cached(&sql)?;
         let rows = stmt.query_map(params![like, limit as i64], |row| {
             Ok(SearchSuggestion {
                 name: row.get(0)?,
@@ -1381,7 +1406,7 @@ impl Db {
              GROUP BY c.name \
              ORDER BY photo_count DESC, c.name COLLATE NOCASE ASC LIMIT ?3"
         );
-        let mut stmt = self.conn.prepare(&sql)?;
+        let mut stmt = self.conn.prepare_cached(&sql)?;
         let rows = stmt.query_map(
             params![i64::from(prefer_english), like, limit as i64, AI_PLUGIN_ID],
             |row| {
@@ -1404,7 +1429,7 @@ impl Db {
         for chunk in ids.chunks(500) {
             let placeholders = vec!["?"; chunk.len()].join(",");
             let sql = format!("SELECT {PHOTO_SELECT}{PHOTO_FROM} WHERE p.id IN ({placeholders})");
-            let mut stmt = self.conn.prepare(&sql)?;
+            let mut stmt = self.conn.prepare_cached(&sql)?;
             let rows = stmt.query_map(params_from_iter(chunk.iter().copied()), row_to_photo)?;
             for photo in rows {
                 let photo = photo?;
@@ -1420,7 +1445,7 @@ impl Db {
             "SELECT {PHOTO_SELECT}{PHOTO_FROM} WHERE {VISIBLE_STATUS} \
              ORDER BY {order} LIMIT ?1 OFFSET ?2"
         );
-        let mut stmt = self.conn.prepare(&sql)?;
+        let mut stmt = self.conn.prepare_cached(&sql)?;
         let rows = stmt.query_map(params![clamp_limit(limit), offset.max(0)], row_to_photo)?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
@@ -1441,7 +1466,7 @@ impl Db {
         let mut all_values = values;
         all_values.push(Value::Integer(limit));
         all_values.push(Value::Integer(offset));
-        let mut stmt = self.conn.prepare(&sql)?;
+        let mut stmt = self.conn.prepare_cached(&sql)?;
         let rows = stmt.query_map(params_from_iter(all_values), row_to_photo)?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
@@ -1452,7 +1477,7 @@ impl Db {
     pub fn count_search(&self, filter: &PhotoFilter) -> Result<i64> {
         let (where_sql, values) = build_photo_filter(filter);
         let sql = format!("SELECT COUNT(*){PHOTO_FROM} WHERE {where_sql}");
-        let mut stmt = self.conn.prepare(&sql)?;
+        let mut stmt = self.conn.prepare_cached(&sql)?;
         let count = stmt.query_row(params_from_iter(values), |row| row.get(0))?;
         Ok(count)
     }
@@ -1475,7 +1500,7 @@ impl Db {
             "SELECT {PHOTO_SELECT}{PHOTO_FROM} WHERE {where_sql} \
              ORDER BY p.captured_at_utc DESC, p.id DESC LIMIT ? OFFSET ?"
         );
-        let mut stmt = self.conn.prepare(&sql)?;
+        let mut stmt = self.conn.prepare_cached(&sql)?;
         let rows = stmt.query_map(params_from_iter(values), row_to_photo)?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
@@ -1485,7 +1510,7 @@ impl Db {
     pub fn count_photos_text(&self, filter: &PhotoTextFilter) -> Result<i64> {
         let (where_sql, values) = build_text_filter(filter);
         let sql = format!("SELECT COUNT(*){PHOTO_FROM} WHERE {where_sql}");
-        let mut stmt = self.conn.prepare(&sql)?;
+        let mut stmt = self.conn.prepare_cached(&sql)?;
         let count = stmt.query_row(params_from_iter(values), |row| row.get(0))?;
         Ok(count)
     }
@@ -1493,7 +1518,7 @@ impl Db {
     fn photo_ids_text(&self, filter: &PhotoTextFilter) -> Result<Vec<i64>> {
         let (where_sql, values) = build_text_filter(filter);
         let sql = format!("SELECT p.id{PHOTO_FROM} WHERE {where_sql}");
-        let mut stmt = self.conn.prepare(&sql)?;
+        let mut stmt = self.conn.prepare_cached(&sql)?;
         let rows = stmt.query_map(params_from_iter(values), |row| row.get(0))?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
@@ -1526,7 +1551,7 @@ impl Db {
             "SELECT {PHOTO_SELECT}{PHOTO_FROM} WHERE c.photo_id IS NULL \
              AND {VISIBLE_STATUS} ORDER BY p.captured_at_utc DESC LIMIT ?1"
         );
-        let mut stmt = self.conn.prepare(&sql)?;
+        let mut stmt = self.conn.prepare_cached(&sql)?;
         let rows = stmt.query_map(params![clamp_limit(limit)], row_to_photo)?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
@@ -1541,7 +1566,7 @@ impl Db {
              AND (p.link_next_retry_at IS NULL OR p.link_next_retry_at <= ?1) \
              ORDER BY p.link_attempts ASC, p.captured_at_utc ASC LIMIT ?2"
         );
-        let mut stmt = self.conn.prepare(&sql)?;
+        let mut stmt = self.conn.prepare_cached(&sql)?;
         let rows = stmt.query_map(params![now, clamp_limit(limit)], row_to_photo)?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
@@ -1575,9 +1600,9 @@ impl Db {
     }
 
     pub fn photos_for_root(&self, root_id: i64) -> Result<Vec<(i64, String)>> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT id, abs_path FROM photos WHERE root_id = ?1 AND status = 'present'")?;
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT id, abs_path FROM photos WHERE root_id = ?1 AND status = 'present'",
+        )?;
         let rows = stmt.query_map(params![root_id], |row| Ok((row.get(0)?, row.get(1)?)))?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
@@ -1593,7 +1618,7 @@ impl Db {
                 "SELECT id, abs_path, file_size, mtime, blake3, status, display_derivative_id \
                  FROM photos WHERE abs_path IN ({placeholders})"
             );
-            let mut stmt = self.conn.prepare(&sql)?;
+            let mut stmt = self.conn.prepare_cached(&sql)?;
             let rows = stmt.query_map(params_from_iter(chunk.iter()), |row| {
                 Ok(PhotoScanState {
                     id: row.get(0)?,
@@ -1729,7 +1754,7 @@ impl Db {
                          AND dr.status IN ('pending', 'blocked', 'running')) \
                  ORDER BY p.id LIMIT 2"
             );
-            let mut stmt = self.conn.prepare(&sql)?;
+            let mut stmt = self.conn.prepare_cached(&sql)?;
             let rows = stmt.query_map(params![hash, photo.abs_path], row_to_photo)?;
             let mut matches = rows.collect::<rusqlite::Result<Vec<_>>>()?;
             if matches.len() > 1 {
@@ -1753,7 +1778,7 @@ impl Db {
                      AND dr.status IN ('pending', 'blocked', 'running')) \
              ORDER BY p.id LIMIT 2"
         );
-        let mut stmt = self.conn.prepare(&sql)?;
+        let mut stmt = self.conn.prepare_cached(&sql)?;
         let rows = stmt.query_map(
             params![
                 photo.abs_path,
@@ -1826,7 +1851,7 @@ impl Db {
     }
 
     pub fn photos_without_hash(&self, limit: i64) -> Result<Vec<(i64, String)>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.conn.prepare_cached(
             "SELECT id, abs_path FROM photos \
              WHERE status = 'present' AND blake3 IS NULL ORDER BY id LIMIT ?1",
         )?;
@@ -1843,7 +1868,7 @@ impl Db {
         &self,
         limit: i64,
     ) -> Result<Vec<(i64, Option<String>, String)>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.conn.prepare_cached(
             "SELECT p.id, d.path, r.path FROM photos p \
              LEFT JOIN derivatives d ON d.id = p.display_derivative_id \
              JOIN library_roots r ON r.id = p.root_id \
@@ -1867,7 +1892,7 @@ impl Db {
     /// Hashing itself does not merge rows; this query is the duplicate report
     /// surface used by move matching and future duplicate-management UI.
     pub fn duplicate_photo_ids(&self) -> Result<Vec<i64>> {
-        let mut stmt = self.conn.prepare(&format!(
+        let mut stmt = self.conn.prepare_cached(&format!(
             "SELECT p.id FROM photos p \
              WHERE {VISIBLE_STATUS} AND p.blake3 IS NOT NULL \
                AND EXISTS (SELECT 1 FROM photos q \
@@ -2103,7 +2128,7 @@ impl Db {
     /// alias wins over the stored or log-derived name, matching the rest of
     /// the UI.
     pub fn worlds_with_photo_counts(&self) -> Result<Vec<WorldPhotoCount>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.conn.prepare_cached(
             "SELECT w.world_id, \
                 COALESCE(w.alias, c.world_name, w.name, w.world_id, '') AS name, \
                 COUNT(*) \
@@ -2369,7 +2394,7 @@ impl Db {
     }
 
     pub fn open_sessions(&self) -> Result<Vec<Session>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.conn.prepare_cached(
             "SELECT id, log_file, started_at, ended_at, world_id, instance_id \
              FROM sessions WHERE ended_at IS NULL ORDER BY started_at",
         )?;
@@ -2435,7 +2460,7 @@ impl Db {
     /// `window_seconds` of it. At most two are returned: callers only need
     /// to distinguish none, exactly one, and ambiguous.
     pub fn sessions_near(&self, timestamp: i64, window_seconds: i64) -> Result<Vec<Session>> {
-        let mut stmt = self.conn.prepare(SESSIONS_NEAR_SQL)?;
+        let mut stmt = self.conn.prepare_cached(SESSIONS_NEAR_SQL)?;
         let rows = stmt.query_map(params![timestamp, window_seconds], |row| {
             Ok(Session {
                 id: row.get(0)?,
@@ -2500,7 +2525,7 @@ impl Db {
     }
 
     pub fn players_at(&self, session_id: i64, timestamp: i64) -> Result<Vec<SessionPlayer>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.conn.prepare_cached(
             "SELECT id, session_id, user_id, display_name, joined_at, left_at \
              FROM session_players WHERE session_id = ?1 AND joined_at <= ?2 \
              AND (left_at IS NULL OR ?2 < left_at) ORDER BY joined_at",
@@ -2546,7 +2571,7 @@ impl Db {
                  FROM sessions s LEFT JOIN worlds w ON w.id = s.world_id \
                  WHERE s.id IN ({placeholders}) ORDER BY s.started_at, s.id"
             );
-            let mut stmt = self.conn.prepare(&sql)?;
+            let mut stmt = self.conn.prepare_cached(&sql)?;
             let rows = stmt.query_map(params_from_iter(unique_ids.iter().copied()), |row| {
                 let world_name: String = row.get(6)?;
                 Ok((
@@ -2575,7 +2600,7 @@ impl Db {
                  WHERE c.session_id IN ({placeholders}) AND {VISIBLE_STATUS} \
                  GROUP BY c.session_id"
             );
-            let mut stmt = self.conn.prepare(&sql)?;
+            let mut stmt = self.conn.prepare_cached(&sql)?;
             let rows = stmt.query_map(params_from_iter(unique_ids.iter().copied()), |row| {
                 Ok((row.get(0)?, row.get(1)?))
             })?;
@@ -2588,7 +2613,7 @@ impl Db {
                 "SELECT session_id, display_name FROM session_players \
                  WHERE session_id IN ({placeholders}) ORDER BY session_id, joined_at, id"
             );
-            let mut stmt = self.conn.prepare(&sql)?;
+            let mut stmt = self.conn.prepare_cached(&sql)?;
             let rows = stmt.query_map(params_from_iter(unique_ids.iter().copied()), |row| {
                 Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
             })?;
@@ -2605,7 +2630,7 @@ impl Db {
                  WHERE c.session_id IN ({placeholders}) AND {VISIBLE_STATUS} \
                  ORDER BY c.session_id, p.is_favorite DESC, p.captured_at_utc DESC, p.id DESC"
             );
-            let mut stmt = self.conn.prepare(&sql)?;
+            let mut stmt = self.conn.prepare_cached(&sql)?;
             let rows = stmt.query_map(params_from_iter(unique_ids.iter().copied()), |row| {
                 Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
             })?;
@@ -2737,7 +2762,7 @@ impl Db {
     }
 
     pub fn photo_players(&self, photo_id: i64) -> Result<Vec<PhotoPlayer>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.conn.prepare_cached(
             "SELECT user_id, display_name FROM photo_players WHERE photo_id = ?1 \
              ORDER BY display_name COLLATE NOCASE",
         )?;
@@ -2809,7 +2834,7 @@ impl Db {
     }
 
     pub fn photo_tags(&self, photo_id: i64) -> Result<Vec<String>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.conn.prepare_cached(
             "SELECT t.name FROM tags t JOIN photo_tags pt ON pt.tag_id = t.id \
              WHERE pt.photo_id = ?1 ORDER BY t.name COLLATE NOCASE",
         )?;
@@ -2936,7 +2961,7 @@ impl Db {
         let mut values = Vec::with_capacity(photo_ids.len() + 1);
         values.push(photo_ids.len() as i64);
         values.extend(photo_ids.iter().copied());
-        let mut stmt = self.conn.prepare(&sql)?;
+        let mut stmt = self.conn.prepare_cached(&sql)?;
         let rows = stmt.query_map(params_from_iter(values), |row| row.get(0))?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
@@ -3034,7 +3059,8 @@ impl Db {
     /// Keeps the clipboard target unique even when a caller other than the
     /// profile switch saves a flagged profile.
     fn clear_other_clipboard_profiles(conn: &Connection, keep_id: &str) -> Result<()> {
-        let mut stmt = conn.prepare("SELECT id, json FROM compression_profiles WHERE id != ?1")?;
+        let mut stmt =
+            conn.prepare_cached("SELECT id, json FROM compression_profiles WHERE id != ?1")?;
         let rows = stmt.query_map(params![keep_id], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })?;
@@ -3060,7 +3086,8 @@ impl Db {
     /// Keeps the Discord target unique even when a caller other than the
     /// profile switch saves a flagged profile.
     fn clear_other_discord_profiles(conn: &Connection, keep_id: &str) -> Result<()> {
-        let mut stmt = conn.prepare("SELECT id, json FROM compression_profiles WHERE id != ?1")?;
+        let mut stmt =
+            conn.prepare_cached("SELECT id, json FROM compression_profiles WHERE id != ?1")?;
         let rows = stmt.query_map(params![keep_id], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })?;
@@ -3084,7 +3111,7 @@ impl Db {
     }
 
     pub fn list_profiles(&self) -> Result<Vec<CompressionProfile>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.conn.prepare_cached(
             "SELECT json FROM compression_profiles ORDER BY sort_order, name COLLATE NOCASE",
         )?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
@@ -3146,7 +3173,7 @@ impl Db {
     pub fn duplicate_profile(&self, id: &str) -> Result<CompressionProfile> {
         let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
         let ordered = {
-            let mut stmt = tx.prepare(
+            let mut stmt = tx.prepare_cached(
                 "SELECT id, json FROM compression_profiles \
                  ORDER BY sort_order, name COLLATE NOCASE",
             )?;
@@ -3388,7 +3415,7 @@ impl Db {
              FROM deletion_requests dr JOIN photos p ON p.id = dr.photo_id \
              WHERE dr.photo_id = ?1 AND dr.status IN ('pending', 'blocked', 'running') \
              ORDER BY dr.id DESC LIMIT 1";
-        let mut stmt = self.conn.prepare(sql)?;
+        let mut stmt = self.conn.prepare_cached(sql)?;
         Ok(stmt
             .query_row(params![photo_id], row_to_deletion_request)
             .optional()?)
@@ -3400,7 +3427,7 @@ impl Db {
              FROM deletion_requests dr JOIN photos p ON p.id = dr.photo_id \
              WHERE dr.status IN ('pending', 'blocked', 'running') \
              ORDER BY dr.requested_at, dr.id LIMIT ?1";
-        let mut stmt = self.conn.prepare(sql)?;
+        let mut stmt = self.conn.prepare_cached(sql)?;
         let rows = stmt.query_map(params![clamp_limit(limit)], row_to_deletion_request)?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
@@ -3453,7 +3480,7 @@ impl Db {
                 "SELECT status, COUNT(*) FROM compression_jobs \
                  WHERE photo_id IN ({placeholders}) GROUP BY status"
             );
-            let mut stmt = self.conn.prepare(&sql)?;
+            let mut stmt = self.conn.prepare_cached(&sql)?;
             let rows = stmt.query_map(params_from_iter(chunk.iter().copied()), |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
             })?;
@@ -3473,7 +3500,7 @@ impl Db {
                 "SELECT status, COUNT(*) FROM send_outbox \
                  WHERE photo_id IN ({placeholders}) GROUP BY status"
             );
-            let mut stmt = self.conn.prepare(&sql)?;
+            let mut stmt = self.conn.prepare_cached(&sql)?;
             let rows = stmt.query_map(params_from_iter(chunk.iter().copied()), |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
             })?;
@@ -3493,7 +3520,7 @@ impl Db {
                 "SELECT status, COUNT(*) FROM tagging_jobs \
                  WHERE photo_id IN ({placeholders}) GROUP BY status"
             );
-            let mut stmt = self.conn.prepare(&sql)?;
+            let mut stmt = self.conn.prepare_cached(&sql)?;
             let rows = stmt.query_map(params_from_iter(chunk.iter().copied()), |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
             })?;
@@ -3604,7 +3631,7 @@ impl Db {
                    ) \
                ) \
              ORDER BY (dr.reason = 'manual') DESC, dr.requested_at, dr.id LIMIT ?1";
-        let mut stmt = self.conn.prepare(sql)?;
+        let mut stmt = self.conn.prepare_cached(sql)?;
         let rows = stmt.query_map(params![clamp_limit(limit)], row_to_deletion_request)?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
@@ -3614,7 +3641,7 @@ impl Db {
                 dr.blocked_reason, dr.error, dr.requested_at, dr.started_at, dr.finished_at \
              FROM deletion_requests dr JOIN photos p ON p.id = dr.photo_id \
              WHERE dr.id = ?1";
-        let mut stmt = self.conn.prepare(sql)?;
+        let mut stmt = self.conn.prepare_cached(sql)?;
         Ok(stmt
             .query_row(params![request_id], row_to_deletion_request)
             .optional()?)
@@ -4094,7 +4121,7 @@ impl Db {
             return Ok(Vec::new());
         };
         let mut jobs = {
-            let mut stmt = tx.prepare(
+            let mut stmt = tx.prepare_cached(
                 "UPDATE compression_jobs SET status = 'processing', started_at = ?1 \
                  WHERE status = 'pending' AND photo_id = ?2 \
                  RETURNING id, photo_id, profile_id, status, progress, error, output_path, policy, output_dir, \
@@ -4175,7 +4202,7 @@ impl Db {
             "SELECT {} FROM compression_jobs ORDER BY created_at DESC LIMIT ?1",
             Self::JOB_COLUMNS
         );
-        let mut stmt = self.conn.prepare(&sql)?;
+        let mut stmt = self.conn.prepare_cached(&sql)?;
         let rows = stmt.query_map(params![clamp_limit(limit)], row_to_job)?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
@@ -4193,7 +4220,7 @@ impl Db {
              ORDER BY created_at DESC LIMIT ?2",
             Self::JOB_COLUMNS
         );
-        let mut stmt = self.conn.prepare(&sql)?;
+        let mut stmt = self.conn.prepare_cached(&sql)?;
         let rows = stmt.query_map(params![status.as_str(), clamp_limit(limit)], row_to_job)?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
@@ -4633,7 +4660,7 @@ impl Db {
              ORDER BY o.id DESC LIMIT ?1",
             Self::SEND_COLUMNS_QUALIFIED
         );
-        let mut stmt = self.conn.prepare(&sql)?;
+        let mut stmt = self.conn.prepare_cached(&sql)?;
         let rows = stmt.query_map(params![clamp_limit(limit)], |row| {
             Ok(SendHistoryEntry {
                 entry: row_to_send_outbox(row)?,
@@ -4728,7 +4755,7 @@ impl Db {
     /// Returns every stored daemon error, newest first. Rows whose operation
     /// string is unknown to this build are skipped.
     pub fn daemon_errors(&self) -> Result<Vec<DaemonError>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.conn.prepare_cached(
             "SELECT operation, message, detail, occurred_at, attempts, message_key, message_args \
              FROM daemon_errors ORDER BY occurred_at DESC, operation",
         )?;
@@ -4796,7 +4823,7 @@ impl Db {
         let mut commands = Vec::new();
         {
             let mut stmt =
-                tx.prepare("SELECT command, payload FROM daemon_commands ORDER BY id")?;
+                tx.prepare_cached("SELECT command, payload FROM daemon_commands ORDER BY id")?;
             let rows = stmt.query_map([], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
             })?;
@@ -4859,7 +4886,7 @@ impl Db {
     }
 
     pub fn compressed_photo_ids(&self) -> Result<Vec<i64>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.conn.prepare_cached(
             "SELECT DISTINCT d.photo_id FROM derivatives d \
                  JOIN photos p ON p.id = d.photo_id WHERE p.status IN ('present', 'replaced')",
         )?;
@@ -4868,7 +4895,7 @@ impl Db {
     }
 
     pub fn derivatives_for_photo(&self, photo_id: i64) -> Result<Vec<Derivative>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.conn.prepare_cached(
             "SELECT id, photo_id, path, format, width, height, file_size, profile_id, policy, created_at \
              FROM derivatives WHERE photo_id = ?1 ORDER BY created_at DESC",
         )?;
@@ -4932,7 +4959,7 @@ impl Db {
     }
 
     pub fn list_plugin_installations(&self, plugin_id: &str) -> Result<Vec<PluginInstallation>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.conn.prepare_cached(
             "SELECT plugin_id, variant, version, protocol_version, path, manifest_json, \
                 catalog_version, active, installed_at, updated_at \
              FROM plugin_installations WHERE plugin_id = ?1 ORDER BY variant, version",
@@ -4978,7 +5005,7 @@ impl Db {
                 )
                 .optional()?,
             None => {
-                let mut stmt = tx.prepare(
+                let mut stmt = tx.prepare_cached(
                     "SELECT version FROM plugin_installations \
                      WHERE plugin_id = ?1 AND variant = ?2",
                 )?;
@@ -5165,7 +5192,7 @@ impl Db {
     }
 
     pub fn ai_tag_definitions(&self, plugin_id: &str) -> Result<Vec<AiTagDefinition>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.conn.prepare_cached(
             "SELECT plugin_id, tag_key, branch, tag_group, name, name_en, description, \
                 default_threshold, sort_order, catalog_version, updated_at \
              FROM ai_tag_definitions WHERE plugin_id = ?1 \
@@ -5240,7 +5267,7 @@ impl Db {
     }
 
     pub fn ai_tag_thresholds(&self, plugin_id: &str) -> Result<Vec<AiTagThreshold>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.conn.prepare_cached(
             "SELECT plugin_id, tag_key, threshold, updated_at \
              FROM ai_tag_thresholds WHERE plugin_id = ?1 ORDER BY tag_key",
         )?;
@@ -5336,7 +5363,7 @@ impl Db {
                 catalog_version, tagged_at FROM photo_ai_tags \
              WHERE photo_id = ?1{applied_clause} ORDER BY tag_key"
         );
-        let mut stmt = self.conn.prepare(&sql)?;
+        let mut stmt = self.conn.prepare_cached(&sql)?;
         let rows = stmt.query_map(params![photo_id], row_to_photo_ai_tag)?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
@@ -5344,7 +5371,7 @@ impl Db {
     /// Returns every judged tag with its catalog display names. Tags that are
     /// no longer in the catalog fall back to the raw key.
     pub fn photo_ai_tags_with_names(&self, photo_id: i64) -> Result<Vec<PhotoAiTagView>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.conn.prepare_cached(
             "SELECT t.tag_key, COALESCE(d.branch, ''), COALESCE(d.tag_group, ''), \
                 COALESCE(d.name, t.tag_key), d.name_en, t.probability, t.applied \
              FROM photo_ai_tags t \
@@ -5638,7 +5665,7 @@ impl Db {
 
     pub fn tagging_job_counts(&self, plugin_id: &str) -> Result<JobStatusCounts> {
         let mut counts = JobStatusCounts::default();
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.conn.prepare_cached(
             "SELECT status, COUNT(*) FROM tagging_jobs WHERE plugin_id = ?1 GROUP BY status",
         )?;
         let rows = stmt.query_map(params![plugin_id], |row| {
@@ -5670,7 +5697,7 @@ impl Db {
              ORDER BY created_at DESC, id DESC LIMIT ?1",
             TAGGING_JOB_COLUMNS
         );
-        let mut stmt = self.conn.prepare(&sql)?;
+        let mut stmt = self.conn.prepare_cached(&sql)?;
         let rows = stmt.query_map(params![clamp_limit(limit)], row_to_tagging_job)?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
@@ -5708,7 +5735,7 @@ impl Db {
             "SELECT {} FROM tagging_jobs WHERE status = ?1 ORDER BY {order} LIMIT ?2",
             TAGGING_JOB_COLUMNS
         );
-        let mut stmt = self.conn.prepare(&sql)?;
+        let mut stmt = self.conn.prepare_cached(&sql)?;
         let rows = stmt.query_map(params![status.as_str(), limit], row_to_tagging_job)?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
@@ -5719,7 +5746,7 @@ impl Db {
              ORDER BY created_at, rowid",
             TAGGING_JOB_COLUMNS
         );
-        let mut stmt = self.conn.prepare(&sql)?;
+        let mut stmt = self.conn.prepare_cached(&sql)?;
         let rows = stmt.query_map(params![photo_id], row_to_tagging_job)?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
@@ -6945,6 +6972,27 @@ mod tests {
         let request = db.active_deletion_request(id).unwrap().unwrap();
         assert_eq!(request.reason, DeletionReason::Manual);
         assert_eq!(request.status, DeletionStatus::Pending);
+    }
+
+    #[test]
+    fn photo_effective_path_prefers_the_display_derivative() {
+        let db = Db::open_in_memory().unwrap();
+        let id = seed_photo(&db);
+        assert_eq!(
+            db.photo_effective_path(id).unwrap().as_deref(),
+            Some("/photos/a.png")
+        );
+        assert_eq!(db.photo_effective_path(999_999).unwrap(), None);
+
+        let derivative = db
+            .add_derivative(id, "/photos/a_webp.webp", "webp", 16, 10, 8, "p", "replace")
+            .unwrap();
+        db.set_replaced(id, derivative).unwrap();
+
+        assert_eq!(
+            db.photo_effective_path(id).unwrap().as_deref(),
+            Some("/photos/a_webp.webp")
+        );
     }
 
     #[test]
@@ -8920,7 +8968,7 @@ mod tests {
             let tx = db.connection().unchecked_transaction().unwrap();
             {
                 let mut stmt = tx
-                    .prepare(
+                    .prepare_cached(
                         "INSERT INTO photos(root_id, rel_path, abs_path, file_name, \
                          captured_at_utc, captured_at_local, tz_offset_sec, width, height, \
                          file_size, mtime, status, created_at, updated_at) \
@@ -10371,7 +10419,7 @@ mod tests {
         assert_eq!(version, 17);
         let columns: Vec<String> = db
             .connection()
-            .prepare("SELECT name FROM pragma_table_info('ai_tag_definitions')")
+            .prepare_cached("SELECT name FROM pragma_table_info('ai_tag_definitions')")
             .unwrap()
             .query_map([], |row| row.get(0))
             .unwrap()
@@ -10735,7 +10783,7 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let mut stmt = db
             .conn
-            .prepare(
+            .prepare_cached(
                 "EXPLAIN QUERY PLAN SELECT id FROM compression_jobs \
                  WHERE status = 'pending' ORDER BY created_at, rowid LIMIT 1",
             )
@@ -10754,7 +10802,7 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let mut stmt = db
             .conn
-            .prepare(&format!("EXPLAIN QUERY PLAN {SESSIONS_NEAR_SQL}"))
+            .prepare_cached(&format!("EXPLAIN QUERY PLAN {SESSIONS_NEAR_SQL}"))
             .unwrap();
         let plan = stmt
             .query_map(params![1000, 30], |row| row.get::<_, String>(3))
@@ -11301,7 +11349,7 @@ mod tests {
     fn query_plan_with_values(db: &Db, sql: &str, values: Vec<Value>) -> Vec<String> {
         let mut stmt = db
             .connection()
-            .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+            .prepare_cached(&format!("EXPLAIN QUERY PLAN {sql}"))
             .unwrap();
         let rows = stmt
             .query_map(params_from_iter(values), |row| row.get::<_, String>(3))
