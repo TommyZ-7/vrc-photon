@@ -440,6 +440,16 @@ pub fn scan_and_index(db: &Db, root_id: i64, root: &Path) -> Result<ScanReport> 
     scan_and_index_observed(db, root_id, root, |_| {})
 }
 
+/// Number of scanned photos buffered before one batched UPSERT transaction.
+const SCAN_UPSERT_CHUNK: usize = 256;
+
+/// A photo waiting for the next batch UPSERT.
+struct PendingUpsert {
+    photo: NewPhoto,
+    existed: bool,
+    path: PathBuf,
+}
+
 /// The database operations a scan needs. Implemented for a plain `Db` (the
 /// synchronous callers and tests) and for `Mutex<Db>` (the daemon, which must
 /// not hold the lock while walking or hashing files).
@@ -448,6 +458,13 @@ trait ScanStore {
     fn find_rebind_candidate(&self, photo: &NewPhoto) -> Result<Option<Photo>>;
     fn rebind_photo(&self, photo_id: i64, photo: &NewPhoto) -> Result<bool>;
     fn upsert_photo(&self, photo: &NewPhoto) -> Result<i64>;
+
+    fn upsert_photos(&self, photos: &[NewPhoto]) -> Result<Vec<i64>> {
+        photos
+            .iter()
+            .map(|photo| self.upsert_photo(photo))
+            .collect()
+    }
 }
 
 impl ScanStore for Db {
@@ -465,6 +482,10 @@ impl ScanStore for Db {
 
     fn upsert_photo(&self, photo: &NewPhoto) -> Result<i64> {
         Db::upsert_photo(self, photo)
+    }
+
+    fn upsert_photos(&self, photos: &[NewPhoto]) -> Result<Vec<i64>> {
+        Db::upsert_photos(self, photos)
     }
 }
 
@@ -484,11 +505,90 @@ impl ScanStore for Mutex<Db> {
     fn upsert_photo(&self, photo: &NewPhoto) -> Result<i64> {
         with_db(self, |db| db.upsert_photo(photo))
     }
+
+    fn upsert_photos(&self, photos: &[NewPhoto]) -> Result<Vec<i64>> {
+        with_db(self, |db| db.upsert_photos(photos))
+    }
 }
 
 fn with_db<T>(db: &Mutex<Db>, operation: impl FnOnce(&Db) -> Result<T>) -> Result<T> {
     let guard = db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     operation(&guard)
+}
+
+/// Upserts the buffered photos as one batch.
+///
+/// A failed chunk rolls back as a unit. The scanner then retries each photo
+/// individually so a single bad row is reported without discarding the rest
+/// of the chunk.
+fn flush_upserts<S, F>(
+    db: &S,
+    pending: &mut Vec<PendingUpsert>,
+    report: &mut ScanReport,
+    processed: &mut usize,
+    total: usize,
+    observe: &mut F,
+) where
+    S: ScanStore + ?Sized,
+    F: FnMut(ScanProgress),
+{
+    if pending.is_empty() {
+        return;
+    }
+    let photos: Vec<NewPhoto> = pending
+        .iter()
+        .map(|pending| pending.photo.clone())
+        .collect();
+    match db.upsert_photos(&photos) {
+        Ok(ids) => {
+            debug_assert_eq!(ids.len(), pending.len());
+            for (pending, id) in pending.drain(..).zip(ids) {
+                record_pending_upsert(pending, Ok(id), report, processed, total, observe);
+            }
+        }
+        Err(error) => {
+            tracing::warn!(%error, "cannot index a photo chunk; retrying individually");
+            for pending in pending.drain(..) {
+                let result = db.upsert_photo(&pending.photo);
+                record_pending_upsert(pending, result, report, processed, total, observe);
+            }
+        }
+    }
+}
+
+fn record_pending_upsert<F>(
+    pending: PendingUpsert,
+    result: Result<i64>,
+    report: &mut ScanReport,
+    processed: &mut usize,
+    total: usize,
+    observe: &mut F,
+) where
+    F: FnMut(ScanProgress),
+{
+    match result {
+        Ok(id) => {
+            report.indexed += 1;
+            report.modified += 1;
+            if !pending.existed {
+                report.new_ids.push(id);
+            }
+        }
+        Err(error) => {
+            tracing::warn!(path = %pending.photo.abs_path, %error, "cannot index photo");
+            report.skipped += 1;
+            report
+                .failures
+                .push(ScanFailure::new(&pending.path, error.to_string()));
+        }
+    }
+    *processed += 1;
+    observe(ScanProgress {
+        phase: ScanPhase::Indexing,
+        processed: *processed,
+        total: Some(total),
+        indexed: report.indexed,
+    });
 }
 
 /// Scans and indexes one root, reporting walking and indexing progress.
@@ -558,6 +658,8 @@ where
         .collect();
     let states = db.photo_scan_states(&paths)?;
     let mut processed = 0;
+    let mut pending = Vec::new();
+    let mut cancelled = false;
     observe(ScanProgress {
         phase: ScanPhase::Indexing,
         processed,
@@ -566,7 +668,7 @@ where
     });
     for photo in photos {
         if stopped(running) {
-            report.cancelled = true;
+            cancelled = true;
             break;
         }
         let path = photo.path.to_string_lossy().to_string();
@@ -608,7 +710,7 @@ where
             _ => None,
         };
         if stopped(running) {
-            report.cancelled = true;
+            cancelled = true;
             break;
         }
 
@@ -649,29 +751,32 @@ where
             }
         }
 
-        match db.upsert_photo(&new_photo) {
-            Ok(id) => {
-                report.indexed += 1;
-                report.modified += 1;
-                if !existed {
-                    report.new_ids.push(id);
-                }
-            }
-            Err(error) => {
-                tracing::warn!(path = %new_photo.abs_path, %error, "cannot index photo");
-                report.skipped += 1;
-                report
-                    .failures
-                    .push(ScanFailure::new(&photo_path, error.to_string()));
-            }
-        }
-        processed += 1;
-        observe(ScanProgress {
-            phase: ScanPhase::Indexing,
-            processed,
-            total: Some(total),
-            indexed: report.indexed,
+        pending.push(PendingUpsert {
+            photo: new_photo,
+            existed,
+            path: photo_path,
         });
+        if pending.len() >= SCAN_UPSERT_CHUNK {
+            flush_upserts(
+                db,
+                &mut pending,
+                &mut report,
+                &mut processed,
+                total,
+                &mut observe,
+            );
+        }
+    }
+    flush_upserts(
+        db,
+        &mut pending,
+        &mut report,
+        &mut processed,
+        total,
+        &mut observe,
+    );
+    if cancelled {
+        report.cancelled = true;
     }
     Ok(report)
 }
@@ -701,12 +806,83 @@ mod tests {
     use super::*;
     use crate::model::PhotoStatus;
     use image::{Rgba, RgbaImage};
+    use std::cell::{Cell, RefCell};
+    use std::collections::HashMap;
     use std::sync::Arc;
     use tempfile::tempdir;
 
     fn write_png(path: &Path) {
         let image = RgbaImage::from_pixel(4, 3, Rgba([10, 20, 30, 255]));
         image.save(path).unwrap();
+    }
+
+    struct RecordingStore {
+        db: Db,
+        chunk_sizes: RefCell<Vec<usize>>,
+    }
+
+    impl ScanStore for RecordingStore {
+        fn photo_scan_states(
+            &self,
+            paths: &[String],
+        ) -> Result<HashMap<String, crate::db::PhotoScanState>> {
+            self.db.photo_scan_states(paths)
+        }
+
+        fn find_rebind_candidate(&self, photo: &NewPhoto) -> Result<Option<Photo>> {
+            self.db.find_rebind_candidate(photo)
+        }
+
+        fn rebind_photo(&self, photo_id: i64, photo: &NewPhoto) -> Result<bool> {
+            self.db.rebind_photo(photo_id, photo)
+        }
+
+        fn upsert_photo(&self, photo: &NewPhoto) -> Result<i64> {
+            self.db.upsert_photo(photo)
+        }
+
+        fn upsert_photos(&self, photos: &[NewPhoto]) -> Result<Vec<i64>> {
+            self.chunk_sizes.borrow_mut().push(photos.len());
+            self.db.upsert_photos(photos)
+        }
+    }
+
+    struct FailingChunkStore {
+        db: Db,
+        fail_next_chunk: Cell<bool>,
+        chunk_attempts: Cell<usize>,
+        per_photo_attempts: Cell<usize>,
+    }
+
+    impl ScanStore for FailingChunkStore {
+        fn photo_scan_states(
+            &self,
+            paths: &[String],
+        ) -> Result<HashMap<String, crate::db::PhotoScanState>> {
+            self.db.photo_scan_states(paths)
+        }
+
+        fn find_rebind_candidate(&self, photo: &NewPhoto) -> Result<Option<Photo>> {
+            self.db.find_rebind_candidate(photo)
+        }
+
+        fn rebind_photo(&self, photo_id: i64, photo: &NewPhoto) -> Result<bool> {
+            self.db.rebind_photo(photo_id, photo)
+        }
+
+        fn upsert_photo(&self, photo: &NewPhoto) -> Result<i64> {
+            self.per_photo_attempts
+                .set(self.per_photo_attempts.get() + 1);
+            self.db.upsert_photo(photo)
+        }
+
+        fn upsert_photos(&self, photos: &[NewPhoto]) -> Result<Vec<i64>> {
+            self.chunk_attempts.set(self.chunk_attempts.get() + 1);
+            if self.fail_next_chunk.replace(false) {
+                return Err(CoreError::Invalid("chunk failed".to_string()));
+            }
+            self.db.upsert_photos(photos)
+        }
     }
 
     #[test]
@@ -759,6 +935,63 @@ mod tests {
         })
         .unwrap();
         assert_eq!(report.indexed, 1);
+    }
+
+    #[test]
+    fn scan_flushes_upserts_in_bounded_chunks() {
+        let dir = tempdir().unwrap();
+        for index in 0..257 {
+            let name = format!(
+                "VRChat_2026-10-21_21-{:02}-{:02}.221_4x3.png",
+                index / 60,
+                index % 60
+            );
+            write_png(&dir.path().join(name));
+        }
+        let store = RecordingStore {
+            db: Db::open_in_memory().unwrap(),
+            chunk_sizes: RefCell::new(Vec::new()),
+        };
+        let root_id = store
+            .db
+            .add_root(&dir.path().to_string_lossy(), "reference")
+            .unwrap();
+
+        let report = scan_and_index_with_store(&store, root_id, dir.path(), None, |_| {}).unwrap();
+
+        assert_eq!(report.found, 257);
+        assert_eq!(report.indexed, 257);
+        assert_eq!(*store.chunk_sizes.borrow(), vec![256, 1]);
+        assert_eq!(store.db.count_photos().unwrap(), 257);
+    }
+
+    #[test]
+    fn chunk_failure_falls_back_to_per_photo_upserts() {
+        let dir = tempdir().unwrap();
+        for second in 3..=5 {
+            write_png(
+                &dir.path()
+                    .join(format!("VRChat_2026-10-21_21-14-{second:02}.221_4x3.png")),
+            );
+        }
+        let store = FailingChunkStore {
+            db: Db::open_in_memory().unwrap(),
+            fail_next_chunk: Cell::new(true),
+            chunk_attempts: Cell::new(0),
+            per_photo_attempts: Cell::new(0),
+        };
+        let root_id = store
+            .db
+            .add_root(&dir.path().to_string_lossy(), "reference")
+            .unwrap();
+
+        let report = scan_and_index_with_store(&store, root_id, dir.path(), None, |_| {}).unwrap();
+
+        assert_eq!(report.indexed, 3);
+        assert!(report.failures.is_empty());
+        assert_eq!(store.chunk_attempts.get(), 1);
+        assert_eq!(store.per_photo_attempts.get(), 3);
+        assert_eq!(store.db.count_photos().unwrap(), 3);
     }
 
     #[test]
