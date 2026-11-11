@@ -128,8 +128,12 @@ jobs:
           PACKAGE_VERSION: ${{ steps.package-version.outputs.version }}
         run: |
           set -euo pipefail
+          # The job runs in a container, so $PWD is /__w/... and cannot be
+          # bind-mounted by the host Docker daemon. GitHub maps /__w to
+          # /home/runner/work on the host.
+          host_workspace="/home/runner/work/${GITHUB_REPOSITORY#*/}/${GITHUB_REPOSITORY#*/}"
           docker run --rm -e PACKAGE_VERSION \
-            -v "$PWD/dist:/dist" -w /dist archlinux:base-devel bash -c '
+            -v "$host_workspace/dist:/dist" -w /dist archlinux:base-devel bash -c '
             set -euxo pipefail
             owner=$(stat -c "%u:%g" /dist)
             trap "chown -R $owner /dist" EXIT
@@ -232,6 +236,7 @@ jobs:
       - name: Verify polkit policy
         run: |
           set -euo pipefail
+          host_workspace="/home/runner/work/${GITHUB_REPOSITORY#*/}/${GITHUB_REPOSITORY#*/}"
           policy="usr/share/polkit-1/actions/com.tommyz.vrc-photon.update.policy"
           deb=$(ls dist/*.deb)
           pkg=$(ls dist/vrc-photon-[0-9]*.pkg.tar.zst)
@@ -243,7 +248,7 @@ jobs:
           grep -q 'org.freedesktop.policykit.exec.path' "$tmp/deb/$policy"
           grep -q 'org.freedesktop.policykit.exec.path.*/usr/bin/vrc-photon-updater' "$tmp/deb/$policy" \
             || { echo "unexpected pkexec path in $policy"; exit 1; }
-          docker run --rm -v "$PWD/dist:/dist" archlinux:base-devel bash -c "
+          docker run --rm -v "$host_workspace/dist:/dist" archlinux:base-devel bash -c "
             set -euo pipefail
             package=/dist/$(basename "$pkg")
             pacman -Qlp \"\$package\" | grep -q '$policy$'
