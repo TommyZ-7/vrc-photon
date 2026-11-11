@@ -86,6 +86,22 @@ jobs:
       - name: Build Linux packages
         run: cargo packager --release
 
+      - name: Diagnose AppImage packaging
+        if: failure()
+        continue-on-error: true
+        run: |
+          echo "PATH=$PATH"
+          for tool in patchelf strip objcopy ldd file mksquashfs zsyncmake desktop-file-validate update-desktop-database gdk-pixbuf-query-loaders glib-compile-schemas update-mime-database; do
+            printf '%-30s ' "$tool"
+            command -v "$tool" || echo MISSING
+          done
+          ls -l /usr/local/bin/gdk-pixbuf-query-loaders || true
+          if [ -d dist/.cargo-packager/appimage ]; then
+            cd dist/.cargo-packager/appimage
+            sed -i 's/--appimage-extract-and-run --appdir/--appimage-extract-and-run --verbosity=0 --appdir/' build_appimage.sh
+            bash -x build_appimage.sh 2>&1 | tail -200
+          fi
+
       - name: Fix PKGBUILD package name
         run: |
           pkg_name=$(sed -n 's/^name = "\(.*\)"/\1/p' Packager.toml | head -n1)
