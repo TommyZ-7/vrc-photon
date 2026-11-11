@@ -10,13 +10,13 @@ cargo test --workspace --locked
 
 2026-11-11時点（CI の `test` ジョブの `test result` 行から更新）:
 
-- `vrc-photon-core`: 555 passed / 1 ignored
+- `vrc-photon-core`: 561 passed / 1 ignored
 - `vrc-photon-daemon`: 306 passed / 1 ignored
 - `vrc-photon-ipc`: 41 passed
 - `vrc-photon-update`: 147 passed
 - `vrc-photon-release-tool`: 9 passed
 - `vrc-photon-signing`: 3 passed
-- UI: 568 passed（GPUIを起動しない純粋ヘルパーとIPCブリッジの単体テスト）
+- UI: 571 passed（GPUIを起動しない純粋ヘルパーとIPCブリッジの単体テスト）
 
 件数は各クレートの lib 単体テスト（UI は bin）の passed / ignored。統合テストと
 doc-test は含めない。`--list` で総数を確認する場合は
