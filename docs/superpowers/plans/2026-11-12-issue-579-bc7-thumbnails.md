@@ -12,7 +12,7 @@
 
 **Mock:** `docs/ui-579-thumbnail-settings-mockup.html`
 
-**Status:** ドラフト（設計・モック承認待ち）
+**Status:** 承認済み（2026-11-12）
 
 ## Global Constraints
 
@@ -25,6 +25,7 @@
 - グリッドカードは 3:2 固定。表示比率と回転は DB の `photo.effective_dimensions()` を基準にする。
 - fork の変更は `TommyZ-7/gpui-fast` の独立 PR。docs と実装は別 PR。
 - 既存の起動時サムネイルバッチ（最新 5,000 件）は維持する。
+- `thumbnail_cache_mb` の既定を 8 GB へ変更する。384×216 で約 100,000 枚を保持できる。
 - 設定・UI 文言は `crates/i18n/locales/ja.yml` と `en.yml` の両方へ追加・削除する。
 - 検証: `cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`
 - CI が green になるまで merge しない。計画のチェックボックスは作業完了時に `- [x]` へ更新する。
@@ -86,9 +87,9 @@ gh pr create --title "docs: #579 サムネイルの BC7 化と Texture2DArray �
   --body "Refs #579" --label documentation
 ```
 
-- [ ] **Step 7: モックと設計の承認を得る**
+- [x] **Step 7: モックと設計の承認を得る**
 
-ユーザーへモックと設計を提示し、承認を得る。承認前に Phase 1 以降へ進まない。承認後、この計画の該当チェックボックスを更新し、docs PR を CI green 後に merge する。
+2026-11-12 に承認。I10–I12 の回答を反映し、docs PR を CI green 後に merge する。
 
 ### Task 2: 承認ゲート
 
@@ -98,13 +99,13 @@ gh pr create --title "docs: #579 サムネイルの BC7 化と Texture2DArray �
 - Consumes: Task 1 の設計・モック
 - Produces: 実装開始の承認
 
-- [ ] **Step 1: ユーザーの承認を確認する**
+- [x] **Step 1: ユーザーの承認を確認する**
 
-Q1–Q8 の回答と、設定画面モックの見た目・文言・再生成ヒントに問題がないことを確認する。
+Q1–Q8、I10–I12、設定画面モック、設計、計画の承認を確認した。
 
-- [ ] **Step 2: 設計変更があれば反映する**
+- [x] **Step 2: 設計変更があれば反映する**
 
-承認時の指摘を設計・モック・計画へ反映し、再度提示する。承認が揃うまで実装しない。
+I12（`thumbnail_cache_mb` の既定 8 GB）を設計・計画へ反映した。追加の変更はない。
 
 ---
 
@@ -560,6 +561,7 @@ git commit -m "feat(core): manage the BC7 thumbnail cache"
 - `thumbnail_size_normalizes_unknown_values_to_384`
 - `legacy_thumbnail_size_values_map_to_widths`
 - `unknown_quality_key_in_json_is_ignored`
+- `thumbnail_cache_default_is_8_gb`
 
 - [ ] **Step 2: テストが失敗することを確認する**
 
@@ -568,7 +570,7 @@ Expected: FAIL
 
 - [ ] **Step 3: 最小実装を書く**
 
-`thumbnail_quality` と `THUMBNAIL_QUALITY_*` を削除する。`default_thumbnail_size` を 384 にする。既存の 256 / 384 / 512 は幅として維持し、未知値は 384。
+`thumbnail_quality` と `THUMBNAIL_QUALITY_*` を削除する。`default_thumbnail_size` を 384 にする。既存の 256 / 384 / 512 は幅として維持し、未知値は 384。`thumbnail_cache_mb` の既定を 8192 にする。
 
 - [ ] **Step 4: テストが通ることを確認する**
 
