@@ -332,7 +332,7 @@ jobs:
           merge-multiple: true
 
       - name: Build release tool (without the signing secret)
-        run: cargo build -p vrc-photon-release-tool --bin vrc-photon-update-manifest
+        run: cargo build -p vrc-photon-release-tool --bin vrc-photon-update-manifest --locked
 
       - name: Sign artifacts and build the update manifest
         env:
@@ -348,7 +348,7 @@ jobs:
               ;;
           esac
           VERSION="${TAG#v}"
-          CARGO_VERSION=$(cargo metadata --no-deps --format-version 1 \
+          CARGO_VERSION=$(cargo metadata --no-deps --format-version 1 --locked \
             | jq -r '.packages[] | select(.name == "vrc-photon-ui") | .version')
           PACKAGER_VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Packager.toml | head -n1)
           if [ "$VERSION" != "$CARGO_VERSION" ] || [ "$VERSION" != "$PACKAGER_VERSION" ]; then
