@@ -1982,18 +1982,6 @@ impl App {
         }
         cx.notify();
     }
-
-    /// Loads the selected photo's AI result and applied tag views.
-    pub(crate) fn load_selected_ai(&mut self, photo_id: i64) {
-        let (ai, tags) = load_photo_ai(&self.db, photo_id);
-        self.selected_ai = ai;
-        self.selected_ai_tags = tags;
-        self.ai_tag_focused = None;
-        // The inspector and Quick Look share this cache. Any reload (a
-        // selection change, a tagging result, or a threshold/tag edit that
-        // refreshes the selected photo) must invalidate it.
-        self.ai_meta_revision = self.ai_meta_revision.wrapping_add(1);
-    }
 }
 
 #[cfg(test)]

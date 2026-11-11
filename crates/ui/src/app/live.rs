@@ -7,21 +7,26 @@
 //! re-renders when a value it displays actually changed.
 
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::Utc;
 use gpui_kit::component::notification::NotificationType;
 use gpui_kit::*;
-use vrc_photon_core::db::{Db, DbProfile};
+use vrc_photon_core::ai::{PhotoAi, PhotoAiTagView};
+use vrc_photon_core::db::Db;
+use vrc_photon_core::error::CoreError;
 use vrc_photon_core::model::{
-    CompressionJob, DaemonError, DeletionCounts, DeletionRequest, LibraryStats, QueueStatus,
+    CompressionJob, CompressionProfile, DaemonError, DeletionCounts, DeletionRequest, Derivative,
+    LibraryStats, Photo, PhotoPlayer, PhotoSort, QueueStatus, SendHistoryEntry,
 };
+use vrc_photon_core::settings::AppSettings;
 use vrc_photon_i18n::tr_args;
 
 use crate::app::App;
-use crate::app::ai::{AiLiveSnapshot, collect_ai_live_snapshot};
+use crate::app::ai::{AiLiveSnapshot, collect_ai_live_snapshot, load_photo_ai};
 use crate::app::daemon::daemon_liveness;
+use crate::state::photo_browser::PhotoIndex;
 use crate::ui::notifications::{FailureNotice, deletion_blocked_transition, failure_transition};
 
 const POLL_INTERVAL: Duration = Duration::from_secs(3);
@@ -67,7 +72,7 @@ impl LiveRefreshGate {
 }
 
 #[derive(Default)]
-struct LiveSnapshot {
+pub(crate) struct LiveSnapshot {
     revision: Option<i64>,
     ai_revision: Option<i64>,
     session_revision: Option<i64>,
@@ -81,6 +86,37 @@ struct LiveSnapshot {
     ai: AiLiveSnapshot,
     deletions: Option<DeletionSnapshot>,
     monitor: MonitorSnapshot,
+}
+
+/// Everything a full library rebuild needs, collected in one read-only pass.
+///
+/// `live` is the same snapshot the poller applies, so a rebuild and an
+/// event-driven refresh never run the stats, badge, and job aggregates twice.
+pub(crate) struct LibraryReloadSnapshot {
+    pub(crate) index: std::result::Result<Arc<PhotoIndex>, CoreError>,
+    pub(crate) live: LiveSnapshot,
+    pub(crate) aux: AuxSnapshot,
+}
+
+/// Read-only data used by the side panels that is too heavy or too volatile
+/// for the three-second poller.
+#[derive(Default)]
+pub(crate) struct AuxSnapshot {
+    pub(crate) profiles: Option<Vec<CompressionProfile>>,
+    pub(crate) settings: Option<AppSettings>,
+    pub(crate) send_history: Option<Vec<SendHistoryEntry>>,
+    pub(crate) send_waiting_count: Option<i64>,
+    pub(crate) selected: Option<SelectedMetaSnapshot>,
+}
+
+pub(crate) struct SelectedMetaSnapshot {
+    pub(crate) id: i64,
+    pub(crate) photo: Option<Photo>,
+    pub(crate) players: Vec<PhotoPlayer>,
+    pub(crate) tags: Vec<String>,
+    pub(crate) derivatives: Vec<Derivative>,
+    pub(crate) ai: Option<PhotoAi>,
+    pub(crate) ai_tags: Vec<PhotoAiTagView>,
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -140,31 +176,33 @@ impl App {
     /// In-memory demo databases have no second handle to open and hold only a
     /// handful of rows, so they keep the simple synchronous path.
     pub(crate) fn refresh_live_async(&mut self, cx: &mut Context<Self>) {
-        let Some(path) = self.db.path().map(Path::to_path_buf) else {
+        let Some(reader) = self.library_reader.clone() else {
             self.refresh_live(cx);
             return;
         };
+        // A full rebuild collects the same aggregates. Let it land instead of
+        // running a second live pass over the same revision.
+        if self.library_loading {
+            return;
+        }
         if self.live_refresh.request() == LiveRefreshRequest::FollowUpQueued {
             return;
         }
         let stats_revision = self.stats_revision;
         cx.spawn(async move |this, cx| {
-            let open_path = path.clone();
             let snapshot = cx
                 .background_executor()
                 .spawn(async move {
-                    let db = Db::open_read_only_with_profile(&open_path, DbProfile::Ui).ok()?;
-                    Some(collect_live_snapshot(&db, stats_revision))
+                    reader
+                        .query(|db| Ok(collect_live_snapshot(db, stats_revision, None)))
+                        .ok()
                 })
                 .await;
             this.update(cx, |this, cx| {
                 let follow_up = this.live_refresh.finish();
                 match snapshot {
-                    Some(snapshot) => this.apply_live_snapshot(snapshot, cx),
-                    None => tracing::warn!(
-                        path = %path.display(),
-                        "cannot open the library for the live refresh"
-                    ),
+                    Some(snapshot) => this.apply_live_snapshot(snapshot, false, cx),
+                    None => tracing::warn!("cannot read the library for the live refresh"),
                 }
                 if follow_up {
                     this.refresh_live_async(cx);
@@ -175,7 +213,77 @@ impl App {
         .detach();
     }
 
-    fn apply_live_snapshot(&mut self, snapshot: LiveSnapshot, cx: &mut Context<Self>) {
+    /// Applies a full rebuild collected by [`collect_library_snapshot`].
+    ///
+    /// The index, the live aggregates, and the side-panel reads all arrive in
+    /// one snapshot. No database query runs on the UI thread.
+    pub(crate) fn apply_library_snapshot_from_background(
+        &mut self,
+        snapshot: LibraryReloadSnapshot,
+        preserve_anchor: bool,
+        anchor: Option<i64>,
+        cx: &mut Context<Self>,
+    ) {
+        self.library_loading = false;
+        let index = match snapshot.index {
+            Ok(index) => index,
+            Err(error) => {
+                tracing::error!(%error, "photo_index failed");
+                self.note_library_error("photos.index_error", cx);
+                self.refresh_live_async(cx);
+                return;
+            }
+        };
+
+        self.library.borrow_mut().replace_index(index);
+        self.library_error = None;
+        self.library_dirty = false;
+        if let Some(revision) = snapshot.live.revision {
+            self.last_library_revision = self.last_library_revision.max(revision);
+        }
+        self.count_debounce.reset();
+        self.revision_debounce.reset();
+
+        let anchor_present =
+            anchor.is_some_and(|id| self.library.borrow().index.row_of_id(id).is_some());
+        if preserve_anchor && let Some(id) = anchor.filter(|_| anchor_present) {
+            self.scroll_to_photo(false, id, ScrollStrategy::Top);
+        } else {
+            self.scroll_grid_to_top(false);
+        }
+
+        if !self.search_active {
+            let index = self.library.borrow().index.clone();
+            self.search_view.borrow_mut().replace_index(index);
+        }
+
+        self.apply_live_snapshot(snapshot.live, true, cx);
+        self.apply_aux_snapshot(snapshot.aux, cx);
+
+        if std::mem::take(&mut self.pending_initial_select) {
+            let first_id = self
+                .library
+                .borrow()
+                .index
+                .entries
+                .first()
+                .map(|entry| entry.id);
+            if let Some(id) = first_id {
+                self.select_photo(id, cx);
+                self.initial_focus_pending = true;
+            } else if self.library_error.is_none() {
+                self.toast_info(vrc_photon_i18n::tr!("app.empty_library"), cx);
+            }
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn apply_live_snapshot(
+        &mut self,
+        snapshot: LiveSnapshot,
+        library_applied: bool,
+        cx: &mut Context<Self>,
+    ) {
         let mut notify = false;
 
         if let Some(stats) = snapshot.stats
@@ -328,7 +436,9 @@ impl App {
             notify = true;
         }
 
-        if self.apply_library_change(snapshot.revision, snapshot.photo_count, cx) {
+        if !library_applied
+            && self.apply_library_change(snapshot.revision, snapshot.photo_count, cx)
+        {
             notify = true;
         }
 
@@ -338,8 +448,73 @@ impl App {
     }
 }
 
-fn collect_live_snapshot(db: &Db, stats_revision: i64) -> LiveSnapshot {
+/// Collects the index and every side-panel read in one background pass.
+pub(crate) fn collect_library_snapshot(
+    db: &Db,
+    stats_revision: i64,
+    selected_id: Option<i64>,
+) -> LibraryReloadSnapshot {
+    // Read the revision before the index. If a commit lands while the index
+    // query runs, the next poll sees a newer revision and rebuilds again;
+    // recording a post-query revision instead could swallow that change.
     let revision = db.library_revision().ok();
+    let index = db
+        .photo_index(PhotoSort::Newest)
+        .map(|entries| Arc::new(PhotoIndex::new(entries)));
+    let live = collect_live_snapshot(db, stats_revision, revision);
+    let aux = collect_aux_snapshot(db, selected_id);
+    LibraryReloadSnapshot { index, live, aux }
+}
+
+fn collect_aux_snapshot(db: &Db, selected_id: Option<i64>) -> AuxSnapshot {
+    AuxSnapshot {
+        profiles: match db.list_profiles() {
+            Ok(profiles) => Some(profiles),
+            Err(error) => {
+                tracing::warn!(%error, "cannot load compression profiles");
+                None
+            }
+        },
+        settings: match AppSettings::load(db) {
+            Ok(settings) => Some(settings),
+            Err(error) => {
+                tracing::warn!(%error, "cannot load app settings; keeping the current settings");
+                None
+            }
+        },
+        send_history: match db.send_history(100) {
+            Ok(history) => Some(history),
+            Err(error) => {
+                tracing::warn!(%error, "cannot load the Discord send history");
+                None
+            }
+        },
+        send_waiting_count: match db.count_waiting_sends() {
+            Ok(count) => Some(count),
+            Err(error) => {
+                tracing::warn!(%error, "cannot count waiting Discord sends");
+                None
+            }
+        },
+        selected: selected_id.map(|id| collect_selected_meta_snapshot(db, id)),
+    }
+}
+
+pub(crate) fn collect_selected_meta_snapshot(db: &Db, id: i64) -> SelectedMetaSnapshot {
+    let (ai, ai_tags) = load_photo_ai(db, id);
+    SelectedMetaSnapshot {
+        id,
+        photo: db.photo_by_id(id).ok().flatten(),
+        players: db.photo_players(id).unwrap_or_default(),
+        tags: db.photo_tags(id).unwrap_or_default(),
+        derivatives: db.derivatives_for_photo(id).unwrap_or_default(),
+        ai,
+        ai_tags,
+    }
+}
+
+fn collect_live_snapshot(db: &Db, stats_revision: i64, revision: Option<i64>) -> LiveSnapshot {
+    let revision = revision.or_else(|| db.library_revision().ok());
     let ai_revision = db.ai_revision().ok();
     let session_revision = db.session_revision().ok();
     let photo_count = db.count_photos().ok();
@@ -483,7 +658,7 @@ fn collect_monitor(db: &Db) -> MonitorSnapshot {
 mod tests {
     use super::{
         DeletionSnapshot, LiveRefreshGate, LiveRefreshRequest, apply_deletion_snapshot,
-        collect_live_snapshot, deletion_update,
+        collect_library_snapshot, collect_live_snapshot, deletion_update,
     };
     use vrc_photon_core::db::Db;
     use vrc_photon_core::model::{
@@ -588,16 +763,41 @@ mod tests {
     }
 
     #[test]
+    fn library_snapshot_collects_index_and_side_panels_in_one_pass() {
+        let db = Db::open_in_memory().unwrap();
+        let photo_id = seed_photo(&db);
+
+        let snapshot = collect_library_snapshot(&db, -1, Some(photo_id));
+
+        let index = snapshot.index.expect("the index query succeeds");
+        assert_eq!(index.total, 1);
+        assert_eq!(index.entries[0].id, photo_id);
+        assert_eq!(
+            snapshot.live.stats.as_ref().map(|stats| stats.photo_count),
+            Some(1)
+        );
+        assert!(snapshot.aux.profiles.is_some());
+        assert!(snapshot.aux.settings.is_some());
+        assert!(snapshot.aux.send_history.is_some());
+        let selected = snapshot.aux.selected.expect("selected metadata is read");
+        assert_eq!(selected.id, photo_id);
+        assert_eq!(
+            selected.photo.as_ref().map(|photo| photo.id),
+            Some(photo_id)
+        );
+    }
+
+    #[test]
     fn snapshot_reports_the_ai_revision() {
         let db = Db::open_in_memory().unwrap();
-        let snapshot = collect_live_snapshot(&db, -1);
+        let snapshot = collect_live_snapshot(&db, -1, None);
         assert_eq!(snapshot.ai_revision, Some(db.ai_revision().unwrap()));
     }
 
     #[test]
     fn snapshot_reports_the_session_revision() {
         let db = Db::open_in_memory().unwrap();
-        let snapshot = collect_live_snapshot(&db, -1);
+        let snapshot = collect_live_snapshot(&db, -1, None);
         assert_eq!(
             snapshot.session_revision,
             Some(db.session_revision().unwrap())
@@ -608,7 +808,7 @@ mod tests {
     fn snapshot_reports_count_stats_and_jobs() {
         let db = Db::open_in_memory().unwrap();
         seed_photo(&db);
-        let snapshot = collect_live_snapshot(&db, -1);
+        let snapshot = collect_live_snapshot(&db, -1, None);
         assert_eq!(snapshot.photo_count, Some(1));
         assert!(snapshot.stats.is_some());
         assert!(snapshot.jobs.daemon_errors.is_some());
@@ -620,7 +820,7 @@ mod tests {
         let id = seed_photo(&db);
         db.request_deletion(&[id], DeletionReason::Manual, false)
             .unwrap();
-        let snapshot = collect_live_snapshot(&db, -1);
+        let snapshot = collect_live_snapshot(&db, -1, None);
         let deletions = snapshot.deletions.expect("deletion snapshot");
         assert_eq!(deletions.counts.pending, 1);
         assert_eq!(deletions.requests.len(), 1);
@@ -632,7 +832,7 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         seed_photo(&db);
         let revision = db.library_revision().unwrap();
-        let snapshot = collect_live_snapshot(&db, revision);
+        let snapshot = collect_live_snapshot(&db, revision, None);
         assert!(snapshot.stats.is_none());
         assert!(snapshot.compressed_ids.is_none());
         assert!(snapshot.duplicate_ids.is_none());
@@ -645,7 +845,7 @@ mod tests {
         db.add_derivative(id, "/photos/a.webp", "webp", 16, 10, 8, "p", "keep")
             .unwrap();
         let revision = db.library_revision().unwrap();
-        let snapshot = collect_live_snapshot(&db, revision - 1);
+        let snapshot = collect_live_snapshot(&db, revision - 1, None);
         let ids = snapshot.compressed_ids.expect("compressed ids");
         assert!(ids.contains(&id));
         assert!(
