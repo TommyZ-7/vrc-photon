@@ -17,6 +17,7 @@ use vrc_photon_core::db::Db;
 use vrc_photon_core::hashing;
 use vrc_photon_core::linker;
 use vrc_photon_core::log_parser::LogIngestor;
+use vrc_photon_core::metadata::{self, XmpMetadata};
 use vrc_photon_core::model::{
     CompressionJob, CompressionProfile, DaemonCommand, DaemonOperation, DeletionReason,
     DeletionRequest, Derivative, Photo, PhotoStatus, QueueStatus,
@@ -318,6 +319,38 @@ pub struct Daemon {
     ai_plugin_keys: Vec<String>,
     #[cfg(test)]
     ai_http: Arc<dyn ModelHttpClient>,
+}
+
+/// Re-links photos whose XMP has already been read outside the database lock.
+///
+/// `read_xmp` must be called while no database lock is held; the daemon passes
+/// a closure that reads the PNG sidecar. The database lock is taken again for
+/// each short link/retry write.
+fn relink_photos_outside_lock<F>(
+    db: &Arc<Mutex<Db>>,
+    photos: Vec<Photo>,
+    estimated_enabled: bool,
+    now: i64,
+    mut read_xmp: F,
+) -> Result<usize>
+where
+    F: FnMut(&Photo) -> Option<XmpMetadata>,
+{
+    let mut linked = 0;
+    for photo in photos {
+        let xmp = read_xmp(&photo);
+        let is_linked = {
+            let db = lock_db(db);
+            linker::link_photo_with_xmp(&db, &photo, xmp, estimated_enabled)?
+        };
+        if is_linked {
+            linked += 1;
+        } else {
+            let db = lock_db(db);
+            db.record_link_attempt(photo.id, now)?;
+        }
+    }
+    Ok(linked)
 }
 
 impl Daemon {
@@ -2031,10 +2064,20 @@ impl Daemon {
     }
 
     fn link_unlinked(&mut self) -> Result<()> {
-        let result = {
+        let now = chrono::Utc::now().timestamp();
+        let (photos, estimated_enabled) = {
             let db = lock_db(&self.db);
-            linker::relink_unlinked(&db, 2000)
+            (
+                db.unlinked_photos_due(2000, now)?,
+                linker::estimated_link_enabled(&db),
+            )
         };
+        let result =
+            relink_photos_outside_lock(&self.db, photos, estimated_enabled, now, |photo| {
+                metadata::read_xmp(Path::new(&photo.abs_path))
+                    .ok()
+                    .flatten()
+            });
         match result {
             Ok(linked) => {
                 if linked > 0 {
@@ -4582,6 +4625,53 @@ mod tests {
         let players = db.photo_players(photo_id).unwrap();
         assert_eq!(players.len(), 1);
         assert_eq!(players[0].display_name, "Mio");
+    }
+
+    #[test]
+    fn xmp_read_happens_without_the_db_lock() {
+        use std::sync::Barrier;
+
+        let db = Arc::new(Mutex::new(Db::open_in_memory().unwrap()));
+        let photo = {
+            let db = lock_db(&db);
+            let root = db.add_root("/photos", "reference").unwrap();
+            let id = db
+                .upsert_photo(&NewPhoto {
+                    root_id: root,
+                    rel_path: "a.png".to_string(),
+                    abs_path: "/photos/a.png".to_string(),
+                    file_name: "a.png".to_string(),
+                    captured_at_utc: 1,
+                    captured_at_local: "2026-11-11 12:00:00".to_string(),
+                    tz_offset_sec: 0,
+                    width: 16,
+                    height: 10,
+                    file_size: 1,
+                    mtime: 1,
+                    blake3: None,
+                })
+                .unwrap();
+            db.photo_by_id(id).unwrap().unwrap()
+        };
+
+        let start = Arc::new(Barrier::new(2));
+        let release = Arc::new(Barrier::new(2));
+        let worker_db = Arc::clone(&db);
+        let worker_start = Arc::clone(&start);
+        let worker_release = Arc::clone(&release);
+        let worker = std::thread::spawn(move || {
+            relink_photos_outside_lock(&worker_db, vec![photo], false, 0, move |_| {
+                worker_start.wait();
+                worker_release.wait();
+                None
+            })
+        });
+
+        start.wait();
+        let acquired = db.try_lock().is_ok();
+        release.wait();
+        assert!(acquired, "reading XMP must not hold the database lock");
+        assert_eq!(worker.join().unwrap().unwrap(), 0);
     }
 
     #[test]
