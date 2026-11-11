@@ -32,16 +32,12 @@ PRAGMA busy_timeout = 5000;
 - 現在のバージョンは **18**。このビルドが理解できる最大値でもあり、
   `user_version` が 19 以上の DB は `Db::open` / `Db::open_read_only` の
   どちらでも型付きエラーで拒否する（古いアプリで新スキーマを書き換えない）。
-- マイグレーションは `Db::migrate` で起動時に自動実行する。
+- 新規 DB は `SCHEMA_LATEST` を 1 トランザクションで実行して v18 にする。
+- v1〜v17 の既存 DB は自動移行しない。`Db::open` は明示エラーを返し、
+  ファイルを変更しない。バックアップして新しいライブラリを作成する。
+- 詳細は [`docs/database-initialization.md`](database-initialization.md) を参照。
 
 ## 3. テーブル
-
-### `schema_migrations`
-
-| 列 | 型 | 説明 |
-|---|---|---|
-| version | INTEGER PK | 適用済みバージョン |
-| applied_at | TEXT | 適用日時（RFC3339） |
 
 ### `library_roots`
 
@@ -748,59 +744,21 @@ Discord 関連の既定値:
 
 ## 6. マイグレーション
 
-現行:
+## 6. schema の初期化
 
-| version | 内容 |
-|---|---|
-| 1 | 初期スキーマ |
-| 2 | `photo_context.author` 追加 |
-| 3 | `idx_photos_captured_id` 追加（`captured_at_utc DESC, id DESC`） |
-| 4 | `compression_jobs.retry_count`、`daemon_errors`、`daemon_commands` 追加 |
-| 5 | `photos.display_derivative_id`、表示対象インデックス、移動照合インデックス追加 |
-| 6 | `compression_jobs.output_dir` 追加 |
-| 7 | `deletion_requests` と active/status インデックス追加 |
-| 8 | `daemon_commands.payload` 追加 |
-| 9 | `idx_jobs_photo_profile` 追加（自動圧縮の重複判定用） |
-| 10 | `daemon_errors.message_key` / `message_args` 追加（翻訳キーと引数） |
-| 11 | `send_outbox` と active / due / photo インデックス追加（Discord 送信 outbox） |
-| 12 | `world_name_lookups` と due インデックス追加（VRChat API ワールド名解決） |
-| 13 | AI プラグイン・カタログ・AI 結果・タグ付けジョブのテーブル追加（`plugin_installations`、`plugin_state`、`ai_tag_definitions`、`ai_tag_thresholds`、`photo_ai`、`photo_ai_tags`、`tagging_jobs`） |
-| 14 | 取得・一覧用インデックス追加（`idx_jobs_claim`、`idx_jobs_created`、`idx_sessions_started`、`idx_sessions_ended`） |
-| 15 | `photos.link_attempts` / `photos.link_next_retry_at` と `idx_photos_link_retry` 追加（未リンク写真の再試行バックオフ） |
-| 16 | `ai_tag_definitions.tag_group` 追加（雰囲気タグのグループ） |
-| 17 | `idx_context_session` 追加（セッション要約の `photo_context.session_id` 検索） |
-| 18 | `photos.captured_month` / `photos.captured_day` の生成列追加（一覧・年レール用） |
+新規 DB は `crates/core/src/db/schema.rs` の `SCHEMA_LATEST` を 1 回の
+`IMMEDIATE` トランザクションで実行し、`user_version = 18` にする。
+`schema_migrations` テーブルと `migrate_v*` は持たない。
 
-V4以降は `IMMEDIATE` トランザクションで適用する。UIとデーモンが同時に起動しても、書き込みロックで直列化し、`user_version` と列・テーブルの存在を再確認してから進めるため、中断後の再実行でも安全。
+既存 DB は v18 のみ受け付ける。v1〜v17 は自動移行せず、`CoreError::Invalid`
+で「このビルドでは移行できない」と返す。このとき `user_version` もファイル内容も
+変更しない。v18 より新しい DB は、このビルドの最大値（18）を超えるため、
+書き込みを始める前に `CoreError::Invalid` で拒否する。読み取り専用の
+`open_read_only` も同じ検査を行う。
 
-v11 の `send_outbox`、v12 の `world_name_lookups`、v13 の AI テーブルは
-`CREATE TABLE IF NOT EXISTS` とインデックス追加だけで、既存データを変更しない。
-v13 は `plugin_state.probe_json` を含めて新規テーブルとして作成する。
-v14 はインデックス追加だけで、テーブル・行・既存インデックスを変更しない。
-v15 は `link_attempts`（既定 0）と `link_next_retry_at`（NULL）を追加し、
-`status IN ('present','replaced')` の部分インデックス `idx_photos_link_retry` を作る。
-既存行は「未試行・即時再試行可能」として移行される。
-v16 は `ai_tag_definitions.tag_group` を既定空文字で追加する。
-v17 は `idx_context_session` を作り、セッション要約の検索を索引化する。
-v18 は `photos` を再作成し、`captured_at_utc` から月・日を計算する STORED
-生成列 `captured_month` / `captured_day` を追加する。SQLite は生成列を
-`ALTER TABLE` で追加できないため、外部キーを一時的に無効化して行と
-インデックスをコピーする。途中で失敗した場合は再実行できる。
-
-v9 は fresh DB では v1 で作成済みの `idx_jobs_photo_profile` を
-`CREATE INDEX IF NOT EXISTS` で再確認するだけで実質 no-op になる。古い DB で
-インデックスが欠けている場合だけ補う。
-ロールバック時はテーブルやインデックスを残しても既存機能は動く。
-
-`user_version` がこのビルドの最大値（18）より大きい DB は、書き込みを始める前に
-`CoreError::Invalid` で拒否する。読み取り専用の `open_read_only` も同じ検査を行う。
-
-追加手順:
-
-1. `db.rs` に次の `SCHEMA_V*` を追加する。
-2. `migrate` に `if version < N` を追加し、`schema_migrations` と `user_version` を更新する。
-3. 既存DBからの起動テストと、新規DBの起動テストを追加する。
-4. 破壊的変更（列削除・型変更）は避け、必要なら新テーブル＋コピーで行う。
+schema を変更するときは `SCHEMA_LATEST` と `SCHEMA_VERSION` を同時に更新し、
+新規 DB の初期化テストと v18 既存 DB の起動テストを追加する。過去バージョン向けの
+移行コードは追加しない。
 
 ## 7. クエリと性能
 

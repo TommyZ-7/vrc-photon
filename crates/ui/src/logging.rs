@@ -100,8 +100,8 @@ mod tests {
     fn rust_log_wins_when_parsable_and_default_applies_otherwise() {
         assert_eq!(filter_from(Some("debug"), "info").to_string(), "debug");
         assert_eq!(
-            filter_from(Some("vrc_photonn=trace"), "info").to_string(),
-            "vrc_photonn=trace"
+            filter_from(Some("vrc_photon=trace"), "info").to_string(),
+            "vrc_photon=trace"
         );
         assert_eq!(filter_from(Some("!!!"), "info").to_string(), "info");
         assert_eq!(filter_from(None, "info").to_string(), "info");

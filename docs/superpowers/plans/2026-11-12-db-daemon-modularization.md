@@ -280,12 +280,12 @@
 - `schema_migrations` テーブルと `migrate_v*` は削除する。
 
 **Steps:**
-- [ ] 現行 v18 DB の `sqlite_master` から `SCHEMA_LATEST` を作る。
-- [ ] 新規 DB 初期化と v18 既存 DB の両方で同じ schema になることを確認する。
-- [ ] v17 DB を seed し、open がエラーを返し、`user_version` とファイル内容が変わらないテストを追加する。
-- [ ] 移行専用テスト（v1→v18 など）を削除または新規初期化テストへ置き換える。
-- [ ] `cargo test -p vrc-photon-core db` を実行する。
-- [ ] コミット: `refactor: #554 schema 初期化を統合 SQL に置き換える`
+- [x] 現行 v18 DB の `sqlite_master` から `SCHEMA_LATEST` を作る。
+- [x] 新規 DB 初期化と v18 既存 DB の両方で同じ schema になることを確認する。
+- [x] v17 DB を seed し、open がエラーを返し、`user_version` とファイル内容が変わらないテストを追加する。
+- [x] 移行専用テスト（v1→v18 など）を削除または新規初期化テストへ置き換える。
+- [x] `cargo test -p vrc-photon-core db` を実行する。
+- [x] コミット: `refactor: #554 schema 初期化を統合 SQL に置き換える`
 
 ---
 
@@ -298,12 +298,12 @@
 - Modify: `crates/ui/src/state/thumbnail.rs`
 
 **Steps:**
-- [ ] `vrc_photonn=debug` を `vrc_photon=debug` に直す。
-- [ ] UI / daemon のログフィルタテストの期待値を更新する。
-- [ ] `ThumbnailCache` の `generation`, `begin`, `insert_if_generation`, `fail`, `fail_if_generation` に `#[cfg(test)]` を付け、`#[allow(dead_code)]` を外す。
-- [ ] 本番コードからの参照がないことを確認する。
-- [ ] `cargo test -p vrc-photon-ui logging`、`thumbnail`、`cargo test -p vrc-photon-daemon logging` を実行する。
-- [ ] コミット: `chore: #554 ログフィルタとテスト専用コードを整理する`
+- [x] `vrc_photonn=debug` を `vrc_photon=debug` に直す。
+- [x] UI / daemon のログフィルタテストの期待値を更新する。
+- [x] `ThumbnailCache` の `generation`, `begin`, `insert_if_generation`, `fail`, `fail_if_generation` に `#[cfg(test)]` を付け、`#[allow(dead_code)]` を外す。
+- [x] 本番コードからの参照がないことを確認する。
+- [x] `cargo test -p vrc-photon-ui logging`、`thumbnail`、`cargo test -p vrc-photon-daemon logging` を実行する。
+- [x] コミット: `chore: #554 ログフィルタとテスト専用コードを整理する`
 
 ---
 
@@ -315,14 +315,14 @@
 - Modify: `crates/core/src/db/schema.rs` の doc comment
 
 **Steps:**
-- [ ] 新規 DB の初期化手順、v18 のみサポートすること、旧 DB のエラーとバックアップ手順を文書化する。
-- [ ] `cargo fmt --all -- --check`
-- [ ] `cargo test -p vrc-photon-core db`
-- [ ] `cargo test -p vrc-photon-ui logging thumbnail`
-- [ ] `cargo test -p vrc-photon-daemon logging`
-- [ ] `cargo clippy -p vrc-photon-core -p vrc-photon-ui -p vrc-photon-daemon --all-targets -- -D warnings`
-- [ ] PR を作成し、`Closes #554` を付ける。
-- [ ] コミット: `docs: #554 DB 初期化と旧 schema の扱いを文書化する`
+- [x] 新規 DB の初期化手順、v18 のみサポートすること、旧 DB のエラーとバックアップ手順を文書化する。
+- [x] `cargo fmt --all -- --check`
+- [x] `cargo test -p vrc-photon-core db`
+- [x] `cargo test -p vrc-photon-ui logging thumbnail`
+- [x] `cargo test -p vrc-photon-daemon logging`
+- [x] `cargo clippy -p vrc-photon-core -p vrc-photon-ui -p vrc-photon-daemon --all-targets -- -D warnings`
+- [x] PR を作成し、`Closes #554` を付ける。
+- [x] コミット: `docs: #554 DB 初期化と旧 schema の扱いを文書化する`
 
 ---
 
