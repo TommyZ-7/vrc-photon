@@ -1,9 +1,8 @@
 use std::fs::File;
-use std::io::{BufReader, Read};
+use std::io::BufReader;
 use std::path::Path;
 
-use base64::Engine;
-use minisign_verify::{PublicKey, Signature};
+use vrc_photon_signing::{VerifyError, parse_public_keys, verify_reader};
 
 use crate::error::{Result, UpdateError};
 
@@ -11,33 +10,31 @@ const KEYS_FILE: &str = include_str!("../../../packaging/update/keys.txt");
 
 /// Verifies a detached minisign signature over an in-memory byte slice.
 pub fn verify_bytes(data: &[u8], signature_text: &str, keys: &[String]) -> Result<()> {
-    let mut reader = std::io::Cursor::new(data);
-    verify_reader(&mut reader, signature_text, keys)
+    vrc_photon_signing::verify_bytes(data, signature_text, keys).map_err(map_verify_error)
 }
 
 /// Verifies a detached minisign signature over a file using streaming reads.
 pub fn verify_file(path: &Path, signature_text: &str, keys: &[String]) -> Result<()> {
     let file = File::open(path).map_err(|error| UpdateError::io(path, error))?;
     let mut reader = BufReader::new(file);
-    verify_reader(&mut reader, signature_text, keys)
+    verify_reader(&mut reader, signature_text, keys).map_err(map_verify_error)
 }
 
 /// Decodes the base64 representation used in the `signature` manifest field.
 pub fn decode_signature_base64(encoded: &str) -> Result<String> {
-    let bytes = base64::engine::general_purpose::STANDARD
-        .decode(encoded)
-        .map_err(|_| UpdateError::Signature)?;
-    String::from_utf8(bytes).map_err(|_| UpdateError::Signature)
+    vrc_photon_signing::decode_signature_base64(encoded).map_err(|_| UpdateError::Signature)
 }
 
 /// Public keys compiled into the application.
 pub fn embedded_public_keys() -> Vec<String> {
-    KEYS_FILE
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty() && !line.starts_with('#'))
-        .map(str::to_string)
-        .collect()
+    parse_public_keys(KEYS_FILE)
+}
+
+fn map_verify_error(error: VerifyError) -> UpdateError {
+    match error {
+        VerifyError::Signature => UpdateError::Signature,
+        VerifyError::Io(error) => UpdateError::Other(format!("cannot read update data: {error}")),
+    }
 }
 
 /// Public keys used for this build. Debug builds may override the list for
@@ -60,35 +57,6 @@ fn merge_public_keys(
         return vec![value];
     }
     embedded
-}
-
-fn verify_reader<R: Read>(reader: &mut R, signature_text: &str, keys: &[String]) -> Result<()> {
-    let signature = Signature::decode(signature_text).map_err(|_| UpdateError::Signature)?;
-    let public_keys: Vec<PublicKey> = keys
-        .iter()
-        .filter_map(|key| PublicKey::from_base64(key.trim()).ok())
-        .collect();
-    if public_keys.is_empty() {
-        return Err(UpdateError::Signature);
-    }
-
-    let mut verifier = public_keys
-        .iter()
-        .find_map(|key| key.verify_stream(&signature).ok())
-        .ok_or(UpdateError::Signature)?;
-
-    let mut buffer = [0u8; 64 * 1024];
-    loop {
-        let read = reader
-            .read(&mut buffer)
-            .map_err(|error| UpdateError::Other(format!("cannot read update data: {error}")))?;
-        if read == 0 {
-            break;
-        }
-        verifier.update(&buffer[..read]);
-    }
-
-    verifier.finalize().map_err(|_| UpdateError::Signature)
 }
 
 #[cfg(test)]

@@ -12,6 +12,7 @@ members = [
     "crates/i18n",
     "crates/ipc",
     "crates/mcp",
+    "crates/signing",
     "crates/ui",
     "crates/update",
     "crates/release-tool",

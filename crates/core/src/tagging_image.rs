@@ -6,6 +6,7 @@ use std::time::UNIX_EPOCH;
 
 use image::DynamicImage;
 
+use crate::compressor::encode_jpeg;
 use crate::error::{CoreError, Result};
 
 /// Longest edge of a tagging snapshot, in pixels.
@@ -49,7 +50,7 @@ pub fn prepare_tagging_snapshot(
         CoreError::Invalid(format!("cannot decode tagging source {}", source.display()))
     })?;
     let image = apply_tagging_transform(image);
-    let bytes = encode_jpeg(&image)?;
+    let bytes = encode_jpeg(&image, TAGGING_JPEG_QUALITY)?;
 
     fs::create_dir_all(cache_dir)?;
     if let Err(error) = fs::write(&temp, &bytes) {
@@ -117,19 +118,6 @@ fn snapshot_paths(cache_dir: &Path, job_id: &str) -> Result<(PathBuf, PathBuf)> 
         cache_dir.join(format!("{job_id}.jpg")),
         cache_dir.join(format!("{job_id}.jpg.tmp")),
     ))
-}
-
-fn encode_jpeg(image: &DynamicImage) -> Result<Vec<u8>> {
-    let mut output = Vec::new();
-    let mut encoder =
-        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut output, TAGGING_JPEG_QUALITY);
-    match image {
-        DynamicImage::ImageRgb8(rgb) => encoder.encode_image(rgb),
-        DynamicImage::ImageRgba8(rgba) => encoder.encode_image(rgba),
-        _ => encoder.encode_image(&image.to_rgb8()),
-    }
-    .map_err(|error| CoreError::Invalid(format!("JPEG encode failed: {error}")))?;
-    Ok(output)
 }
 
 #[cfg(test)]

@@ -9,6 +9,7 @@ authors.workspace = true
 [dependencies]
 vrc-photon-ai-protocol = { path = "../ai-protocol" }
 vrc-photon-core = { path = "../core" }
+vrc-photon-signing = { path = "../signing" }
 hex.workspace = true
 minisign = { version = "0.10", optional = true }
 minisign-verify.workspace = true
