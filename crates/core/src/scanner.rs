@@ -5,7 +5,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::db::{Db, PhotoScanState};
 use crate::error::{CoreError, Result};
-use crate::hashing;
 use crate::model::{NewPhoto, Photo, PhotoStatus};
 use crate::photo_filename::{
     from_modified_time, image_dimensions, is_source_photo, parse_photo_filename,
@@ -606,9 +605,7 @@ where
             {
                 existing.blake3.clone()
             }
-            _ => hashing::file_blake3(Path::new(&new_photo.abs_path))
-                .ok()
-                .flatten(),
+            _ => None,
         };
         if stopped(running) {
             report.cancelled = true;
@@ -1007,6 +1004,50 @@ mod tests {
         assert_eq!(report.new_ids.len(), 1);
         assert_ne!(report.new_ids[0], original_id);
         assert_eq!(db.count_photos().unwrap(), 2);
+    }
+
+    #[test]
+    fn new_photo_is_indexed_without_a_synchronous_hash() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("VRChat_2026-10-21_21-14-03.221_4x3.png");
+        write_png(&path);
+        let db = Db::open_in_memory().unwrap();
+        let root_id = db
+            .add_root(dir.path().to_str().unwrap(), "reference")
+            .unwrap();
+
+        let report = scan_and_index(&db, root_id, dir.path()).unwrap();
+
+        assert_eq!(report.indexed, 1);
+        let photo = db.photo_by_path(path.to_str().unwrap()).unwrap().unwrap();
+        assert!(
+            photo.blake3.is_none(),
+            "the scan must leave hashing to the background hash_loop"
+        );
+    }
+
+    #[test]
+    fn moved_photo_without_hash_is_rebound_by_metadata_fallback() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        let name = "VRChat_2026-10-21_21-14-03.221_4x3.png";
+        let original = root.join(name);
+        write_png(&original);
+        let db = Db::open_in_memory().unwrap();
+        let root_id = db.add_root(root.to_str().unwrap(), "reference").unwrap();
+        let first = scan_and_index(&db, root_id, root).unwrap();
+        let id = first.new_ids[0];
+
+        let moved_dir = root.join("moved");
+        std::fs::create_dir(&moved_dir).unwrap();
+        std::fs::rename(&original, moved_dir.join(name)).unwrap();
+
+        let report = scan_and_index(&db, root_id, root).unwrap();
+        assert_eq!(report.rebound_ids, vec![id]);
+        assert_eq!(db.count_photos().unwrap(), 1);
+        let photo = db.photo_by_id(id).unwrap().unwrap();
+        assert!(photo.blake3.is_none());
+        assert_eq!(photo.file_name, name);
     }
 
     #[test]
