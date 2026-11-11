@@ -49,11 +49,21 @@ pub fn is_running() -> Option<bool> {
         TH32CS_SNAPPROCESS,
     };
 
+    // SAFETY: `CreateToolhelp32Snapshot` returns an owned snapshot handle or an
+    // error. The handle is closed exactly once below and no pointer is stored.
     let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) }.ok()?;
     let mut entry = PROCESSENTRY32W {
         dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
         ..Default::default()
     };
+    debug_assert_eq!(
+        entry.dwSize as usize,
+        std::mem::size_of::<PROCESSENTRY32W>(),
+        "PROCESSENTRY32W.dwSize must match the struct layout"
+    );
+    // SAFETY: `snapshot` is a valid process snapshot, `entry.dwSize` is set to
+    // the struct size, and `entry` is a distinct stack buffer that Windows
+    // initializes before returning.
     let result = match unsafe { Process32FirstW(snapshot, &mut entry) } {
         Ok(()) => loop {
             let len = entry
@@ -65,6 +75,8 @@ pub fn is_running() -> Option<bool> {
             if is_vrchat_comm(&name) {
                 break Some(true);
             }
+            // SAFETY: same snapshot and entry buffer as Process32FirstW; the
+            // buffer stays alive and is not aliased for the duration of the call.
             match unsafe { Process32NextW(snapshot, &mut entry) } {
                 Ok(()) => {}
                 Err(error) if is_end_of_process_list(&error) => break Some(false),
@@ -74,6 +86,8 @@ pub fn is_running() -> Option<bool> {
         Err(error) if is_end_of_process_list(&error) => Some(false),
         Err(_) => None,
     };
+    // SAFETY: `snapshot` is the owned handle returned by
+    // CreateToolhelp32Snapshot and is closed exactly once here.
     unsafe {
         let _ = CloseHandle(snapshot);
     }
