@@ -149,6 +149,10 @@ fn pump_windows_messages() {
     use windows::Win32::UI::WindowsAndMessaging::{
         DispatchMessageW, MSG, PM_REMOVE, PeekMessageW, TranslateMessage,
     };
+    // SAFETY: this runs on the thread that owns the tray window and its message
+    // queue. `message` is a stack buffer that PeekMessageW initializes before
+    // TranslateMessage/DispatchMessageW read it, and the loop handles only this
+    // thread's messages.
     unsafe {
         let mut message = MSG::default();
         while PeekMessageW(&mut message, None, 0, 0, PM_REMOVE).as_bool() {

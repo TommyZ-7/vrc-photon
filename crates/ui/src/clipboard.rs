@@ -331,6 +331,8 @@ mod windows_clipboard {
     use windows::core::w;
 
     pub(super) fn write(png: &[u8], dib: &[u8]) -> Result<(), String> {
+        // SAFETY: `w!` produces a NUL-terminated UTF-16 literal with static
+        // storage, so the pointer is valid for the duration of the call.
         let png_format = unsafe { RegisterClipboardFormatW(w!("PNG")) };
         if png_format == 0 {
             return Err(windows_error("RegisterClipboardFormatW"));
@@ -338,6 +340,9 @@ mod windows_clipboard {
 
         open_clipboard()?;
         let _guard = ClipboardGuard;
+        // SAFETY: `open_clipboard` succeeded and the guard keeps the clipboard
+        // open on this thread until `write` returns. Windows requires the
+        // thread that opened it to empty it.
         unsafe { EmptyClipboard() }
             .map_err(|error| windows_error_with("EmptyClipboard", &error))?;
         set_bytes(CF_DIB.0 as u32, dib)?;
@@ -348,6 +353,9 @@ mod windows_clipboard {
     fn open_clipboard() -> Result<(), String> {
         let deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
         loop {
+            // SAFETY: `None` associates the clipboard with the current thread's
+            // hidden window. The call is retried on contention and must run on
+            // the thread that later closes it.
             match unsafe { OpenClipboard(None) } {
                 Ok(()) => return Ok(()),
                 Err(_) if std::time::Instant::now() < deadline => {
@@ -359,6 +367,12 @@ mod windows_clipboard {
     }
 
     fn set_bytes(format: u32, bytes: &[u8]) -> Result<(), String> {
+        debug_assert!(!bytes.is_empty(), "clipboard payloads are never empty");
+        // SAFETY: `GlobalAlloc(GMEM_MOVEABLE, len)` returns an owned handle or
+        // an error. `GlobalLock` returns a pointer valid for `len` bytes while
+        // the handle stays locked, and `copy_nonoverlapping` copies from a
+        // distinct slice. On success `SetClipboardData` takes ownership of the
+        // handle, so the error path is the only place we free it ourselves.
         unsafe {
             let memory = GlobalAlloc(GMEM_MOVEABLE, bytes.len())
                 .map_err(|error| windows_error_with("GlobalAlloc", &error))?;
@@ -382,6 +396,8 @@ mod windows_clipboard {
 
     impl Drop for ClipboardGuard {
         fn drop(&mut self) {
+            // SAFETY: the guard is created only after OpenClipboard succeeds and
+            // is dropped on the same thread before the clipboard is used again.
             unsafe {
                 let _ = CloseClipboard();
             }
