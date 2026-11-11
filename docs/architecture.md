@@ -52,9 +52,9 @@ UIとデーモンは同じSQLite（WAL）に加えて、ローカルIPC（Unix d
 
 UIとデーモンは同じSQLite（WAL）を共有し、状態とジョブをやり取りする。これに加えて、即時コマンドのwake-upとイベント配信のためにローカルIPCを使う（ADR-0011）。UIはデーモンのハートビート（`app_settings.daemon_heartbeat`）とIPC購読のどちらかが生きていれば稼働中と判定する。デーモンの処理エラーは `daemon_errors`、UIからの再実行要求は `daemon_commands` に置く。IPCは `daemon_commands` / `compression_jobs` / `send_outbox` を置き換えず、デーモンを起こすだけ。デーモン停止中も要求はDBに残り、起動後に処理される。AI の取込・モデル・probe・キャンセルは IPC 要求としてデーモンだけが実行し、AI 結果の書き込みもデーモンに限定する。
 
-IPCは `PROTOCOL_VERSION = 5`。v4 の要求・イベントに加えて、AI プラグインの
+IPCは `PROTOCOL_VERSION = 8`。AI プラグインの
 取込・アンインストール・probe・variant 切替・モデル DL / 取込 / 削除と、
-タグ付けジョブの起床・キャンセルを追加した。`StatusSnapshot` は
+タグ付けジョブの起床・キャンセルを扱う。`StatusSnapshot` は
 `pending_tagging_jobs`（`waiting` + `pending` + `processing`）と
 `tagging_ready`（active install・ready model・probe が揃っている）を持つ。
 `WakeSends` で Discord 送信ワーカー、`WakeTagging` でタグ付けワーカーを起床し、
@@ -145,7 +145,8 @@ ui ────────┬──> ipc ──> ai-protocol
            └──> update
 daemon ────┼──> ipc ──> ai-protocol
            ├──> core ──> ai-protocol
-           ├──> ai-host ──> ai-protocol
+           ├──> ai-host ──> core ──> ai-protocol
+           │             └──> ai-protocol
            └──> ai-protocol
 release-tool ───> update
 ai-mock-sidecar ───> ai-protocol
@@ -158,8 +159,8 @@ ai-mock-sidecar ───> ai-protocol
 - `update` はUI・GPUI・SQLiteに依存しない。署名検証、HTTP、適用ジョブ、ヘルパーだけを持つ。
 - `release-tool` は `update` のマニフェスト型を使うRelease専用ツールで、アプリには同梱しない。
 - `ai-protocol` は serde とフレーミングだけを持ち、DB・GPUI・プロセス起動に依存しない。
-- `ai-host` は ZIP 検証・モデル DL / 取込・sidecar クライアントだけを持ち、
-  `core` に依存しない。デーモン専用で、UI からは呼ばない。
+- `ai-host` は ZIP 検証・モデル DL / 取込・sidecar クライアントに加えて、
+  `core` の AI 設定・結果・タグ付けジョブ型を使う。デーモン専用で、UI からは呼ばない。
 - `ai-mock-sidecar` はテスト専用で、配布物には含めない。
 - `daemon` は `core` のDB・スキャナ・解析・圧縮・サムネイル、`ipc` のサーバー/プロトコル、
   `ai-host` のプラグイン・モデル・sidecar を使う。
@@ -273,7 +274,7 @@ crates/ui/src/
 - 保存先はユーザーデータディレクトリの `thumbnails/<photo_id>.webp`。
 - デーモンは起動時（初回ライブラリ走査より前）と上限超過時に `thumbnails/*.webp` の合計サイズを確認し、`thumbnail_cache_mb` を超えた分を最終アクセス時刻の古い順に削除する。UIが生成したサムネイルは `thumbnails_generated` 通知でバイト数を追跡し、60秒ごとの定期全走査は行わない。0は無制限。
 - UIが実際に表示したキャッシュヒットはmtimeを更新する。メモリキャッシュからの表示も1時間に1回までmtimeを更新し、UIスレッドではファイルI/Oをしない。デーモンの起動時全件走査はmtimeを更新しないため、LRUの最近使用を一括で引き上げない。
-- UIは表示中のカードのサムネイルだけを非同期デコードし、192件のLRUで保持する。同時デコードは最大4件で、UIスレッドではデコードしない。
+- UIは表示中のカードのサムネイルだけを非同期デコードし、128件のLRUで保持する。同時デコードは最大1件で、UIスレッドではデコードしない。
 
 ### 4.6 取り込み
 
