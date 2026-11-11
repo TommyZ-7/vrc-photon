@@ -17,6 +17,11 @@
 //! Callers that need a numeric suffix retry with the next name when an
 //! operation returns [`PlaceOutcome::DestinationExists`] (or
 //! [`MoveOutcome::DestinationExists`] for a move).
+//!
+//! Durability policy: compressed outputs and exports use
+//! [`write_bytes_no_clobber_durable`] so the file and its directory entry
+//! survive a crash. Thumbnails and temporary files use the non-durable
+//! helpers because their loss only costs a regeneration.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
@@ -109,17 +114,78 @@ pub(crate) fn copy_no_clobber_with(
 /// complete, so another importer or compressor can never observe a partially
 /// written final file.
 pub fn write_bytes_no_clobber(destination: &Path, bytes: &[u8]) -> io::Result<PlaceOutcome> {
+    write_bytes_no_clobber_with(destination, bytes, false)
+}
+
+/// Writes `bytes` to `destination` without overwriting an existing file and
+/// fsyncs the data and the destination directory.
+///
+/// Use this for user-visible artifacts whose loss after a crash matters, such
+/// as compressed outputs and exports. Thumbnails and other cache files use
+/// [`write_bytes_no_clobber`] because their loss only costs a regeneration.
+pub fn write_bytes_no_clobber_durable(
+    destination: &Path,
+    bytes: &[u8],
+) -> io::Result<PlaceOutcome> {
+    write_bytes_no_clobber_with(destination, bytes, true)
+}
+
+fn write_bytes_no_clobber_with(
+    destination: &Path,
+    bytes: &[u8],
+    durable: bool,
+) -> io::Result<PlaceOutcome> {
     let (temp, mut reserved) = create_temp(destination)?;
-    let write_result = reserved.write_all(bytes).and_then(|()| reserved.flush());
+    let write_result = (|| {
+        reserved.write_all(bytes)?;
+        reserved.flush()?;
+        if durable {
+            reserved.sync_all()?;
+        }
+        Ok(())
+    })();
     drop(reserved);
     if let Err(error) = write_result {
+        // Best effort: a leftover temporary file is harmless and cleaned up by
+        // the cache/prune paths.
         remove_temp(&temp);
         return Err(error);
     }
     let result = place_no_clobber(&temp, destination);
+    if durable && matches!(result, Ok(PlaceOutcome::Placed)) {
+        sync_parent_dir(destination);
+    }
     remove_temp(&temp);
     result
 }
+
+/// Persists the directory entry after a durable write. A failure is logged but
+/// does not fail the write because the file contents are already durable.
+#[cfg(unix)]
+fn sync_parent_dir(destination: &Path) {
+    let Some(parent) = destination.parent() else {
+        return;
+    };
+    match File::open(parent) {
+        Ok(directory) => {
+            if let Err(error) = directory.sync_all() {
+                tracing::warn!(
+                    %error,
+                    path = %parent.display(),
+                    "cannot fsync the destination directory"
+                );
+            }
+        }
+        Err(error) => tracing::warn!(
+            %error,
+            path = %parent.display(),
+            "cannot open the destination directory for fsync"
+        ),
+    }
+}
+
+#[cfg(not(unix))]
+fn sync_parent_dir(_destination: &Path) {}
 
 /// Fallback for filesystems that cannot hard-link: exclusively reserve the
 /// final name, then copy the source into the reserved file.
@@ -229,6 +295,8 @@ fn create_temp(destination: &Path) -> io::Result<(PathBuf, File)> {
 }
 
 fn remove_temp(temp: &Path) {
+    // Best effort: temporary files are cache-adjacent and may be reclaimed by
+    // a later prune, so a failed unlink is not fatal to the caller.
     if let Err(error) = fs::remove_file(temp)
         && error.kind() != io::ErrorKind::NotFound
     {
@@ -355,6 +423,20 @@ mod tests {
 
         assert_eq!(outcome, PlaceOutcome::DestinationExists);
         assert_eq!(read(&destination), b"original");
+    }
+
+    #[test]
+    fn durable_write_keeps_no_clobber_semantics() {
+        let dir = tempdir().unwrap();
+        let destination = dir.path().join("destination.bin");
+
+        let placed = write_bytes_no_clobber_durable(&destination, b"durable").unwrap();
+        assert_eq!(placed, PlaceOutcome::Placed);
+        assert_eq!(read(&destination), b"durable");
+
+        let existing = write_bytes_no_clobber_durable(&destination, b"replacement").unwrap();
+        assert_eq!(existing, PlaceOutcome::DestinationExists);
+        assert_eq!(read(&destination), b"durable");
     }
 
     #[test]

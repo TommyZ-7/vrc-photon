@@ -3175,11 +3175,38 @@ fn thumbnail_loop(
     }
 }
 
+/// Retries a pending library-revision bump and reports whether it is clear.
+///
+/// A failure keeps `pending` set so the caller can retry on its next idle
+/// cycle instead of silently dropping the UI refresh.
+fn retry_revision<F>(pending: &mut bool, mut bump: F) -> bool
+where
+    F: FnMut() -> Result<()>,
+{
+    if !*pending {
+        return true;
+    }
+    match bump() {
+        Ok(()) => {
+            *pending = false;
+            true
+        }
+        Err(error) => {
+            tracing::warn!(
+                %error,
+                "cannot bump library revision after hashing; will retry"
+            );
+            false
+        }
+    }
+}
+
 /// Fills `photos.blake3` for rows indexed before hashing was introduced.
 /// The worker is deliberately low-frequency so a large first run does not
 /// starve compression or watcher work.
 fn hash_loop(db: Arc<Mutex<Db>>, running: Arc<AtomicBool>, paused: Arc<AtomicBool>) {
     let mut hashed_since_idle = false;
+    let mut revision_pending = false;
     while running.load(Ordering::Relaxed) {
         if paused.load(Ordering::Relaxed) {
             thread::sleep(PAUSED_WORKER_POLL);
@@ -3197,10 +3224,16 @@ fn hash_loop(db: Arc<Mutex<Db>>, running: Arc<AtomicBool>, paused: Arc<AtomicBoo
         };
         if rows.is_empty() {
             if hashed_since_idle {
-                let db = lock_db(&db);
-                let _ = db.bump_library_revision();
-                drop(db);
+                revision_pending = true;
                 hashed_since_idle = false;
+            }
+            if revision_pending {
+                let db = lock_db(&db);
+                retry_revision(&mut revision_pending, || {
+                    db.bump_library_revision()?;
+                    Ok(())
+                });
+                drop(db);
             }
             thread::sleep(Duration::from_secs(2));
             continue;
@@ -3896,6 +3929,25 @@ mod tests {
         assert!(error.message_in("ja").contains('3'));
         assert!(error.message_in("en").contains('3'));
         assert_eq!(error.args_json(), r#"{"count":"3"}"#);
+    }
+
+    #[test]
+    fn revision_bump_retries_after_a_failure() {
+        let mut pending = true;
+        let mut calls = 0;
+        let first = retry_revision(&mut pending, || {
+            calls += 1;
+            Err(anyhow::anyhow!("database busy"))
+        });
+        assert!(!first);
+        assert!(pending);
+        let second = retry_revision(&mut pending, || {
+            calls += 1;
+            Ok(())
+        });
+        assert!(second);
+        assert!(!pending);
+        assert_eq!(calls, 2);
     }
 
     #[test]
