@@ -1891,15 +1891,27 @@ pub(crate) fn process_alive(pid: u32) -> bool {
             GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
         };
         const STILL_ACTIVE: u32 = 259;
+        debug_assert_ne!(pid, 0, "PID 0 is the system idle process");
         // ERROR_INVALID_PARAMETER means the PID does not exist. Any other
         // failure (notably access denied) could be a live process this user
         // cannot inspect, so fail safe and treat it as alive.
+        // SAFETY: `OpenProcess` returns an owned handle or an error; `false`
+        // means the handle is not inherited. The PID comes from the lock file
+        // and is not dereferenced.
         let handle = match unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) } {
             Ok(handle) => handle,
             Err(error) => return (error.code().0 as u32 & 0xffff) != 87,
         };
+        debug_assert!(
+            !handle.is_invalid(),
+            "OpenProcess returned an invalid handle"
+        );
         let mut code = 0u32;
+        // SAFETY: `handle` was returned by OpenProcess with query access and is
+        // still open; `code` is a valid stack out-parameter.
         let read = unsafe { GetExitCodeProcess(handle, &mut code) }.is_ok();
+        // SAFETY: `handle` is owned here and is neither used nor closed anywhere
+        // else before this call.
         let _ = unsafe { CloseHandle(handle) };
         read && code == STILL_ACTIVE
     }
