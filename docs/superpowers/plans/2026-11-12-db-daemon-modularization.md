@@ -47,8 +47,8 @@
 **Files:**
 - Create: `docs/superpowers/plans/2026-11-12-db-daemon-modularization.md`
 
-- [ ] PR を作成し、ユーザーの承認を得る。
-- [ ] 承認後にマージし、PR1 の worktree を最新 main から作る。
+- [x] PR を作成し、ユーザーの承認を得る。
+- [x] 承認後にマージし、PR1 の worktree を最新 main から作る。
 
 ---
 
