@@ -74,7 +74,7 @@
 
 Phase 1–4 のタスク、ファイル、インターフェース、テスト、検証コマンドを記載する。
 
-- [ ] **Step 6: docs をコミットして PR を出す**
+- [x] **Step 6: docs をコミットして PR を出す**
 
 ```bash
 git add docs/superpowers/specs/2026-11-12-issue-579-bc7-thumbnails-design.md \
