@@ -3115,13 +3115,13 @@ fn thumbnail_loop(
                 budget.note_external(external);
                 let path = {
                     let db = lock_db(&db);
-                    match db.photo_by_id(id) {
-                        Ok(photo) => photo.map(|photo| photo.effective_path().to_string()),
+                    match db.photo_effective_path(id) {
+                        Ok(path) => path,
                         Err(error) => {
                             tracing::warn!(
                                 %error,
                                 photo_id = id,
-                                "cannot load photo for thumbnail"
+                                "cannot load the photo path for thumbnail"
                             );
                             None
                         }

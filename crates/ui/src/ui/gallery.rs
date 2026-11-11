@@ -1945,7 +1945,7 @@ fn render_card(
     }
 
     let mut card = v_flex()
-        .id(SharedString::from(format!("photo-{id}")))
+        .id(("photo", id as u64))
         .relative()
         .w_full()
         .min_w_0()
