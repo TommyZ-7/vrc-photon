@@ -615,6 +615,13 @@ fn splitmix64(value: u64) -> u64 {
     z ^ (z >> 31)
 }
 
+/// A lightweight, ordered photo index plus whether the query hit the row cap.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PhotoIndexSnapshot {
+    pub entries: Vec<PhotoIndexEntry>,
+    pub truncated: bool,
+}
+
 pub struct Db {
     conn: Connection,
     path: Option<PathBuf>,
@@ -1409,11 +1416,34 @@ impl Db {
     /// Returns a lightweight, ordered snapshot of every present photo. The
     /// `photo_context` join is 1:1 and keeps every `PhotoSort` executable,
     /// including world order.
+    ///
+    /// The result is capped at [`MAX_ROW_LIMIT`]; use
+    /// [`Self::photo_index_snapshot`] when the caller needs to know whether
+    /// the library was truncated.
     pub fn photo_index(&self, sort: PhotoSort) -> Result<Vec<PhotoIndexEntry>> {
-        let sql = photo_index_sql(sort);
+        Ok(self.photo_index_snapshot(sort)?.entries)
+    }
+
+    /// Returns the index snapshot and whether [`MAX_ROW_LIMIT`] hid any rows.
+    pub fn photo_index_snapshot(&self, sort: PhotoSort) -> Result<PhotoIndexSnapshot> {
+        self.photo_index_snapshot_with_limit(sort, MAX_ROW_LIMIT)
+    }
+
+    fn photo_index_snapshot_with_limit(
+        &self,
+        sort: PhotoSort,
+        limit: i64,
+    ) -> Result<PhotoIndexSnapshot> {
+        let limit = clamp_limit(limit);
+        let sql = format!("{} LIMIT ?1", photo_index_sql(sort));
         let mut stmt = self.conn.prepare_cached(&sql)?;
-        let rows = stmt.query_map([], row_to_photo_index)?;
-        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+        let rows = stmt.query_map([limit + 1], row_to_photo_index)?;
+        let mut entries = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+        let truncated = entries.len() as i64 > limit;
+        if truncated {
+            entries.truncate(limit as usize);
+        }
+        Ok(PhotoIndexSnapshot { entries, truncated })
     }
 
     /// Returns an ordered index snapshot matching the text filters.
@@ -8321,6 +8351,50 @@ CREATE TABLE photos (
         );
         assert_eq!(entries[0].captured_month, 202505);
         assert_eq!(entries[1].captured_month, 202504);
+    }
+
+    #[test]
+    fn photo_index_snapshot_limits_rows_and_reports_truncation() {
+        let db = Db::open_in_memory().unwrap();
+        let root = db.add_root("/photos", "reference").unwrap();
+        for (index, path) in ["one.png", "two.png", "three.png"].iter().enumerate() {
+            db.upsert_photo(&photo_at(
+                root,
+                &format!("/photos/{path}"),
+                1_700_000_000 + index as i64,
+                "2025-05-01 08:00:00",
+            ))
+            .unwrap();
+        }
+
+        let snapshot = db
+            .photo_index_snapshot_with_limit(PhotoSort::Newest, 2)
+            .unwrap();
+
+        assert_eq!(snapshot.entries.len(), 2);
+        assert!(snapshot.truncated);
+    }
+
+    #[test]
+    fn photo_index_snapshot_does_not_truncate_at_or_below_the_limit() {
+        let db = Db::open_in_memory().unwrap();
+        let root = db.add_root("/photos", "reference").unwrap();
+        for (index, path) in ["one.png", "two.png"].iter().enumerate() {
+            db.upsert_photo(&photo_at(
+                root,
+                &format!("/photos/{path}"),
+                1_700_000_000 + index as i64,
+                "2025-05-01 08:00:00",
+            ))
+            .unwrap();
+        }
+
+        let snapshot = db
+            .photo_index_snapshot_with_limit(PhotoSort::Newest, 2)
+            .unwrap();
+
+        assert_eq!(snapshot.entries.len(), 2);
+        assert!(!snapshot.truncated);
     }
 
     #[test]
