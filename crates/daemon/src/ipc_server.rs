@@ -11,7 +11,7 @@ use interprocess::TryClone as _;
 use interprocess::local_socket::traits::Stream as _;
 use vrc_photon_core::db::Db;
 use vrc_photon_core::error::CoreError;
-use vrc_photon_core::model::{AiPhotoFilter, Photo, PhotoTextFilter};
+use vrc_photon_core::model::{AiPhotoFilter, Photo, PhotoPlayer, PhotoTextFilter};
 use vrc_photon_ipc::framing;
 use vrc_photon_ipc::server::Listener;
 use vrc_photon_ipc::{
@@ -619,27 +619,30 @@ fn library_error(error: CoreError) -> Response {
     }
 }
 
-fn player_summaries(db: &Db, photo_id: i64) -> vrc_photon_core::Result<Vec<PlayerSummary>> {
-    Ok(db
-        .photo_players(photo_id)?
+fn to_player_summaries(players: Vec<PhotoPlayer>) -> Vec<PlayerSummary> {
+    players
         .into_iter()
         .map(|player| PlayerSummary {
             user_id: player.user_id,
             display_name: player.display_name,
         })
-        .collect())
+        .collect()
 }
 
-fn photo_summary(db: &Db, photo: &Photo) -> vrc_photon_core::Result<PhotoSummary> {
-    Ok(PhotoSummary {
+fn player_summaries(db: &Db, photo_id: i64) -> vrc_photon_core::Result<Vec<PlayerSummary>> {
+    Ok(to_player_summaries(db.photo_players(photo_id)?))
+}
+
+fn photo_summary(photo: &Photo, players: &[PlayerSummary]) -> PhotoSummary {
+    PhotoSummary {
         id: photo.id,
         path: photo.effective_path().to_string(),
         captured_at_utc: photo.captured_at_utc,
         captured_at_local: photo.captured_at_local.clone(),
         world_name: photo.world_name.clone(),
         world_id: photo.world_id.clone(),
-        players: player_summaries(db, photo.id)?,
-    })
+        players: players.to_vec(),
+    }
 }
 
 fn photo_detail(db: &Db, photo: &Photo) -> vrc_photon_core::Result<PhotoDetail> {
@@ -718,10 +721,18 @@ fn library_search_response(
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         let total = db.count_photos_text(&filter)?;
         let rows = db.search_photos_text(&filter, i64::from(limit), i64::from(offset))?;
+        let ids = rows.iter().map(|photo| photo.id).collect::<Vec<_>>();
+        let mut players = db.photo_players_many(&ids)?;
         let photos = rows
             .iter()
-            .map(|photo| photo_summary(&db, photo))
-            .collect::<vrc_photon_core::Result<Vec<_>>>()?;
+            .map(|photo| {
+                let players = players
+                    .remove(&photo.id)
+                    .map(to_player_summaries)
+                    .unwrap_or_default();
+                photo_summary(photo, &players)
+            })
+            .collect::<Vec<_>>();
         Ok(PhotoSearch {
             photos,
             total,
@@ -768,11 +779,23 @@ fn random_library_search_response(
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         let sample = db.random_photos_text(&filter, i64::from(limit), seed)?;
+        let ids = sample
+            .photos
+            .iter()
+            .map(|photo| photo.id)
+            .collect::<Vec<_>>();
+        let mut players = db.photo_players_many(&ids)?;
         let photos = sample
             .photos
             .iter()
-            .map(|photo| photo_summary(&db, photo))
-            .collect::<vrc_photon_core::Result<Vec<_>>>()?;
+            .map(|photo| {
+                let players = players
+                    .remove(&photo.id)
+                    .map(to_player_summaries)
+                    .unwrap_or_default();
+                photo_summary(photo, &players)
+            })
+            .collect::<Vec<_>>();
         Ok(RandomPhotoSearch {
             photos,
             total: sample.total,
