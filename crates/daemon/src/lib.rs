@@ -37,6 +37,7 @@ mod discord;
 mod discord_http;
 mod ipc_server;
 mod lock;
+mod memory_budget;
 pub(crate) mod plugin;
 mod signals;
 mod supervisor;
@@ -50,6 +51,7 @@ mod world_names;
 use discord_http::UreqTransport;
 use ipc_server::{EventBus, IpcControl, IpcServer, status_snapshot, tagging_status};
 use lock::{lock_db, lock_status};
+use memory_budget::{COMPRESSION_MEMORY_BUDGET_BYTES, MemoryBudget, compression_peak_estimate};
 use plugin::{AI_PLUGIN_ID, PluginService};
 use signals::{JobSignal, WakeSignal};
 use tagging::{TaggingControl, TaggingWorker, TaggingWorkerConfig};
@@ -244,6 +246,8 @@ impl LogPass {
 
 pub struct Daemon {
     db: Arc<Mutex<Db>>,
+    /// Shared transient-memory budget for the compression workers.
+    compression_budget: Arc<MemoryBudget>,
     settings: AppSettings,
     status: Arc<Mutex<DaemonStatus>>,
     running: Arc<AtomicBool>,
@@ -498,6 +502,7 @@ impl Daemon {
 
         Ok(Self {
             db,
+            compression_budget: Arc::new(MemoryBudget::new(COMPRESSION_MEMORY_BUDGET_BYTES)),
             settings,
             status: Arc::new(Mutex::new(DaemonStatus::default())),
             running: Arc::new(AtomicBool::new(true)),
@@ -1006,7 +1011,12 @@ impl Daemon {
             if jobs.is_empty() {
                 break;
             }
-            process_photo_batch(&self.db, &jobs, Some(&self.thumbnail_dir));
+            process_photo_batch(
+                &self.db,
+                &jobs,
+                Some(&self.thumbnail_dir),
+                &self.compression_budget,
+            );
         }
         self.process_deletions()?;
         Ok(())
@@ -2573,6 +2583,7 @@ impl Daemon {
             let events = self.events.clone();
             let thumbnail_dir = self.thumbnail_dir.clone();
             let paused = self.paused.clone();
+            let budget = self.compression_budget.clone();
             let name = format!("compress-{index}");
             let Some(handle) = self.spawn_supervised_worker(&name, move || {
                 worker_loop(
@@ -2582,6 +2593,7 @@ impl Daemon {
                     events.clone(),
                     thumbnail_dir.clone(),
                     paused.clone(),
+                    budget.clone(),
                 )
             }) else {
                 break;
@@ -3373,6 +3385,7 @@ fn worker_loop(
     events: EventBus,
     thumbnail_dir: PathBuf,
     paused: Arc<AtomicBool>,
+    budget: Arc<MemoryBudget>,
 ) {
     let mut seen_generation = 0;
     let mut last_poll_error: Option<String> = None;
@@ -3409,7 +3422,7 @@ fn worker_loop(
         for job in &batch {
             publish_compression(&events, job, JobStatus::Processing, 0.05, None);
         }
-        for outcome in process_photo_batch(&db, &batch, Some(&thumbnail_dir)) {
+        for outcome in process_photo_batch(&db, &batch, Some(&thumbnail_dir), &budget) {
             match outcome.status {
                 QueueStatus::Completed => {
                     publish_compression(&events, &outcome.job, JobStatus::Completed, 1.0, None)
@@ -3462,8 +3475,9 @@ fn process_photo_batch(
     db: &Arc<Mutex<Db>>,
     jobs: &[CompressionJob],
     thumbnail_dir: Option<&Path>,
+    budget: &MemoryBudget,
 ) -> Vec<JobOutcome> {
-    match process_photo_batch_inner(db, jobs, thumbnail_dir) {
+    match process_photo_batch_inner(db, jobs, thumbnail_dir, budget) {
         Ok(outcomes) => outcomes,
         Err(error) => {
             let message = error.to_string();
@@ -3506,6 +3520,7 @@ fn process_photo_batch_inner(
     db: &Arc<Mutex<Db>>,
     jobs: &[CompressionJob],
     thumbnail_dir: Option<&Path>,
+    budget: &MemoryBudget,
 ) -> Result<Vec<JobOutcome>> {
     let Some(first) = jobs.first() else {
         return Ok(Vec::new());
@@ -3531,6 +3546,10 @@ fn process_photo_batch_inner(
         lock_db(db).set_photo_blake3(photo.id, &hash)?;
     }
 
+    // Hold the shared reservation for the whole batch: the decoded image is
+    // reused by every profile while resized copies and encoder output are
+    // created one after another.
+    let _memory_permit = budget.reserve(compression_peak_estimate(&source_path));
     let Some(image) = vrc_photon_core::image_decode::decode_image(&source_path) else {
         return fail_batch(
             db,
@@ -3704,7 +3723,8 @@ fn process_job_with_thumbnail_dir(
     job: &CompressionJob,
     thumbnail_dir: Option<&Path>,
 ) -> Result<()> {
-    let mut outcomes = process_photo_batch(db, std::slice::from_ref(job), thumbnail_dir);
+    let budget = MemoryBudget::new(COMPRESSION_MEMORY_BUDGET_BYTES);
+    let mut outcomes = process_photo_batch(db, std::slice::from_ref(job), thumbnail_dir, &budget);
     let outcome = outcomes.pop().context("compression produced no outcome")?;
     match outcome.status {
         QueueStatus::Completed => Ok(()),
@@ -7795,7 +7815,12 @@ mod tests {
             .unwrap()[0];
         assert!(db.force_deletion(request).unwrap());
 
-        let outcomes = process_photo_batch(&daemon.db, &jobs, Some(&daemon.thumbnail_dir));
+        let outcomes = process_photo_batch(
+            &daemon.db,
+            &jobs,
+            Some(&daemon.thumbnail_dir),
+            &daemon.compression_budget,
+        );
 
         assert_eq!(outcomes[0].status, QueueStatus::Completed);
         assert_eq!(outcomes[1].status, QueueStatus::Cancelled);
