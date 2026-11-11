@@ -2096,7 +2096,7 @@ impl Daemon {
                     LocalizedError::new("daemon.link_failed"),
                     Some(&error.to_string()),
                 )?;
-                Err(error.into())
+                Err(error)
             }
         }
     }
