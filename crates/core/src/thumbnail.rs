@@ -6,6 +6,7 @@ use image::RgbaImage;
 
 use crate::cache_metadata;
 use crate::error::{CoreError, Result};
+use crate::fs_safe::{PlaceOutcome, write_bytes_no_clobber};
 
 pub const THUMBNAIL_QUALITY_MIN: u8 = 10;
 pub const THUMBNAIL_QUALITY_MAX: u8 = 100;
@@ -511,11 +512,7 @@ pub fn ensure_thumbnail_in_with_status(
 ) -> Result<Option<EnsuredThumbnail>> {
     let spec = ThumbnailSpec::new(spec.quality, spec.size);
     let output = thumbnail_path_in(cache_dir, photo_id, spec);
-    let existing_bytes = fs::metadata(&output)
-        .ok()
-        .filter(|metadata| metadata.is_file())
-        .map(|metadata| metadata.len())
-        .filter(|bytes| *bytes > 0);
+    let existing_bytes = existing_thumbnail_bytes(&output);
     if let Some(bytes) = existing_bytes
         && cache_metadata::cache_is_fresh(&output, source)
     {
@@ -545,38 +542,88 @@ pub fn ensure_thumbnail_in_with_status(
     if let Some(parent) = output.parent() {
         fs::create_dir_all(parent)?;
     }
-    let temp = cache_metadata::unique_temp_path(&output);
-    if let Err(error) = fs::write(&temp, &*encoded) {
-        let _ = fs::remove_file(&temp);
-        return Err(CoreError::Io(error));
-    }
-    if let Err(error) = fs::rename(&temp, &output) {
-        if let Err(cleanup) = fs::remove_file(&temp) {
-            tracing::debug!(
-                %cleanup,
-                photo_id,
-                path = %temp.display(),
-                "cannot remove temporary thumbnail after rename failure"
-            );
+    // The pre-check only returns early for a fresh cache entry, so an
+    // existing file here is stale. Remove it before the no-clobber publish;
+    // a racing writer may place a new file after this point, which the
+    // DestinationExists branch below adopts.
+    if existing_bytes.is_some() {
+        match fs::remove_file(&output) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                // Windows can deny removing a file another worker still has
+                // open. Keep a non-empty existing thumbnail as a cache hit
+                // instead of failing this request.
+                tracing::debug!(
+                    %error,
+                    photo_id,
+                    path = %output.display(),
+                    "cannot replace a stale thumbnail; keeping the existing file"
+                );
+                if let Some(bytes) = existing_thumbnail_bytes(&output) {
+                    return Ok(Some(EnsuredThumbnail {
+                        path: output,
+                        created: false,
+                        bytes,
+                        image: None,
+                    }));
+                }
+                return Err(CoreError::Io(error));
+            }
         }
-        return Err(CoreError::Io(error));
     }
-    if let Err(error) = cache_metadata::write_stamp(&output, stamp) {
-        // The thumbnail itself is valid; a missing stamp only forces one
-        // regeneration on the next request.
-        tracing::warn!(
-            %error,
-            photo_id,
-            path = %output.display(),
-            "cannot write thumbnail metadata"
-        );
+    match publish_thumbnail_bytes(&output, &encoded)? {
+        PlaceOutcome::Placed => {
+            if let Err(error) = cache_metadata::write_stamp(&output, stamp) {
+                // The thumbnail itself is valid; a missing stamp only forces
+                // one regeneration on the next request.
+                tracing::warn!(
+                    %error,
+                    photo_id,
+                    path = %output.display(),
+                    "cannot write thumbnail metadata"
+                );
+            }
+            Ok(Some(EnsuredThumbnail {
+                path: output,
+                created: true,
+                bytes: encoded.len() as u64,
+                image: Some(image),
+            }))
+        }
+        PlaceOutcome::DestinationExists => {
+            let bytes = existing_thumbnail_bytes(&output).ok_or_else(|| {
+                CoreError::Io(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!(
+                        "thumbnail destination exists but is empty: {}",
+                        output.display()
+                    ),
+                ))
+            })?;
+            Ok(Some(EnsuredThumbnail {
+                path: output,
+                created: false,
+                bytes,
+                image: None,
+            }))
+        }
     }
-    Ok(Some(EnsuredThumbnail {
-        path: output,
-        created: true,
-        bytes: encoded.len() as u64,
-        image: Some(image),
-    }))
+}
+
+/// Returns the non-empty on-disk size of an existing thumbnail.
+fn existing_thumbnail_bytes(output: &Path) -> Option<u64> {
+    fs::metadata(output)
+        .ok()
+        .filter(|metadata| metadata.is_file())
+        .map(|metadata| metadata.len())
+        .filter(|bytes| *bytes > 0)
+}
+
+/// Publishes encoded thumbnail bytes without overwriting a file that another
+/// worker placed first.
+fn publish_thumbnail_bytes(output: &Path, bytes: &[u8]) -> Result<PlaceOutcome> {
+    Ok(write_bytes_no_clobber(output, bytes)?)
 }
 
 #[cfg(test)]
@@ -603,6 +650,18 @@ mod tests {
             .unwrap()
             .set_modified(modified)
             .unwrap();
+    }
+
+    #[test]
+    fn racing_thumbnail_publish_keeps_the_existing_file() {
+        let dir = tempdir().unwrap();
+        let output = dir.path().join("thumb.webp");
+        fs::write(&output, b"existing").unwrap();
+
+        let outcome = publish_thumbnail_bytes(&output, b"new").unwrap();
+
+        assert_eq!(outcome, PlaceOutcome::DestinationExists);
+        assert_eq!(fs::read(&output).unwrap(), b"existing");
     }
 
     #[test]

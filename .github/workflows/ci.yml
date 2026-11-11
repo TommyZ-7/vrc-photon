@@ -49,6 +49,8 @@ jobs:
           else
             echo "docs_only=true" >> "$GITHUB_OUTPUT"
           fi
+      - name: Check documentation drift
+        run: ./scripts/check-docs-drift.sh
 
   test:
     needs: changes
@@ -100,11 +102,11 @@ jobs:
 
       - name: Clippy
         if: needs.changes.outputs.docs_only != 'true'
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
       - name: Test
         if: needs.changes.outputs.docs_only != 'true'
-        run: cargo test --workspace
+        run: cargo test --workspace --locked
 
   ipc-windows:
     needs: changes
@@ -126,16 +128,16 @@ jobs:
       - name: Check the whole workspace on Windows
         run: cargo check --workspace --all-targets --locked
       - name: Test IPC transport on Windows
-        run: cargo test -p vrc-photon-ipc
+        run: cargo test -p vrc-photon-ipc --locked
       - name: Clippy IPC transport on Windows
-        run: cargo clippy -p vrc-photon-ipc --all-targets -- -D warnings
+        run: cargo clippy -p vrc-photon-ipc --all-targets --locked -- -D warnings
       - name: Test updater on Windows
-        run: cargo test -p vrc-photon-update
+        run: cargo test -p vrc-photon-update --locked
       - name: Clippy updater on Windows
-        run: cargo clippy -p vrc-photon-update --all-targets -- -D warnings
+        run: cargo clippy -p vrc-photon-update --all-targets --locked -- -D warnings
       - name: Test thumbnail cache on Windows
         if: needs.changes.outputs.thumbnails == 'true'
-        run: cargo test -p vrc-photon-core thumbnail::tests
+        run: cargo test -p vrc-photon-core thumbnail::tests --locked
 
   audit:
     needs: changes
@@ -159,11 +161,16 @@ jobs:
         uses: EmbarkStudios/cargo-deny-action@v2.1.1
         with:
           command: check advisories
+      - name: Check dependency licenses, bans, and sources (blocking)
+        uses: EmbarkStudios/cargo-deny-action@v2.1.1
+        with:
+          command: check
+          command-arguments: "licenses bans sources"
       - name: Install cargo-about
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-about@0.9.3
       - name: Check third-party notices
         run: |
-          cargo about generate about.hbs -o /tmp/THIRD-PARTY-NOTICES.md
+          cargo about generate about.hbs --locked -o /tmp/THIRD-PARTY-NOTICES.md
           diff -u packaging/licenses/THIRD-PARTY-NOTICES.md /tmp/THIRD-PARTY-NOTICES.md
