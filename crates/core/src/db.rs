@@ -2792,7 +2792,7 @@ impl Db {
                  WHERE photo_id IN ({placeholders}) \
                  ORDER BY photo_id, display_name COLLATE NOCASE"
             );
-            let mut stmt = self.conn.prepare(&sql)?;
+            let mut stmt = self.conn.prepare_cached(&sql)?;
             let rows = stmt.query_map(params_from_iter(chunk.iter().copied()), |row| {
                 Ok((
                     row.get::<_, i64>(0)?,
