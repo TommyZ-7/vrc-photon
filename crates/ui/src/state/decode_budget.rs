@@ -3,7 +3,8 @@
 use std::path::Path;
 use std::sync::{Condvar, LazyLock, Mutex};
 
-use vrc_photon_core::image_decode::FULL_IMAGE_MAX;
+use image::metadata::Orientation;
+use vrc_photon_core::image_decode::{FULL_IMAGE_MAX, image_info};
 
 /// Total decoded-image bytes the UI may reserve at once.
 pub(crate) const DECODE_BUDGET_BYTES: usize = 256 * 1024 * 1024;
@@ -32,14 +33,27 @@ pub(crate) enum FullImageSource {
 }
 
 /// Estimates the peak bytes for one full-image decode.
-pub(crate) fn full_image_bytes(width: u32, height: u32, source: FullImageSource) -> usize {
+///
+/// `rotated` accounts for the extra RGBA copy made while applying EXIF
+/// orientation, and `compressed_bytes` is the on-disk size of an AVIF/JXL
+/// source that the image crate decodes through a conversion buffer.
+pub(crate) fn full_image_bytes(
+    width: u32,
+    height: u32,
+    source: FullImageSource,
+    rotated: bool,
+    compressed_bytes: usize,
+) -> usize {
     if width == 0 || height == 0 {
         return 0;
     }
     let source_bytes = rgba_bytes(width, height);
     let mut estimate = match source {
+        FullImageSource::DirectRgba if rotated => source_bytes.saturating_mul(2),
         FullImageSource::DirectRgba => source_bytes,
-        FullImageSource::Converted => source_bytes.saturating_mul(2),
+        FullImageSource::Converted => source_bytes
+            .saturating_mul(2)
+            .saturating_add(compressed_bytes),
     };
     if width.max(height) > FULL_IMAGE_MAX {
         let scaled = rgba_bytes(width.min(FULL_IMAGE_MAX), height.min(FULL_IMAGE_MAX));
@@ -51,7 +65,15 @@ pub(crate) fn full_image_bytes(width: u32, height: u32, source: FullImageSource)
 /// Estimates the full-image peak from the file header, falling back to the
 /// database dimensions when the format cannot be read cheaply.
 pub(crate) fn full_image_estimate(path: &Path, fallback: (u32, u32)) -> usize {
-    let (width, height) = vrc_photon_core::image_decode::image_dimensions(path).unwrap_or(fallback);
+    let (width, height, rotated) = image_info(path)
+        .map(|info| {
+            (
+                info.width,
+                info.height,
+                info.orientation != Orientation::NoTransforms,
+            )
+        })
+        .unwrap_or((fallback.0, fallback.1, false));
     let extension = path
         .extension()
         .and_then(|extension| extension.to_str())
@@ -60,7 +82,14 @@ pub(crate) fn full_image_estimate(path: &Path, fallback: (u32, u32)) -> usize {
         Some("jpg" | "jpeg" | "png") => FullImageSource::DirectRgba,
         _ => FullImageSource::Converted,
     };
-    full_image_bytes(width, height, source)
+    let compressed_bytes = if matches!(extension.as_deref(), Some("avif" | "jxl")) {
+        std::fs::metadata(path)
+            .map(|metadata| metadata.len() as usize)
+            .unwrap_or(0)
+    } else {
+        0
+    };
+    full_image_bytes(width, height, source, rotated, compressed_bytes)
 }
 
 pub(crate) struct DecodeBudget {
@@ -219,13 +248,38 @@ mod tests {
     }
 
     #[test]
+    fn converted_estimate_includes_the_compressed_file_size() {
+        assert_eq!(
+            full_image_bytes(100, 50, FullImageSource::Converted, false, 1_000),
+            40_000 + 1_000
+        );
+    }
+
+    #[test]
+    fn avif_estimate_reads_the_compressed_file_size() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("photo.avif");
+        std::fs::write(&path, vec![0u8; 1_000]).unwrap();
+
+        assert_eq!(full_image_estimate(&path, (100, 50)), 41_000);
+    }
+
+    #[test]
+    fn rotated_direct_rgba_counts_the_orientation_copy() {
+        assert_eq!(
+            full_image_bytes(100, 50, FullImageSource::DirectRgba, true, 0),
+            40_000
+        );
+    }
+
+    #[test]
     fn full_image_estimate_accounts_for_the_conversion_buffer() {
         assert_eq!(
-            full_image_bytes(100, 50, FullImageSource::DirectRgba),
+            full_image_bytes(100, 50, FullImageSource::DirectRgba, false, 0),
             20_000
         );
         assert_eq!(
-            full_image_bytes(100, 50, FullImageSource::Converted),
+            full_image_bytes(100, 50, FullImageSource::Converted, false, 0),
             40_000
         );
     }
@@ -233,13 +287,16 @@ mod tests {
     #[test]
     fn full_image_estimate_accounts_for_the_downscaled_output() {
         assert_eq!(
-            full_image_bytes(10_000, 1_000, FullImageSource::DirectRgba),
+            full_image_bytes(10_000, 1_000, FullImageSource::DirectRgba, false, 0),
             rgba_bytes(10_000, 1_000) + rgba_bytes(FULL_IMAGE_MAX, 1_000)
         );
     }
 
     #[test]
     fn full_image_estimate_ignores_unknown_dimensions() {
-        assert_eq!(full_image_bytes(0, 0, FullImageSource::Converted), 0);
+        assert_eq!(
+            full_image_bytes(0, 0, FullImageSource::Converted, false, 0),
+            0
+        );
     }
 }

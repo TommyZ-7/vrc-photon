@@ -299,16 +299,39 @@ fn finish_full_image(image: RgbaImage, orientation: Orientation) -> RgbaImage {
     }
 }
 
+/// Displayed dimensions and the EXIF orientation read from the file header.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ImageInfo {
+    pub width: u32,
+    pub height: u32,
+    pub orientation: Orientation,
+}
+
+/// Reads displayed image dimensions and EXIF orientation without decoding
+/// pixel data.
+///
+/// 90/270-degree orientations swap the stored width and height, so `width`
+/// and `height` match what thumbnails and full images display while
+/// `orientation` lets callers account for the extra rotation buffer.
+pub fn image_info(path: &Path) -> Option<ImageInfo> {
+    let mut decoder = open_decoder(path)?;
+    let (width, height) = decoder.dimensions();
+    let orientation = decoder.orientation().unwrap_or(Orientation::NoTransforms);
+    let (width, height) = oriented_dimensions(width, height, orientation);
+    Some(ImageInfo {
+        width,
+        height,
+        orientation,
+    })
+}
+
 /// Reads displayed image dimensions without decoding pixel data.
 ///
 /// EXIF orientation is read from the file header and 90/270-degree
 /// orientations swap the stored width and height. This keeps the scanner's
 /// width/height semantics equal to what thumbnails and full images display.
 pub fn image_dimensions(path: &Path) -> Option<(u32, u32)> {
-    let mut decoder = open_decoder(path)?;
-    let (width, height) = decoder.dimensions();
-    let orientation = decoder.orientation().unwrap_or(Orientation::NoTransforms);
-    Some(oriented_dimensions(width, height, orientation))
+    image_info(path).map(|info| (info.width, info.height))
 }
 
 /// Returns the displayed dimensions for a raw size and EXIF orientation.
@@ -894,6 +917,19 @@ mod tests {
                 (200, 400)
             );
         }
+    }
+
+    #[test]
+    fn image_info_reports_oriented_dimensions_and_orientation() {
+        let dir = tempdir().unwrap();
+        let source = RgbaImage::from_pixel(400, 200, Rgba([40, 120, 220, 255]));
+        let path = dir.path().join("rotated.jpg");
+        test_support::write_jpeg_with_orientation(&path, &source, 6);
+
+        let info = image_info(&path).expect("image info");
+
+        assert_eq!((info.width, info.height), (200, 400));
+        assert_eq!(info.orientation, Orientation::Rotate90);
     }
 
     fn write_png_with_declared_dimensions(path: &Path, width: u32, height: u32) {
