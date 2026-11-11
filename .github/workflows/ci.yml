@@ -90,6 +90,10 @@ jobs:
         if: needs.changes.outputs.docs_only != 'true'
         uses: Swatinem/rust-cache@v2
 
+      - name: Check gpui fork patches
+        if: needs.changes.outputs.docs_only != 'true'
+        run: ./scripts/check-gpui-patches.sh
+
       - name: Format
         if: needs.changes.outputs.docs_only != 'true'
         run: cargo fmt --all -- --check
@@ -155,3 +159,11 @@ jobs:
         uses: EmbarkStudios/cargo-deny-action@v2.1.1
         with:
           command: check advisories
+      - name: Install cargo-about
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-about@0.9.3
+      - name: Check third-party notices
+        run: |
+          cargo about generate about.hbs -o /tmp/THIRD-PARTY-NOTICES.md
+          diff -u packaging/licenses/THIRD-PARTY-NOTICES.md /tmp/THIRD-PARTY-NOTICES.md
