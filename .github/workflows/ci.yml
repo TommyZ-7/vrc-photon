@@ -66,6 +66,9 @@ jobs:
       # Match the hosted runner user so workspace files and permission tests
       # see a normal non-root owner.
       options: --user 1001:1001
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - name: Docs-only fast pass
