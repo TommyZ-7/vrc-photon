@@ -10,6 +10,8 @@ use crate::error::{CoreError, Result};
 
 /// Longest edge of the JPEG preview returned to MCP clients.
 pub const MCP_PREVIEW_MAX_EDGE: u32 = 1024;
+/// Largest original file returned to an MCP client without re-encoding.
+pub const MCP_ORIGINAL_MAX_BYTES: u64 = 64 * 1024 * 1024;
 /// JPEG quality used only for the MCP preview; originals are never re-encoded.
 const MCP_PREVIEW_JPEG_QUALITY: u8 = 85;
 
@@ -26,7 +28,23 @@ pub struct PhotoImage {
 /// encodes a JPEG. `original = true` reads the file unchanged and only
 /// determines its MIME type.
 pub fn render_photo_image(path: &Path, original: bool) -> Result<PhotoImage> {
+    render_photo_image_with_limit(path, original, MCP_ORIGINAL_MAX_BYTES)
+}
+
+fn render_photo_image_with_limit(
+    path: &Path,
+    original: bool,
+    max_original_bytes: u64,
+) -> Result<PhotoImage> {
     if original {
+        let size = std::fs::metadata(path)?.len();
+        if size > max_original_bytes {
+            let limit_mib = max_original_bytes / (1024 * 1024);
+            return Err(CoreError::Invalid(format!(
+                "original image is {size} bytes; limit is {limit_mib} MiB \
+                 ({max_original_bytes} bytes); use preview"
+            )));
+        }
         let bytes = std::fs::read(path)?;
         let mime_type = mime_type_for(path, &bytes).ok_or_else(|| {
             CoreError::Invalid(format!("unsupported image format: {}", path.display()))
@@ -139,6 +157,19 @@ mod tests {
 
         let rendered = render_photo_image(&source, true).unwrap();
         assert_eq!(rendered.mime_type, "image/png");
+    }
+
+    #[test]
+    fn original_over_the_limit_is_rejected_with_preview_guidance() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("photo.png");
+        write_test_png(&source, 16, 10);
+
+        let error = render_photo_image_with_limit(&source, true, 10).unwrap_err();
+        let message = error.to_string();
+
+        assert!(message.contains("preview"), "{message}");
+        assert!(message.contains("limit"), "{message}");
     }
 
     #[test]
