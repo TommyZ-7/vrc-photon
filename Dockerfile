@@ -22,6 +22,7 @@ RUN apt-get update \
         jq \
         libfontconfig1-dev \
         libfreetype6-dev \
+        libfuse2t64 \
         libgdk-pixbuf-2.0-0 \
         libglib2.0-bin \
         libwayland-dev \
