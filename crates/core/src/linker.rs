@@ -18,7 +18,7 @@ pub fn link_photo(db: &Db, photo: &Photo) -> Result<bool> {
     link_photo_with(db, photo, estimated_link_enabled(db))
 }
 
-fn estimated_link_enabled(db: &Db) -> bool {
+pub fn estimated_link_enabled(db: &Db) -> bool {
     match AppSettings::load(db) {
         Ok(settings) => settings.estimated_link,
         Err(error) => {
@@ -32,6 +32,19 @@ fn link_photo_with(db: &Db, photo: &Photo, estimated_enabled: bool) -> Result<bo
     let xmp = metadata::read_xmp(Path::new(&photo.abs_path))
         .ok()
         .flatten();
+    link_photo_with_xmp(db, photo, xmp, estimated_enabled)
+}
+
+/// Links one photo using XMP metadata that the caller already read.
+///
+/// The daemon reads XMP outside its shared database lock and passes the
+/// result here, so a slow file read never blocks other workers.
+pub fn link_photo_with_xmp(
+    db: &Db,
+    photo: &Photo,
+    xmp: Option<XmpMetadata>,
+    estimated_enabled: bool,
+) -> Result<bool> {
     let session = db.session_at(photo.captured_at_utc)?;
 
     if let Some(session) = session {
