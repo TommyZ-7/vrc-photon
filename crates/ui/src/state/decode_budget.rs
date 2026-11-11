@@ -82,12 +82,12 @@ impl DecodeBudget {
         // A single decode larger than the cap still runs, but only while no
         // other decode holds a reservation: account it as the whole cap.
         let charge = bytes.min(self.cap);
-        let mut reserved = self.reserved.lock().expect("decode budget lock poisoned");
+        let mut reserved = self.lock_reserved();
         while reserved.saturating_add(charge) > self.cap {
             reserved = self
                 .available
                 .wait(reserved)
-                .expect("decode budget lock poisoned");
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
         }
         *reserved += charge;
         DecodePermit {
@@ -97,14 +97,22 @@ impl DecodeBudget {
     }
 
     fn release(&self, bytes: usize) {
-        let mut reserved = self.reserved.lock().expect("decode budget lock poisoned");
+        let mut reserved = self.lock_reserved();
         *reserved = reserved.saturating_sub(bytes);
         self.available.notify_all();
     }
 
+    /// A panic while holding the reservation mutex must not stop every later
+    /// image decode; recover the guarded count and continue.
+    fn lock_reserved(&self) -> std::sync::MutexGuard<'_, usize> {
+        self.reserved
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     #[cfg(test)]
     pub(crate) fn reserved(&self) -> usize {
-        *self.reserved.lock().expect("decode budget lock poisoned")
+        *self.lock_reserved()
     }
 }
 
@@ -133,6 +141,22 @@ mod tests {
         let budget = DecodeBudget::new(100);
         let permit = budget.reserve(60);
         assert_eq!(budget.reserved(), 60);
+        drop(permit);
+        assert_eq!(budget.reserved(), 0);
+    }
+
+    #[test]
+    fn reserve_recovers_from_a_poisoned_lock() {
+        let budget = Arc::new(DecodeBudget::new(100));
+        let poisoned = Arc::clone(&budget);
+        let _ = thread::spawn(move || {
+            let _guard = poisoned.reserved.lock().expect("hold the budget lock");
+            panic!("poison the decode budget");
+        })
+        .join();
+
+        let permit = budget.reserve(10);
+        assert_eq!(budget.reserved(), 10);
         drop(permit);
         assert_eq!(budget.reserved(), 0);
     }

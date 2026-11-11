@@ -408,11 +408,13 @@ pub(crate) fn find_main(id: &str) -> &'static MainColor {
 }
 
 pub(crate) fn find_accent(id: &str) -> &'static AccentColor {
+    // The catalog is a compile-time table and its shape is asserted by tests;
+    // a missing id falls back to the first entry instead of panicking.
     ACCENT_COLORS
         .iter()
         .find(|color| color.id == id)
         .or_else(|| ACCENT_COLORS.iter().find(|color| color.id == "sky"))
-        .expect("default accent")
+        .unwrap_or(&ACCENT_COLORS[0])
 }
 
 #[derive(Clone, Copy)]
