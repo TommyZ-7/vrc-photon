@@ -110,9 +110,9 @@ mod tests {
             debug.contains("debug") && debug.contains("ureq=off"),
             "{debug}"
         );
-        let trace = filter_from(Some("vrc_photonn=trace"), "info").to_string();
+        let trace = filter_from(Some("vrc_photon=trace"), "info").to_string();
         assert!(
-            trace.contains("vrc_photonn=trace") && trace.contains("ureq=off"),
+            trace.contains("vrc_photon=trace") && trace.contains("ureq=off"),
             "{trace}"
         );
         // An explicit ureq directive in RUST_LOG is overridden.
