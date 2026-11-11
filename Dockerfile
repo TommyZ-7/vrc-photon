@@ -18,6 +18,7 @@ RUN apt-get update \
         docker.io \
         file \
         git \
+        jq \
         libfontconfig1-dev \
         libfreetype6-dev \
         libwayland-dev \
