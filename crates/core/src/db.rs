@@ -1660,7 +1660,16 @@ impl Db {
     /// Promotes a completed derivative to the library display asset. The
     /// original file is expected to be removed by the caller.
     pub fn set_replaced(&self, photo_id: i64, derivative_id: i64) -> Result<bool> {
-        let changed = self.conn.execute(
+        self.set_replaced_in(&self.conn, photo_id, derivative_id)
+    }
+
+    fn set_replaced_in(
+        &self,
+        conn: &Connection,
+        photo_id: i64,
+        derivative_id: i64,
+    ) -> Result<bool> {
+        let changed = conn.execute(
             "UPDATE photos SET display_derivative_id = ?1, \
                 status = CASE WHEN status = 'deleting' THEN 'deleting' ELSE 'replaced' END, \
                 updated_at = ?2 \
@@ -1669,6 +1678,20 @@ impl Db {
             params![derivative_id, now_string(), photo_id],
         )?;
         Ok(changed == 1)
+    }
+
+    /// Attaches a replacement derivative and queues its automatic deletion in
+    /// one transaction. Either both writes commit or neither does.
+    pub fn complete_replacement(&self, photo_id: i64, derivative_id: i64) -> Result<()> {
+        let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
+        if !self.set_replaced_in(&tx, photo_id, derivative_id)? {
+            return Err(CoreError::Invalid(
+                "derivative was not attached to the photo".to_string(),
+            ));
+        }
+        self.request_deletion_in(&tx, &[photo_id], DeletionReason::AutoReplace, false)?;
+        tx.commit()?;
+        Ok(())
     }
 
     /// Returns a replaced photo to the original-file state. Used when trashing
@@ -3264,12 +3287,24 @@ impl Db {
         reason: DeletionReason,
         force: bool,
     ) -> Result<Vec<i64>> {
+        let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
+        let request_ids = self.request_deletion_in(&tx, photo_ids, reason, force)?;
+        tx.commit()?;
+        Ok(request_ids)
+    }
+
+    fn request_deletion_in(
+        &self,
+        tx: &Transaction<'_>,
+        photo_ids: &[i64],
+        reason: DeletionReason,
+        force: bool,
+    ) -> Result<Vec<i64>> {
         if reason == DeletionReason::Unknown {
             return Err(CoreError::Invalid(
                 "cannot record an unknown deletion reason".to_string(),
             ));
         }
-        let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
         let now = now_string();
         let mut request_ids = Vec::new();
         for photo_id in photo_ids {
@@ -3344,7 +3379,6 @@ impl Db {
             )?;
             request_ids.push(request_id);
         }
-        tx.commit()?;
         Ok(request_ids)
     }
 
@@ -6860,6 +6894,37 @@ mod tests {
         assert_eq!(photo.status, PhotoStatus::Deleting);
         assert_eq!(photo.display_derivative_id, Some(derivative));
         assert_eq!(db.count_photos().unwrap(), 0);
+    }
+
+    #[test]
+    fn complete_replacement_marks_replaced_and_requests_auto_deletion() {
+        let db = Db::open_in_memory().unwrap();
+        let id = seed_photo(&db);
+        let derivative = db
+            .add_derivative(id, "/photos/a_webp.webp", "webp", 16, 10, 8, "p", "replace")
+            .unwrap();
+
+        db.complete_replacement(id, derivative).unwrap();
+
+        let photo = db.photo_by_id(id).unwrap().unwrap();
+        assert_eq!(photo.status, PhotoStatus::Replaced);
+        assert_eq!(photo.display_derivative_id, Some(derivative));
+        let request = db.active_deletion_request(id).unwrap().unwrap();
+        assert_eq!(request.reason, DeletionReason::AutoReplace);
+        assert_eq!(request.status, DeletionStatus::Pending);
+    }
+
+    #[test]
+    fn complete_replacement_rolls_back_when_derivative_is_missing() {
+        let db = Db::open_in_memory().unwrap();
+        let id = seed_photo(&db);
+
+        assert!(db.complete_replacement(id, 9999).is_err());
+
+        let photo = db.photo_by_id(id).unwrap().unwrap();
+        assert_eq!(photo.status, PhotoStatus::Present);
+        assert!(photo.display_derivative_id.is_none());
+        assert!(db.active_deletion_request(id).unwrap().is_none());
     }
 
     #[test]
