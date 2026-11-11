@@ -146,6 +146,18 @@ fn terminate(child: &mut Child) {
     let _ = child.kill();
 }
 
+/// Serializes executable-file writes with process spawns in the test process.
+///
+/// `fork` inherits open write descriptors from every thread. If another test
+/// forks while this test is writing an executable, the child briefly holds the
+/// write descriptor and `exec` fails with ETXTBSY. Tests take this lock around
+/// executable writes and process spawns so that race cannot happen.
+#[cfg(test)]
+pub(crate) fn test_process_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 /// Runs a command with an overall deadline, draining stdout and stderr into
 /// bounded buffers.
 ///
@@ -229,6 +241,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn a_command_that_exceeds_the_deadline_is_killed() {
+        let _guard = crate::command::test_process_lock();
         let dir = tempfile::tempdir().unwrap();
         let script = dir.path().join("slow.sh");
         let pid_file = dir.path().join("pid");
@@ -242,7 +255,8 @@ mod tests {
         .unwrap();
         make_executable(&script);
 
-        let mut command = Command::new(&script);
+        let mut command = Command::new("/bin/sh");
+        command.arg(&script);
         let started = Instant::now();
         let error = run_bounded(&mut command, Duration::from_secs(1)).unwrap_err();
 
@@ -269,6 +283,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn output_is_bounded_but_the_pipes_are_drained() {
+        let _guard = crate::command::test_process_lock();
         let dir = tempfile::tempdir().unwrap();
         let script = dir.path().join("noisy.sh");
         std::fs::write(
@@ -286,7 +301,8 @@ mod tests {
         .unwrap();
         make_executable(&script);
 
-        let mut command = Command::new(&script);
+        let mut command = Command::new("/bin/sh");
+        command.arg(&script);
         let output = run_bounded(&mut command, Duration::from_secs(10)).unwrap();
 
         assert!(output.success());

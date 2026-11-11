@@ -620,6 +620,8 @@ pub fn start_apply(job: &ApplyJob, current_exe: &Path, data_dir: &Path) -> Resul
     let stderr = log
         .try_clone()
         .map_err(|error| UpdateError::io_at(IoOperation::Job, paths.log_file(), error))?;
+    #[cfg(test)]
+    let _process_guard = crate::command::test_process_lock();
     Command::new(&helper)
         .arg("--apply")
         .arg(paths.job_file())
