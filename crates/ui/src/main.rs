@@ -33,6 +33,17 @@ mod update_view;
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
+/// Reports a fatal startup error to the log and stderr, then exits.
+///
+/// Startup happens before any window exists, so there is no in-app surface for
+/// this message. Keep the exit explicit so a service manager or launcher never
+/// mistakes a broken start for a clean one.
+fn exit_startup_failure(context: &str, error: impl std::fmt::Display) -> ! {
+    tracing::error!(error = %error, "{context}");
+    eprintln!("VRC PhotoN cannot start: {context}: {error}");
+    std::process::exit(1)
+}
+
 fn main() {
     vrc_photon_core::memory::configure_allocator();
     if logging::init("vrc-photon", "info,vrc_photonn=debug").is_none() {
@@ -76,11 +87,11 @@ fn main() {
     gpui_kit::application()
         .with_assets(gpui_kit::assets::Assets)
         .run(move |cx| {
-            cx.text_system()
-                .add_fonts(vec![Cow::Borrowed(
-                    include_bytes!("../assets/NotoSansJP.ttf").as_slice(),
-                )])
-                .expect("load Noto Sans JP");
+            if let Err(error) = cx.text_system().add_fonts(vec![Cow::Borrowed(
+                include_bytes!("../assets/NotoSansJP.ttf").as_slice(),
+            )]) {
+                exit_startup_failure("cannot load the bundled Noto Sans JP font", error);
+            }
             gpui_kit::init(cx);
             cx.bind_keys([
                 KeyBinding::new("ctrl-b", ToggleSidebar, None),
@@ -135,7 +146,7 @@ fn main() {
                 window.set_window_title("VRC PhotoN");
                 cx.new(|cx| App::new(window, cx, &options))
             })
-            .expect("open window");
+            .unwrap_or_else(|error| exit_startup_failure("cannot open the main window", error));
             register_global_actions(cx, app);
         });
 }

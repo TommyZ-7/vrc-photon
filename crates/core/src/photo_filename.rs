@@ -17,6 +17,8 @@ pub struct ParsedPhotoName {
 fn photo_regex() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
+        // The pattern is a compile-time literal covered by the filename
+        // parsing tests; a failure here is a programming error, not user input.
         Regex::new(
             r"(?i)^VRChat_(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})\.(\d{3})_(\d+)x(\d+)\.(png|jpe?g)$",
         )
