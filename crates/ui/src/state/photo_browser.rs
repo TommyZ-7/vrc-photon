@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 
 use gpui_kit::base::VirtualListScrollHandle;
 use gpui_kit::{ScrollStrategy, UniformListScrollHandle, point, px};
+use vrc_photon_core::db::PhotoIndexSnapshot;
 use vrc_photon_core::error::CoreError;
 use vrc_photon_core::model::{Photo, PhotoIndexEntry, SessionSummary};
 
@@ -48,6 +49,9 @@ pub(crate) fn set_session_scroll_offset(browser: &PhotoBrowser, offset: f32) {
 pub(crate) struct PhotoIndex {
     pub(crate) entries: Vec<PhotoIndexEntry>,
     pub(crate) total: usize,
+    /// The database capped the index at its row limit; the library is larger
+    /// than the mounted snapshot.
+    pub(crate) truncated: bool,
     pub(crate) years: Vec<YearBucket>,
     /// Photo count per local capture month. The gallery header needs the
     /// count for the month at the top of the viewport on every scroll-driven
@@ -60,6 +64,10 @@ pub(crate) struct PhotoIndex {
 
 impl PhotoIndex {
     pub(crate) fn new(entries: Vec<PhotoIndexEntry>) -> Self {
+        Self::with_truncation(entries, false)
+    }
+
+    pub(crate) fn with_truncation(entries: Vec<PhotoIndexEntry>, truncated: bool) -> Self {
         let total = entries.len();
         let years = build_year_buckets(&entries);
         let mut months: HashMap<i32, usize> = HashMap::new();
@@ -73,6 +81,7 @@ impl PhotoIndex {
         Self {
             entries,
             total,
+            truncated,
             years,
             months,
             rows,
@@ -978,6 +987,22 @@ pub(crate) fn sync_search_mirror(search: &mut PhotoBrowser, library: &PhotoBrows
     true
 }
 
+/// Result of applying a fresh library index.
+///
+/// On failure the previously mounted snapshot stays in place, so `error` is
+/// the user-facing message and `truncated` is false.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct AppliedIndex {
+    pub(crate) error: Option<&'static str>,
+    pub(crate) truncated: bool,
+}
+
+/// A truncation toast belongs to the transition into the truncated state, not
+/// to every reload while the library stays too large.
+pub(crate) fn should_notify_truncation(previous: bool, next: bool) -> bool {
+    next && !previous
+}
+
 /// Replaces the library snapshot with a fresh index result.
 ///
 /// On failure the previously mounted snapshot, page cache, and scroll offset
@@ -985,16 +1010,23 @@ pub(crate) fn sync_search_mirror(search: &mut PhotoBrowser, library: &PhotoBrows
 /// visible library. Returns the user-facing error in that case.
 pub(crate) fn apply_library_index(
     browser: &mut PhotoBrowser,
-    result: vrc_photon_core::error::Result<Vec<PhotoIndexEntry>>,
-) -> Option<&'static str> {
+    result: vrc_photon_core::error::Result<PhotoIndexSnapshot>,
+) -> AppliedIndex {
     match result {
-        Ok(entries) => {
-            browser.replace_index(Arc::new(PhotoIndex::new(entries)));
-            None
+        Ok(snapshot) => {
+            let PhotoIndexSnapshot { entries, truncated } = snapshot;
+            browser.replace_index(Arc::new(PhotoIndex::with_truncation(entries, truncated)));
+            AppliedIndex {
+                error: None,
+                truncated,
+            }
         }
         Err(error) => {
             tracing::error!(%error, "photo_index failed");
-            Some("photos.index_error")
+            AppliedIndex {
+                error: Some("photos.index_error"),
+                truncated: false,
+            }
         }
     }
 }
@@ -1400,6 +1432,14 @@ mod tests {
     }
 
     #[test]
+    fn truncation_toast_fires_only_when_the_limit_is_first_hit() {
+        assert!(should_notify_truncation(false, true));
+        assert!(!should_notify_truncation(true, true));
+        assert!(!should_notify_truncation(true, false));
+        assert!(should_notify_truncation(false, true));
+    }
+
+    #[test]
     fn failed_library_index_keeps_the_mounted_snapshot_and_pages() {
         let mut browser = PhotoBrowser::new(
             Arc::new(PhotoIndex::new(vec![
@@ -1412,19 +1452,20 @@ mod tests {
         browser.insert_page(0, vec![test_photo(1)], generation);
         let mounted = browser.index.clone();
 
-        let error = apply_library_index(
+        let applied = apply_library_index(
             &mut browser,
             Err(CoreError::Invalid("database is locked".to_string())),
         );
 
-        assert_eq!(error, Some("photos.index_error"));
+        assert_eq!(applied.error, Some("photos.index_error"));
+        assert!(!applied.truncated);
         assert!(Arc::ptr_eq(&browser.index, &mounted));
         assert_eq!(browser.index.total, 2);
         assert!(browser.pages.get_page(0).is_some());
     }
 
     #[test]
-    fn fresh_library_index_replaces_the_snapshot() {
+    fn fresh_library_index_replaces_the_snapshot_and_reports_truncation() {
         let mut browser = PhotoBrowser::new(
             Arc::new(PhotoIndex::new(vec![index_entry(1, 202601)])),
             TEST_ROW_HEIGHT,
@@ -1432,12 +1473,17 @@ mod tests {
         let generation = browser.generation;
         browser.insert_page(0, vec![test_photo(1)], generation);
 
-        let error = apply_library_index(
+        let applied = apply_library_index(
             &mut browser,
-            Ok(vec![index_entry(2, 202512), index_entry(3, 202511)]),
+            Ok(PhotoIndexSnapshot {
+                entries: vec![index_entry(2, 202512), index_entry(3, 202511)],
+                truncated: true,
+            }),
         );
 
-        assert!(error.is_none());
+        assert!(applied.error.is_none());
+        assert!(applied.truncated);
+        assert!(browser.index.truncated);
         assert_eq!(browser.index.total, 2);
         assert_eq!(browser.index.row_of_id(2), Some(0));
         assert!(browser.pages.get_page(0).is_none());

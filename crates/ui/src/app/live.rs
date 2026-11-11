@@ -263,7 +263,9 @@ impl App {
             }
         };
 
+        let truncated = index.truncated;
         self.library.borrow_mut().replace_index(index);
+        self.note_library_truncation(truncated, cx);
         self.library_error = None;
         self.library_dirty = false;
         if let Some(revision) = snapshot.live.revision {
@@ -543,9 +545,12 @@ pub(crate) fn collect_library_snapshot(
     // query runs, the next poll sees a newer revision and rebuilds again;
     // recording a post-query revision instead could swallow that change.
     let revision = db.library_revision().ok();
-    let index = db
-        .photo_index(PhotoSort::Newest)
-        .map(|entries| Arc::new(PhotoIndex::new(entries)));
+    let index = db.photo_index_snapshot(PhotoSort::Newest).map(|snapshot| {
+        Arc::new(PhotoIndex::with_truncation(
+            snapshot.entries,
+            snapshot.truncated,
+        ))
+    });
     let live = collect_live_snapshot(db, stats_revision, revision);
     let aux = collect_aux_snapshot(db, selected_id);
     LibraryReloadSnapshot { index, live, aux }
