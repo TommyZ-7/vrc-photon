@@ -60,7 +60,9 @@ use crate::app::lifecycle::ScanProgressView;
 use crate::app::live::LiveRefreshGate;
 use crate::state::display_image::{DecodeQueue, DisplayKey};
 use crate::state::motion::ToggleMotion;
-use crate::state::photo_browser::{CountDebounce, PhotoBrowser, PhotoIndex};
+use crate::state::photo_browser::{
+    CountDebounce, PhotoBrowser, PhotoIndex, should_notify_truncation,
+};
 use crate::state::selection::PhotoSelection;
 use crate::state::thumbnail::{ThumbnailCache, ThumbnailNoticeBatch};
 use crate::state::viewer::{
@@ -224,6 +226,9 @@ pub struct App {
     /// A failed index/page query kept the previous snapshot mounted; retry from
     /// the Photos header.
     pub(crate) library_error: Option<&'static str>,
+    /// The row-limit toast was already shown for the current truncated state.
+    /// Reset when a reload fits within the limit again.
+    pub(crate) library_truncated_notified: bool,
     pub(crate) count_debounce: CountDebounce,
     /// Quiet-period tracker for daemon revision bursts. A full index rebuild
     /// waits until the revision has stopped moving for `LIBRARY_QUIET_PERIOD`.
@@ -611,6 +616,17 @@ impl App {
         self.library_error = Some(error);
         if notify {
             self.toast_actionable(NotificationType::Error, tr!("app.library_error"), cx);
+        }
+    }
+
+    /// Shows the row-limit notice once per transition into the truncated
+    /// state. A later reload that fits within the limit resets the latch, so a
+    /// future truncation notifies again.
+    pub(crate) fn note_library_truncation(&mut self, truncated: bool, cx: &mut Context<Self>) {
+        let notify = should_notify_truncation(self.library_truncated_notified, truncated);
+        self.library_truncated_notified = truncated;
+        if notify {
+            self.toast_info(tr!("photos.index_truncated"), cx);
         }
     }
 
@@ -1168,6 +1184,7 @@ impl App {
             search_gallery,
             library_dirty: false,
             library_error: None,
+            library_truncated_notified: false,
             count_debounce: CountDebounce::default(),
             revision_debounce: CountDebounce::default(),
             selected: None,

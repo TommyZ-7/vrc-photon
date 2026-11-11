@@ -406,6 +406,7 @@ photos.context_menu.copy_path_done_count: "%{count}件のパスをコピーし�
 photos.context_menu.copy_path_error: "パスをコピーできません: %{error}"
 photos.context_menu.photo_missing: "写真が見つかりません"
 photos.index_error: "写真一覧を読み込めませんでした"
+photos.index_truncated: "写真が多いため、先頭 200,000 枚のみ表示しています"
 gallery.no_photos: "写真なし"
 gallery.month_count: "%{count}枚 / %{total}"
 gallery.no_match: "条件に一致する写真がありません"

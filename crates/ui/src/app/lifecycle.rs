@@ -951,16 +951,17 @@ impl App {
             .flatten();
 
         let index_start = Instant::now();
-        let result = self.db.photo_index(PhotoSort::Newest);
+        let result = self.db.photo_index_snapshot(PhotoSort::Newest);
         log_timing("photo_index", index_start);
-        let error = apply_library_index(&mut self.library.borrow_mut(), result);
-        if let Some(error) = error {
+        let applied = apply_library_index(&mut self.library.borrow_mut(), result);
+        if let Some(error) = applied.error {
             self.note_library_error(error, cx);
             // Leave the mounted view and side panels untouched; the next
             // successful reload repopulates them.
             return false;
         }
 
+        self.note_library_truncation(applied.truncated, cx);
         self.library_error = None;
         self.library_dirty = false;
         let anchor_present =
