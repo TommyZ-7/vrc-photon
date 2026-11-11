@@ -2750,6 +2750,41 @@ impl Db {
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
+    /// Loads the players of many photos in one query per 500 ids.
+    ///
+    /// Search results are limited to 500 rows, so the caller normally pays a
+    /// single query instead of one query per photo. The per-photo order matches
+    /// [`Self::photo_players`].
+    pub fn photo_players_many(&self, photo_ids: &[i64]) -> Result<HashMap<i64, Vec<PhotoPlayer>>> {
+        let mut grouped: HashMap<i64, Vec<PhotoPlayer>> = HashMap::new();
+        for chunk in photo_ids.chunks(500) {
+            if chunk.is_empty() {
+                continue;
+            }
+            let placeholders = vec!["?"; chunk.len()].join(",");
+            let sql = format!(
+                "SELECT photo_id, user_id, display_name FROM photo_players \
+                 WHERE photo_id IN ({placeholders}) \
+                 ORDER BY photo_id, display_name COLLATE NOCASE"
+            );
+            let mut stmt = self.conn.prepare(&sql)?;
+            let rows = stmt.query_map(params_from_iter(chunk.iter().copied()), |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    PhotoPlayer {
+                        user_id: row.get(1)?,
+                        display_name: row.get(2)?,
+                    },
+                ))
+            })?;
+            for row in rows {
+                let (photo_id, player) = row?;
+                grouped.entry(photo_id).or_default().push(player);
+            }
+        }
+        Ok(grouped)
+    }
+
     // ---------- tags ----------
 
     pub fn add_tag(&self, name: &str) -> Result<i64> {
@@ -8267,6 +8302,51 @@ mod tests {
             ]
         );
         assert!(db.world_name_suggestions("  ", 10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn photo_players_many_groups_by_photo_and_keeps_name_order() {
+        let db = Db::open_in_memory().unwrap();
+        let root = db.add_root("/photos", "reference").unwrap();
+        let a = db
+            .upsert_photo(&photo_at(root, "/photos/a.png", 1, "2025-04-30 09:00:00"))
+            .unwrap();
+        let b = db
+            .upsert_photo(&photo_at(root, "/photos/b.png", 2, "2025-04-30 09:00:00"))
+            .unwrap();
+        db.set_photo_players(
+            a,
+            &[
+                PhotoPlayer {
+                    user_id: "usr_2".into(),
+                    display_name: "Beta".into(),
+                },
+                PhotoPlayer {
+                    user_id: "usr_1".into(),
+                    display_name: "alpha".into(),
+                },
+            ],
+        )
+        .unwrap();
+        db.set_photo_players(
+            b,
+            &[PhotoPlayer {
+                user_id: "usr_3".into(),
+                display_name: "Gamma".into(),
+            }],
+        )
+        .unwrap();
+
+        let grouped = db.photo_players_many(&[a, b, 999]).unwrap();
+        assert_eq!(
+            grouped[&a]
+                .iter()
+                .map(|player| player.display_name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["alpha", "Beta"]
+        );
+        assert_eq!(grouped[&b][0].display_name, "Gamma");
+        assert!(!grouped.contains_key(&999));
     }
 
     #[test]
