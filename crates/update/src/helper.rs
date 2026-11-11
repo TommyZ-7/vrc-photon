@@ -108,6 +108,8 @@ pub fn effective_uid() -> u32 {
 /// Reads the job, waits for the old processes, applies the update, verifies
 /// the new UI's health marker, and rolls back on failure.
 pub fn run_helper_with_options(job_path: &Path, options: HelperOptions) -> Result<()> {
+    #[cfg(test)]
+    let _process_guard = crate::command::test_process_lock();
     let bytes = std::fs::read(job_path)
         .map_err(|error| UpdateError::io_at(IoOperation::Job, job_path, error))?;
     let job: ApplyJob = serde_json::from_slice(&bytes)
@@ -2145,6 +2147,7 @@ mod tests {
 
     #[test]
     fn detects_a_live_apply_lock_and_reclaims_a_stale_one() {
+        let _guard = crate::command::test_process_lock();
         let dir = tempfile::tempdir().unwrap();
         let paths = paths(dir.path());
         std::fs::write(paths.lock_file(), std::process::id().to_string()).unwrap();
@@ -2244,6 +2247,7 @@ mod tests {
 
     #[cfg(unix)]
     fn dead_pid() -> u32 {
+        let _guard = crate::command::test_process_lock();
         let mut child = std::process::Command::new("true").spawn().unwrap();
         let pid = child.id();
         child.wait().unwrap();
@@ -2252,6 +2256,7 @@ mod tests {
 
     #[test]
     fn waits_for_a_process_to_exit_with_a_bound() {
+        let _guard = crate::command::test_process_lock();
         let mut child = if cfg!(windows) {
             let mut command = std::process::Command::new("cmd");
             command.args(["/C", "exit 0"]);
@@ -2287,6 +2292,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn health_marker_must_match_the_database() {
+        let _guard = crate::command::test_process_lock();
         let dir = tempfile::tempdir().unwrap();
         let paths = paths(dir.path());
         let db = dir.path().join("app.db");
@@ -2340,6 +2346,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn health_marker_must_match_the_expected_version() {
+        let _guard = crate::command::test_process_lock();
         let dir = tempfile::tempdir().unwrap();
         let paths = paths(dir.path());
         let mut child = std::process::Command::new("sleep")
@@ -2401,14 +2408,9 @@ mod tests {
     }
 
     #[cfg(unix)]
-    fn make_executable(path: &Path) {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
-    }
-
-    #[cfg(unix)]
     fn write_script(path: &Path, body: &str) {
         use std::os::unix::fs::PermissionsExt;
+        let _guard = crate::command::test_process_lock();
         std::fs::write(path, body).unwrap();
         std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
     }
@@ -2486,18 +2488,16 @@ mod tests {
             .join(format!("health-{token}.json"));
         let marker_tmp = marker_path.with_extension("json.tmp");
         let new_script = dir.path().join("new.AppImage");
-        std::fs::write(
+        write_script(
             &new_script,
-            format!(
+            &format!(
                 "#!/bin/sh\nmkdir -p '{}'\nprintf '%s' '{{\"version\":\"9.9.9\",\"mode\":\"normal\"}}' > '{}'\nmv '{}' '{}'\nsleep 2\n",
                 marker_path.parent().unwrap().display(),
                 marker_tmp.display(),
                 marker_tmp.display(),
                 marker_path.display()
             ),
-        )
-        .unwrap();
-        make_executable(&new_script);
+        );
 
         let (job, public_key) = signed_job(dir.path(), &new_script, token);
         let job_file = dir.path().join("updates/job.json");
@@ -2524,8 +2524,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let token = "token-bad-signature";
         let new_script = dir.path().join("new.AppImage");
-        std::fs::write(&new_script, "#!/bin/sh\nexit 0\n").unwrap();
-        make_executable(&new_script);
+        write_script(&new_script, "#!/bin/sh\nexit 0\n");
 
         let (mut job, public_key) = signed_job(dir.path(), &new_script, token);
         let bytes = std::fs::read(&new_script).unwrap();
@@ -2568,8 +2567,7 @@ mod tests {
     fn integration_job(dir: &Path, staged: &Path, token: &str) -> ApplyJob {
         let target = dir.join("app.AppImage");
         if !target.exists() {
-            std::fs::write(&target, "#!/bin/sh\nexit 0\n").unwrap();
-            make_executable(&target);
+            write_script(&target, "#!/bin/sh\nexit 0\n");
         }
         let bytes = std::fs::read(staged).unwrap();
         ApplyJob {
@@ -2605,18 +2603,16 @@ mod tests {
             .join(format!("health-{token}.json"));
         let marker_tmp = marker_path.with_extension("json.tmp");
         let new_script = dir.path().join("new.AppImage");
-        std::fs::write(
+        write_script(
             &new_script,
-            format!(
+            &format!(
                 "#!/bin/sh\nmkdir -p '{}'\nprintf '%s' '{{\"version\":\"9.9.9\",\"mode\":\"normal\"}}' > '{}'\nmv '{}' '{}'\nsleep 2\n",
                 marker_path.parent().unwrap().display(),
                 marker_tmp.display(),
                 marker_tmp.display(),
                 marker_path.display()
             ),
-        )
-        .unwrap();
-        make_executable(&new_script);
+        );
 
         let job = integration_job(dir.path(), &new_script, token);
         let new_content = std::fs::read_to_string(&new_script).unwrap();
@@ -2648,8 +2644,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let paths = paths(dir.path());
         let staged = dir.path().join("new.AppImage");
-        std::fs::write(&staged, "#!/bin/sh\nexit 0\n").unwrap();
-        make_executable(&staged);
+        write_script(&staged, "#!/bin/sh\nexit 0\n");
         let job = ApplyJob {
             schema: APPLY_SCHEMA,
             kind: ApplyKind::AppImage,
@@ -2694,8 +2689,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let paths = paths(dir.path());
         let target = dir.path().join("app.AppImage");
-        std::fs::write(&target, "#!/bin/sh\nexit 0\n").unwrap();
-        make_executable(&target);
+        write_script(&target, "#!/bin/sh\nexit 0\n");
         let staged = dir.path().join("new.AppImage");
         std::fs::write(&staged, b"new").unwrap();
         let job_path = paths.job_file();
@@ -2747,15 +2741,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let sentinel = dir.path().join("old-ran");
         let target = dir.path().join("app.AppImage");
-        std::fs::write(
+        write_script(
             &target,
-            format!("#!/bin/sh\nprintf old > '{}'\n", sentinel.display()),
-        )
-        .unwrap();
-        make_executable(&target);
+            &format!("#!/bin/sh\nprintf old > '{}'\n", sentinel.display()),
+        );
         let staged = dir.path().join("new.AppImage");
-        std::fs::write(&staged, "#!/bin/sh\nexit 0\n").unwrap();
-        make_executable(&staged);
+        write_script(&staged, "#!/bin/sh\nexit 0\n");
         let job = integration_job(dir.path(), &staged, "token-lock");
         let job_file = dir.path().join("updates/job.json");
         std::fs::create_dir_all(job_file.parent().unwrap()).unwrap();
@@ -2782,8 +2773,7 @@ mod tests {
         let token = "token-quick-exit";
         let target = dir.path().join("app.AppImage");
         let old_script = format!("#!/bin/sh\nprintf old > '{}'\n", sentinel.display());
-        std::fs::write(&target, &old_script).unwrap();
-        make_executable(&target);
+        write_script(&target, &old_script);
 
         let marker_path = dir
             .path()
@@ -2791,18 +2781,16 @@ mod tests {
             .join(format!("health-{token}.json"));
         let marker_tmp = marker_path.with_extension("json.tmp");
         let new_script = dir.path().join("new.AppImage");
-        std::fs::write(
+        write_script(
             &new_script,
-            format!(
+            &format!(
                 "#!/bin/sh\nmkdir -p '{}'\nprintf '%s' '{{\"version\":\"9.9.9\",\"mode\":\"normal\"}}' > '{}'\nmv '{}' '{}'\n",
                 marker_path.parent().unwrap().display(),
                 marker_tmp.display(),
                 marker_tmp.display(),
                 marker_path.display()
             ),
-        )
-        .unwrap();
-        make_executable(&new_script);
+        );
 
         let mut job = integration_job(dir.path(), &new_script, token);
         job.target = target.clone();
@@ -2838,12 +2826,10 @@ mod tests {
         let token = "token-failure";
         let target = dir.path().join("app.AppImage");
         let old_script = format!("#!/bin/sh\nprintf old > '{}'\n", sentinel.display());
-        std::fs::write(&target, &old_script).unwrap();
-        make_executable(&target);
+        write_script(&target, &old_script);
 
         let new_script = dir.path().join("new.AppImage");
-        std::fs::write(&new_script, "#!/bin/sh\nexit 0\n").unwrap();
-        make_executable(&new_script);
+        write_script(&new_script, "#!/bin/sh\nexit 0\n");
 
         let mut job = integration_job(dir.path(), &new_script, token);
         job.target = target.clone();
@@ -3509,12 +3495,10 @@ mod tests {
         let (mut job, options) = system_package_fixture(dir.path(), &next_version());
         let sentinel = dir.path().join("old-ran");
         let target = dir.path().join("vrc-photon");
-        std::fs::write(
+        write_script(
             &target,
-            format!("#!/bin/sh\nprintf old > '{}'\n", sentinel.display()),
-        )
-        .unwrap();
-        make_executable(&target);
+            &format!("#!/bin/sh\nprintf old > '{}'\n", sentinel.display()),
+        );
         job.target = target;
 
         let paths = UpdatePaths::new(&job.data_dir);
@@ -3546,12 +3530,10 @@ mod tests {
         let (mut job, mut options) = system_package_fixture(dir.path(), &next_version());
         let sentinel = dir.path().join("old-ran");
         let target = dir.path().join("vrc-photon");
-        std::fs::write(
+        write_script(
             &target,
-            format!("#!/bin/sh\nprintf old > '{}'\n", sentinel.display()),
-        )
-        .unwrap();
-        make_executable(&target);
+            &format!("#!/bin/sh\nprintf old > '{}'\n", sentinel.display()),
+        );
         job.target = target;
         options.policy_path = Some(dir.path().join("missing.policy"));
 
@@ -3618,12 +3600,10 @@ mod tests {
         let (mut job, _options) = system_package_fixture(dir.path(), &next_version());
         let sentinel = dir.path().join("relaunched");
         let target = dir.path().join("vrc-photon");
-        std::fs::write(
+        write_script(
             &target,
-            format!("#!/bin/sh\nprintf ok > '{}'\n", sentinel.display()),
-        )
-        .unwrap();
-        make_executable(&target);
+            &format!("#!/bin/sh\nprintf ok > '{}'\n", sentinel.display()),
+        );
         job.target = target;
         let paths = UpdatePaths::new(&job.data_dir);
         paths.ensure().unwrap();
