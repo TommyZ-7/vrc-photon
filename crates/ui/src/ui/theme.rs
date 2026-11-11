@@ -119,29 +119,6 @@ pub(crate) fn format_count(value: i64) -> String {
     }
 }
 
-pub(crate) fn average_bgra(bytes: &[u8]) -> u32 {
-    let mut blue = 0u64;
-    let mut green = 0u64;
-    let mut red = 0u64;
-    let mut count = 0u64;
-    for pixel in bytes.as_chunks::<4>().0 {
-        if pixel[3] < 8 {
-            continue;
-        }
-        blue += u64::from(pixel[0]);
-        green += u64::from(pixel[1]);
-        red += u64::from(pixel[2]);
-        count += 1;
-    }
-    if count == 0 {
-        return 0;
-    }
-    let blue = (blue / count) as u32;
-    let green = (green / count) as u32;
-    let red = (red / count) as u32;
-    (red << 16) | (green << 8) | blue
-}
-
 pub(crate) fn cubic_bezier(t: f64, p1: f64, p2: f64) -> f64 {
     let mt = 1.0 - t;
     3.0 * mt * mt * t * p1 + 3.0 * mt * t * t * p2 + t * t * t
@@ -1054,13 +1031,6 @@ mod tests {
         assert_eq!(format_count(1_234), "1,234");
         assert_eq!(format_count(12_842), "12.8k");
         assert_eq!(format_count(100_000), "100k");
-    }
-
-    #[test]
-    fn average_bgra_ignores_transparent_pixels() {
-        let bytes = [0, 0, 255, 255, 255, 0, 0, 255, 255, 255, 255, 0];
-        assert_eq!(average_bgra(&bytes), 0x7f007f);
-        assert_eq!(average_bgra(&[0, 0, 0, 0]), 0);
     }
 
     #[test]

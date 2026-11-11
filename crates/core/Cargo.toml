@@ -15,6 +15,7 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 png.workspace = true
 quick-xml.workspace = true
 imgref.workspace = true
+jpeg-decoder.workspace = true
 jpegxl-rs.workspace = true
 libmimalloc-sys.workspace = true
 ravif.workspace = true

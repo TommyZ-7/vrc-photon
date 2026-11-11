@@ -2,6 +2,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
+use image::RgbaImage;
+
 use crate::cache_metadata;
 use crate::error::{CoreError, Result};
 
@@ -72,12 +74,15 @@ pub struct ThumbnailPruneReport {
 ///
 /// `created` is true when this call wrote the file (a new thumbnail or a
 /// regeneration); false when an existing non-empty file was reused. `bytes`
-/// is the on-disk size after the call.
+/// is the on-disk size after the call. `image` carries the pixels only when
+/// this call generated the file, so the caller can build a render image
+/// without reading the WebP back.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EnsuredThumbnail {
     pub path: PathBuf,
     pub created: bool,
     pub bytes: u64,
+    pub image: Option<RgbaImage>,
 }
 
 struct ThumbnailEntry {
@@ -518,6 +523,7 @@ pub fn ensure_thumbnail_in_with_status(
             path: output,
             created: false,
             bytes,
+            image: None,
         }));
     }
     if !source.is_file() {
@@ -527,8 +533,8 @@ pub fn ensure_thumbnail_in_with_status(
         tracing::warn!(path = %source.display(), "cannot read thumbnail source metadata");
         return Ok(None);
     };
-    let image = match crate::image_decode::decode_image(source) {
-        Some(image) => image.thumbnail(spec.size, spec.size).into_rgba8(),
+    let image = match crate::image_decode::decode_thumbnail_image(source, spec.size) {
+        Some(image) => image,
         None => {
             tracing::warn!(path = %source.display(), "cannot decode thumbnail source");
             return Ok(None);
@@ -569,6 +575,7 @@ pub fn ensure_thumbnail_in_with_status(
         path: output,
         created: true,
         bytes: encoded.len() as u64,
+        image: Some(image),
     }))
 }
 
@@ -1038,6 +1045,8 @@ mod tests {
         assert!(ensured.bytes > 0);
         assert_eq!(ensured.bytes, fs::metadata(&ensured.path).unwrap().len());
         assert!(ensured.path.is_file());
+        let image = ensured.image.expect("generated pixels are returned");
+        assert_eq!(image.dimensions(), (256, 144));
     }
 
     #[test]
@@ -1060,6 +1069,28 @@ mod tests {
         assert!(!second.created);
         assert_eq!(second.bytes, first.bytes);
         assert_eq!(second.path, first.path);
+        assert!(first.image.is_some(), "a generated thumbnail has pixels");
+        assert!(second.image.is_none(), "a cache hit is decoded by the UI");
+    }
+
+    #[test]
+    fn jpeg_thumbnail_uses_scaled_decode_and_applies_orientation() {
+        let dir = tempdir().unwrap();
+        let source = dir.path().join("source.jpg");
+        let image = RgbaImage::from_pixel(2048, 1024, Rgba([200, 100, 50, 255]));
+        crate::image_decode::test_support::write_jpeg_with_orientation(&source, &image, 6);
+
+        let ensured =
+            ensure_thumbnail_in_with_status(999_995, &source, dir.path(), ThumbnailSpec::default())
+                .unwrap()
+                .expect("thumbnail");
+
+        let thumbnail = ensured.image.expect("generated pixels are returned");
+        assert_eq!(
+            thumbnail.dimensions(),
+            (128, 256),
+            "orientation 6 turns the landscape source portrait before the final resize"
+        );
     }
 
     #[test]
