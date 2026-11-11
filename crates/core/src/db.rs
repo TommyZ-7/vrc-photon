@@ -1338,50 +1338,25 @@ impl Db {
     // ---------- photos ----------
 
     pub fn upsert_photo(&self, photo: &NewPhoto) -> Result<i64> {
-        let now = now_string();
-        let id = self.conn.query_row(
-            "INSERT INTO photos(root_id, rel_path, abs_path, file_name, captured_at_utc, \
-                captured_at_local, tz_offset_sec, width, height, file_size, mtime, blake3, \
-                status, created_at, updated_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, 'present', ?13, ?13) \
-             ON CONFLICT(abs_path) DO UPDATE SET \
-                root_id = excluded.root_id, rel_path = excluded.rel_path, \
-                file_name = excluded.file_name, captured_at_utc = excluded.captured_at_utc, \
-                captured_at_local = excluded.captured_at_local, \
-                tz_offset_sec = excluded.tz_offset_sec, width = excluded.width, \
-                height = excluded.height, file_size = excluded.file_size, \
-                mtime = excluded.mtime, blake3 = COALESCE(excluded.blake3, photos.blake3), \
-                status = CASE WHEN EXISTS ( \
-                    SELECT 1 FROM deletion_requests dr \
-                    WHERE dr.photo_id = photos.id \
-                      AND dr.status IN ('pending', 'blocked', 'running') \
-                ) OR photos.status NOT IN ('present', 'replaced', 'missing', 'deleting') \
-                THEN photos.status ELSE 'present' END, \
-                display_derivative_id = CASE WHEN EXISTS ( \
-                    SELECT 1 FROM deletion_requests dr \
-                    WHERE dr.photo_id = photos.id \
-                      AND dr.status IN ('pending', 'blocked', 'running') \
-                ) THEN photos.display_derivative_id ELSE NULL END, \
-                updated_at = excluded.updated_at \
-             RETURNING id",
-            params![
-                photo.root_id,
-                photo.rel_path,
-                photo.abs_path,
-                photo.file_name,
-                photo.captured_at_utc,
-                photo.captured_at_local,
-                photo.tz_offset_sec,
-                photo.width as i64,
-                photo.height as i64,
-                photo.file_size as i64,
-                photo.mtime,
-                photo.blake3,
-                now,
-            ],
-            |row| row.get(0),
-        )?;
-        Ok(id)
+        upsert_photo_in(&self.conn, photo)
+    }
+
+    /// Upserts a batch of photos in one immediate transaction.
+    ///
+    /// Returns IDs in input order. A failure rolls back the whole batch; the
+    /// scanner retries the photos individually so one bad row does not
+    /// discard its neighbors.
+    pub fn upsert_photos(&self, photos: &[NewPhoto]) -> Result<Vec<i64>> {
+        if photos.is_empty() {
+            return Ok(Vec::new());
+        }
+        let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
+        let mut ids = Vec::with_capacity(photos.len());
+        for photo in photos {
+            ids.push(upsert_photo_in(&tx, photo)?);
+        }
+        tx.commit()?;
+        Ok(ids)
     }
 
     pub fn photo_by_id(&self, id: i64) -> Result<Option<Photo>> {
@@ -6235,6 +6210,53 @@ fn reapply_thresholds(conn: &Connection, plugin_id: &str) -> Result<usize> {
         params![plugin_id],
     )?;
     Ok(updated)
+}
+
+fn upsert_photo_in(conn: &Connection, photo: &NewPhoto) -> Result<i64> {
+    let now = now_string();
+    let id = conn.query_row(
+        "INSERT INTO photos(root_id, rel_path, abs_path, file_name, captured_at_utc, \
+            captured_at_local, tz_offset_sec, width, height, file_size, mtime, blake3, \
+            status, created_at, updated_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, 'present', ?13, ?13) \
+         ON CONFLICT(abs_path) DO UPDATE SET \
+            root_id = excluded.root_id, rel_path = excluded.rel_path, \
+            file_name = excluded.file_name, captured_at_utc = excluded.captured_at_utc, \
+            captured_at_local = excluded.captured_at_local, \
+            tz_offset_sec = excluded.tz_offset_sec, width = excluded.width, \
+            height = excluded.height, file_size = excluded.file_size, \
+            mtime = excluded.mtime, blake3 = COALESCE(excluded.blake3, photos.blake3), \
+            status = CASE WHEN EXISTS ( \
+                SELECT 1 FROM deletion_requests dr \
+                WHERE dr.photo_id = photos.id \
+                  AND dr.status IN ('pending', 'blocked', 'running') \
+            ) OR photos.status NOT IN ('present', 'replaced', 'missing', 'deleting') \
+            THEN photos.status ELSE 'present' END, \
+            display_derivative_id = CASE WHEN EXISTS ( \
+                SELECT 1 FROM deletion_requests dr \
+                WHERE dr.photo_id = photos.id \
+                  AND dr.status IN ('pending', 'blocked', 'running') \
+            ) THEN photos.display_derivative_id ELSE NULL END, \
+            updated_at = excluded.updated_at \
+         RETURNING id",
+        params![
+            photo.root_id,
+            photo.rel_path,
+            photo.abs_path,
+            photo.file_name,
+            photo.captured_at_utc,
+            photo.captured_at_local,
+            photo.tz_offset_sec,
+            photo.width as i64,
+            photo.height as i64,
+            photo.file_size as i64,
+            photo.mtime,
+            photo.blake3,
+            now,
+        ],
+        |row| row.get(0),
+    )?;
+    Ok(id)
 }
 
 fn photo_index_sql(sort: PhotoSort) -> String {
@@ -14492,6 +14514,29 @@ CREATE TABLE photos (
         assert!(photo.display_path.is_none());
         assert_eq!(photo.effective_path(), "/photos/a.png");
         assert_eq!(db.stats().unwrap().total_bytes, 12_400_000);
+    }
+
+    #[test]
+    fn upsert_photos_returns_ids_in_input_order_and_commits() {
+        let db = Db::open_in_memory().unwrap();
+        let root = db.add_root("/photos", "reference").unwrap();
+        let photos = vec![
+            photo_at(root, "/photos/a.png", 100, "2025-05-01 08:00:00"),
+            photo_at(root, "/photos/b.png", 200, "2025-05-01 08:00:01"),
+            photo_at(root, "/photos/c.png", 300, "2025-05-01 08:00:02"),
+        ];
+
+        let ids = db.upsert_photos(&photos).unwrap();
+
+        assert_eq!(ids.len(), 3);
+        assert!(ids.windows(2).all(|pair| pair[0] < pair[1]));
+        assert_eq!(db.count_photos().unwrap(), 3);
+        for (id, photo) in ids.iter().zip(photos.iter()) {
+            assert_eq!(
+                db.photo_by_id(*id).unwrap().unwrap().abs_path,
+                photo.abs_path
+            );
+        }
     }
 
     #[test]
