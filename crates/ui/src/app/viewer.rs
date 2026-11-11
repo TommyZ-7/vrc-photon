@@ -422,7 +422,10 @@ impl App {
         self.zoom_drag = None;
         // The closing morph owns its image clone; the crossfade frame must
         // not keep a decoded image alive after the viewer is gone.
-        self.previous_image = None;
+        if let Some(image) = self.previous_image.take() {
+            self.queue_atlas_drop(image);
+        }
+        self.schedule_allocator_collect(cx);
         self.quick_look_open = false;
         self.note_edit_id = None;
         let focus = self
@@ -459,6 +462,7 @@ impl App {
         self.quick_look_photo_ids.clear();
         self.quick_look_index = 0;
         self.reset_image_state();
+        self.schedule_allocator_collect(cx);
         let focus = self
             .quick_look_return_focus
             .take()
@@ -536,6 +540,9 @@ impl App {
         let from_size = self.viewer_box.current_size(viewport);
         let target_details_width = self.viewer_panel.to_width;
         self.select_photo(self.quick_look_photo_ids[next], cx);
+        if let Some(previous) = self.previous_image.take() {
+            self.queue_atlas_drop(previous);
+        }
         self.previous_image = visible_image;
         let new_aspect = self
             .selected_photo

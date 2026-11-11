@@ -824,6 +824,7 @@ fn render_grid(
             if let Some(app_entity) = app.upgrade() {
                 app_entity.update(cx, |app, cx| {
                     app.close_photo_context_menu_for_lifecycle(window, cx);
+                    app.schedule_allocator_collect(cx);
                 });
             }
         }
@@ -1246,6 +1247,7 @@ fn render_session_grid(
                 if let Some(app_entity) = app.upgrade() {
                     app_entity.update(cx, |app, cx| {
                         app.close_photo_context_menu_for_lifecycle(window, cx);
+                        app.schedule_allocator_collect(cx);
                     });
                 }
             }

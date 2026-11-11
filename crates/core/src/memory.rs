@@ -44,3 +44,16 @@ pub fn configure_allocator() {
         mi_option_set(MI_OPTION_PAGE_FULL_RETAIN, 0);
     }
 }
+
+/// Collects freed pages from every mimalloc heap and returns them to the OS.
+///
+/// The allocator purges freed pages in the background, but pages can remain
+/// committed while a decode burst has just ended. Call this from an idle
+/// background task rather than on the UI thread.
+pub fn collect_allocator() {
+    // SAFETY: mimalloc's collect API is process-global and may be called from
+    // any thread. It only touches allocator state.
+    unsafe {
+        libmimalloc_sys::mi_collect(true);
+    }
+}

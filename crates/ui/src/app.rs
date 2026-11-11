@@ -249,6 +249,12 @@ pub struct App {
     pub(crate) thumbnail_notice: ThumbnailNoticeBatch,
     /// A timer is already queued to flush a partial thumbnail notice batch.
     pub(crate) thumbnail_notice_scheduled: bool,
+    /// Bumped whenever new image work finishes. The allocator collection timer
+    /// restarts until this stops moving, so a scroll burst produces one purge
+    /// after the UI goes quiet.
+    pub(crate) allocator_collect_epoch: u64,
+    /// An allocator collection timer is already queued.
+    pub(crate) allocator_collect_pending: bool,
     pub(crate) photo_grid_focus: FocusHandle,
     pub(crate) search_grid_focus: FocusHandle,
     pub(crate) photo_context_menu: Option<context_menu::PhotoContextMenuState>,
@@ -278,6 +284,10 @@ pub struct App {
     pub(crate) full_image_key: Option<DisplayKey>,
     pub(crate) full_image_queue: DecodeQueue,
     pub(crate) previous_image: Option<Arc<RenderImage>>,
+    /// Images removed from the thumbnail cache or viewer whose atlas tiles
+    /// still need to be dropped. Shared with the next-frame callback so a
+    /// retry can requeue an image without borrowing the App entity.
+    pub(crate) pending_atlas_drops: Rc<RefCell<Vec<Arc<RenderImage>>>>,
     pub(crate) profiles: Vec<CompressionProfile>,
     pub(crate) profile_index: usize,
     pub(crate) profile_name_input: Entity<InputState>,
@@ -1156,6 +1166,8 @@ impl App {
             thumbnail_notify_pending: false,
             thumbnail_notice: ThumbnailNoticeBatch::default(),
             thumbnail_notice_scheduled: false,
+            allocator_collect_epoch: 0,
+            allocator_collect_pending: false,
             photo_grid_focus,
             search_grid_focus,
             photo_context_menu: None,
@@ -1184,6 +1196,7 @@ impl App {
             full_image_key: None,
             full_image_queue: DecodeQueue::default(),
             previous_image: None,
+            pending_atlas_drops: Rc::new(RefCell::new(Vec::new())),
             profiles: Vec::new(),
             profile_index: 0,
             profile_name_input,
@@ -1405,9 +1418,66 @@ impl App {
     }
 }
 
+const MAX_ATLAS_DROP_RETRIES: u8 = 60;
+
+/// Drops image atlas entries after the frame that may still reference them.
+/// `Arc::strong_count == 1` means only this queue holds the image; other
+/// holders (a viewer morph or the previous frame's element tree) delay the
+/// drop to a later frame. After the retry cap the image goes back to the
+/// pending queue instead of being dropped under a live holder, so a re-upload
+/// cannot leave an untracked tile behind.
+fn schedule_atlas_drops(
+    window: &Window,
+    images: Vec<Arc<RenderImage>>,
+    attempt: u8,
+    pending: Rc<RefCell<Vec<Arc<RenderImage>>>>,
+) {
+    if images.is_empty() {
+        return;
+    }
+    window.on_next_frame(move |window, cx| {
+        let mut retry = Vec::new();
+        let exhausted = attempt >= MAX_ATLAS_DROP_RETRIES;
+        for image in images {
+            if Arc::strong_count(&image) == 1 {
+                cx.drop_image(image, Some(&mut *window));
+            } else if exhausted {
+                pending.borrow_mut().push(image);
+            } else {
+                retry.push(image);
+            }
+        }
+        schedule_atlas_drops(window, retry, attempt.saturating_add(1), pending);
+    });
+}
+
+impl App {
+    /// Queues one image for a delayed atlas drop. The id check avoids dropping
+    /// the same tile twice when a full image is also the previous image.
+    pub(crate) fn queue_atlas_drop(&mut self, image: Arc<RenderImage>) {
+        let mut pending = self.pending_atlas_drops.borrow_mut();
+        if !pending.iter().any(|queued| queued.id == image.id) {
+            pending.push(image);
+        }
+    }
+
+    fn queue_thumbnail_removals(&mut self) {
+        let removed = self.thumbnails.borrow_mut().take_removed();
+        for image in removed {
+            self.queue_atlas_drop(image);
+        }
+    }
+}
+
 impl Render for App {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.render_epoch = self.render_epoch.wrapping_add(1);
+        self.queue_thumbnail_removals();
+        let pending = self.pending_atlas_drops.clone();
+        let images = std::mem::take(&mut *pending.borrow_mut());
+        if !images.is_empty() {
+            schedule_atlas_drops(window, images, 0, pending);
+        }
         if toast_flush_needed(self.pending_toasts.len(), self.toast_flush_scheduled) {
             self.toast_flush_scheduled = true;
             cx.defer_in(window, |this, window, cx| {
