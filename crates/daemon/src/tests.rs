@@ -4468,6 +4468,21 @@ fn paused_loop_keeps_heartbeat_status_and_log_ingestion() {
 }
 
 #[test]
+fn presence_check_runs_only_after_its_interval() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    daemon.set_tray_enabled(false);
+
+    daemon.last_presence_check = Instant::now() - PRESENCE_INTERVAL;
+    daemon.run_loop_iteration();
+    let after_due = daemon.last_presence_check;
+    assert!(after_due.elapsed() < Duration::from_secs(1));
+
+    daemon.run_loop_iteration();
+    assert_eq!(daemon.last_presence_check, after_due);
+}
+
+#[test]
 fn paused_loop_collects_watcher_events_and_indexes_them_after_resume() {
     let dir = tempfile::tempdir().unwrap();
     let mut daemon = test_daemon(&dir);

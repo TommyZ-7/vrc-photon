@@ -4,6 +4,7 @@ use super::hash::*;
 use super::logs::*;
 use super::status::*;
 use super::thumbnails::*;
+use super::vrchat_process::VrchatProcessProbe;
 use super::*;
 
 #[derive(Debug, Clone, Default)]
@@ -120,8 +121,10 @@ pub struct Daemon {
     /// `--once`); the caller generates their thumbnails directly.
     pub(crate) deferred_thumbnail_ids: Vec<i64>,
     pub(crate) log_tail: Option<LogTail>,
+    pub(crate) vrchat_probe: VrchatProcessProbe,
     pub(crate) vrchat_missing_polls: u8,
     pub(crate) vrchat_session_id: Option<i64>,
+    pub(crate) last_presence_check: Instant,
     pub(crate) workers: Vec<JoinHandle<()>>,
     pub(crate) dirty_paths: Vec<PathBuf>,
     /// Commands consumed from the database while paused. They run in order
@@ -350,8 +353,10 @@ impl Daemon {
             watcher_error,
             deferred_thumbnail_ids: Vec::new(),
             log_tail: None,
+            vrchat_probe: VrchatProcessProbe::new(),
             vrchat_missing_polls: 0,
             vrchat_session_id: None,
+            last_presence_check: Instant::now() - PRESENCE_INTERVAL,
             workers: Vec::new(),
             dirty_paths: Vec::new(),
             deferred_commands: Vec::new(),
@@ -1002,10 +1007,13 @@ impl Daemon {
             if let Err(error) = self.ingest_logs() {
                 tracing::error!(%error, "log ingestion failed");
             }
+            self.last_log_poll = std::time::Instant::now();
+        }
+        if self.last_presence_check.elapsed() >= PRESENCE_INTERVAL {
             if let Err(error) = self.poll_vrchat_presence() {
                 tracing::error!(%error, "VRChat process check failed");
             }
-            self.last_log_poll = std::time::Instant::now();
+            self.last_presence_check = std::time::Instant::now();
         }
         if let Err(error) = self.refresh_status() {
             tracing::warn!(%error, "cannot refresh daemon status");

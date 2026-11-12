@@ -261,7 +261,8 @@ impl Daemon {
             self.vrchat_session_id = None;
             return Ok(());
         }
-        self.observe_vrchat_presence(vrchat_process::is_running())
+        let running = self.vrchat_probe.poll();
+        self.observe_vrchat_presence(running)
     }
 
     pub(crate) fn observe_vrchat_presence(&mut self, running: Option<bool>) -> Result<()> {

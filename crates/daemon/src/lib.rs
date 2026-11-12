@@ -79,6 +79,11 @@ const SCAN_INTERVAL: Duration = Duration::from_millis(500);
 /// notifies the worker signals, so this is only a fallback.
 const PAUSED_WORKER_POLL: Duration = Duration::from_millis(500);
 const LOG_INTERVAL: Duration = Duration::from_millis(750);
+/// How often the daemon checks whether the VRChat process is still running.
+/// Three consecutive misses close the session, so a stopped client is noticed
+/// within roughly fifteen seconds. The PID cache keeps the steady-state cost
+/// to one `comm` read per poll.
+const PRESENCE_INTERVAL: Duration = Duration::from_secs(5);
 /// Complete log lines one poll may return. The next poll continues from the
 /// last committed offset.
 const LOG_READ_MAX_LINES: usize = 5_000;
