@@ -1128,6 +1128,9 @@ impl App {
                         )
                         .track_scroll(&queue_scroll),
                     )
+                    // Exception: VirtualList is not a ScrollableElement, so the bar
+                    // binds to the shared VirtualListScrollHandle and uses the
+                    // layout bounds.
                     .child(Scrollbar::vertical(&queue_scroll).viewport_from_layout())
             })
     }
