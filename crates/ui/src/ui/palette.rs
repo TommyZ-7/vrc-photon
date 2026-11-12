@@ -7,7 +7,7 @@
 //! colour literal for UI surfaces.
 
 use gpui_kit::component::{Edges, Theme, ThemeMode};
-use gpui_kit::{Anchor, App, px, rgb, rgba, transparent_black};
+use gpui_kit::{Anchor, App, Hsla, px, rgb, rgba, transparent_black};
 
 /// The three colour families offered for both selectors.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -825,6 +825,12 @@ pub(crate) fn with_alpha(color: u32, alpha: u8) -> u32 {
     ((color & 0x00ff_ffff) << 8) | u32::from(alpha)
 }
 
+/// Track colour for standard scrollbars. Transparent in every theme so only
+/// the thumb paints; the track keeps its layout width and hit area.
+fn scrollbar_track_color() -> Hsla {
+    transparent_black()
+}
+
 impl Palette {
     pub(crate) fn scene_color(&self, world: &str) -> u32 {
         let mut hash = 0u32;
@@ -973,7 +979,7 @@ pub(crate) fn apply_component_theme(palette: Palette, cx: &mut App) {
         // library defaults: the app draws those surfaces itself from the
         // palette, so no default token can leak into the UI.
         theme.colors.drag_border = rgb(palette.accent_border).into();
-        theme.colors.scrollbar = rgb(palette.border_strong).into();
+        theme.colors.scrollbar = scrollbar_track_color().into();
         theme.colors.scrollbar_thumb = rgb(palette.muted_2).into();
         theme.colors.scrollbar_thumb_hover = rgb(palette.muted).into();
         theme.overlay = rgba(palette.scrim).into();
@@ -1027,6 +1033,11 @@ mod tests {
     fn with_alpha_packs_rgb_and_alpha() {
         assert_eq!(with_alpha(0x112233, 0x44), 0x1122_3344);
         assert_eq!(with_alpha(0x66b3ff, 0x47), 0x66b3_ff47);
+    }
+
+    #[test]
+    fn scrollbar_track_is_transparent() {
+        assert_eq!(scrollbar_track_color().a, 0.0);
     }
 
     #[test]
