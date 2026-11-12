@@ -162,23 +162,11 @@ impl App {
                             )
                             .child(
                                 div()
-                                    .text_size(px(9.))
-                                    .text_color(rgb(p.amber))
-                                    .child(tr!("settings.ai.thresholds.next_run")),
-                            )
-                            .child(
-                                div()
                                     .text_size(px(13.))
                                     .font_semibold()
                                     .text_color(rgb(p.accent))
                                     .child(format!("{}%", (presence_value * 100.0).round() as u32)),
                             ),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(9.5))
-                            .text_color(rgb(p.muted_2))
-                            .child(tr!("settings.ai.thresholds.presence_hint")),
                     )
                     .when_some(presence_slider, |this, slider| {
                         this.child(threshold_slider(
@@ -189,37 +177,24 @@ impl App {
                         ))
                     })
                     .child(
-                        h_flex()
-                            .items_center()
-                            .gap(px(8.))
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .text_size(px(9.))
-                                    .text_color(rgb(p.muted_2))
-                                    .child(tr!("settings.ai.thresholds.applies_now")),
-                            )
-                            .child(
-                                Button::new("ai-thresholds-presence-reset")
-                                    .label(tr!("settings.ai.thresholds.reset"))
-                                    .small()
-                                    .ghost()
-                                    .disabled(!presence_overridden)
-                                    .on_click(cx.listener(|this, _, window, cx| {
-                                        this.ai_thresholds.presence_draft = None;
-                                        if let Some(slider) = this
-                                            .ai_thresholds
-                                            .sliders
-                                            .get(PRESENCE_SLIDER_KEY)
-                                            .cloned()
-                                        {
-                                            slider.update(cx, |state, cx| {
-                                                state.set_value(PRESENCE_DEFAULT, window, cx)
-                                            });
-                                        }
-                                        cx.notify();
-                                    })),
-                            ),
+                        h_flex().justify_end().child(
+                            Button::new("ai-thresholds-presence-reset")
+                                .label(tr!("settings.ai.thresholds.reset"))
+                                .small()
+                                .ghost()
+                                .disabled(!presence_overridden)
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.ai_thresholds.presence_draft = None;
+                                    if let Some(slider) =
+                                        this.ai_thresholds.sliders.get(PRESENCE_SLIDER_KEY).cloned()
+                                    {
+                                        slider.update(cx, |state, cx| {
+                                            state.set_value(PRESENCE_DEFAULT, window, cx)
+                                        });
+                                    }
+                                    cx.notify();
+                                })),
+                        ),
                     ),
             )
             .child(

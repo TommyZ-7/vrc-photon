@@ -245,12 +245,6 @@ impl App {
             .when(dialog.output != ManualOutputTarget::Clipboard, |this| {
                 this.child(self.section_label(tr!("dialog.section.original")))
                     .child(v_flex().gap(px(6.)).child(keep_row).child(trash_row))
-                    .child(
-                        div()
-                            .text_size(px(10.))
-                            .text_color(rgb(p.muted_2))
-                            .child(tr!("dialog.trash_note")),
-                    )
             })
             .when(dialog.output == ManualOutputTarget::Clipboard, |this| {
                 this.child(

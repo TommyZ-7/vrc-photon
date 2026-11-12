@@ -463,16 +463,10 @@ pub enum UpdatePhase {
 }
 
 impl UpdatePhase {
-    fn badge(&self, p: &Palette) -> (String, u32, u32) {
+    fn badge(&self, p: &Palette) -> Option<(String, u32, u32)> {
         match self {
-            Self::Idle => (tr!("update.phase.idle"), p.muted, p.panel_2),
-            Self::Checking => (tr!("update.phase.checking"), p.accent, p.accent_soft),
-            Self::UpToDate => (tr!("update.phase.up_to_date"), p.green, p.green_soft),
-            Self::Available(_) => (tr!("update.phase.available"), p.amber, p.amber_soft),
-            Self::Downloading { .. } => (tr!("update.phase.downloading"), p.accent, p.accent_soft),
-            Self::Ready { .. } => (tr!("update.phase.ready"), p.green, p.green_soft),
-            Self::Applying => (tr!("update.phase.applying"), p.amber, p.amber_soft),
-            Self::Error(_) => (tr!("update.phase.error"), p.red, p.red_soft),
+            Self::Available(_) => Some((tr!("update.phase.available"), p.amber, p.amber_soft)),
+            _ => None,
         }
     }
 }
@@ -1248,7 +1242,17 @@ impl App {
             | UpdatePhase::Ready { update, .. } => update.asset.is_some(),
             _ => false,
         };
-        let (status, fg, bg) = phase.badge(&p);
+        let badge = phase.badge(&p);
+        let mut header = h_flex().items_center().gap(px(8.)).child(
+            div()
+                .text_size(px(13.))
+                .font_semibold()
+                .text_color(rgb(p.text))
+                .child(tr!("update.title")),
+        );
+        if let Some((status, fg, bg)) = badge {
+            header = header.child(self.badge(status, fg, bg));
+        }
 
         let mut card = glass_panel(&self.palette)
             .flex()
@@ -1257,19 +1261,7 @@ impl App {
             .p(px(14.))
             .gap(px(12.))
             .rounded(px(17.))
-            .child(
-                h_flex()
-                    .items_center()
-                    .gap(px(8.))
-                    .child(
-                        div()
-                            .text_size(px(13.))
-                            .font_semibold()
-                            .text_color(rgb(p.text))
-                            .child(tr!("update.title")),
-                    )
-                    .child(self.badge(status, fg, bg)),
-            )
+            .child(header)
             .child(card_divider(&p))
             .child(self.meta_row(
                 tr!("update.current_version"),

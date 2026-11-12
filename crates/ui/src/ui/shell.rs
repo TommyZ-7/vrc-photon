@@ -799,31 +799,38 @@ fn running_job_count(active: i64, waiting: i64) -> i64 {
 fn compression_card_status(active: i64, waiting: i64, failed: i64) -> CardStatus {
     let running = running_job_count(active, waiting);
     if waiting > 0 {
+        let mut parts = Vec::new();
+        if running > 0 {
+            parts.push(tr_args!("sidebar.status.item.running", count = running));
+        }
+        if failed > 0 {
+            parts.push(tr_args!("sidebar.status.item.failed", count = failed));
+        }
         CardStatus {
             headline: tr_args!("sidebar.status.waiting.headline", waiting = waiting),
-            detail: tr_args!(
-                "sidebar.status.waiting.detail",
-                running = running,
-                failed = failed
-            ),
+            detail: parts.join(" · "),
             tone: StatusTone::Waiting,
         }
     } else if running > 0 {
         CardStatus {
             headline: tr_args!("sidebar.status.running.headline", running = running),
-            detail: tr_args!("sidebar.status.running.detail", failed = failed),
+            detail: if failed > 0 {
+                tr_args!("sidebar.status.item.failed", count = failed)
+            } else {
+                String::new()
+            },
             tone: StatusTone::Running,
         }
     } else if failed > 0 {
         CardStatus {
             headline: tr_args!("sidebar.status.failed.headline", failed = failed),
-            detail: tr!("sidebar.status.failed.detail"),
+            detail: String::new(),
             tone: StatusTone::Failed,
         }
     } else {
         CardStatus {
             headline: tr!("sidebar.status.idle.headline"),
-            detail: tr!("sidebar.status.idle.detail"),
+            detail: String::new(),
             tone: StatusTone::Idle,
         }
     }
@@ -1296,17 +1303,17 @@ mod tests {
 
         let running = compression_card_status(3, 0, 0);
         assert_eq!(running.headline, "実行中 3");
-        assert_eq!(running.detail, "未実行 0 · 失敗 0");
+        assert_eq!(running.detail, "");
         assert_eq!(running.tone, StatusTone::Running);
 
         let failed = compression_card_status(0, 0, 2);
         assert_eq!(failed.headline, "失敗 2");
-        assert_eq!(failed.detail, "未実行 0 · 実行中 0");
+        assert_eq!(failed.detail, "");
         assert_eq!(failed.tone, StatusTone::Failed);
 
         let idle = compression_card_status(0, 0, 0);
         assert_eq!(idle.headline, "キューは空です");
-        assert_eq!(idle.detail, "未実行のジョブはありません");
+        assert_eq!(idle.detail, "");
         assert_eq!(idle.tone, StatusTone::Idle);
     }
     #[test]

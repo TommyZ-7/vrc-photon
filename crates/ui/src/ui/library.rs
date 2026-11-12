@@ -504,9 +504,6 @@ impl App {
         if compressed {
             badges =
                 badges.child(self.badge(tr!("photos.badge.compressed"), p.green, p.green_soft));
-        } else {
-            badges =
-                badges.child(self.badge(tr!("photos.badge.uncompressed"), p.amber, p.amber_soft));
         }
 
         let meta = v_flex()
@@ -646,20 +643,15 @@ impl App {
         let p = self.palette;
         let language = self.settings.language.clone();
         let ai = self.selected_ai.clone();
-        let key = AiMetaKey::new(id, &language, self.ai_meta_revision, ai.as_ref());
-        // The identifier, language, reload revision, and stored result form the
-        // key, so switching photos or reloading AI rows rebuilds this once
-        // instead of formatting every chip and parsing the place JSON per frame.
-        let (tags, people, place, foot) = {
+        let key = AiMetaKey::new(id, &language, self.ai_meta_revision);
+        // The identifier, language, and reload revision form the key, so
+        // switching photos or reloading AI rows rebuilds this once instead of
+        // formatting every chip and parsing the place JSON per frame.
+        let (tags, people, place) = {
             let view = self
                 .ai_meta_cache
                 .view(key, &language, ai.as_ref(), &self.selected_ai_tags);
-            (
-                view.tags.clone(),
-                view.people.clone(),
-                view.place.clone(),
-                view.foot.clone(),
-            )
+            (view.tags.clone(), view.people.clone(), view.place.clone())
         };
         let focus_states: Vec<Entity<AiTagFocusState>> = (0..tags.len())
             .map(|index| {
@@ -861,15 +853,6 @@ impl App {
                 .child(fact(tr!("photos.ai.people"), people))
                 .child(fact(tr!("photos.ai.place"), place)),
         );
-        if let Some(foot) = foot {
-            panel = panel.child(
-                div()
-                    .text_size(px(9.))
-                    .text_color(rgb(p.muted_2))
-                    .child(foot),
-            );
-        }
-
         panel.child(
             Button::new(SharedString::from(format!("ai-retag-{id}")))
                 .label(tr!("photos.ai.retag"))

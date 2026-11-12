@@ -340,29 +340,15 @@ impl App {
     pub(crate) fn daemon_card(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let p = self.palette;
         let status = if !self.daemon_active {
-            (tr!("dashboard.daemon.state.stopped"), p.muted, p.panel_2)
+            Some((tr!("dashboard.daemon.state.stopped"), p.muted, p.panel_2))
         } else if self.daemon_paused {
-            (tr!("dashboard.daemon.state.paused"), p.amber, p.amber_soft)
+            Some((tr!("dashboard.daemon.state.paused"), p.amber, p.amber_soft))
         } else {
-            (tr!("dashboard.daemon.state.running"), p.green, p.green_soft)
+            None
         };
-        let sync = daemon_sync_label(
-            self.daemon_age_secs,
-            self.daemon_supervisor.as_deref(),
-            self.ipc_connected,
-        );
-        let ipc = if self.ipc_connected {
-            tr!("dashboard.ipc.connected")
-        } else {
-            tr!("dashboard.ipc.disconnected")
-        };
+        let sync = daemon_sync_label(self.daemon_age_secs, self.daemon_supervisor.as_deref());
+        let ipc = (!self.ipc_connected).then(|| tr!("dashboard.ipc.disconnected"));
         let ipc_detail = ipc_status_label(self.ipc_connected, self.ipc_error.as_deref());
-        let ipc_color = if self.ipc_connected { p.green } else { p.red };
-        let ipc_bg = if self.ipc_connected {
-            p.green_soft
-        } else {
-            p.red_soft
-        };
         let scan = self.scan_progress;
         let armed = self.daemon_shutdown_armed;
         let pause_label = if self.daemon_paused {
@@ -371,6 +357,20 @@ impl App {
             tr!("dashboard.daemon.pause")
         };
 
+        let mut header = h_flex().items_center().gap(px(8.)).child(
+            div()
+                .text_size(px(13.))
+                .font_semibold()
+                .text_color(rgb(p.text))
+                .child(tr!("dashboard.daemon.title")),
+        );
+        if let Some((text, fg, bg)) = status {
+            header = header.child(self.badge(text, fg, bg));
+        }
+        if let Some(ipc) = ipc {
+            header = header.child(self.badge(ipc, p.red, p.red_soft));
+        }
+
         let mut card = glass_panel(&self.palette)
             .flex()
             .flex_col()
@@ -378,21 +378,11 @@ impl App {
             .p(px(14.))
             .gap(px(10.))
             .rounded(px(17.))
-            .child(
-                h_flex()
-                    .items_center()
-                    .gap(px(8.))
-                    .child(
-                        div()
-                            .text_size(px(13.))
-                            .font_semibold()
-                            .text_color(rgb(p.text))
-                            .child(tr!("dashboard.daemon.title")),
-                    )
-                    .child(self.badge(status.0, status.1, status.2))
-                    .child(self.badge(ipc, ipc_color, ipc_bg)),
-            )
-            .child(self.meta_row(tr!("dashboard.daemon.last_sync"), sync))
+            .child(header);
+        if let Some(sync) = sync {
+            card = card.child(self.meta_row(tr!("dashboard.daemon.last_sync"), sync));
+        }
+        card = card
             .child(self.meta_row("IPC", ipc_detail))
             .child(self.meta_row(
                 tr!("dashboard.daemon.watching"),
