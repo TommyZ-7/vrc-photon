@@ -1,7 +1,7 @@
 ## 0. Project profile (fill in per project)
 
 - Project: `vrc-photon`
-- Stack / language: `Rust stable (edition 2024) + gpui-kit 0.8 + SQLite`
+- Stack / language: `Rust stable (edition 2024) + gpui-kit 0.9.1 (custom forks of gpui-component / gpui-fast) + SQLite`
 - Main branch: `main`
 - Tag pattern: `v*.*.*`
 - Local verify commands: see §3.
