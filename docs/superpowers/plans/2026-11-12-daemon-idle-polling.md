@@ -81,7 +81,7 @@
   - `Daemon.vrchat_probe: VrchatProcessProbe`
   - `Daemon.last_presence_check: Instant`
 
-- [ ] **Step 1: PID キャッシュの失敗テストを書く**
+- [x] **Step 1: PID キャッシュの失敗テストを書く**
 
 `crates/daemon/src/vrchat_process.rs` の tests に、テスト用の `ProcessTable` 実装を追加する。
 
@@ -126,13 +126,13 @@ fn probe_returns_false_when_vrchat_is_absent()
 - `comm` と `list` の両方がエラーなら `poll == None`、`list_calls == 1`。
 - プロセス一覧が空なら `Some(false)`。
 
-- [ ] **Step 2: テストが失敗することを確認する**
+- [x] **Step 2: テストが失敗することを確認する**
 
 Run: `cargo test -p vrc-photon-daemon vrchat_process::tests -- --nocapture`
 
 Expected: `VrchatProcessProbe` / `ProcessTable` が未定義でコンパイルエラー。
 
-- [ ] **Step 3: `VrchatProcessProbe` と `ProcessTable` を実装する**
+- [x] **Step 3: `VrchatProcessProbe` と `ProcessTable` を実装する**
 
 共通ロジック:
 
@@ -193,13 +193,13 @@ pub fn is_running() -> Option<bool> {
 }
 ```
 
-- [ ] **Step 4: テストが通ることを確認する**
+- [x] **Step 4: テストが通ることを確認する**
 
 Run: `cargo test -p vrc-photon-daemon vrchat_process::tests -- --nocapture`
 
 Expected: PASS。`cargo check -p vrc-photon-daemon` も通る。
 
-- [ ] **Step 5: 5秒タイマーの失敗テストを書く**
+- [x] **Step 5: 5秒タイマーの失敗テストを書く**
 
 `crates/daemon/src/tests.rs`:
 
@@ -220,13 +220,13 @@ fn presence_check_runs_only_after_its_interval() {
 }
 ```
 
-- [ ] **Step 6: テストが失敗することを確認する**
+- [x] **Step 6: テストが失敗することを確認する**
 
 Run: `cargo test -p vrc-photon-daemon presence_check_runs_only_after_its_interval -- --nocapture`
 
 Expected: FAIL（`last_presence_check` が存在しない、または毎回更新される）。
 
-- [ ] **Step 7: タイマーと probe をメインループへ組み込む**
+- [x] **Step 7: タイマーと probe をメインループへ組み込む**
 
 `crates/daemon/src/lib.rs` に追加:
 
@@ -258,13 +258,13 @@ self.observe_vrchat_presence(running)
 
 `repair_open_sessions` は起動時の1回だけなので、既存の `vrchat_process::is_running()` をそのまま使う。
 
-- [ ] **Step 8: テストが通ることを確認する**
+- [x] **Step 8: テストが通ることを確認する**
 
 Run: `cargo test -p vrc-photon-daemon presence_check_runs_only_after_its_interval vrchat_process::tests -- --nocapture`
 
 Expected: PASS。
 
-- [ ] **Step 9: コミット**
+- [x] **Step 9: コミット**
 
 ```bash
 git add crates/daemon/src/vrchat_process.rs crates/daemon/src/lifecycle.rs crates/daemon/src/lib.rs crates/daemon/Cargo.toml crates/daemon/src/tests.rs
@@ -289,7 +289,7 @@ git commit -m "fix(daemon): cache the VRChat process id between presence polls"
   - `const LOG_DIR_RESCAN_FALLBACK: Duration = Duration::from_secs(60);`
   - `Daemon.log_locator: Option<LogLocator>`
 
-- [ ] **Step 1: `LogLocator` の失敗テストを書く**
+- [x] **Step 1: `LogLocator` の失敗テストを書く**
 
 `crates/daemon/src/logs.rs` の tests:
 
@@ -310,13 +310,13 @@ fn locator_rescans_after_the_fallback_interval()
 - キャッシュしたファイルを削除すると `scans == 3`、`None` を返す。
 - `last_scan = Instant::now() - LOG_DIR_RESCAN_FALLBACK - 1s` にすると `scans` が増える。
 
-- [ ] **Step 2: テストが失敗することを確認する**
+- [x] **Step 2: テストが失敗することを確認する**
 
 Run: `cargo test -p vrc-photon-daemon logs::tests -- --nocapture`
 
 Expected: `LogLocator` が未定義でコンパイルエラー。
 
-- [ ] **Step 3: `LogLocator` を実装する**
+- [x] **Step 3: `LogLocator` を実装する**
 
 ```rust
 pub(crate) fn latest(&mut self) -> Result<Option<PathBuf>> {
@@ -356,13 +356,13 @@ pub(crate) fn latest(&mut self) -> Result<Option<PathBuf>> {
 - `dir()` は `&self.dir`。
 - `LOG_DIR_RESCAN_FALLBACK` は `lib.rs` に置く。
 
-- [ ] **Step 4: テストが通ることを確認する**
+- [x] **Step 4: テストが通ることを確認する**
 
 Run: `cargo test -p vrc-photon-daemon logs::tests -- --nocapture`
 
 Expected: PASS。
 
-- [ ] **Step 5: `ingest_logs` と設定変更へ組み込む**
+- [x] **Step 5: `ingest_logs` と設定変更へ組み込む**
 
 `Daemon` に `log_locator: Option<LogLocator>` を追加（初期値 `None`）。
 
@@ -383,7 +383,7 @@ let path = self.log_locator.as_mut().unwrap().latest();
 
 `ingest_logs` の既存の `log_dir.is_dir()` エラー報告は残す。`latest()` が `Err` のときの `daemon.log_unreadable` 報告も残す。
 
-- [ ] **Step 6: 設定変更のテストを追加する**
+- [x] **Step 6: 設定変更のテストを追加する**
 
 `crates/daemon/src/tests.rs`:
 
@@ -403,13 +403,13 @@ fn changing_the_log_dir_invalidates_the_locator() {
 }
 ```
 
-- [ ] **Step 7: テストが通ることを確認する**
+- [x] **Step 7: テストが通ることを確認する**
 
 Run: `cargo test -p vrc-photon-daemon changing_the_log_dir_invalidates_the_locator logs::tests -- --nocapture`
 
 Expected: PASS。
 
-- [ ] **Step 8: コミット**
+- [x] **Step 8: コミット**
 
 ```bash
 git add crates/daemon/src/logs.rs crates/daemon/src/lifecycle.rs crates/daemon/src/lib.rs crates/daemon/src/tests.rs
@@ -436,7 +436,7 @@ git commit -m "fix(daemon): avoid rescanning the log directory every poll"
   - `Daemon.hash_wake: Arc<JobSignal>`
   - `const HASH_IDLE_WAIT: Duration = Duration::from_secs(60);`
 
-- [ ] **Step 1: ID カーソルの失敗テストを書く**
+- [x] **Step 1: ID カーソルの失敗テストを書く**
 
 `crates/core/src/db/tests.rs`:
 
@@ -450,13 +450,13 @@ fn photos_without_hash_after_skips_earlier_ids() {
 }
 ```
 
-- [ ] **Step 2: テストが失敗することを確認する**
+- [x] **Step 2: テストが失敗することを確認する**
 
 Run: `cargo test -p vrc-photon-core photos_without_hash_after_skips_earlier_ids -- --nocapture`
 
 Expected: メソッド未定義でコンパイルエラー。
 
-- [ ] **Step 3: `photos_without_hash_after` を実装する**
+- [x] **Step 3: `photos_without_hash_after` を実装する**
 
 ```rust
 pub fn photos_without_hash_after(&self, limit: i64, after_id: i64) -> Result<Vec<(i64, String)>> {
@@ -474,13 +474,13 @@ pub fn photos_without_hash_after(&self, limit: i64, after_id: i64) -> Result<Vec
 
 既存の `photos_without_hash` は `photos_without_hash_after(limit, 0)` を呼ぶ互換ラッパーにする。
 
-- [ ] **Step 4: テストが通ることを確認する**
+- [x] **Step 4: テストが通ることを確認する**
 
 Run: `cargo test -p vrc-photon-core photos_without_hash_after_skips_earlier_ids -- --nocapture`
 
 Expected: PASS。
 
-- [ ] **Step 5: 先頭詰まりの回帰テストを書く**
+- [x] **Step 5: 先頭詰まりの回帰テストを書く**
 
 `crates/daemon/src/tests.rs`:
 
@@ -540,13 +540,13 @@ fn hash_worker_passes_missing_rows_and_hashes_later_photos() {
 
 補足: `wait_for` は既存のテストヘルパー。`NewPhoto` のフィールドは既存の `seed_photo_with_link_backoff` に合わせる。元の実装では最初の16件が失敗し続けるため、このテストは修正前ならタイムアウトする。
 
-- [ ] **Step 6: テストが失敗することを確認する**
+- [x] **Step 6: テストが失敗することを確認する**
 
 Run: `cargo test -p vrc-photon-daemon hash_worker_passes_missing_rows_and_hashes_later_photos -- --nocapture`
 
 Expected: FAIL（2秒以内に `valid.bin` がハッシュされない）。
 
-- [ ] **Step 7: `hash_loop` をシグナル＋カーソル方式へ変更する**
+- [x] **Step 7: `hash_loop` をシグナル＋カーソル方式へ変更する**
 
 `hash_loop` のシグネチャに `wake: Arc<JobSignal>` を追加する。ループの骨子:
 
@@ -600,7 +600,7 @@ while running.load(Ordering::Relaxed) {
 - 失敗行は次の60秒フォールバックで再試行される。
 - 既存の `hashed_since_idle` と `revision_pending` の扱いは引き継ぐ。DB 読み取りエラー時は従来どおり `Vec::new()` として扱い、待機へ落ちる。
 
-- [ ] **Step 8: 通知経路を追加する**
+- [x] **Step 8: 通知経路を追加する**
 
 `Daemon` に `hash_wake: Arc<JobSignal>` を追加し、`open_inner` で `Arc::new(JobSignal::default())`。`start_workers` の `hash_loop` 呼び出しに `self.hash_wake.clone()` を渡す。`notify_workers` と `stop_workers` に `self.hash_wake.notify()` を追加する。`stop_workers` へ入れ忘れると、シャットダウンが最大60秒待つ。
 
@@ -611,7 +611,7 @@ while running.load(Ordering::Relaxed) {
 - `scan_photos_with_initial`
 - `scan_root_photos`
 
-- [ ] **Step 9: テストが通ることを確認する**
+- [x] **Step 9: テストが通ることを確認する**
 
 Run: `cargo test -p vrc-photon-daemon hash_worker_passes_missing_rows_and_hashes_later_photos -- --nocapture`
 
@@ -619,7 +619,7 @@ Run: `cargo test -p vrc-photon-core photos_without_hash_after_skips_earlier_ids 
 
 Expected: PASS。
 
-- [ ] **Step 10: コミット**
+- [x] **Step 10: コミット**
 
 ```bash
 git add crates/core/src/db/photos.rs crates/core/src/db/tests.rs crates/daemon/src/hash.rs crates/daemon/src/lifecycle.rs crates/daemon/src/scan.rs crates/daemon/src/lib.rs crates/daemon/src/tests.rs
@@ -652,7 +652,7 @@ git commit -m "fix(daemon): wake the hash worker and skip unreadable rows"
   - `Daemon.last_counts_status: Instant`
   - `Daemon.last_published_status: Option<StatusSnapshot>`（`vrc_photon_ipc::StatusSnapshot` を import する）
 
-- [ ] **Step 1: 分割と publish の失敗テストを書く**
+- [x] **Step 1: 分割と publish の失敗テストを書く**
 
 `crates/daemon/src/tests.rs`:
 
@@ -716,13 +716,13 @@ fn status_publish_fires_when_a_field_changes() {
 
 `set_paused(true)` は既に publish するため、テストではいったんキューを空にしてから `publish_status_if_changed` の挙動を確認する。`last_published_status` の初期値が `None` なので最初の呼び出しは publish される。
 
-- [ ] **Step 2: テストが失敗することを確認する**
+- [x] **Step 2: テストが失敗することを確認する**
 
 Run: `cargo test -p vrc-photon-daemon session_refresh_does_not_touch_counts counts_refresh_does_not_touch_session_fields status_publish_is_skipped_when_nothing_changed -- --nocapture`
 
 Expected: メソッド未定義でコンパイルエラー。
 
-- [ ] **Step 3: `status.rs` を分割する**
+- [x] **Step 3: `status.rs` を分割する**
 
 `refresh_session_status`:
 - DB ロックを取り、`session_at(now)`、`world_by_id`、`players_at` を読む。DB ロックを解放してから status ロックを取る（現在のロック順を維持）。
@@ -780,7 +780,7 @@ fn same_status_fields(a: &StatusSnapshot, b: &StatusSnapshot) -> bool {
 ```
 `publish_status_if_changed` はこのヘルパーで比較する。
 
-- [ ] **Step 4: メインループとイベント経路を更新する**
+- [x] **Step 4: メインループとイベント経路を更新する**
 
 `run_loop_iteration`:
 ```rust
@@ -806,7 +806,7 @@ if self.last_counts_status.elapsed() >= COUNTS_STATUS_INTERVAL {
 
 初期化: `last_session_status = Instant::now() - SESSION_STATUS_INTERVAL`、`last_counts_status = Instant::now() - COUNTS_STATUS_INTERVAL`、`last_published_status = None`。
 
-- [ ] **Step 5: counts の周期テストを追加する**
+- [x] **Step 5: counts の周期テストを追加する**
 
 ```rust
 #[test]
@@ -830,19 +830,19 @@ fn loop_refreshes_counts_only_when_due() {
 }
 ```
 
-- [ ] **Step 6: テストが通ることを確認する**
+- [x] **Step 6: テストが通ることを確認する**
 
 Run: `cargo test -p vrc-photon-daemon session_refresh_does_not_touch_counts counts_refresh_does_not_touch_session_fields status_publish_is_skipped_when_nothing_changed loop_refreshes_counts_only_when_due -- --nocapture`
 
 Expected: PASS。
 
-- [ ] **Step 7: 既存テストを確認する**
+- [x] **Step 7: 既存テストを確認する**
 
 Run: `cargo test -p vrc-photon-daemon`
 
 Expected: PASS。失敗するテストがあれば、`refresh_status()` を明示的に呼ぶか、`invalidate_counts()` を追加して直す。テスト専用の短い周期は導入しない。
 
-- [ ] **Step 8: コミット**
+- [x] **Step 8: コミット**
 
 ```bash
 git add crates/daemon/src/status.rs crates/daemon/src/lifecycle.rs crates/daemon/src/logs.rs crates/daemon/src/scan.rs crates/daemon/src/lib.rs crates/daemon/src/tests.rs
@@ -866,7 +866,7 @@ git commit -m "fix(daemon): split status refresh cadence and publish changes"
   - `Daemon.last_data_version: Option<i64>`
   - `SETTINGS_INTERVAL` を `Duration::from_secs(1)` にする（`data_version` ゲートで JSON パースは変更時だけ。1秒＋ループ待機でも #188 の約2.5秒以内）
 
-- [ ] **Step 1: `has_daemon_commands` の失敗テストを書く**
+- [x] **Step 1: `has_daemon_commands` の失敗テストを書く**
 
 `crates/core/src/db/tests.rs`:
 
@@ -879,13 +879,13 @@ fn has_daemon_commands_reports_only_queued_rows() {
 }
 ```
 
-- [ ] **Step 2: テストが失敗することを確認する**
+- [x] **Step 2: テストが失敗することを確認する**
 
 Run: `cargo test -p vrc-photon-core has_daemon_commands_reports_only_queued_rows -- --nocapture`
 
 Expected: メソッド未定義でコンパイルエラー。
 
-- [ ] **Step 3: `has_daemon_commands` を実装する**
+- [x] **Step 3: `has_daemon_commands` を実装する**
 
 ```rust
 pub fn has_daemon_commands(&self) -> Result<bool> {
@@ -898,13 +898,13 @@ pub fn has_daemon_commands(&self) -> Result<bool> {
 }
 ```
 
-- [ ] **Step 4: テストが通ることを確認する**
+- [x] **Step 4: テストが通ることを確認する**
 
 Run: `cargo test -p vrc-photon-core has_daemon_commands_reports_only_queued_rows -- --nocapture`
 
 Expected: PASS。
 
-- [ ] **Step 5: `data_version` の失敗テストを書く**
+- [x] **Step 5: `data_version` の失敗テストを書く**
 
 `crates/core/src/db/tests.rs`:
 
@@ -922,13 +922,13 @@ fn data_version_changes_after_another_connection_commits() {
 }
 ```
 
-- [ ] **Step 6: テストが失敗することを確認する**
+- [x] **Step 6: テストが失敗することを確認する**
 
 Run: `cargo test -p vrc-photon-core data_version_changes_after_another_connection_commits -- --nocapture`
 
 Expected: `data_version` 未定義でコンパイルエラー。
 
-- [ ] **Step 7: `Db::data_version` を実装する**
+- [x] **Step 7: `Db::data_version` を実装する**
 
 `crates/core/src/db/settings.rs` に追加:
 
@@ -939,13 +939,13 @@ pub fn data_version(&self) -> Result<i64> {
 }
 ```
 
-- [ ] **Step 8: テストが通ることを確認する**
+- [x] **Step 8: テストが通ることを確認する**
 
 Run: `cargo test -p vrc-photon-core data_version_changes_after_another_connection_commits -- --nocapture`
 
 Expected: PASS。
 
-- [ ] **Step 9: `poll_commands_with_initial` に高速パスを追加する**
+- [x] **Step 9: `poll_commands_with_initial` に高速パスを追加する**
 
 ```rust
 pub(crate) fn poll_commands_with_initial(&mut self, initial_scan: Option<bool>) -> Result<()> {
@@ -961,7 +961,7 @@ pub(crate) fn poll_commands_with_initial(&mut self, initial_scan: Option<bool>) 
 }
 ```
 
-- [ ] **Step 10: 設定再読込を `data_version` でゲートする**
+- [x] **Step 10: 設定再読込を `data_version` でゲートする**
 
 `Daemon` に `last_data_version: Option<i64>` を追加し、`open_inner` で `None` に初期化する。
 
@@ -986,7 +986,7 @@ if self.last_settings_check.elapsed() >= SETTINGS_INTERVAL {
 - `refresh_autostart_setting` の10秒周期は変えない。
 - デーモン自身が `settings.save` した場合は `self.settings` を直接更新しているため、`data_version` が変わらなくても問題ない。
 
-- [ ] **Step 11: コマンドの回帰テストを追加する**
+- [x] **Step 11: コマンドの回帰テストを追加する**
 
 `crates/daemon/src/tests.rs`:
 
@@ -1008,7 +1008,7 @@ fn command_inserted_without_wake_is_still_processed() {
 }
 ```
 
-- [ ] **Step 12: 設定再読込のゲートテストを追加する**
+- [x] **Step 12: 設定再読込のゲートテストを追加する**
 
 ```rust
 #[test]
@@ -1051,7 +1051,7 @@ fn settings_reload_applies_an_external_change() {
 }
 ```
 
-- [ ] **Step 13: テストが通ることを確認する**
+- [x] **Step 13: テストが通ることを確認する**
 
 Run: `cargo test -p vrc-photon-daemon command_inserted_without_wake_is_still_processed settings_reload_is_skipped_when_data_version_is_unchanged settings_reload_applies_an_external_change -- --nocapture`
 
@@ -1059,7 +1059,7 @@ Run: `cargo test -p vrc-photon-core has_daemon_commands_reports_only_queued_rows
 
 Expected: PASS。
 
-- [ ] **Step 14: コミット**
+- [x] **Step 14: コミット**
 
 ```bash
 git add crates/core/src/db/daemon.rs crates/core/src/db/settings.rs crates/core/src/db/tests.rs crates/daemon/src/lifecycle.rs crates/daemon/src/tests.rs
@@ -1095,7 +1095,7 @@ git commit -m "fix(daemon): avoid idle command transactions and settings reads"
 - deletion は compression / tagging / send の完了で解除されることがあり、通知漏れの影響を抑えるため5秒。
 - thumbnail は外部から書き込まれたサムネイルの通知を IPC 経由で受けるため、2秒で十分な応答性を確保する（500msから4倍に削減）。設定変更は `Refresh` で即時反映する。
 
-- [ ] **Step 1: thumbnail チャネルの失敗テストを書く**
+- [x] **Step 1: thumbnail チャネルの失敗テストを書く**
 
 `crates/daemon/src/tests.rs` の `scan_root_sends_new_photos_to_the_thumbnail_queue` を新しい型に合わせ、`Refresh` のテストを追加する:
 
@@ -1112,13 +1112,13 @@ fn thumbnail_settings_change_wakes_the_worker() {
 }
 ```
 
-- [ ] **Step 2: テストが失敗することを確認する**
+- [x] **Step 2: テストが失敗することを確認する**
 
 Run: `cargo test -p vrc-photon-daemon thumbnail_settings_change_wakes_the_worker -- --nocapture`
 
 Expected: `ThumbnailRequest` 未定義、または `Refresh` が送られず FAIL。
 
-- [ ] **Step 3: `ThumbnailRequest` と `Refresh` 送信を実装する**
+- [x] **Step 3: `ThumbnailRequest` と `Refresh` 送信を実装する**
 
 `thumbnails.rs`:
 ```rust
@@ -1163,13 +1163,13 @@ if old_limit != new_limit || old_spec != new_spec || thumbnail_size_changed {
 `reload_settings` も同じ比較で送る。
 - テストの `thumbnail_tx.send(999_999)` を `ThumbnailRequest::Photo(999_999)` に変更する。
 
-- [ ] **Step 4: テストが通ることを確認する**
+- [x] **Step 4: テストが通ることを確認する**
 
 Run: `cargo test -p vrc-photon-daemon thumbnail_settings_change_wakes_the_worker -- --nocapture`
 
 Expected: PASS。
 
-- [ ] **Step 5: 各ワーカーの待機値を変更する**
+- [x] **Step 5: 各ワーカーの待機値を変更する**
 
 - `compression.rs`: `Duration::from_millis(400)` を `COMPRESSION_IDLE_WAIT` に。pause 中の `PAUSED_WORKER_POLL` も `COMPRESSION_IDLE_WAIT` に。
 - `tagging.rs`: `TaggingWorkerConfig::default().poll_interval` を `TAGGING_IDLE_WAIT` に。pause 中も同じ。
@@ -1178,7 +1178,7 @@ Expected: PASS。
 - `lib.rs`: `PAUSED_WORKER_POLL` と `THUMBNAIL_PRUNE_IDLE` が未使用になるなら削除する。
 - `notify_workers` に `self.hash_wake.notify()` と `self.notify_thumbnail_worker()` を追加する（Task 3 で hash は追加済み）。
 
-- [ ] **Step 6: pause / resume の通知テストを追加する**
+- [x] **Step 6: pause / resume の通知テストを追加する**
 
 ```rust
 #[test]
@@ -1194,7 +1194,7 @@ fn notify_workers_wakes_hash_and_thumbnail() {
 }
 ```
 
-- [ ] **Step 7: 既存テストを修正する**
+- [x] **Step 7: 既存テストを修正する**
 
 Run: `cargo test -p vrc-photon-daemon`
 
@@ -1203,7 +1203,7 @@ Expected: PASS。失敗したテストは、ワーカーが直接 DB を読む�
 - ワーカーの1ステップ関数（例: `run_deletions_once`）を直接呼ぶ。
 - `wait_for` のタイムアウトを延ばすのではなく、通知を追加する。
 
-- [ ] **Step 8: コミット**
+- [x] **Step 8: コミット**
 
 ```bash
 git add crates/daemon/src/compression.rs crates/daemon/src/tagging.rs crates/daemon/src/discord.rs crates/daemon/src/deletion.rs crates/daemon/src/thumbnails.rs crates/daemon/src/lifecycle.rs crates/daemon/src/lib.rs crates/daemon/src/scan.rs crates/daemon/src/tests.rs
@@ -1226,7 +1226,7 @@ git commit -m "fix(daemon): unify worker idle waits"
   - `const MAIN_LOOP_MAX_WAIT: Duration = Duration::from_millis(500);`
   - `const MAIN_LOOP_HEADLESS_WAIT: Duration = Duration::from_secs(1);`
 
-- [ ] **Step 1: `min_wait` の失敗テストを書く**
+- [x] **Step 1: `min_wait` の失敗テストを書く**
 
 ```rust
 #[test]
@@ -1240,13 +1240,13 @@ fn min_wait_uses_the_earliest_deadline_and_caps_at_the_maximum() {
 
 `min_wait` は最小値を `Duration::from_millis(10)` で下限クリップする。
 
-- [ ] **Step 2: テストが失敗することを確認する**
+- [x] **Step 2: テストが失敗することを確認する**
 
 Run: `cargo test -p vrc-photon-daemon min_wait_uses_the_earliest_deadline_and_caps_at_the_maximum -- --nocapture`
 
 Expected: `min_wait` 未定義でコンパイルエラー。
 
-- [ ] **Step 3: `min_wait` と `next_loop_wait` を実装する**
+- [x] **Step 3: `min_wait` と `next_loop_wait` を実装する**
 
 ```rust
 pub(crate) fn min_wait(waits: &[Duration], cap: Duration) -> Duration {
@@ -1299,13 +1299,13 @@ if self.running.load(Ordering::Relaxed) {
 }
 ```
 
-- [ ] **Step 4: テストが通ることを確認する**
+- [x] **Step 4: テストが通ることを確認する**
 
 Run: `cargo test -p vrc-photon-daemon min_wait_uses_the_earliest_deadline_and_caps_at_the_maximum -- --nocapture`
 
 Expected: PASS。
 
-- [ ] **Step 5: watcher からメインループを起こす**
+- [x] **Step 5: watcher からメインループを起こす**
 
 `setup_watchers`:
 ```rust
@@ -1319,7 +1319,7 @@ let mut watcher = notify::recommended_watcher(move |event| {
 ```
 これにより、写真イベントの索引付けが最大待機時間まで遅れない。
 
-- [ ] **Step 6: 待機時間の境界テストを追加する**
+- [x] **Step 6: 待機時間の境界テストを追加する**
 
 ```rust
 #[test]
@@ -1361,13 +1361,13 @@ fn paused_idle_wait_does_not_spin_on_an_overdue_asset_check() {
 
 `last_*` を未来にする方法がないため、初期化直後の期限で境界だけを確認する。厳密な期限一致は `min_wait` の単体テストで担保する。
 
-- [ ] **Step 7: テストが通ることを確認する**
+- [x] **Step 7: テストが通ることを確認する**
 
 Run: `cargo test -p vrc-photon-daemon min_wait_uses_the_earliest_deadline_and_caps_at_the_maximum headless_idle_wait_is_at_most_one_second tray_idle_wait_is_at_most_five_hundred_milliseconds -- --nocapture`
 
 Expected: PASS。
 
-- [ ] **Step 8: コミット**
+- [x] **Step 8: コミット**
 
 ```bash
 git add crates/daemon/src/lifecycle.rs crates/daemon/src/lib.rs crates/daemon/src/tests.rs
@@ -1386,7 +1386,7 @@ git commit -m "fix(daemon): wake the main loop from watcher events and deadlines
 
 **注意:** このタスクはコード PR とは別の docs-only PR にする（AGENTS.md §4）。
 
-- [ ] **Step 1: architecture.md を更新する**
+- [x] **Step 1: architecture.md を更新する**
 
 次の内容を追記・修正する:
 - メインループは期限ベースで起床し、アイドル時はトレイ有効500ms / ヘッドレス1秒を上限にする。
@@ -1395,25 +1395,25 @@ git commit -m "fix(daemon): wake the main loop from watcher events and deadlines
 - ハッシュ・compression・tagging・discord はシグナル起床＋長いフォールバック、deletion は5秒、thumbnail は2秒＋Refresh。
 - IPC の型とプロトコルバージョンは不変。
 
-- [ ] **Step 2: log-and-xmp.md を更新する**
+- [x] **Step 2: log-and-xmp.md を更新する**
 
 「追記は750ms間隔のポーリングと notify を併用する」の後に追記:
 - 最新ログファイルの特定はログディレクトリの mtime をゲートにし、変更時と60秒フォールバック時だけ `read_dir` する。
 - 追記の読み取りは750msのまま。
 
-- [ ] **Step 3: features.md / development.md を確認する**
+- [x] **Step 3: features.md / development.md を確認する**
 
 Run: `grep -n "750\|500ms\|400ms\|3秒ポーリング" docs/features.md docs/development.md docs/architecture.md`
 
 期待: 変更対象の記述をすべて洗い出す。UI の3秒ポーリングは今回のスコープ外なので変更しない。
 
-- [ ] **Step 4: ドキュメントの差分を確認する**
+- [x] **Step 4: ドキュメントの差分を確認する**
 
 Run: `git diff -- docs/architecture.md docs/log-and-xmp.md docs/features.md docs/development.md`
 
 Expected: 実装と矛盾する記述がない。
 
-- [ ] **Step 5: コミット（docs-only PR）**
+- [x] **Step 5: コミット（docs-only PR）**
 
 ```bash
 git add docs/architecture.md docs/log-and-xmp.md docs/features.md docs/development.md
@@ -1464,13 +1464,21 @@ cargo test --workspace
 
 ### 完了条件
 
-- [ ] `cargo fmt --all -- --check` が通る。
-- [ ] `cargo clippy --workspace --all-targets -- -D warnings` が通る。
-- [ ] `cargo test --workspace` が通る。
+- [x] `cargo fmt --all -- --check` が通る。
+- [x] `cargo clippy --workspace --all-targets -- -D warnings` が通る。
+- [x] `cargo test --workspace` が通る。
 - [ ] 手動計測で上記の頻度を満たす。
-- [ ] `StatusSnapshot` のフィールドと `PROTOCOL_VERSION` が変わっていない。
-- [ ] セッション終了時刻が従来と同じロジックで計算されている。
-- [ ] docs-only PR が分離されている。
+- [x] `StatusSnapshot` のフィールドと `PROTOCOL_VERSION` が変わっていない。
+- [x] セッション終了時刻が従来と同じロジックで計算されている。
+- [x] docs-only PR が分離されている。
+
+> 手動の strace 計測は未実施。頻度の根拠は自動テスト、コードレビュー、CI（Linux / Windows ビルド）で確認した。実機でのアイドル計測は別途行う。
+
+## 実行結果
+
+- 実装: PR #619 `fix/daemon-idle-polling`（merge commit `81c9192`）
+- 自動検証: `cargo fmt`、workspace clippy、workspace tests、audit、IPC Windows build、Release bundle（Linux / Windows）がすべて成功
+- ドキュメント: この docs-only PR
 
 ## 実行上の注意
 
