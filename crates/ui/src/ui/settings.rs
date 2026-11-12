@@ -8,7 +8,7 @@ use gpui_kit::base::FocusTrapElement as _;
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::input::Input;
-use gpui_kit::component::scroll::Scrollbar;
+use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::slider::Slider;
 use gpui_kit::component::switch::Switch;
 use gpui_kit::component::tooltip::Tooltip;
@@ -627,15 +627,7 @@ impl App {
                         ),
                     ),
             )
-            .child(
-                div()
-                    .absolute()
-                    .top_0()
-                    .right_0()
-                    .bottom_0()
-                    .w(px(8.))
-                    .child(Scrollbar::vertical(&self.settings_scroll)),
-            )
+            .vertical_scrollbar(&self.settings_scroll)
     }
 
     fn language_card(&self, cx: &mut Context<Self>) -> impl IntoElement {

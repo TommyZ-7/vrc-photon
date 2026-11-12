@@ -4,7 +4,7 @@
 
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::checkbox::Checkbox;
-use gpui_kit::component::scroll::{ScrollableElement as _, Scrollbar};
+use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::switch::Switch;
 use gpui_kit::component::*;
 use gpui_kit::prelude::FluentBuilder as _;
@@ -128,15 +128,7 @@ impl App {
             .min_h_0()
             .items_stretch()
             .child(detail_body)
-            .child(
-                div()
-                    .absolute()
-                    .top_0()
-                    .right_0()
-                    .bottom_0()
-                    .w(px(8.))
-                    .child(Scrollbar::vertical(&self.integrations_scroll)),
-            );
+            .vertical_scrollbar(&self.integrations_scroll);
 
         if stacked {
             v_flex()
