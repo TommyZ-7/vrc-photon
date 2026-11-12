@@ -260,6 +260,7 @@ impl Daemon {
                 self.sends.notify();
             }
         }
+        self.hash_wake.notify();
         Ok(())
     }
 
@@ -295,6 +296,9 @@ impl Daemon {
             Err(error) => (Err(error), 0),
         };
         self.finish_scan(&report_result, auto_enqueued, target);
+        // Covers both the full scan and ScanRoot commands. A no-op when the
+        // scan found nothing; the hash worker also has a long fallback.
+        self.hash_wake.notify();
         report_result
     }
 

@@ -101,6 +101,8 @@ pub struct Daemon {
     pub(crate) supervisor_wake: Arc<WakeSignal>,
     pub(crate) jobs: Arc<JobSignal>,
     pub(crate) sends: Arc<JobSignal>,
+    /// Wakes the photo-hash backfill worker when a scan indexed new rows.
+    pub(crate) hash_wake: Arc<JobSignal>,
     /// Wakes the world name worker when lookups are queued.
     pub(crate) world_names: Arc<JobSignal>,
     /// Live copy of `settings.world_name_resolution_enabled` for the worker.
@@ -343,6 +345,7 @@ impl Daemon {
             supervisor_wake: Arc::new(WakeSignal::default()),
             jobs: Arc::new(JobSignal::default()),
             sends: Arc::new(JobSignal::default()),
+            hash_wake: Arc::new(JobSignal::default()),
             world_names: Arc::new(JobSignal::default()),
             world_name_resolution_enabled,
             events,
@@ -484,6 +487,7 @@ impl Daemon {
         self.sends.notify();
         self.world_names.notify();
         self.tagging.notify();
+        self.hash_wake.notify();
     }
 
     /// Records a supervised restart without changing the IPC status shape.
@@ -1054,6 +1058,7 @@ impl Daemon {
             wake: self.wake.clone(),
             jobs: self.jobs.clone(),
             sends: self.sends.clone(),
+            hash: self.hash_wake.clone(),
             world_names: self.world_names.clone(),
             events: self.events.clone(),
             thumbnail_dir: self.thumbnail_dir.clone(),
@@ -1421,8 +1426,9 @@ impl Daemon {
             let db = self.db.clone();
             let running = self.running.clone();
             let paused = self.paused.clone();
+            let wake = self.hash_wake.clone();
             self.hash_handle = self.spawn_supervised_worker("photo-hashes", move || {
-                hash_loop(db.clone(), running.clone(), paused.clone())
+                hash_loop(db.clone(), running.clone(), paused.clone(), wake.clone())
             });
         }
         if self.owns_deletion_executor && self.deletion_handle.is_none() {
@@ -1508,6 +1514,7 @@ impl Daemon {
         self.sends.notify();
         self.world_names.notify();
         self.tagging.notify();
+        self.hash_wake.notify();
         self.supervisor_wake.notify();
         self.thumbnail_tx = None;
         if let Some(handle) = self.thumbnail_handle.take()
@@ -1593,6 +1600,7 @@ impl Drop for Daemon {
         self.sends.notify();
         self.world_names.notify();
         self.tagging.notify();
+        self.hash_wake.notify();
         self.supervisor_wake.notify();
         self.wake.notify();
     }

@@ -145,6 +145,7 @@ pub(crate) struct IpcControl {
     pub(crate) wake: Arc<WakeSignal>,
     pub(crate) jobs: Arc<JobSignal>,
     pub(crate) sends: Arc<JobSignal>,
+    pub(crate) hash: Arc<JobSignal>,
     pub(crate) world_names: Arc<JobSignal>,
     pub(crate) events: EventBus,
     pub(crate) thumbnail_dir: PathBuf,
@@ -175,6 +176,7 @@ impl IpcControl {
         self.sends.notify();
         self.world_names.notify();
         self.tagging.notify();
+        self.hash.notify();
         self.wake.notify();
         self.events.publish(Event::StatusChanged {
             status: self.snapshot(),
@@ -1059,6 +1061,7 @@ mod tests {
             wake: Arc::new(WakeSignal::default()),
             jobs: Arc::new(JobSignal::default()),
             sends: Arc::new(JobSignal::default()),
+            hash: Arc::new(JobSignal::default()),
             world_names: Arc::new(JobSignal::default()),
             events,
             thumbnail_dir: dir.path().join("thumbnails"),

@@ -29,17 +29,29 @@ where
 /// Fills `photos.blake3` for rows indexed before hashing was introduced.
 /// The worker is deliberately low-frequency so a large first run does not
 /// starve compression or watcher work.
-pub(crate) fn hash_loop(db: Arc<Mutex<Db>>, running: Arc<AtomicBool>, paused: Arc<AtomicBool>) {
+///
+/// Rows are read with an id cursor. A permanently unreadable row therefore
+/// cannot occupy the first page forever and block every later photo.
+pub(crate) fn hash_loop(
+    db: Arc<Mutex<Db>>,
+    running: Arc<AtomicBool>,
+    paused: Arc<AtomicBool>,
+    wake: Arc<JobSignal>,
+) {
     let mut hashed_since_idle = false;
     let mut revision_pending = false;
+    let mut seen_generation = 0;
+    let mut after_id = 0;
+    let mut progressed_since_reset = false;
+
     while running.load(Ordering::Relaxed) {
         if paused.load(Ordering::Relaxed) {
-            thread::sleep(PAUSED_WORKER_POLL);
+            wake.wait(&mut seen_generation, HASH_IDLE_WAIT);
             continue;
         }
         let rows = {
             let db = lock_db(&db);
-            match db.photos_without_hash(16) {
+            match db.photos_without_hash_after(16, after_id) {
                 Ok(rows) => rows,
                 Err(error) => {
                     tracing::warn!(%error, "cannot load photos for hashing");
@@ -48,6 +60,17 @@ pub(crate) fn hash_loop(db: Arc<Mutex<Db>>, running: Arc<AtomicBool>, paused: Ar
             }
         };
         if rows.is_empty() {
+            if after_id != 0 {
+                // The cursor reached the end. Start one more pass so rows that
+                // failed earlier get another chance, but do not spin when the
+                // pass made no progress.
+                after_id = 0;
+                if !progressed_since_reset {
+                    wake.wait(&mut seen_generation, HASH_IDLE_WAIT);
+                }
+                progressed_since_reset = false;
+                continue;
+            }
             if hashed_since_idle {
                 revision_pending = true;
                 hashed_since_idle = false;
@@ -60,11 +83,12 @@ pub(crate) fn hash_loop(db: Arc<Mutex<Db>>, running: Arc<AtomicBool>, paused: Ar
                 });
                 drop(db);
             }
-            thread::sleep(Duration::from_secs(2));
+            wake.wait(&mut seen_generation, HASH_IDLE_WAIT);
             continue;
         }
         let mut progressed = false;
         for (photo_id, path) in rows {
+            after_id = photo_id;
             if !running.load(Ordering::Relaxed) {
                 break;
             }
@@ -82,10 +106,9 @@ pub(crate) fn hash_loop(db: Arc<Mutex<Db>>, running: Arc<AtomicBool>, paused: Ar
                 Err(error) => tracing::warn!(%error, photo_id, path, "cannot hash photo"),
             }
         }
-        thread::sleep(if progressed {
-            Duration::from_millis(200)
-        } else {
-            Duration::from_secs(2)
-        });
+        progressed_since_reset |= progressed;
+        if progressed {
+            thread::sleep(Duration::from_millis(200));
+        }
     }
 }

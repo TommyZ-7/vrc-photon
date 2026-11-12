@@ -88,6 +88,10 @@ const PRESENCE_INTERVAL: Duration = Duration::from_secs(5);
 /// The mtime gate handles normal create/delete/rename events; this is the
 /// fallback for filesystems with coarse or unreliable directory timestamps.
 const LOG_DIR_RESCAN_FALLBACK: Duration = Duration::from_secs(60);
+/// Idle fallback for the photo-hash backfill worker. Scans notify it
+/// explicitly; this only catches rows inserted by another path or a missed
+/// notification.
+const HASH_IDLE_WAIT: Duration = Duration::from_secs(60);
 /// Complete log lines one poll may return. The next poll continues from the
 /// last committed offset.
 const LOG_READ_MAX_LINES: usize = 5_000;

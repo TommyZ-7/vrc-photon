@@ -2068,6 +2068,76 @@ fn start_workers_spawns_and_stops_the_tagging_worker() {
 }
 
 #[test]
+fn hash_worker_passes_missing_rows_and_hashes_later_photos() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    daemon.set_tray_enabled(false);
+
+    let valid_path = dir.path().join("photos/valid.bin");
+    std::fs::write(&valid_path, b"hash me").unwrap();
+
+    {
+        let db = daemon.db.lock().unwrap();
+        let root = db
+            .add_root(dir.path().join("photos").to_str().unwrap(), "reference")
+            .unwrap();
+        for index in 0..16 {
+            db.upsert_photo(&NewPhoto {
+                root_id: root,
+                rel_path: format!("missing-{index}.bin"),
+                abs_path: dir
+                    .path()
+                    .join(format!("photos/missing-{index}.bin"))
+                    .to_string_lossy()
+                    .to_string(),
+                file_name: format!("missing-{index}.bin"),
+                captured_at_utc: index,
+                captured_at_local: "2026-10-21 21:24:00.000".to_string(),
+                tz_offset_sec: 9 * 3600,
+                width: 1,
+                height: 1,
+                file_size: 1,
+                mtime: index,
+                blake3: None,
+            })
+            .unwrap();
+        }
+        db.upsert_photo(&NewPhoto {
+            root_id: root,
+            rel_path: "valid.bin".to_string(),
+            abs_path: valid_path.to_string_lossy().to_string(),
+            file_name: "valid.bin".to_string(),
+            captured_at_utc: 100,
+            captured_at_local: "2026-10-21 21:24:00.000".to_string(),
+            tz_offset_sec: 9 * 3600,
+            width: 1,
+            height: 1,
+            file_size: 7,
+            mtime: 100,
+            blake3: None,
+        })
+        .unwrap();
+    }
+
+    daemon.start_workers();
+    wait_for(
+        || {
+            daemon
+                .db
+                .lock()
+                .unwrap()
+                .photo_by_path(valid_path.to_str().unwrap())
+                .unwrap()
+                .unwrap()
+                .blake3
+                .is_some()
+        },
+        Duration::from_secs(2),
+    );
+    daemon.stop_workers();
+}
+
+#[test]
 fn startup_resumes_interrupted_tagging_jobs() {
     let dir = tempfile::tempdir().unwrap();
     let photo_dir = dir.path().join("photos");
