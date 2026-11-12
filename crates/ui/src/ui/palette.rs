@@ -979,7 +979,7 @@ pub(crate) fn apply_component_theme(palette: Palette, cx: &mut App) {
         // library defaults: the app draws those surfaces itself from the
         // palette, so no default token can leak into the UI.
         theme.colors.drag_border = rgb(palette.accent_border).into();
-        theme.colors.scrollbar = scrollbar_track_color().into();
+        theme.colors.scrollbar = scrollbar_track_color();
         theme.colors.scrollbar_thumb = rgb(palette.muted_2).into();
         theme.colors.scrollbar_thumb_hover = rgb(palette.muted).into();
         theme.overlay = rgba(palette.scrim).into();
