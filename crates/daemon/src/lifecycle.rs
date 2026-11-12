@@ -653,6 +653,13 @@ impl Daemon {
             pack_thumbnail_spec(settings.thumbnail_spec()),
             Ordering::Relaxed,
         );
+        let thumbnail_size_changed = self.settings.thumbnail_size != settings.thumbnail_size;
+        if thumbnail_size_changed {
+            if let Err(error) = thumbnail::clear_thumbnail_cache_in(&self.thumbnail_dir) {
+                tracing::warn!(%error, "cannot clear thumbnails after a resolution change");
+            }
+            self.thumbnail_cache_epoch.fetch_add(1, Ordering::Relaxed);
+        }
         let world_name_enabled = settings.world_name_resolution_enabled;
         self.settings = settings;
         let was_world_name_enabled = self
@@ -1136,8 +1143,12 @@ impl Daemon {
         self.settings.ai_tagging_auto = settings.ai_tagging_auto;
         self.settings.ai_tagging_backlog = settings.ai_tagging_backlog;
         self.settings.ai_tagging_idle_timeout_sec = settings.ai_tagging_idle_timeout_sec;
-        self.settings.thumbnail_quality = settings.thumbnail_quality;
+        let thumbnail_size_changed = self.settings.thumbnail_size != settings.thumbnail_size;
         self.settings.thumbnail_size = settings.thumbnail_size;
+        if thumbnail_size_changed {
+            let _ = thumbnail::clear_thumbnail_cache_in(&self.thumbnail_dir);
+            self.thumbnail_cache_epoch.fetch_add(1, Ordering::Relaxed);
+        }
         self.thumbnail_cache_limit.store(
             thumbnail_cache_limit_bytes(settings.thumbnail_cache_mb),
             Ordering::Relaxed,
@@ -1338,6 +1349,11 @@ impl Daemon {
 
     pub(crate) fn start_workers(&mut self) {
         if self.thumbnail_tx.is_none() {
+            match thumbnail::remove_legacy_webp_entries(&self.thumbnail_dir) {
+                Ok(0) => {}
+                Ok(removed) => tracing::info!(removed, "removed legacy WebP thumbnails"),
+                Err(error) => tracing::warn!(%error, "cannot remove legacy WebP thumbnails"),
+            }
             let (tx, rx) = mpsc::channel();
             let db = self.db.clone();
             let running = self.running.clone();

@@ -65,8 +65,8 @@ zip = { version = "9", default-features = false, features = ["deflate"] }
 # Fork-only patch for #428: opt-in PopupMenu opening animation.
 # Branch: vrc-091-trial (based on v0.9.1).
 gpui-component = { git = "https://github.com/TommyZ-7/gpui-kit", rev = "ee98b887e620e7c47e0cbe41500959fde7bfdfb5" }
-# Fork-only patch for #537: raise the minimum atlas texture to 1536x1536.
-# Branch: vrc-0.1.14-atlas-1536 (prepared from v0.1.14).
-gpui-fast = { git = "https://github.com/TommyZ-7/gpui-fast", rev = "a3c3ac550d16bfb70e9f55c2cd46bf9d68cd4b73" }
-gpui-fast-wgpu = { git = "https://github.com/TommyZ-7/gpui-fast", rev = "a3c3ac550d16bfb70e9f55c2cd46bf9d68cd4b73" }
-gpui-fast-windows = { git = "https://github.com/TommyZ-7/gpui-fast", rev = "a3c3ac550d16bfb70e9f55c2cd46bf9d68cd4b73" }
+# Fork-only patches for #537 (1536x1536 atlas) and #579 (BC7 texture arrays).
+# Branch: vrc-0.1.14-texture2d-array (based on vrc-0.1.14-atlas-1536).
+gpui-fast = { git = "https://github.com/TommyZ-7/gpui-fast", rev = "c66d3da88c26cc2f65033a374f1fd3be85f0bd23" }
+gpui-fast-wgpu = { git = "https://github.com/TommyZ-7/gpui-fast", rev = "c66d3da88c26cc2f65033a374f1fd3be85f0bd23" }
+gpui-fast-windows = { git = "https://github.com/TommyZ-7/gpui-fast", rev = "c66d3da88c26cc2f65033a374f1fd3be85f0bd23" }

@@ -107,10 +107,7 @@ pub struct AppSettings {
     pub auto_compress_immediate: bool,
     pub estimated_link: bool,
     pub thumbnail_cache_mb: u64,
-    /// WebP quality used for newly generated thumbnails (10–100).
-    #[serde(default = "default_thumbnail_quality")]
-    pub thumbnail_quality: u8,
-    /// Long edge of newly generated thumbnails (256, 384, or 512).
+    /// Width of the fixed 16:9 thumbnail canvas (256, 384, or 512).
     #[serde(default = "default_thumbnail_size")]
     pub thumbnail_size: u32,
     pub compression_workers: usize,
@@ -213,10 +210,6 @@ fn default_true() -> bool {
 
 fn default_max_fps() -> u32 {
     60
-}
-
-fn default_thumbnail_quality() -> u8 {
-    crate::thumbnail::THUMBNAIL_QUALITY_DEFAULT
 }
 
 fn default_thumbnail_size() -> u32 {
@@ -335,8 +328,7 @@ impl Default for AppSettings {
             auto_compress_keep_original: true,
             auto_compress_immediate: true,
             estimated_link: true,
-            thumbnail_cache_mb: 2048,
-            thumbnail_quality: crate::thumbnail::THUMBNAIL_QUALITY_DEFAULT,
+            thumbnail_cache_mb: 8192,
             thumbnail_size: crate::thumbnail::THUMBNAIL_SIZE_DEFAULT,
             compression_workers: 1,
             clipboard_enabled: true,
@@ -463,7 +455,7 @@ impl AppSettings {
     }
 
     pub fn thumbnail_spec(&self) -> crate::thumbnail::ThumbnailSpec {
-        crate::thumbnail::ThumbnailSpec::new(self.thumbnail_quality, self.thumbnail_size)
+        crate::thumbnail::ThumbnailSpec::new(self.thumbnail_size)
     }
 
     pub fn log_dir(&self) -> Option<PathBuf> {
@@ -921,7 +913,7 @@ mod tests {
         let defaults = AppSettings::default();
         assert_eq!(settings.language, defaults.language);
         assert_eq!(settings.autostart, defaults.autostart);
-        assert_eq!(settings.thumbnail_quality, defaults.thumbnail_quality);
+        assert_eq!(settings.thumbnail_size, defaults.thumbnail_size);
         assert_eq!(settings.photo_roots, defaults.photo_roots);
         assert_eq!(settings.ai_tagging_backend, defaults.ai_tagging_backend);
 
@@ -998,7 +990,7 @@ mod tests {
     }
 
     #[test]
-    fn missing_thumbnail_settings_default_to_the_legacy_values() {
+    fn missing_thumbnail_settings_use_the_new_defaults() {
         let json = r#"{
             "photo_roots": [],
             "log_dir": null,
@@ -1013,8 +1005,8 @@ mod tests {
             "compression_workers": 1
         }"#;
         let settings: AppSettings = serde_json::from_str(json).unwrap();
-        assert_eq!(settings.thumbnail_quality, 80);
-        assert_eq!(settings.thumbnail_size, 256);
+        assert_eq!(settings.thumbnail_size, 384);
+        assert_eq!(settings.thumbnail_cache_mb, 2048);
         assert!(settings.clipboard_enabled);
     }
 
@@ -1022,16 +1014,21 @@ mod tests {
     fn thumbnail_and_clipboard_settings_roundtrip() {
         let db = Db::open_in_memory().unwrap();
         let settings = AppSettings {
-            thumbnail_quality: 95,
             thumbnail_size: 512,
             clipboard_enabled: false,
             ..Default::default()
         };
         settings.save(&db).unwrap();
         let loaded = AppSettings::load(&db).unwrap();
-        assert_eq!(loaded.thumbnail_quality, 95);
         assert_eq!(loaded.thumbnail_size, 512);
         assert!(!loaded.clipboard_enabled);
+    }
+
+    #[test]
+    fn unknown_thumbnail_quality_key_is_ignored() {
+        let json = r#"{"thumbnail_quality": 95, "thumbnail_size": 256}"#;
+        let settings: AppSettings = serde_json::from_str(json).unwrap();
+        assert_eq!(settings.thumbnail_size, 256);
     }
 
     #[test]

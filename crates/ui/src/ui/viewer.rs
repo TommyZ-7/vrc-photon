@@ -11,8 +11,8 @@ use vrc_photon_i18n::tr;
 
 use crate::app::{App, effective_motion_fps};
 use crate::state::display_image::{display_key, thumbnail_placeholder_label};
-use crate::state::viewer::{ViewerMorph, minimap_size, morph_radius_plan};
-use crate::ui::components::{ButtonState, ButtonTone};
+use crate::state::viewer::{ViewerMorph, ViewerStill, minimap_size, morph_radius_plan};
+use crate::ui::components::{ButtonState, ButtonTone, thumbnail_layer};
 use crate::ui::theme::*;
 
 /// Opacity and horizontal offset for the outgoing and incoming photos during a
@@ -156,7 +156,16 @@ impl App {
             .full_image
             .clone()
             .filter(|_| self.full_image_key == Some(key));
-        let current_image = full_image.or_else(|| self.thumbnails.borrow_mut().get(photo.id));
+        let current_image = full_image.map(ViewerStill::Full).or_else(|| {
+            self.thumbnails
+                .borrow_mut()
+                .get(photo.id)
+                .map(|handle| ViewerStill::Thumbnail {
+                    id: photo.id,
+                    handle,
+                    dimensions: photo.effective_dimensions(),
+                })
+        });
         let (start_w, start_h) = box_state.size_at(0.0, viewport);
 
         let mut image_frame = div()
@@ -187,13 +196,12 @@ impl App {
         if nav_epoch > 0
             && let Some(previous) = previous_image
         {
-            let previous = gpui_kit::img(previous)
-                .object_fit(ObjectFit::Contain)
+            let previous = div()
                 .absolute()
                 .top_0()
                 .left_0()
                 .size_full()
-                .rounded(px(10.))
+                .child(viewer_still_element(&previous, ObjectFit::Contain))
                 .with_animation(
                     ("viewer-nav-previous", nav_epoch),
                     Animation::new(nav_duration)
@@ -208,14 +216,13 @@ impl App {
         }
 
         if let Some(image) = current_image {
-            let current = gpui_kit::img(image)
-                .object_fit(ObjectFit::Contain)
+            let current = div()
                 .absolute()
                 .top(px(zoom_top))
                 .left(px(zoom_left))
                 .w(px(zoom_width))
                 .h(px(zoom_height))
-                .rounded(px(10.))
+                .child(viewer_still_element(&image, ObjectFit::Contain))
                 .with_animation(
                     ("viewer-nav-current", nav_epoch),
                     Animation::new(nav_duration)
@@ -292,11 +299,12 @@ impl App {
                     .border_1()
                     .border_color(rgba(with_alpha(p.text, 0x40)))
                     .bg(rgb(p.panel_deep))
-                    .child(
-                        gpui_kit::img(thumbnail)
-                            .object_fit(ObjectFit::Cover)
-                            .size_full(),
-                    )
+                    .child(thumbnail_layer(
+                        thumbnail,
+                        photo.effective_dimensions(),
+                        ObjectFit::Cover,
+                        0.0,
+                    ))
                     .child(
                         div()
                             .absolute()
@@ -473,6 +481,21 @@ impl ViewerMorphView {
     }
 }
 
+/// Paints a viewer still: full images use the ordinary image element, while
+/// thumbnails come from the texture array and are stretched into the frame's
+/// photo-shaped bounds.
+fn viewer_still_element(still: &ViewerStill, thumbnail_fit: ObjectFit) -> AnyElement {
+    match still {
+        ViewerStill::Full(image) => gpui_kit::img(image.clone())
+            .object_fit(ObjectFit::Contain)
+            .size_full()
+            .into_any_element(),
+        ViewerStill::Thumbnail {
+            handle, dimensions, ..
+        } => thumbnail_layer(*handle, *dimensions, thumbnail_fit, 0.0).into_any_element(),
+    }
+}
+
 impl Render for ViewerMorphView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let p = self.palette;
@@ -490,7 +513,7 @@ impl Render for ViewerMorphView {
         let fade_only = morph.fade_only;
         let backdrop_from = morph.backdrop_from;
         let (start_radius, end_radius) = morph_radius_plan(closing, morph.source);
-        let Some(image) = morph.thumbnail.clone() else {
+        let Some(still) = morph.thumbnail.clone() else {
             // Keep the empty slot out of flow for the same reason as the idle
             // return above: a root flex gap would narrow the whole shell.
             return div().absolute().into_any_element();
@@ -499,11 +522,7 @@ impl Render for ViewerMorphView {
             .absolute()
             .overflow_hidden()
             .bg(rgb(color))
-            .child(
-                gpui_kit::img(image)
-                    .object_fit(ObjectFit::Cover)
-                    .size_full(),
-            )
+            .child(viewer_still_element(&still, ObjectFit::Cover))
             .with_animation(
                 ("viewer-morph-frame", epoch),
                 Animation::new(MOTION_MORPH)

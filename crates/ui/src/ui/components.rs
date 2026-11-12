@@ -561,6 +561,51 @@ impl App {
     }
 }
 
+/// Paints one texture-array thumbnail into the element's bounds.
+///
+/// `dimensions` are the photo's display dimensions from the database, not the
+/// 16:9 canvas. The fit is therefore computed from the photo's aspect ratio and
+/// the shader restores a portrait layer's rotation.
+pub(crate) fn thumbnail_layer(
+    handle: crate::state::thumbnail::ThumbnailHandle,
+    dimensions: (u32, u32),
+    fit: ObjectFit,
+    radius: f32,
+) -> impl IntoElement {
+    let image_size = size(
+        DevicePixels(dimensions.0.max(1) as i32),
+        DevicePixels(dimensions.1.max(1) as i32),
+    );
+    let uv = if handle.rotated {
+        TextureArrayUv::Rotate90
+    } else {
+        TextureArrayUv::Normal
+    };
+    let corners = Corners {
+        top_left: px(radius),
+        top_right: px(radius),
+        bottom_right: px(radius),
+        bottom_left: px(radius),
+    };
+    canvas(
+        |_, _, _| (),
+        move |bounds, _, window, _| {
+            let image_bounds = fit.get_bounds(bounds, image_size);
+            if let Err(error) = window.paint_texture_array_layer(
+                bounds,
+                image_bounds,
+                handle.array,
+                handle.layer,
+                uv,
+                corners,
+            ) {
+                tracing::warn!(%error, "cannot paint thumbnail layer");
+            }
+        },
+    )
+    .size_full()
+}
+
 #[cfg(test)]
 mod tests {
     use super::{

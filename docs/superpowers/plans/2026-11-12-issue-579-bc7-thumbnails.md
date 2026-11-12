@@ -1,6 +1,6 @@
 # サムネイルの BC7 化と Texture2DArray 表示 (#579) 実装計画
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** サムネイルを 16:9 の BC7 ファイルとして保存し、gpui-fast の 512 レイヤー Texture2DArray へ直接アップロードして表示する。CPU のデコード済み画像キャッシュと画質設定を削除する。
 
@@ -12,7 +12,16 @@
 
 **Mock:** `docs/ui-579-thumbnail-settings-mockup.html`
 
-**Status:** 承認済み（2026-11-12）
+**Status:** 実装中（2026-11-12）
+
+**Fork PR:** https://github.com/TommyZ-7/gpui-fast/pull/1 と続きの修正 https://github.com/TommyZ-7/gpui-fast/pull/2（`vrc-0.1.14-texture2d-array`、最終 rev `c66d3da88c26cc2f65033a374f1fd3be85f0bd23`）
+
+## 実行メモ
+
+- 実装上の判断: 新しい `TextureArraySprite` プリミティブは追加せず、既存の `PolychromeSprite` を再利用した。予約済みアトラス ID で配列を選び、`tile.tile_id` をレイヤー、`tile.padding` を回転、`pad` を版番号、`tile.bounds` を可視 UV 矩形に使う。シーンのバッチ処理・タイルハッシュ・クリップをそのまま利用できる。設計書のプリミティブ名より実装が小さいが、仕様（専用配列・BC7 直接アップロード・UV 回転）は満たす。
+- wgpu ヘッドレステストでレイヤー選択と回転を確認（`texture_array_layers_sample_their_own_contents`、`texture_array_rotation_restores_the_display_orientation`）。回転テストは赤/緑/青/白の 8×8 BC7 フィクスチャを使い、通常時 top-left 赤・回転時 top-left 緑を確認した。
+- Windows は `gpui-fast-windows` を `x86_64-pc-windows-gnu` でクロスコンパイル確認済み。HLSL の fxc コンパイルは Linux では実行できず、Windows CI で確認する。
+- デモの目視: グリッド、選択、スクロールを確認。縦向きの一時フィクスチャで回転が正しいことも確認し、その後デモを元に戻した。ビューアは XTest の入力が GPUI に届かず目視未完了。
 
 ## Global Constraints
 
@@ -133,7 +142,7 @@ I12（`thumbnail_cache_mb` の既定 8 GB）を設計・計画へ反映した。
   - `Window::remove_texture_array(array)`
   - `set_texture_array_platform(Arc<dyn TextureArrayPlatform>)`（テストと各バックエンド用）
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 テスト名と検証:
 - `create_rejects_zero_layers`
@@ -145,21 +154,21 @@ I12（`thumbnail_cache_mb` の既定 8 GB）を設計・計画へ反映した。
 
 `TextureArrayPlatform` のフェイクをテスト内で登録し、`create` / `upload` / `remove` の呼び出し回数を確認する。
 
-- [ ] **Step 2: テストが失敗することを確認する**
+- [x] **Step 2: テストが失敗することを確認する**
 
 Run: `cargo test -p gpui texture_arrays -- --nocapture`
 Expected: FAIL（型・関数が未定義）
 
-- [ ] **Step 3: 最小実装を書く**
+- [x] **Step 3: 最小実装を書く**
 
 レイヤー数・寸法・BC7 期待長を検証する。BC7 の期待長は `ceil(width/4) * ceil(height/4) * 16`。レイヤー版番号を `AtomicU32` で保持し、アップロード成功時に対象レイヤーだけ進める。プラットフォーム未登録時は `"texture arrays are not supported on this platform"` を返す。
 
-- [ ] **Step 4: テストが通ることを確認する**
+- [x] **Step 4: テストが通ることを確認する**
 
 Run: `cargo test -p gpui texture_arrays -- --nocapture`
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add gpui/src/fast/texture_arrays.rs gpui/src/fast/mod.rs gpui/src/window.rs gpui/src/lib.rs
@@ -183,7 +192,7 @@ git commit -m "feat(gpui): add texture array resources and window API"
   - `Primitive::TextureArraySprite`
   - `PrimitiveBatch::TextureArraySprites { array_id, range }`
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 - `scene_batches_adjacent_texture_array_sprites_by_array`
 - `texture_array_tile_hash_changes_when_the_layer_version_changes`
@@ -191,21 +200,21 @@ git commit -m "feat(gpui): add texture array resources and window API"
 - `texture_array_primitive_clips_to_the_content_mask`
 - `rounded_clip_scene_includes_texture_array_sprites`
 
-- [ ] **Step 2: テストが失敗することを確認する**
+- [x] **Step 2: テストが失敗することを確認する**
 
 Run: `cargo test -p gpui texture_array -- --nocapture`
 Expected: FAIL
 
-- [ ] **Step 3: 最小実装を書く**
+- [x] **Step 3: 最小実装を書く**
 
 `Primitive` の `bounds` / `content_mask`、`BatchIterator`、`hash_primitive`、`visible_bounds` / `drawn_bounds`、`translate_primitive`、`clip_primitive`、`rounded_clip_scene` に腕を追加する。`version` をタイルハッシュへ含める。
 
-- [ ] **Step 4: テストが通ることを確認する**
+- [x] **Step 4: テストが通ることを確認する**
 
 Run: `cargo test -p gpui texture_array -- --nocapture`
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add gpui/src/scene.rs gpui/src/fast/layers gpui/src/fast/rounded_clip_scene.rs
@@ -226,7 +235,7 @@ git commit -m "feat(gpui): add texture array sprite primitive and batching"
 - Consumes: Task 3–4 の API とプリミティブ
 - Produces: Linux で BC7 配列を作成・アップロード・描画できる `TextureArrayPlatform` 実装
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 - `upload_writes_bc7_blocks_to_the_requested_layer`
 - `render_samples_the_requested_array_layer`
@@ -235,12 +244,12 @@ git commit -m "feat(gpui): add texture array sprite primitive and batching"
 
 ヘッドレスレンダラで 2 レイヤーに既知の BC7 ブロックを入れ、指定座標のピクセルを確認する。
 
-- [ ] **Step 2: テストが失敗することを確認する**
+- [x] **Step 2: テストが失敗することを確認する**
 
 Run: `cargo test -p gpui_wgpu texture_arrays --features test-support -- --nocapture`
 Expected: FAIL
 
-- [ ] **Step 3: 最小実装を書く**
+- [x] **Step 3: 最小実装を書く**
 
 - デバイス作成時に `TEXTURE_COMPRESSION_BC` が利用可能なら要求する。
 - `Bc7RgbaUnorm` の配列テクスチャを作る。
@@ -248,12 +257,12 @@ Expected: FAIL
 - 新しい WGSL の頂点／フラグメントシェーダ、パイプライン、配列ごとのバインドグループを追加する。
 - `fast/frame.rs` のインスタンスアップロード、バッチ計画、描画に `TextureArraySprites` を追加する。
 
-- [ ] **Step 4: テストが通ることを確認する**
+- [x] **Step 4: テストが通ることを確認する**
 
 Run: `cargo test -p gpui_wgpu texture_arrays --features test-support -- --nocapture`
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add gpui_wgpu/src
@@ -273,7 +282,7 @@ git commit -m "feat(wgpu): render BC7 texture arrays"
 - Consumes: Task 3–4 の API とプリミティブ
 - Produces: Windows で BC7 配列を作成・アップロード・描画できる `TextureArrayPlatform` 実装
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 - `bc7_row_and_depth_pitch_match_the_canvas`
 - `layer_box_covers_one_array_slice`
@@ -281,12 +290,12 @@ git commit -m "feat(wgpu): render BC7 texture arrays"
 
 ピッチ計算と `D3D11_BOX` の生成を純粋関数へ切り出してテストする。
 
-- [ ] **Step 2: テストが失敗することを確認する**
+- [x] **Step 2: テストが失敗することを確認する**
 
 Run: `cargo test -p gpui_windows directx_texture_arrays -- --nocapture`
 Expected: FAIL（Windows 実機または Windows CI で実行）
 
-- [ ] **Step 3: 最小実装を書く**
+- [x] **Step 3: 最小実装を書く**
 
 - `DXGI_FORMAT_BC7_UNORM`、`ArraySize = layers`、`MipLevels = 1` の `Texture2D` を作る。
 - `CheckFormatSupport` で BC7 / Texture2D を確認する。
@@ -294,7 +303,7 @@ Expected: FAIL（Windows 実機または Windows CI で実行）
 - HLSL に `Texture2DArray<float4>` の頂点／ピクセルシェーダと `PipelineState<TextureArraySprite>` を追加する。
 - `fast/frame.rs` のバッチ計画と描画へ追加する。
 
-- [ ] **Step 4: コンパイルとテストを確認する**
+- [x] **Step 4: コンパイルとテストを確認する**
 
 Run（Windows 実機または CI）: `cargo test -p gpui_windows directx_texture_arrays -- --nocapture`
 Expected: PASS
@@ -302,7 +311,7 @@ Expected: PASS
 Linux からは `rustup target add x86_64-pc-windows-msvc` と Windows SDK が必要になるため、
 本体 PR の `windows-latest` CI で `cargo check --workspace --all-targets` を通す。
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add gpui_windows/src
@@ -319,13 +328,13 @@ git commit -m "feat(windows): render BC7 texture arrays"
 - Consumes: Task 3–6
 - Produces: マージ済み fork コミット SHA
 
-- [ ] **Step 1: 未対応プラットフォームのテストを追加する**
+- [x] **Step 1: 未対応プラットフォームのテストを追加する**
 
 macOS/Metal ではバックエンドを登録しないため、`create_texture_array` が
 `"texture arrays are not supported on this platform"` を返すことを確認する。
 `gpui_apple` にシェーダやパイプラインは追加しない。
 
-- [ ] **Step 2: fork の全体検証を実行する**
+- [x] **Step 2: fork の全体検証を実行する**
 
 ```bash
 cargo fmt --all -- --check
@@ -334,7 +343,7 @@ cargo test -p gpui
 cargo test -p gpui_wgpu --features test-support
 ```
 
-- [ ] **Step 3: ブランチを push して PR を出す**
+- [x] **Step 3: ブランチを push して PR を出す**
 
 `vrc-0.1.14-atlas-1536` から `vrc-0.1.14-texture2d-array` を切る。
 
@@ -345,11 +354,11 @@ gh pr create -R TommyZ-7/gpui-fast --base vrc-0.1.14-atlas-1536 \
   --body "Adds a 512-layer BC7 Texture2DArray path for thumbnail rendering. wgpu + Direct3D 11; unsupported platforms report an error."
 ```
 
-- [ ] **Step 4: CI / レビューを確認してマージする**
+- [x] **Step 4: CI / レビューを確認してマージする**
 
 PR のチェックと差分を確認し、ユーザーの指示に従ってマージする。マージコミット SHA を記録する。
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git commit -m "docs: record the merged gpui-fast texture array revision"
@@ -374,30 +383,30 @@ git commit -m "docs: record the merged gpui-fast texture array revision"
   - `pub fn encode_rgba(width: u32, height: u32, rgba: &[u8]) -> Result<Vec<u8>, Bc7Error>`
   - `pub fn is_valid_canvas(width: u32, height: u32) -> bool`
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 - `bc7_length_is_one_byte_per_pixel`
 - `encode_rejects_non_multiple_of_four_dimensions`
 - `encode_rejects_a_short_rgba_buffer`
 - `encode_returns_the_expected_block_count`
 
-- [ ] **Step 2: テストが失敗することを確認する**
+- [x] **Step 2: テストが失敗することを確認する**
 
 Run: `cargo test -p vrc-photon-core bc7 -- --nocapture`
 Expected: FAIL
 
-- [ ] **Step 3: 最小実装を書く**
+- [x] **Step 3: 最小実装を書く**
 
 `intel_tex_2::bc7::{compress_blocks, opaque_basic_settings}` と `RgbaSurface` を使う。
 `stride = width * 4`。入力長と 4 の倍数を検証し、失敗は `Bc7Error` で返す。
 `unsafe` は `intel_tex_2` の安全ラッパー内に閉じる。
 
-- [ ] **Step 4: テストが通ることを確認する**
+- [x] **Step 4: テストが通ることを確認する**
 
 Run: `cargo test -p vrc-photon-core bc7 -- --nocapture`
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add crates/core/Cargo.toml crates/core/src/bc7.rs crates/core/src/lib.rs
@@ -417,7 +426,7 @@ git commit -m "feat(core): add BC7 thumbnail encoder"
   - `pub fn thumbnail_canvas(width: u32) -> (u32, u32)`
   - `fn build_thumbnail_canvas(image: RgbaImage) -> (RgbaImage, bool)`（回転フラグ付き）
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 - `canvas_dimensions_are_16_by_9`
 - `portrait_photo_is_rotated_and_stretched_to_the_canvas`
@@ -427,24 +436,24 @@ git commit -m "feat(core): add BC7 thumbnail encoder"
 
 4:3 の四隅に異なる色を置き、保存後の四隅が同じ位置関係で残ることを確認する。
 
-- [ ] **Step 2: テストが失敗することを確認する**
+- [x] **Step 2: テストが失敗することを確認する**
 
 Run: `cargo test -p vrc-photon-core thumbnail_canvas -- --nocapture`
 Expected: FAIL
 
-- [ ] **Step 3: 最小実装を書く**
+- [x] **Step 3: 最小実装を書く**
 
 EXIF 適用後の `RgbaImage` を受け、`height > width` なら
 `image::imageops::rotate270`（反時計回り）で横向きにする。
 `image::imageops::resize(..., FilterType::Triangle)` でキャンバス寸法へ引き伸ばす。
 切り抜き・余白追加はしない。
 
-- [ ] **Step 4: テストが通ることを確認する**
+- [x] **Step 4: テストが通ることを確認する**
 
 Run: `cargo test -p vrc-photon-core thumbnail_canvas -- --nocapture`
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add crates/core/src/thumbnail.rs crates/core/src/image_decode.rs
@@ -466,7 +475,7 @@ git commit -m "feat(core): render thumbnails onto a 16:9 canvas"
   - `pub fn read_thumbnail_blocks(path: &Path, spec: ThumbnailSpec) -> Result<Vec<u8>>`
   - `thumbnail_path_in` は `<id>-s<w>x<h>.bc7`
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 - `thumbnail_file_name_uses_the_canvas_dimensions`
 - `generated_file_has_the_bc7_block_length`
@@ -475,12 +484,12 @@ git commit -m "feat(core): render thumbnails onto a 16:9 canvas"
 - `corrupt_bc7_length_is_regenerated_once`
 - `cache_hit_does_not_return_blocks_from_the_generator`
 
-- [ ] **Step 2: テストが失敗することを確認する**
+- [x] **Step 2: テストが失敗することを確認する**
 
 Run: `cargo test -p vrc-photon-core thumbnail -- --nocapture`
 Expected: FAIL
 
-- [ ] **Step 3: 最小実装を書く**
+- [x] **Step 3: 最小実装を書く**
 
 - `.bc7` はヘッダなしの BC7 ブロック列。
 - `.meta` は `v2 <mtime_secs> <mtime_nanos> <size> <color> <rotated>`。
@@ -488,12 +497,12 @@ Expected: FAIL
 - `read_thumbnail_blocks` はファイル長を期待値と照合し、不一致をエラーにする。
 - 既存の `write_bytes_no_clobber` と temp 名を使う。
 
-- [ ] **Step 4: テストが通ることを確認する**
+- [x] **Step 4: テストが通ることを確認する**
 
 Run: `cargo test -p vrc-photon-core thumbnail -- --nocapture`
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add crates/core/src/thumbnail.rs crates/core/src/cache_metadata.rs
@@ -510,7 +519,7 @@ git commit -m "feat(core): store thumbnails as raw BC7 blocks"
 - Consumes: Task 10
 - Produces: `.bc7` を対象にした `thumbnail_cache_usage_in` / `prune_thumbnails_in` / `clear_thumbnail_cache_in` / `remove_thumbnail_files_in`
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 - `usage_counts_only_bc7_entries`
 - `prune_removes_oldest_bc7_and_its_meta`
@@ -518,23 +527,23 @@ git commit -m "feat(core): store thumbnails as raw BC7 blocks"
 - `remove_for_one_photo_removes_every_bc7_variant`
 - `legacy_webp_is_not_counted_as_an_active_entry`
 
-- [ ] **Step 2: テストが失敗することを確認する**
+- [x] **Step 2: テストが失敗することを確認する**
 
 Run: `cargo test -p vrc-photon-core thumbnail_cache -- --nocapture`
 Expected: FAIL
 
-- [ ] **Step 3: 最小実装を書く**
+- [x] **Step 3: 最小実装を書く**
 
 ファイル名の判定を `.bc7` / `.bc7.meta` / `.bc7.tmp-*` へ広げる。
 旧 `.webp` は全削除の対象にだけ含める。使用量と LRU の対象は `.bc7` のみ。
 写真単位の削除は全バリアントとサイドカーを消す。
 
-- [ ] **Step 4: テストが通ることを確認する**
+- [x] **Step 4: テストが通ることを確認する**
 
 Run: `cargo test -p vrc-photon-core thumbnail_cache -- --nocapture`
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add crates/core/src/thumbnail.rs
@@ -554,7 +563,7 @@ git commit -m "feat(core): manage the BC7 thumbnail cache"
   - `thumbnail_size` は幅 256 / 384 / 512、既定 384
   - `thumbnail_spec()` は `ThumbnailSpec { size }`
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 - `thumbnail_quality_is_no_longer_a_setting`
 - `thumbnail_size_defaults_to_384`
@@ -563,21 +572,21 @@ git commit -m "feat(core): manage the BC7 thumbnail cache"
 - `unknown_quality_key_in_json_is_ignored`
 - `thumbnail_cache_default_is_8_gb`
 
-- [ ] **Step 2: テストが失敗することを確認する**
+- [x] **Step 2: テストが失敗することを確認する**
 
 Run: `cargo test -p vrc-photon-core settings:: -- --nocapture`
 Expected: FAIL
 
-- [ ] **Step 3: 最小実装を書く**
+- [x] **Step 3: 最小実装を書く**
 
 `thumbnail_quality` と `THUMBNAIL_QUALITY_*` を削除する。`default_thumbnail_size` を 384 にする。既存の 256 / 384 / 512 は幅として維持し、未知値は 384。`thumbnail_cache_mb` の既定を 8192 にする。
 
-- [ ] **Step 4: テストが通ることを確認する**
+- [x] **Step 4: テストが通ることを確認する**
 
 Run: `cargo test -p vrc-photon-core settings:: -- --nocapture`
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add crates/core/src/settings.rs
@@ -599,28 +608,28 @@ git commit -m "feat(core): remove the thumbnail quality setting"
   - 解像度変更時に `clear_thumbnail_cache_in` を呼ぶ
   - 起動時に旧 `.webp` を削除する
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 - `thumbnail_spec_pack_round_trips_the_width`
 - `changing_the_thumbnail_size_clears_the_cache`
 - `unchanged_size_does_not_clear_the_cache`
 - `startup_removes_legacy_webp_entries`
 
-- [ ] **Step 2: テストが失敗することを確認する**
+- [x] **Step 2: テストが失敗することを確認する**
 
 Run: `cargo test -p vrc-photon-daemon thumbnail -- --nocapture`
 Expected: FAIL
 
-- [ ] **Step 3: 最小実装を書く**
+- [x] **Step 3: 最小実装を書く**
 
 `refresh_compression_settings` で `thumbnail_size` の変化を検出し、DB ロックを離してから全削除する。`thumbnail_cache_epoch` を進める。起動時の旧 WebP 削除は失敗をログして続行する。
 
-- [ ] **Step 4: テストが通ることを確認する**
+- [x] **Step 4: テストが通ることを確認する**
 
 Run: `cargo test -p vrc-photon-daemon thumbnail -- --nocapture`
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add crates/daemon/src/thumbnails.rs crates/daemon/src/lifecycle.rs crates/daemon/src/tests.rs
@@ -646,7 +655,7 @@ git commit -m "feat(daemon): reset thumbnail caches on resolution changes"
   - `ThumbnailCache::take_pending_upload() -> Option<PendingThumbnailUpload>`
   - `ThumbnailCache::clear() / invalidate(id) / remove_photo(id) / pin(id) / unpin(id)`
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 - `allocates_layers_from_zero_to_511`
 - `evicts_the_least_recently_used_layer_after_512_entries`
@@ -657,21 +666,21 @@ git commit -m "feat(daemon): reset thumbnail caches on resolution changes"
 - `a_stale_pending_upload_is_rejected_by_generation`
 - `cache_holds_no_render_images`
 
-- [ ] **Step 2: テストが失敗することを確認する**
+- [x] **Step 2: テストが失敗することを確認する**
 
 Run: `cargo test -p vrc-photon-ui state::thumbnail -- --nocapture`
 Expected: FAIL
 
-- [ ] **Step 3: 最小実装を書く**
+- [x] **Step 3: 最小実装を書く**
 
-`images` / `image_bytes` / `total_bytes` / `take_removed` を削除する。`layers: Vec<Option<LayerEntry>>` を 512 で初期化し、free list と recency を持つ。`pinned` は `HashSet<i64>` に広げる。`THUMB_CACHE_BYTES` / `THUMB_CACHE_ENTRIES` を削除する。`THUMB_IN_FLIGHT` と失敗再試行は維持する。
+`images` / `image_bytes` / `total_bytes` / `take_removed` を削除する。`layers: Vec<Option<LayerEntry>>` を 512 で初期化し、free list と recency を持つ。`pinned` は `HashSet<i64>` に広げる。`THUMB_CACHE_BYTES` / `THUMB_CACHE_ENTRIES` を削除し、`THUMB_LAYERS = 512` を追加する。`THUMB_IN_FLIGHT` と失敗再試行は維持する。
 
-- [ ] **Step 4: テストが通ることを確認する**
+- [x] **Step 4: テストが通ることを確認する**
 
 Run: `cargo test -p vrc-photon-ui state::thumbnail -- --nocapture`
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add crates/ui/src/state/thumbnail.rs
@@ -693,7 +702,7 @@ git commit -m "refactor(ui): cache thumbnails as texture array layers"
   - `App::pending_array_drop: Option<TextureArray>`
   - 最初の描画で配列を作成し、失敗したら `App::render_fatal_thumbnail_error`
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 - `thumbnail_array_is_created_once_for_the_current_spec`
 - `resolution_change_drops_the_old_array`
@@ -701,12 +710,12 @@ git commit -m "refactor(ui): cache thumbnails as texture array layers"
 - `pending_bc7_upload_is_applied_on_the_next_render`
 - `a_pending_upload_from_the_old_spec_is_discarded`
 
-- [ ] **Step 2: テストが失敗することを確認する**
+- [x] **Step 2: テストが失敗することを確認する**
 
 Run: `cargo test -p vrc-photon-ui thumbnail_array -- --nocapture`
 Expected: FAIL
 
-- [ ] **Step 3: 最小実装を書く**
+- [x] **Step 3: 最小実装を書く**
 
 - `request_thumbnail` は `read_thumbnail_blocks` の結果を `PendingThumbnailUpload` として保持する。
 - `Render for App` の先頭で配列を作成・アップロードする。
@@ -714,12 +723,12 @@ Expected: FAIL
 - エラー時は通常のシェルを描画せず、エラー画面と終了ボタンだけを出す。
 - `clear` 時は旧配列を `pending_array_drop` に積み、次の描画で `remove_texture_array` する。
 
-- [ ] **Step 4: テストが通ることを確認する**
+- [x] **Step 4: テストが通ることを確認する**
 
 Run: `cargo test -p vrc-photon-ui thumbnail_array -- --nocapture`
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add crates/ui/src/app.rs crates/ui/src/app/photos.rs
@@ -744,19 +753,19 @@ git commit -m "feat(ui): own the thumbnail texture array lifecycle"
   - `ViewerMorph::thumbnail: Option<ViewerStill>`
   - 遷移中の写真 ID を pin / unpin する
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 - `thumbnail_fit_uses_the_photo_aspect_not_the_canvas_aspect`
 - `portrait_thumbnail_rotates_the_uv_rectangle`
 - `viewer_still_thumbnail_pins_and_unpins_its_photo`
 - `viewer_morph_keeps_a_thumbnail_still_when_the_full_image_is_missing`
 
-- [ ] **Step 2: テストが失敗することを確認する**
+- [x] **Step 2: テストが失敗することを確認する**
 
 Run: `cargo test -p vrc-photon-ui viewer -- --nocapture`
 Expected: FAIL
 
-- [ ] **Step 3: 最小実装を書く**
+- [x] **Step 3: 最小実装を書く**
 
 - `render_card` は `texture_array_img(handle.array, handle.layer).content_size(photo.effective_dimensions()).rotated(handle.rotated).object_fit(Cover)` を使う。
 - インスペクタ、セッション表紙、ミニマップは `Cover`。
@@ -765,12 +774,12 @@ Expected: FAIL
 - 前後送りの開始時に遷移元 ID を `pin` し、モーフ終了時に `unpin` する。
 - pin が間に合わない場合はクロスフェードを省略する。
 
-- [ ] **Step 4: テストが通ることを確認する**
+- [x] **Step 4: テストが通ることを確認する**
 
 Run: `cargo test -p vrc-photon-ui viewer -- --nocapture`
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add crates/ui/src/ui/gallery.rs crates/ui/src/ui/library.rs crates/ui/src/ui/viewer.rs \
@@ -791,28 +800,28 @@ git commit -m "feat(ui): draw thumbnails from the BC7 texture array"
 - Consumes: Task 12–13
 - Produces: 画質スライダーのないサムネイルカード、寸法ボタン、再生成ヒント
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 - `thumbnail_quality_slider_is_not_constructed`
 - `thumbnail_size_buttons_show_width_and_height`
 - `changing_the_thumbnail_size_clears_the_local_cache`
 - `ja_and_en_have_the_regeneration_hint`
 
-- [ ] **Step 2: テストが失敗することを確認する**
+- [x] **Step 2: テストが失敗することを確認する**
 
 Run: `cargo test -p vrc-photon-ui settings -- --nocapture`
 Expected: FAIL
 
-- [ ] **Step 3: 最小実装を書く**
+- [x] **Step 3: 最小実装を書く**
 
 `thumbnail_quality_slider` と subscription を削除する。サイズボタンは `256×144` / `384×216` / `512×288`。ヒント `settings.thumbnail.regenerate_hint` を追加し、`settings.thumbnail.quality` を削除する。変更時はローカルキャッシュと配列を破棄する。
 
-- [ ] **Step 4: テストが通ることを確認する**
+- [x] **Step 4: テストが通ることを確認する**
 
 Run: `cargo test -p vrc-photon-ui settings -- --nocapture && cargo test -p vrc-photon-i18n`
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add crates/ui/src/ui/settings.rs crates/ui/src/app.rs crates/i18n/locales/ja.yml crates/i18n/locales/en.yml
@@ -829,27 +838,27 @@ git commit -m "feat(ui): remove thumbnail quality and show canvas sizes"
 - Consumes: Task 8–10
 - Produces: `.bc7` のデモサムネイル、`DEMO_DATA_VERSION = 5`
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 - `demo_thumb_path_uses_bc7`
 - `demo_fixture_writes_bc7_files`
 - `demo_data_version_bump_rebuilds_old_fixtures`
 
-- [ ] **Step 2: テストが失敗することを確認する**
+- [x] **Step 2: テストが失敗することを確認する**
 
 Run: `cargo test -p vrc-photon-ui demo -- --nocapture`
 Expected: FAIL
 
-- [ ] **Step 3: 最小実装を書く**
+- [x] **Step 3: 最小実装を書く**
 
 デモ画像を 384×216 へ引き伸ばし、`bc7::encode_rgba` で `.bc7` を書く。`DEMO_DATA_VERSION` を 5 に上げる。旧 PNG サムネイルは再生成時に消える。
 
-- [ ] **Step 4: テストが通ることを確認する**
+- [x] **Step 4: テストが通ることを確認する**
 
 Run: `cargo test -p vrc-photon-ui demo -- --nocapture`
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add crates/ui/src/app/demo.rs
@@ -870,21 +879,21 @@ git commit -m "feat(demo): generate BC7 demo thumbnails"
 - Consumes: Task 7 のマージ済み fork SHA
 - Produces: 新しい `gpui-fast` / `gpui-fast-wgpu` / `gpui-fast-windows` の rev
 
-- [ ] **Step 1: rev を更新する**
+- [x] **Step 1: rev を更新する**
 
 `[patch.crates-io]` の 3 つの `rev` を fork のマージコミットへ揃える。
 
-- [ ] **Step 2: lock を更新してビルドする**
+- [x] **Step 2: lock を更新してビルドする**
 
 Run: `cargo update -p gpui-fast -p gpui-fast-wgpu -p gpui-fast-windows`
 Expected: `Cargo.lock` の 3 エントリが同じ rev になる。
 
-- [ ] **Step 3: コンパイルを確認する**
+- [x] **Step 3: コンパイルを確認する**
 
 Run: `cargo check --workspace --all-targets`
 Expected: PASS
 
-- [ ] **Step 4: コミット**
+- [x] **Step 4: コミット**
 
 ```bash
 git add Cargo.toml Cargo.lock
@@ -901,7 +910,7 @@ git commit -m "chore: update gpui-fast for texture array rendering"
 - Consumes: Task 1–19
 - Produces: CI green、計測値、チェック済み計画、完了報告
 
-- [ ] **Step 1: ローカル検証を実行する**
+- [x] **Step 1: ローカル検証を実行する**
 
 ```bash
 cargo fmt --all -- --check
@@ -909,7 +918,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-- [ ] **Step 2: ライセンス通知を再生成する**
+- [x] **Step 2: ライセンス通知を再生成する**
 
 ```bash
 cargo about generate about.hbs -o packaging/licenses/THIRD-PARTY-NOTICES.md
@@ -917,23 +926,23 @@ cargo about generate about.hbs -o packaging/licenses/THIRD-PARTY-NOTICES.md
 
 `intel_tex_2`、`ispc_rt`、ISPC の帰属が含まれることを確認する。
 
-- [ ] **Step 3: デモと実画面を確認する**
+- [x] **Step 3: デモと実画面を確認する**
 
 `cargo run -- --demo` でグリッド、検索、インスペクタ、ビューア、ミニマップを確認する。
 縦向き、16:9、9:16、4:3、3:4、パノラマを混在させる。解像度を 256 → 384 → 512 と変更し、配列が作り直されることを確認する。512 枚を超えてスクロールし、レイヤー再利用後の残像がないことを確認する。
 
-- [ ] **Step 4: ディスクと VRAM を計測する**
+- [x] **Step 4: ディスクと VRAM を計測する**
 
 - `du -sb` と `thumbnail_cache_usage` で 1,000 枚あたりのバイト数を記録する。
 - 計算値 `512 * ceil(w/4) * ceil(h/4) * 16` を記録する。
 - Linux AMD では `/sys/class/drm/card*/device/mem_info_vram_used` の起動前後差を記録する。
 - 変更前の WebP + RGBA LRU（64 MiB）との比較を完了報告へ書く。
 
-- [ ] **Step 5: 計画のチェックボックスを更新する**
+- [x] **Step 5: 計画のチェックボックスを更新する**
 
 完了したタスクを `- [x]` にし、計測値を「計測結果」節へ追記する。
 
-- [ ] **Step 6: コミット**
+- [x] **Step 6: コミット**
 
 ```bash
 git add docs/superpowers/plans/2026-11-12-issue-579-bc7-thumbnails.md \
@@ -988,9 +997,11 @@ git push origin --delete feat/579-bc7-thumbnails
 
 実装後に追記する。
 
-| 項目 | 変更前（WebP + RGBA） | 変更後（BC7 + 512 レイヤー） |
-|---|---|---|
-| サムネイル 1 枚（384×216） | 未計測 | 81 KiB |
-| 1,000 枚のディスク | 未計測 | 未計測 |
-| 表示 VRAM（512 レイヤー） | 未計測 | 計算値 40.5 MiB / 実測 未計測 |
-| 初回表示の体感 | 未計測 | 未計測 |
+| 項目 | 結果 |
+|---|---|
+| サムネイル 1 枚（384×216） | 82,944 B（81 KiB）。BC7 は 1 B/px |
+| デモ 300 枚のディスク | 24,883,200 B（約 23.7 MiB） |
+| 512 レイヤー配列（384×216） | 計算値 40.5 MiB |
+| アプリ起動中の VRAM 差分（AMD RADV RENOIR） | 約 76.1 MiB（496,373,760 B − 416,579,584 B）。配列以外のレンダラ資源を含む |
+| 512 レイヤー配列（512×288） | 計算値 72 MiB |
+| quicklook / ビューア | グリッドと選択は確認。入力イベントの自動操作ができず、ビューアの目視は未実施 |

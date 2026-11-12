@@ -26,6 +26,7 @@ use std::path::Path;
 use image::metadata::Orientation;
 use image::{
     ColorType, DynamicImage, GenericImageView, ImageBuffer, ImageDecoder, ImageReader, RgbaImage,
+    imageops::{self, FilterType},
 };
 use jpegxl_rs::decode::{Event, Events};
 use jpegxl_rs::image::ToDynamic;
@@ -107,6 +108,30 @@ pub(crate) fn decode_thumbnail_image(source: &Path, max_size: u32) -> Option<Rgb
         image,
         Orientation::NoTransforms,
         max_size,
+    ))
+}
+
+/// Decodes a thumbnail source and renders it onto a fixed landscape canvas.
+///
+/// The source is decoded with its EXIF orientation applied. A portrait image
+/// is then rotated 90° counter-clockwise so the stored canvas is landscape;
+/// `rotated` tells the display which UV transform restores it. The result is
+/// stretched to exactly `width` × `height` without cropping or padding.
+pub(crate) fn decode_thumbnail_canvas(
+    source: &Path,
+    width: u32,
+    height: u32,
+) -> Option<(RgbaImage, bool)> {
+    let image = decode_thumbnail_image(source, width.max(height))?;
+    let rotated = image.height() > image.width();
+    let image = if rotated {
+        imageops::rotate270(&image)
+    } else {
+        image
+    };
+    Some((
+        imageops::resize(&image, width, height, FilterType::Triangle),
+        rotated,
     ))
 }
 
@@ -895,14 +920,14 @@ mod tests {
                 index as i64 + 1,
                 &source,
                 &dir.path().join("thumbnails"),
-                ThumbnailSpec::new(80, 256),
+                ThumbnailSpec::new(384),
             )
             .unwrap()
             .expect("thumbnail");
             assert_eq!(
-                image::image_dimensions(&thumbnail).unwrap(),
-                (128, 256),
-                "thumbnail keeps the displayed portrait layout for orientation {orientation}"
+                fs::metadata(&thumbnail).unwrap().len(),
+                384 * 216,
+                "thumbnail uses the landscape canvas after orientation {orientation}"
             );
 
             let compressed =

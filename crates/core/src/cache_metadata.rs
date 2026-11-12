@@ -2,8 +2,8 @@
 //!
 //! A cache entry is only reused when the source file still has the same
 //! modification time and size that produced it. The stamp lives next to the
-//! WebP (`<entry>.webp.meta`) so no database migration is needed and a cache
-//! directory can be copied or removed independently.
+//! thumbnail (`<entry>.meta`) and also carries the average colour and rotation
+//! flag the display needs before it reads the BC7 blocks.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -61,23 +61,38 @@ pub(crate) fn metadata_path(cache: &Path) -> PathBuf {
     PathBuf::from(name)
 }
 
-fn read_stamp(cache: &Path) -> Option<SourceStamp> {
+fn read_stamp(cache: &Path) -> Option<(SourceStamp, u32, bool)> {
     let text = fs::read_to_string(metadata_path(cache)).ok()?;
     let mut parts = text.split_whitespace();
-    if parts.next()? != "v1" {
+    if parts.next()? != "v2" {
         return None;
     }
     let modified_secs = parts.next()?.parse().ok()?;
     let modified_nanos = parts.next()?.parse().ok()?;
     let size = parts.next()?.parse().ok()?;
+    let color = parts.next()?.parse().ok()?;
+    let rotated = match parts.next()? {
+        "0" => false,
+        "1" => true,
+        _ => return None,
+    };
     if parts.next().is_some() {
         return None;
     }
-    Some(SourceStamp {
-        modified_secs,
-        modified_nanos,
-        size,
-    })
+    Some((
+        SourceStamp {
+            modified_secs,
+            modified_nanos,
+            size,
+        },
+        color,
+        rotated,
+    ))
+}
+
+/// The average colour and rotation flag stored beside a cache entry.
+pub(crate) fn read_color_rotation(cache: &Path) -> Option<(u32, bool)> {
+    read_stamp(cache).map(|(_, color, rotated)| (color, rotated))
 }
 
 /// Whether `cache` is a non-empty entry produced from the current `source`.
@@ -96,17 +111,26 @@ pub(crate) fn cache_is_fresh(cache: &Path, source: &Path) -> bool {
     let Some(stamp) = source_stamp(source) else {
         return true;
     };
-    read_stamp(cache).is_some_and(|cached| cached == stamp)
+    read_stamp(cache).is_some_and(|(cached, _, _)| cached == stamp)
 }
 
 /// Writes the source stamp atomically. Temp files are removed when either the
 /// write or the rename fails.
-pub(crate) fn write_stamp(cache: &Path, stamp: SourceStamp) -> std::io::Result<()> {
+pub(crate) fn write_stamp(
+    cache: &Path,
+    stamp: SourceStamp,
+    color: u32,
+    rotated: bool,
+) -> std::io::Result<()> {
     let target = metadata_path(cache);
     let temp = unique_temp_path(&target);
     let data = format!(
-        "v1 {} {} {}\n",
-        stamp.modified_secs, stamp.modified_nanos, stamp.size
+        "v2 {} {} {} {} {}\n",
+        stamp.modified_secs,
+        stamp.modified_nanos,
+        stamp.size,
+        color,
+        u8::from(rotated)
     );
     if let Err(error) = fs::write(&temp, data) {
         let _ = fs::remove_file(&temp);

@@ -90,11 +90,11 @@ pub(crate) fn thumbnail_cache_limit_bytes(megabytes: u64) -> u64 {
 }
 
 pub(crate) fn pack_thumbnail_spec(spec: thumbnail::ThumbnailSpec) -> u32 {
-    (u32::from(spec.quality) << 16) | (spec.size & 0xffff)
+    spec.size
 }
 
 pub(crate) fn unpack_thumbnail_spec(packed: u32) -> thumbnail::ThumbnailSpec {
-    thumbnail::ThumbnailSpec::new((packed >> 16) as u8, packed & 0xffff)
+    thumbnail::ThumbnailSpec::new(packed)
 }
 
 /// Prunes the cache when a limit is set. Returns the measurement from the

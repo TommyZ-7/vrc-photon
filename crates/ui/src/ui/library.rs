@@ -25,7 +25,7 @@ use crate::app::daemon::open_path;
 use crate::state::display_image::thumbnail_placeholder_label;
 use crate::state::photo_browser::{PAGE_SIZE, PageFailure, PhotoIndex};
 use crate::state::viewer::ViewerOpenSource;
-use crate::ui::components::{ButtonState, ButtonTone, photo_world_label};
+use crate::ui::components::{ButtonState, ButtonTone, photo_world_label, thumbnail_layer};
 use crate::ui::theme::*;
 
 /// Stable keyboard-focus state for one AI tag chip. The entity lives in the
@@ -376,14 +376,18 @@ impl App {
         // 2. The selected thumbnail, upscaled and softened by opacity.
         //    The layer matches the card bounds so its rounded corners can be
         //    clipped by the image itself (GPUI overflow clipping is rectangular).
-        if let Some(thumbnail) = thumbnail.as_ref() {
+        if let Some(thumbnail) = thumbnail {
             card = card.child(
-                div().absolute().size_full().opacity(0.45).child(
-                    gpui_kit::img(thumbnail.clone())
-                        .object_fit(ObjectFit::Cover)
-                        .size_full()
-                        .rounded(px(inner_corner_radius(18.0, 1.0))),
-                ),
+                div()
+                    .absolute()
+                    .size_full()
+                    .opacity(0.45)
+                    .child(thumbnail_layer(
+                        thumbnail,
+                        photo.effective_dimensions(),
+                        ObjectFit::Cover,
+                        inner_corner_radius(18.0, 1.0),
+                    )),
             );
         }
 
@@ -400,13 +404,13 @@ impl App {
                 )),
         );
 
-        let image_layer = |image: Arc<RenderImage>| {
-            div().absolute().size_full().child(
-                gpui_kit::img(image)
-                    .object_fit(ObjectFit::Cover)
-                    .size_full()
-                    .rounded(px(inner_corner_radius(12.0, 1.0))),
-            )
+        let image_layer = |image: crate::state::thumbnail::ThumbnailHandle| {
+            div().absolute().size_full().child(thumbnail_layer(
+                image,
+                photo.effective_dimensions(),
+                ObjectFit::Cover,
+                inner_corner_radius(12.0, 1.0),
+            ))
         };
         let mut preview_frame = div()
             .relative()
@@ -424,8 +428,8 @@ impl App {
             .shadow(vec![
                 BoxShadow::new(px(0.), px(16.), rgba(p.shadow).into()).blur_radius(px(32.)),
             ]);
-        if let Some(thumbnail) = thumbnail.as_ref() {
-            preview_frame = preview_frame.child(image_layer(thumbnail.clone()));
+        if let Some(thumbnail) = thumbnail {
+            preview_frame = preview_frame.child(image_layer(thumbnail));
         }
         if thumbnail.is_none() {
             let label = thumbnail_placeholder_label(self.thumbnails.borrow().pending_for(id));
