@@ -181,6 +181,18 @@ pub struct Daemon {
 /// `read_xmp` must be called while no database lock is held; the daemon passes
 /// a closure that reads the PNG sidecar. The database lock is taken again for
 /// each short link/retry write.
+/// Earliest deadline, capped at `cap` and floored at 10 ms so an already-due
+/// task cannot spin the loop.
+pub(crate) fn min_wait(waits: &[Duration], cap: Duration) -> Duration {
+    waits
+        .iter()
+        .copied()
+        .min()
+        .unwrap_or(cap)
+        .min(cap)
+        .max(Duration::from_millis(10))
+}
+
 impl Daemon {
     /// Opens the daemon as the deletion executor. The caller must own the
     /// single-instance lock so no other process can still be executing a
@@ -1000,7 +1012,8 @@ impl Daemon {
                 }
             }
             if self.running.load(Ordering::Relaxed) {
-                self.wake.wait(SCAN_INTERVAL);
+                let wait = self.next_loop_wait();
+                self.wake.wait(wait);
             }
         }
         self.shutdown();
@@ -1072,6 +1085,37 @@ impl Daemon {
 
     pub(crate) fn stopping(&self) -> bool {
         !self.running.load(Ordering::Relaxed)
+    }
+
+    /// Time until the next periodic task is due, capped so an IPC or watcher
+    /// wake is never the only way the loop notices a missed deadline.
+    pub(crate) fn next_loop_wait(&self) -> Duration {
+        let now = Instant::now();
+        // Asset verification is skipped while paused. Including an overdue
+        // deadline would make the loop wake every 10 ms for no work.
+        let asset_deadline = if self.is_paused() {
+            now + Duration::from_secs(30)
+        } else {
+            self.last_asset_check + Duration::from_secs(30)
+        };
+        let waits = [
+            self.last_log_poll + LOG_INTERVAL,
+            self.last_presence_check + PRESENCE_INTERVAL,
+            self.last_session_status + SESSION_STATUS_INTERVAL,
+            self.last_counts_status + COUNTS_STATUS_INTERVAL,
+            self.last_settings_check + SETTINGS_INTERVAL,
+            self.last_autostart_check + Duration::from_secs(10),
+            self.last_heartbeat + Duration::from_secs(10),
+            asset_deadline,
+        ]
+        .map(|deadline| deadline.saturating_duration_since(now));
+
+        let cap = if self.tray_enabled {
+            MAIN_LOOP_MAX_WAIT
+        } else {
+            MAIN_LOOP_HEADLESS_WAIT
+        };
+        min_wait(&waits, cap)
     }
 
     pub(crate) fn start_ipc(&mut self) {
@@ -1308,10 +1352,12 @@ impl Daemon {
                 continue;
             }
             let tx = tx.clone();
+            let wake = self.wake.clone();
             let mut watcher = notify::recommended_watcher(move |event| {
                 if let Err(error) = tx.send(event) {
                     tracing::debug!(%error, "photo watcher receiver closed; dropping event");
                 }
+                wake.notify();
             })
             .context("cannot create photo watcher")?;
             watcher

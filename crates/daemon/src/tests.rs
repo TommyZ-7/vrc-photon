@@ -4661,6 +4661,67 @@ fn loop_refreshes_counts_only_when_due() {
 }
 
 #[test]
+fn min_wait_uses_the_earliest_deadline_and_caps_at_the_maximum() {
+    assert_eq!(
+        crate::lifecycle::min_wait(
+            &[Duration::from_secs(5), Duration::from_secs(2)],
+            Duration::from_secs(1)
+        ),
+        Duration::from_secs(1)
+    );
+    assert_eq!(
+        crate::lifecycle::min_wait(
+            &[Duration::from_millis(200), Duration::from_secs(5)],
+            Duration::from_secs(1)
+        ),
+        Duration::from_millis(200)
+    );
+    assert_eq!(
+        crate::lifecycle::min_wait(&[], Duration::from_secs(1)),
+        Duration::from_secs(1)
+    );
+    assert_eq!(
+        crate::lifecycle::min_wait(&[Duration::ZERO], Duration::from_secs(1)),
+        Duration::from_millis(10)
+    );
+}
+
+#[test]
+fn headless_idle_wait_is_at_most_one_second() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    daemon.set_tray_enabled(false);
+    daemon.last_log_poll = Instant::now() - LOG_INTERVAL;
+    assert!(daemon.next_loop_wait() <= Duration::from_secs(1));
+}
+
+#[test]
+fn tray_idle_wait_is_at_most_five_hundred_milliseconds() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    daemon.set_tray_enabled(true);
+    assert!(daemon.next_loop_wait() <= Duration::from_millis(500));
+}
+
+#[test]
+fn paused_idle_wait_does_not_spin_on_an_overdue_asset_check() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    daemon.set_tray_enabled(false);
+    let now = Instant::now();
+    daemon.last_log_poll = now;
+    daemon.last_presence_check = now;
+    daemon.last_session_status = now;
+    daemon.last_counts_status = now;
+    daemon.last_settings_check = now;
+    daemon.last_autostart_check = now;
+    daemon.last_heartbeat = now;
+    daemon.last_asset_check = now - Duration::from_secs(60);
+    daemon.set_paused(true);
+    assert!(daemon.next_loop_wait() >= Duration::from_millis(100));
+}
+
+#[test]
 fn presence_check_runs_only_after_its_interval() {
     let dir = tempfile::tempdir().unwrap();
     let mut daemon = test_daemon(&dir);

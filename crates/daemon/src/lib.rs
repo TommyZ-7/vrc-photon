@@ -76,7 +76,11 @@ use world_name_http::UreqWorldNameTransport;
 const PARSER_VERSION: &str = "1";
 /// Number of skipped-line sentences kept in one log error detail.
 const MAX_SKIPPED_DETAILS: usize = 5;
-const SCAN_INTERVAL: Duration = Duration::from_millis(500);
+/// Maximum main-loop wait while the tray needs timely menu polling.
+const MAIN_LOOP_MAX_WAIT: Duration = Duration::from_millis(500);
+/// Maximum main-loop wait without a tray. Every periodic task has its own
+/// deadline; this only bounds how long an unnotified deadline can slip.
+const MAIN_LOOP_HEADLESS_WAIT: Duration = Duration::from_secs(1);
 /// Idle fallbacks for queue workers. Enqueue paths notify the matching signal;
 /// these only cover missed notifications.
 const COMPRESSION_IDLE_WAIT: Duration = Duration::from_secs(30);
