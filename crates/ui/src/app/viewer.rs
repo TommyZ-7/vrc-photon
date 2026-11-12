@@ -11,8 +11,8 @@ use gpui_kit::*;
 use crate::app::{App, Screen};
 use crate::state::display_image::display_key;
 use crate::state::viewer::{
-    ViewerBoxState, ViewerMorph, ViewerOpenSource, ViewerPanelState, ViewerZoom, ViewerZoomDrag,
-    current_tagged_bounds, preferred_bounds,
+    ViewerBoxState, ViewerMorph, ViewerOpenSource, ViewerPanelState, ViewerStill, ViewerZoom,
+    ViewerZoomDrag, current_tagged_bounds, preferred_bounds,
 };
 use crate::ui::theme::{
     MOTION_BASE, MOTION_MORPH, MOTION_SLOW, VIEWER_DETAILS_WIDTH, centered_viewer_rect,
@@ -21,7 +21,30 @@ use crate::ui::theme::{
 };
 
 impl App {
+    pub(crate) fn drop_viewer_still(&mut self, still: ViewerStill) {
+        match still {
+            ViewerStill::Full(image) => self.queue_atlas_drop(image),
+            ViewerStill::Thumbnail { id, .. } => {
+                if Some(id) != self.selected {
+                    self.thumbnails.borrow_mut().unpin(id);
+                }
+            }
+        }
+    }
+
     fn set_viewer_morph(&mut self, morph: Option<ViewerMorph>, cx: &mut Context<Self>) {
+        if let Some(old) = self.viewer_morph.take()
+            && let Some(ViewerStill::Thumbnail { id, .. }) = old.thumbnail
+            && Some(id) != self.selected
+        {
+            self.thumbnails.borrow_mut().unpin(id);
+        }
+        if let Some(ViewerStill::Thumbnail { id, .. }) =
+            morph.as_ref().and_then(|m| m.thumbnail.as_ref())
+            && Some(*id) != self.selected
+        {
+            self.thumbnails.borrow_mut().pin(*id);
+        }
         let max_fps = self.settings.ui_max_fps;
         self.viewer_morph = morph.clone();
         self.viewer_morph_view.update(cx, |view, cx| {
@@ -273,7 +296,20 @@ impl App {
         if !cx.reduce_motion()
             && let Some((actual_source, from)) = resolved
         {
-            let thumbnail = self.thumbnails.borrow_mut().get(id);
+            let dimensions = self
+                .selected_photo
+                .as_ref()
+                .map(|photo| photo.effective_dimensions())
+                .unwrap_or((16, 9));
+            let thumbnail =
+                self.thumbnails
+                    .borrow_mut()
+                    .get(id)
+                    .map(|handle| ViewerStill::Thumbnail {
+                        id,
+                        handle,
+                        dimensions,
+                    });
             if thumbnail.is_some() {
                 self.viewer_morph_epoch = self.viewer_morph_epoch.wrapping_add(1);
                 let epoch = self.viewer_morph_epoch;
@@ -372,7 +408,20 @@ impl App {
             Duration::from_millis(240),
             Instant::now(),
         );
-        let thumbnail = self.thumbnails.borrow_mut().get(id);
+        let dimensions = self
+            .selected_photo
+            .as_ref()
+            .map(|photo| photo.effective_dimensions())
+            .unwrap_or((16, 9));
+        let thumbnail = self
+            .thumbnails
+            .borrow_mut()
+            .get(id)
+            .map(|handle| ViewerStill::Thumbnail {
+                id,
+                handle,
+                dimensions,
+            });
         let color = self
             .selected_photo
             .as_ref()
@@ -423,7 +472,7 @@ impl App {
         // The closing morph owns its image clone; the crossfade frame must
         // not keep a decoded image alive after the viewer is gone.
         if let Some(image) = self.previous_image.take() {
-            self.queue_atlas_drop(image);
+            self.drop_viewer_still(image);
         }
         self.schedule_allocator_collect(cx);
         self.quick_look_open = false;
@@ -523,27 +572,38 @@ impl App {
         }
         // Keep the top-bar navigation focused; only the library selection and
         // the displayed photo change behind the overlay.
-        let visible_image = self
-            .selected_photo
-            .as_ref()
-            .and_then(|photo| {
-                let key = display_key(photo);
-                self.full_image
-                    .clone()
-                    .filter(|_| self.full_image_key == Some(key))
-            })
-            .or_else(|| {
-                self.selected
-                    .and_then(|id| self.thumbnails.borrow_mut().get(id))
-            });
+        let visible_image = self.selected_photo.as_ref().and_then(|photo| {
+            let key = display_key(photo);
+            if let Some(full) = self
+                .full_image
+                .clone()
+                .filter(|_| self.full_image_key == Some(key))
+            {
+                Some(ViewerStill::Full(full))
+            } else {
+                self.thumbnails
+                    .borrow_mut()
+                    .get(photo.id)
+                    .map(|handle| ViewerStill::Thumbnail {
+                        id: photo.id,
+                        handle,
+                        dimensions: photo.effective_dimensions(),
+                    })
+            }
+        });
         let viewport = content_viewport(window);
         let from_size = self.viewer_box.current_size(viewport);
         let target_details_width = self.viewer_panel.to_width;
         self.select_photo(self.quick_look_photo_ids[next], cx);
         if let Some(previous) = self.previous_image.take() {
-            self.queue_atlas_drop(previous);
+            self.drop_viewer_still(previous);
         }
         self.previous_image = visible_image;
+        if let Some(ViewerStill::Thumbnail { id, .. }) = self.previous_image.as_ref()
+            && Some(*id) != self.selected
+        {
+            self.thumbnails.borrow_mut().pin(*id);
+        }
         let new_aspect = self
             .selected_photo
             .as_ref()

@@ -37,7 +37,9 @@ use crate::state::session_rows::{SessionRow, SessionRowKind};
 use crate::state::thumbnail::ThumbnailCache;
 use crate::state::viewer::ViewerOpenSource;
 use crate::state::year_rail::format_captured_month;
-use crate::ui::components::{card_header, chip, glass_panel, photo_scene_key, photo_world_label};
+use crate::ui::components::{
+    card_header, chip, glass_panel, photo_scene_key, photo_world_label, thumbnail_layer,
+};
 use crate::ui::theme::*;
 use crate::ui::year_rail::{RailList, YearRail, YearRailLabels};
 
@@ -802,19 +804,6 @@ fn render_grid(
                     }
                 });
             }
-            // Cards read the memory cache during the render above; hand the
-            // ids that crossed the throttle window to one background batch.
-            let access_refreshes = list_shared.thumbnails.borrow_mut().take_access_refreshes();
-            if !access_refreshes.is_empty() {
-                let app = list_shared.app.clone();
-                cx.defer(move |cx| {
-                    if let Some(app_entity) = app.upgrade() {
-                        app_entity.update(cx, |app, cx| {
-                            app.refresh_thumbnail_access(access_refreshes, cx);
-                        });
-                    }
-                });
-            }
             rendered
         },
     )
@@ -1209,17 +1198,6 @@ fn render_session_grid(
                     }
                 });
             }
-            let access_refreshes = list_shared.thumbnails.borrow_mut().take_access_refreshes();
-            if !access_refreshes.is_empty() {
-                let app = list_shared.app.clone();
-                cx.defer(move |cx| {
-                    if let Some(app_entity) = app.upgrade() {
-                        app_entity.update(cx, |app, cx| {
-                            app.refresh_thumbnail_access(access_refreshes, cx);
-                        });
-                    }
-                });
-            }
             rendered
         },
     )
@@ -1384,12 +1362,10 @@ fn render_session_header(
         .border_color(rgba(p.line_soft))
         .bg(rgb(cover_color));
     if let Some(image) = cover_image {
-        cover_el = cover_el.child(
-            gpui_kit::img(image)
-                .object_fit(ObjectFit::Cover)
-                .size_full()
-                .rounded(px(8.)),
-        );
+        let dimensions = cover
+            .map(|photo| photo.effective_dimensions())
+            .unwrap_or((16, 9));
+        cover_el = cover_el.child(thumbnail_layer(image, dimensions, ObjectFit::Cover, 8.0));
     }
 
     let mut meta = h_flex()
@@ -1813,18 +1789,12 @@ fn render_card(
                 .rounded_br(px(image_radius))
         });
     if let Some(image) = thumbnail {
-        let image = gpui_kit::img(image)
-            .object_fit(ObjectFit::Cover)
-            .size_full()
-            // GPUI clips overflow to a rectangle, so the image has to carry
-            // the rounded silhouette itself.
-            .rounded_tl(px(image_radius))
-            .rounded_tr(px(image_radius))
-            .when(!has_info, |this| {
-                this.rounded_bl(px(image_radius))
-                    .rounded_br(px(image_radius))
-            });
-        thumb = thumb.child(image);
+        thumb = thumb.child(thumbnail_layer(
+            image,
+            photo.effective_dimensions(),
+            ObjectFit::Cover,
+            image_radius,
+        ));
     }
     let bounds_map = shared.bounds.clone();
     thumb = thumb.child(

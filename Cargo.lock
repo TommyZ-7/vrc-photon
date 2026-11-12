@@ -1768,7 +1768,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2297,7 +2297,7 @@ dependencies = [
  "log",
  "presser",
  "thiserror 2.0.21",
- "windows 0.58.0",
+ "windows 0.62.2",
 ]
 
 [[package]]
@@ -2404,7 +2404,7 @@ dependencies = [
 [[package]]
 name = "gpui-fast"
 version = "0.1.14"
-source = "git+https://github.com/TommyZ-7/gpui-fast?rev=a3c3ac550d16bfb70e9f55c2cd46bf9d68cd4b73#a3c3ac550d16bfb70e9f55c2cd46bf9d68cd4b73"
+source = "git+https://github.com/TommyZ-7/gpui-fast?rev=2ed26567d385511a0cf69689f064736068893c41#2ed26567d385511a0cf69689f064736068893c41"
 dependencies = [
  "accesskit",
  "anyhow",
@@ -2595,7 +2595,7 @@ dependencies = [
 [[package]]
 name = "gpui-fast-macros"
 version = "0.1.14"
-source = "git+https://github.com/TommyZ-7/gpui-fast?rev=a3c3ac550d16bfb70e9f55c2cd46bf9d68cd4b73#a3c3ac550d16bfb70e9f55c2cd46bf9d68cd4b73"
+source = "git+https://github.com/TommyZ-7/gpui-fast?rev=2ed26567d385511a0cf69689f064736068893c41#2ed26567d385511a0cf69689f064736068893c41"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
@@ -2652,7 +2652,7 @@ dependencies = [
 [[package]]
 name = "gpui-fast-wgpu"
 version = "0.1.14"
-source = "git+https://github.com/TommyZ-7/gpui-fast?rev=a3c3ac550d16bfb70e9f55c2cd46bf9d68cd4b73#a3c3ac550d16bfb70e9f55c2cd46bf9d68cd4b73"
+source = "git+https://github.com/TommyZ-7/gpui-fast?rev=2ed26567d385511a0cf69689f064736068893c41#2ed26567d385511a0cf69689f064736068893c41"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -2678,7 +2678,7 @@ dependencies = [
 [[package]]
 name = "gpui-fast-windows"
 version = "0.1.14"
-source = "git+https://github.com/TommyZ-7/gpui-fast?rev=a3c3ac550d16bfb70e9f55c2cd46bf9d68cd4b73#a3c3ac550d16bfb70e9f55c2cd46bf9d68cd4b73"
+source = "git+https://github.com/TommyZ-7/gpui-fast?rev=2ed26567d385511a0cf69689f064736068893c41#2ed26567d385511a0cf69689f064736068893c41"
 dependencies = [
  "accesskit",
  "accesskit_windows",
@@ -3806,6 +3806,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "intel_tex_2"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7980d359170e7da4bc2421aa74c49d338a3153313e006d732a3430f1af375a60"
+dependencies = [
+ "ispc_rt",
+]
+
+[[package]]
 name = "interpolate_name"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3868,6 +3877,16 @@ name = "is_terminal_polyfill"
 version = "1.70.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695"
+
+[[package]]
+name = "ispc_rt"
+version = "2.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a396f76fd253fab9945bb4c6080f515d0c4036bc30219462d199b58886fd37b4"
+dependencies = [
+ "libc",
+ "num_cpus",
+]
 
 [[package]]
 name = "itertools"
@@ -5913,7 +5932,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6572,7 +6591,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -7451,7 +7470,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -8258,6 +8277,7 @@ dependencies = [
  "dirs 7.0.0",
  "image",
  "imgref",
+ "intel_tex_2",
  "jpeg-decoder",
  "jpegxl-rs",
  "libc",
@@ -8953,7 +8973,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

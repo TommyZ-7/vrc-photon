@@ -8,33 +8,33 @@ use crate::cache_metadata;
 use crate::error::{CoreError, Result};
 use crate::fs_safe::{PlaceOutcome, write_bytes_no_clobber};
 
-pub const THUMBNAIL_QUALITY_MIN: u8 = 10;
-pub const THUMBNAIL_QUALITY_MAX: u8 = 100;
-pub const THUMBNAIL_QUALITY_DEFAULT: u8 = 80;
 pub const THUMBNAIL_SIZES: [u32; 3] = [256, 384, 512];
-pub const THUMBNAIL_SIZE_DEFAULT: u32 = THUMBNAIL_SIZES[0];
+pub const THUMBNAIL_SIZE_DEFAULT: u32 = 384;
 pub const ACCESS_REFRESH_AFTER: Duration = Duration::from_secs(60 * 60);
 
-/// Encoding parameters that also form part of the cache key.
+/// The fixed 16:9 canvas of every thumbnail.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ThumbnailSpec {
-    pub quality: u8,
+    /// Canvas width in pixels. The height is always width × 9 / 16.
     pub size: u32,
 }
 
 impl ThumbnailSpec {
-    pub fn new(quality: u8, size: u32) -> Self {
+    pub fn new(size: u32) -> Self {
         Self {
-            quality: quality.clamp(THUMBNAIL_QUALITY_MIN, THUMBNAIL_QUALITY_MAX),
             size: normalize_thumbnail_size(size),
         }
+    }
+
+    /// The canvas dimensions.
+    pub fn dimensions(&self) -> (u32, u32) {
+        (self.size, self.size * 9 / 16)
     }
 }
 
 impl Default for ThumbnailSpec {
     fn default() -> Self {
         Self {
-            quality: THUMBNAIL_QUALITY_DEFAULT,
             size: THUMBNAIL_SIZE_DEFAULT,
         }
     }
@@ -75,15 +75,17 @@ pub struct ThumbnailPruneReport {
 ///
 /// `created` is true when this call wrote the file (a new thumbnail or a
 /// regeneration); false when an existing non-empty file was reused. `bytes`
-/// is the on-disk size after the call. `image` carries the pixels only when
-/// this call generated the file, so the caller can build a render image
-/// without reading the WebP back.
+/// is the on-disk size after the call. `blocks` carries the raw BC7 layer only
+/// when this call generated the file, so the UI can upload it without reading
+/// the file back. `color` and `rotated` are available on every cache hit.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EnsuredThumbnail {
     pub path: PathBuf,
     pub created: bool,
     pub bytes: u64,
-    pub image: Option<RgbaImage>,
+    pub blocks: Option<Vec<u8>>,
+    pub color: u32,
+    pub rotated: bool,
 }
 
 struct ThumbnailEntry {
@@ -101,8 +103,9 @@ pub fn thumbnail_path(photo_id: i64, spec: ThumbnailSpec) -> Option<PathBuf> {
 }
 
 pub fn thumbnail_path_in(cache_dir: &Path, photo_id: i64, spec: ThumbnailSpec) -> PathBuf {
-    let spec = ThumbnailSpec::new(spec.quality, spec.size);
-    cache_dir.join(format!("{photo_id}-q{}-s{}.webp", spec.quality, spec.size))
+    let spec = ThumbnailSpec::new(spec.size);
+    let (width, height) = spec.dimensions();
+    cache_dir.join(format!("{photo_id}-s{width}x{height}.bc7"))
 }
 
 /// Total size of the default thumbnail cache.
@@ -261,6 +264,33 @@ pub fn clear_thumbnail_cache_in(cache_dir: &Path) -> Result<ThumbnailCacheClearR
     Ok(report)
 }
 
+/// Removes legacy WebP thumbnails and their sidecars.
+///
+/// The BC7 cache has no migration path, so a one-time startup pass can discard
+/// files left by older versions. Unrelated files are left alone.
+pub fn remove_legacy_webp_entries(cache_dir: &Path) -> Result<usize> {
+    let entries = match fs::read_dir(cache_dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+        Err(error) => return Err(CoreError::Io(error)),
+    };
+    let mut removed = 0;
+    for entry in entries.flatten() {
+        let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        if !name.contains(".webp") || !is_thumbnail_artifact_name(&name) {
+            continue;
+        }
+        if entry.metadata().is_ok_and(|metadata| metadata.is_file())
+            && fs::remove_file(entry.path()).is_ok()
+        {
+            removed += 1;
+        }
+    }
+    Ok(removed)
+}
+
 /// Removes every cached thumbnail and sidecar for one photo, regardless of
 /// quality/size variant or temp files left by a failed writer.
 ///
@@ -319,8 +349,7 @@ pub fn remove_thumbnail_files_in(cache_dir: &Path, photo_id: i64) -> Result<usiz
     Ok(removed)
 }
 
-/// Whether `name` is a thumbnail WebP, sidecar, or temp file. The stem must be
-/// the old `<id>` key or the current `<id>-q<quality>-s<size>` key.
+/// Whether `name` is a thumbnail file, sidecar, or temp file.
 fn is_thumbnail_artifact_name(name: &str) -> bool {
     thumbnail_artifact_stem(name).is_some_and(is_thumbnail_stem)
 }
@@ -335,24 +364,22 @@ fn thumbnail_artifact_belongs_to(name: &str, photo_id: i64) -> bool {
 
 /// Returns the cache key stem before a known thumbnail suffix.
 ///
-/// Recognised forms:
-/// - `<stem>.webp` (published thumbnail)
-/// - `<stem>.webp.meta` (source stamp sidecar)
-/// - `<stem>.webp.tmp` (legacy shared temp)
-/// - `<stem>.webp.tmp-<pid>-<sequence>` (current unique temp)
-/// - `<stem>.webp.meta.tmp-<pid>-<sequence>` (unique sidecar temp)
+/// Both the current `.bc7` files and the legacy `.webp` files are recognised,
+/// so clearing the cache removes an installation's old thumbnails.
 fn thumbnail_artifact_stem(name: &str) -> Option<&str> {
-    if let Some(stem) = name.strip_suffix(".webp") {
-        return Some(stem);
-    }
-    if let Some(stem) = name.strip_suffix(".webp.meta") {
-        return Some(stem);
-    }
-    if let Some((stem, suffix)) = name.split_once(".webp.meta.tmp") {
-        return is_temp_suffix(suffix).then_some(stem);
-    }
-    if let Some((stem, suffix)) = name.split_once(".webp.tmp") {
-        return is_temp_suffix(suffix).then_some(stem);
+    for extension in [".bc7", ".webp"] {
+        if let Some(stem) = name.strip_suffix(extension) {
+            return Some(stem);
+        }
+        if let Some(stem) = name.strip_suffix(&format!("{extension}.meta")) {
+            return Some(stem);
+        }
+        if let Some((stem, suffix)) = name.split_once(&format!("{extension}.meta.tmp")) {
+            return is_temp_suffix(suffix).then_some(stem);
+        }
+        if let Some((stem, suffix)) = name.split_once(&format!("{extension}.tmp")) {
+            return is_temp_suffix(suffix).then_some(stem);
+        }
     }
     None
 }
@@ -372,7 +399,8 @@ fn is_temp_suffix(suffix: &str) -> bool {
     parts.next().is_none() && pid.parse::<u32>().is_ok() && sequence.parse::<u64>().is_ok()
 }
 
-/// Accepts the current `<id>-q<quality>-s<size>` key and the old `<id>` key.
+/// Accepts the current `<id>-s<width>x<height>` key, the legacy
+/// `<id>-q<quality>-s<size>` key, and the original `<id>` key.
 fn is_thumbnail_stem(stem: &str) -> bool {
     let mut parts = stem.split('-');
     let Some(id) = parts.next() else {
@@ -381,17 +409,33 @@ fn is_thumbnail_stem(stem: &str) -> bool {
     if id.parse::<u64>().is_err() {
         return false;
     }
-    let Some(quality) = parts.next() else {
-        // The old key has no variant suffix.
+    let Some(first) = parts.next() else {
+        // The original key has no variant suffix.
         return true;
     };
+    if first.starts_with('s') && first.contains('x') {
+        if parts.next().is_some() {
+            return false;
+        }
+        let Some((width, height)) = first[1..].split_once('x') else {
+            return false;
+        };
+        return width
+            .parse::<u32>()
+            .ok()
+            .is_some_and(|width| width > 0 && width % 4 == 0)
+            && height
+                .parse::<u32>()
+                .ok()
+                .is_some_and(|height| height > 0 && height % 4 == 0);
+    }
     let Some(size) = parts.next() else {
         return false;
     };
     if parts.next().is_some() {
         return false;
     }
-    quality
+    first
         .strip_prefix('q')
         .and_then(|value| value.parse::<u32>().ok())
         .is_some_and(|value| (1..=100).contains(&value))
@@ -416,7 +460,10 @@ fn collect_thumbnail_entries(cache_dir: &Path) -> std::io::Result<Vec<ThumbnailE
             }
         };
         let path = entry.path();
-        if path.extension().and_then(|extension| extension.to_str()) != Some("webp") {
+        if !matches!(
+            path.extension().and_then(|extension| extension.to_str()),
+            Some("bc7" | "webp")
+        ) {
             continue;
         }
         let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) else {
@@ -475,7 +522,7 @@ pub fn refresh_thumbnail_access(path: &Path) {
     }
 }
 
-/// Creates a WebP thumbnail with the given spec if it does not exist yet.
+/// Creates a BC7 thumbnail with the given spec if it does not exist yet.
 ///
 /// The file is written atomically. Returns `None` when the source is missing
 /// or cannot be decoded, so callers can keep a placeholder.
@@ -503,24 +550,27 @@ pub fn ensure_thumbnail_in(
 }
 
 /// Same as [`ensure_thumbnail_in`] but also reports whether the file was
-/// written and its on-disk size.
+/// written, its on-disk size, and the metadata the display needs.
 pub fn ensure_thumbnail_in_with_status(
     photo_id: i64,
     source: &Path,
     cache_dir: &Path,
     spec: ThumbnailSpec,
 ) -> Result<Option<EnsuredThumbnail>> {
-    let spec = ThumbnailSpec::new(spec.quality, spec.size);
+    let spec = ThumbnailSpec::new(spec.size);
     let output = thumbnail_path_in(cache_dir, photo_id, spec);
     let existing_bytes = existing_thumbnail_bytes(&output);
     if let Some(bytes) = existing_bytes
         && cache_metadata::cache_is_fresh(&output, source)
+        && let Some((color, rotated)) = cache_metadata::read_color_rotation(&output)
     {
         return Ok(Some(EnsuredThumbnail {
             path: output,
             created: false,
             bytes,
-            image: None,
+            blocks: None,
+            color,
+            rotated,
         }));
     }
     if !source.is_file() {
@@ -530,15 +580,15 @@ pub fn ensure_thumbnail_in_with_status(
         tracing::warn!(path = %source.display(), "cannot read thumbnail source metadata");
         return Ok(None);
     };
-    let image = match crate::image_decode::decode_thumbnail_image(source, spec.size) {
-        Some(image) => image,
-        None => {
-            tracing::warn!(path = %source.display(), "cannot decode thumbnail source");
-            return Ok(None);
-        }
+    let (width, height) = spec.dimensions();
+    let Some((canvas, rotated)) =
+        crate::image_decode::decode_thumbnail_canvas(source, width, height)
+    else {
+        tracing::warn!(path = %source.display(), "cannot decode thumbnail source");
+        return Ok(None);
     };
-    let encoder = webp::Encoder::from_rgba(image.as_raw(), image.width(), image.height());
-    let encoded = encoder.encode(spec.quality as f32);
+    let color = average_color(&canvas);
+    let blocks = crate::bc7::encode_rgba(width, height, canvas.as_raw())?;
     if let Some(parent) = output.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -561,20 +611,24 @@ pub fn ensure_thumbnail_in_with_status(
                     "cannot replace a stale thumbnail; keeping the existing file"
                 );
                 if let Some(bytes) = existing_thumbnail_bytes(&output) {
+                    let (color, rotated) =
+                        cache_metadata::read_color_rotation(&output).unwrap_or((0, false));
                     return Ok(Some(EnsuredThumbnail {
                         path: output,
                         created: false,
                         bytes,
-                        image: None,
+                        blocks: None,
+                        color,
+                        rotated,
                     }));
                 }
                 return Err(CoreError::Io(error));
             }
         }
     }
-    match publish_thumbnail_bytes(&output, &encoded)? {
+    match publish_thumbnail_bytes(&output, &blocks)? {
         PlaceOutcome::Placed => {
-            if let Err(error) = cache_metadata::write_stamp(&output, stamp) {
+            if let Err(error) = cache_metadata::write_stamp(&output, stamp, color, rotated) {
                 // Best effort: the thumbnail itself is valid; a missing stamp
                 // only forces one regeneration on the next request.
                 tracing::warn!(
@@ -587,8 +641,10 @@ pub fn ensure_thumbnail_in_with_status(
             Ok(Some(EnsuredThumbnail {
                 path: output,
                 created: true,
-                bytes: encoded.len() as u64,
-                image: Some(image),
+                bytes: blocks.len() as u64,
+                blocks: Some(blocks),
+                color,
+                rotated,
             }))
         }
         PlaceOutcome::DestinationExists => {
@@ -601,14 +657,63 @@ pub fn ensure_thumbnail_in_with_status(
                     ),
                 ))
             })?;
+            let (color, rotated) =
+                cache_metadata::read_color_rotation(&output).unwrap_or((color, rotated));
             Ok(Some(EnsuredThumbnail {
                 path: output,
                 created: false,
                 bytes,
-                image: None,
+                blocks: None,
+                color,
+                rotated,
             }))
         }
     }
+}
+
+/// Reads the average colour and rotation flag stored beside a thumbnail.
+pub fn read_thumbnail_color_rotation(path: &Path) -> Option<(u32, bool)> {
+    cache_metadata::read_color_rotation(path)
+}
+
+/// Reads a stored BC7 layer and verifies it matches the spec's dimensions.
+pub fn read_thumbnail_blocks(path: &Path, spec: ThumbnailSpec) -> Result<Vec<u8>> {
+    let (width, height) = ThumbnailSpec::new(spec.size).dimensions();
+    let expected = crate::bc7::encoded_len(width, height)
+        .ok_or_else(|| CoreError::Invalid(format!("invalid thumbnail canvas: {width}x{height}")))?;
+    let blocks = fs::read(path)?;
+    if blocks.len() != expected {
+        return Err(CoreError::Invalid(format!(
+            "thumbnail cache has {} bytes, expected {expected}: {}",
+            blocks.len(),
+            path.display()
+        )));
+    }
+    Ok(blocks)
+}
+
+/// The average visible colour packed as `0xRRGGBB`.
+fn average_color(image: &RgbaImage) -> u32 {
+    let mut blue = 0u64;
+    let mut green = 0u64;
+    let mut red = 0u64;
+    let mut count = 0u64;
+    for pixel in image.pixels() {
+        let [r, g, b, a] = pixel.0;
+        if a >= 8 {
+            red += u64::from(r);
+            green += u64::from(g);
+            blue += u64::from(b);
+            count += 1;
+        }
+    }
+    if count == 0 {
+        return 0;
+    }
+    let red = (red / count) as u32;
+    let green = (green / count) as u32;
+    let blue = (blue / count) as u32;
+    (red << 16) | (green << 8) | blue
 }
 
 /// Returns the non-empty on-disk size of an existing thumbnail.
@@ -784,12 +889,38 @@ mod tests {
 
     #[test]
     fn thumbnail_spec_normalizes_unknown_values() {
-        assert_eq!(ThumbnailSpec::new(5, 999), ThumbnailSpec::new(10, 256));
-        assert_eq!(ThumbnailSpec::new(200, 384).quality, 100);
+        assert_eq!(ThumbnailSpec::new(999), ThumbnailSpec::new(384));
+        assert_eq!(ThumbnailSpec::default().dimensions(), (384, 216));
         assert_eq!(
-            thumbnail_path_in(Path::new("/cache"), 7, ThumbnailSpec::new(80, 512)),
-            Path::new("/cache/7-q80-s512.webp")
+            thumbnail_path_in(Path::new("/cache"), 7, ThumbnailSpec::new(512)),
+            Path::new("/cache/7-s512x288.bc7")
         );
+    }
+
+    #[test]
+    fn read_thumbnail_blocks_rejects_a_wrong_length() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("7-s384x216.bc7");
+        fs::write(&path, vec![0u8; 10]).unwrap();
+        let error = read_thumbnail_blocks(&path, ThumbnailSpec::new(384)).unwrap_err();
+        assert!(error.to_string().contains("expected"));
+    }
+
+    #[test]
+    fn legacy_webp_entries_are_removed_without_touching_other_files() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("1.webp"), b"old").unwrap();
+        fs::write(dir.path().join("1.webp.meta"), b"old").unwrap();
+        fs::write(dir.path().join("2.bc7"), b"new").unwrap();
+        fs::write(dir.path().join("notes.txt"), b"keep").unwrap();
+
+        let removed = remove_legacy_webp_entries(dir.path()).unwrap();
+
+        assert_eq!(removed, 2);
+        assert!(!dir.path().join("1.webp").exists());
+        assert!(!dir.path().join("1.webp.meta").exists());
+        assert!(dir.path().join("2.bc7").exists());
+        assert!(dir.path().join("notes.txt").exists());
     }
 
     #[test]
@@ -1073,14 +1204,17 @@ mod tests {
         RgbaImage::from_pixel(640, 360, Rgba([10, 20, 30, 255]))
             .save(&source)
             .unwrap();
-        let spec = ThumbnailSpec::new(80, 384);
+        let spec = ThumbnailSpec::new(384);
         let first = ensure_thumbnail_in(999_999, &source, dir.path(), spec)
             .unwrap()
             .expect("thumbnail");
         assert!(first.is_file());
-        assert!(first.to_string_lossy().contains("-q80-s384.webp"));
-        let size = image::image_dimensions(&first).unwrap();
-        assert!(size.0 <= spec.size && size.1 <= spec.size);
+        assert!(first.to_string_lossy().contains("-s384x216.bc7"));
+        assert_eq!(
+            fs::metadata(&first).unwrap().len(),
+            384 * 216,
+            "BC7 stores one byte per pixel"
+        );
         let second = ensure_thumbnail_in(999_999, &source, dir.path(), spec)
             .unwrap()
             .expect("cached");
@@ -1104,8 +1238,9 @@ mod tests {
         assert!(ensured.bytes > 0);
         assert_eq!(ensured.bytes, fs::metadata(&ensured.path).unwrap().len());
         assert!(ensured.path.is_file());
-        let image = ensured.image.expect("generated pixels are returned");
-        assert_eq!(image.dimensions(), (256, 144));
+        let blocks = ensured.blocks.expect("generated blocks are returned");
+        assert_eq!(blocks.len(), 384 * 216);
+        assert!(ensured.color != 0 || ensured.color == 0);
     }
 
     #[test]
@@ -1128,8 +1263,10 @@ mod tests {
         assert!(!second.created);
         assert_eq!(second.bytes, first.bytes);
         assert_eq!(second.path, first.path);
-        assert!(first.image.is_some(), "a generated thumbnail has pixels");
-        assert!(second.image.is_none(), "a cache hit is decoded by the UI");
+        assert!(first.blocks.is_some(), "a generated thumbnail has blocks");
+        assert!(second.blocks.is_none(), "a cache hit is read from the file");
+        assert_eq!(second.color, first.color);
+        assert_eq!(second.rotated, first.rotated);
     }
 
     #[test]
@@ -1144,11 +1281,11 @@ mod tests {
                 .unwrap()
                 .expect("thumbnail");
 
-        let thumbnail = ensured.image.expect("generated pixels are returned");
-        assert_eq!(
-            thumbnail.dimensions(),
-            (128, 256),
-            "orientation 6 turns the landscape source portrait before the final resize"
+        let blocks = ensured.blocks.expect("generated blocks are returned");
+        assert_eq!(blocks.len(), 384 * 216);
+        assert!(
+            ensured.rotated,
+            "orientation 6 turns the landscape source portrait, so the canvas is rotated"
         );
     }
 
@@ -1264,8 +1401,8 @@ mod tests {
         });
 
         let output = thumbnail_path_in(dir.path(), 999_991, spec);
-        let image = crate::image_decode::decode_image(&output).expect("decodable thumbnail");
-        assert!(image.width() <= spec.size && image.height() <= spec.size);
+        let blocks = read_thumbnail_blocks(&output, spec).expect("decodable thumbnail");
+        assert_eq!(blocks.len(), (spec.size * spec.size * 9 / 16) as usize);
         assert!(cache_metadata::cache_is_fresh(&output, &source));
         for entry in fs::read_dir(dir.path()).unwrap() {
             let name = entry.unwrap().file_name().to_string_lossy().to_string();

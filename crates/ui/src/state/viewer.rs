@@ -8,6 +8,8 @@ use std::time::{Duration, Instant};
 
 use gpui_kit::{Bounds, Pixels, Point, RenderImage, Size, point};
 
+use crate::state::thumbnail::ThumbnailHandle;
+
 use crate::ui::theme::{
     MOTION_MORPH, VIEWER_MINIMAP_HEIGHT, VIEWER_MINIMAP_WIDTH, eased_progress, lerp_bounds,
     viewer_image_box_with_details_width,
@@ -163,13 +165,25 @@ fn zoom_limits(ratio: f32) -> (f32, f32) {
     (actual.min(1.0), (actual * 4.0).max(1.0))
 }
 
+/// A still image used by the viewer's crossfade: either a decoded full image
+/// or a thumbnail layer borrowed from the texture array.
+#[derive(Clone)]
+pub(crate) enum ViewerStill {
+    Full(Arc<RenderImage>),
+    Thumbnail {
+        id: i64,
+        handle: ThumbnailHandle,
+        dimensions: (u32, u32),
+    },
+}
+
 #[derive(Clone)]
 pub(crate) struct ViewerMorph {
     pub(crate) epoch: u64,
     pub(crate) started_at: Instant,
     pub(crate) from: Bounds<Pixels>,
     pub(crate) to: Bounds<Pixels>,
-    pub(crate) thumbnail: Option<Arc<RenderImage>>,
+    pub(crate) thumbnail: Option<ViewerStill>,
     pub(crate) color: u32,
     pub(crate) source: ViewerOpenSource,
     pub(crate) closing: bool,

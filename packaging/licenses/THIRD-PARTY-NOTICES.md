@@ -8,7 +8,7 @@ VRC PhotoN がバイナリに含むサードパーティ製クレートと、そ
 
 | ライセンス | 名称 | クレート数 |
 |---|---|---:|
-| MIT | MIT License | 782 |
+| MIT | MIT License | 784 |
 | Apache-2.0 | Apache License 2.0 | 58 |
 | ISC | ISC License | 26 |
 | Unicode-3.0 | Unicode License v3 | 23 |
@@ -10481,6 +10481,31 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ```
+### intel_tex_2 0.5.0
+
+```
+MIT License
+
+Copyright (c) 2019 Graham Wihlidal
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
 ### rgb 0.8.53
 
 ```
@@ -11463,7 +11488,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ```
-### accesskit 0.24.1, accesskit_atspi_common 0.19.1, accesskit_consumer 0.38.0, accesskit_macos 0.26.3, accesskit_unix 0.22.1, accesskit_windows 0.34.0, block2 0.6.2, chrono 0.4.45, difflib 0.4.0, dispatch2 0.3.1, dpi 0.1.2, granit-parser 1.3.0, harfrust 0.5.2, jni-sys-macros 0.4.1, libm 0.2.16, libwebp-sys 0.9.6, lyon 1.0.19, lyon_algorithms 1.0.22, lyon_geom 1.0.20, lyon_path 1.0.19, lyon_tessellation 1.0.23, mac-notification-sys 0.6.15, mac 0.1.1, minisign-verify 0.3.0, minisign 0.10.0, ndk-sys 0.6.0+11769913, objc-sys 0.3.5, objc2-app-kit 0.2.2, objc2-app-kit 0.3.2, objc2-cloud-kit 0.3.2, objc2-core-data 0.3.2, objc2-core-foundation 0.3.2, objc2-core-graphics 0.3.2, objc2-core-image 0.3.2, objc2-core-location 0.3.2, objc2-core-services 0.3.2, objc2-core-text 0.3.2, objc2-core-video 0.3.2, objc2-encode 4.1.0, objc2-foundation 0.2.2, objc2-foundation 0.3.2, objc2-metal 0.3.2, objc2-quartz-core 0.3.2, objc2-security 0.3.2, objc2-service-management 0.3.2, objc2-ui-kit 0.3.2, objc2-uniform-type-identifiers 0.3.2, objc2-user-notifications 0.3.2, objc2 0.5.3, objc2 0.6.5, pathfinder_geometry 0.5.1, pathfinder_simd 0.5.6, profiling-procmacros 1.0.18, profiling 1.0.18, pulp-wasm-simd-flag 0.1.1, r-efi 5.3.0, r-efi 6.0.0, rsqlite-vfs 0.2.0, rust-i18n-macro 4.2.4, rust-i18n-support 4.2.4, seahash 4.1.0, simd_helpers 0.1.0, single-instance 0.3.3, svg_fmt 0.4.5, taffy 0.15.0, tauri-winrt-notification 0.8.1, winapi-i686-pc-windows-gnu 0.4.0, winapi-x86_64-pc-windows-gnu 0.4.0, windows-collections 0.3.2, windows-core 0.58.0, windows-core 0.62.2, windows-future 0.3.2, windows-implement 0.58.0, windows-implement 0.60.2, windows-interface 0.58.0, windows-interface 0.59.3, windows-link 0.1.3, windows-link 0.2.1, windows-numerics 0.3.1, windows-registry 0.4.0, windows-registry 0.6.1, windows-result 0.2.0, windows-result 0.3.4, windows-result 0.4.1, windows-strings 0.1.0, windows-strings 0.3.1, windows-strings 0.5.1, windows-sys 0.48.0, windows-sys 0.52.0, windows-sys 0.61.2, windows-targets 0.48.5, windows-targets 0.52.6, windows-targets 0.53.5, windows-threading 0.2.1, windows-version 0.1.7, windows 0.58.0, windows 0.62.2, windows_aarch64_gnullvm 0.48.5, windows_aarch64_gnullvm 0.52.6, windows_aarch64_gnullvm 0.53.1, windows_aarch64_msvc 0.48.5, windows_aarch64_msvc 0.52.6, windows_aarch64_msvc 0.53.1, windows_i686_gnu 0.48.5, windows_i686_gnu 0.52.6, windows_i686_gnu 0.53.1, windows_i686_gnullvm 0.52.6, windows_i686_gnullvm 0.53.1, windows_i686_msvc 0.48.5, windows_i686_msvc 0.52.6, windows_i686_msvc 0.53.1, windows_x86_64_gnu 0.48.5, windows_x86_64_gnu 0.52.6, windows_x86_64_gnu 0.53.1, windows_x86_64_gnullvm 0.48.5, windows_x86_64_gnullvm 0.52.6, windows_x86_64_gnullvm 0.53.1, windows_x86_64_msvc 0.48.5, windows_x86_64_msvc 0.52.6, windows_x86_64_msvc 0.53.1, xim-ctext 0.3.0, xim-parser 0.2.2, zune-core 0.4.12, zune-inflate 0.2.54, zune-jpeg 0.4.21
+### accesskit 0.24.1, accesskit_atspi_common 0.19.1, accesskit_consumer 0.38.0, accesskit_macos 0.26.3, accesskit_unix 0.22.1, accesskit_windows 0.34.0, block2 0.6.2, chrono 0.4.45, difflib 0.4.0, dispatch2 0.3.1, dpi 0.1.2, granit-parser 1.3.0, harfrust 0.5.2, ispc_rt 2.0.4, jni-sys-macros 0.4.1, libm 0.2.16, libwebp-sys 0.9.6, lyon 1.0.19, lyon_algorithms 1.0.22, lyon_geom 1.0.20, lyon_path 1.0.19, lyon_tessellation 1.0.23, mac-notification-sys 0.6.15, mac 0.1.1, minisign-verify 0.3.0, minisign 0.10.0, ndk-sys 0.6.0+11769913, objc-sys 0.3.5, objc2-app-kit 0.2.2, objc2-app-kit 0.3.2, objc2-cloud-kit 0.3.2, objc2-core-data 0.3.2, objc2-core-foundation 0.3.2, objc2-core-graphics 0.3.2, objc2-core-image 0.3.2, objc2-core-location 0.3.2, objc2-core-services 0.3.2, objc2-core-text 0.3.2, objc2-core-video 0.3.2, objc2-encode 4.1.0, objc2-foundation 0.2.2, objc2-foundation 0.3.2, objc2-metal 0.3.2, objc2-quartz-core 0.3.2, objc2-security 0.3.2, objc2-service-management 0.3.2, objc2-ui-kit 0.3.2, objc2-uniform-type-identifiers 0.3.2, objc2-user-notifications 0.3.2, objc2 0.5.3, objc2 0.6.5, pathfinder_geometry 0.5.1, pathfinder_simd 0.5.6, profiling-procmacros 1.0.18, profiling 1.0.18, pulp-wasm-simd-flag 0.1.1, r-efi 5.3.0, r-efi 6.0.0, rsqlite-vfs 0.2.0, rust-i18n-macro 4.2.4, rust-i18n-support 4.2.4, seahash 4.1.0, simd_helpers 0.1.0, single-instance 0.3.3, svg_fmt 0.4.5, taffy 0.15.0, tauri-winrt-notification 0.8.1, winapi-i686-pc-windows-gnu 0.4.0, winapi-x86_64-pc-windows-gnu 0.4.0, windows-collections 0.3.2, windows-core 0.58.0, windows-core 0.62.2, windows-future 0.3.2, windows-implement 0.58.0, windows-implement 0.60.2, windows-interface 0.58.0, windows-interface 0.59.3, windows-link 0.1.3, windows-link 0.2.1, windows-numerics 0.3.1, windows-registry 0.4.0, windows-registry 0.6.1, windows-result 0.2.0, windows-result 0.3.4, windows-result 0.4.1, windows-strings 0.1.0, windows-strings 0.3.1, windows-strings 0.5.1, windows-sys 0.48.0, windows-sys 0.52.0, windows-sys 0.61.2, windows-targets 0.48.5, windows-targets 0.52.6, windows-targets 0.53.5, windows-threading 0.2.1, windows-version 0.1.7, windows 0.58.0, windows 0.62.2, windows_aarch64_gnullvm 0.48.5, windows_aarch64_gnullvm 0.52.6, windows_aarch64_gnullvm 0.53.1, windows_aarch64_msvc 0.48.5, windows_aarch64_msvc 0.52.6, windows_aarch64_msvc 0.53.1, windows_i686_gnu 0.48.5, windows_i686_gnu 0.52.6, windows_i686_gnu 0.53.1, windows_i686_gnullvm 0.52.6, windows_i686_gnullvm 0.53.1, windows_i686_msvc 0.48.5, windows_i686_msvc 0.52.6, windows_i686_msvc 0.53.1, windows_x86_64_gnu 0.48.5, windows_x86_64_gnu 0.52.6, windows_x86_64_gnu 0.53.1, windows_x86_64_gnullvm 0.48.5, windows_x86_64_gnullvm 0.52.6, windows_x86_64_gnullvm 0.53.1, windows_x86_64_msvc 0.48.5, windows_x86_64_msvc 0.52.6, windows_x86_64_msvc 0.53.1, xim-ctext 0.3.0, xim-parser 0.2.2, zune-core 0.4.12, zune-inflate 0.2.54, zune-jpeg 0.4.21
 
 ```
 MIT License

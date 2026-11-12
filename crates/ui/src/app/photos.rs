@@ -26,7 +26,7 @@ use crate::app::{App, Screen};
 use crate::state::decode_budget;
 use crate::state::display_image::{display_key, should_apply_image};
 use crate::state::photo_browser::{PhotoBrowser, plan_page_retry};
-use crate::state::thumbnail::{decode_thumbnail, make_render_image, rgba_to_bgra};
+use crate::state::thumbnail::{PendingUpload, decode_thumbnail, make_render_image, rgba_to_bgra};
 use crate::ui::components::photo_scene_key;
 
 /// Delay before a partial thumbnail notice batch is reported. Keeps a quiet
@@ -83,7 +83,11 @@ impl App {
         let id = photo.id;
         let source = PathBuf::from(photo.effective_path());
         let fallback_dimensions = photo.effective_dimensions();
-        let spec = self.settings.thumbnail_spec();
+        let spec = if self.demo_assets.is_some() {
+            thumbnail::ThumbnailSpec::new(crate::app::demo::DEMO_THUMBNAIL_WIDTH)
+        } else {
+            self.settings.thumbnail_spec()
+        };
         let cache_path = match &self.demo_assets {
             Some(assets) => demo_thumb_path(assets, id),
             None => thumbnail::thumbnail_path(id, spec).unwrap_or_default(),
@@ -114,14 +118,17 @@ impl App {
             this.update(cx, |this, cx| {
                 match decoded {
                     Some(decoded) => {
-                        let inserted = this.thumbnails.borrow_mut().insert_if_ticket(
-                            ticket,
+                        let queued = this.thumbnails.borrow_mut().queue_upload(PendingUpload {
                             id,
-                            make_render_image(decoded.image),
-                            decoded.color,
-                        );
-                        if inserted && let Some(bytes) = decoded.generated_bytes {
-                            this.note_generated_thumbnail(bytes, cx);
+                            ticket,
+                            layer: 0,
+                            blocks: decoded.blocks,
+                            color: decoded.color,
+                            rotated: decoded.rotated,
+                            generated_bytes: decoded.generated_bytes,
+                        });
+                        if !queued {
+                            this.thumbnails.borrow_mut().fail_if_ticket(ticket, id);
                         }
                     }
                     None => this.thumbnails.borrow_mut().fail_if_ticket(ticket, id),
@@ -169,33 +176,11 @@ impl App {
         .detach();
     }
 
-    /// Marks the cached thumbnail files as recently used after the grid reads
-    /// them from the memory cache. One background task handles the whole
-    /// batch; demo assets have no real cache to touch.
-    pub(crate) fn refresh_thumbnail_access(&self, ids: Vec<i64>, cx: &mut Context<Self>) {
-        if ids.is_empty() || self.demo_assets.is_some() {
-            return;
-        }
-        let spec = self.settings.thumbnail_spec();
-        cx.spawn(async move |_this, cx| {
-            cx.background_executor()
-                .spawn(async move {
-                    for id in ids {
-                        if let Some(path) = thumbnail::thumbnail_path(id, spec) {
-                            thumbnail::refresh_thumbnail_access(&path);
-                        }
-                    }
-                })
-                .await;
-        })
-        .detach();
-    }
-
     /// Records a thumbnail the UI generated itself. The daemon uses the same
     /// notice to track cache growth, so the files are reported in batches
     /// rather than as one request per decode. Demo assets are not part of the
     /// real cache and stay silent.
-    fn note_generated_thumbnail(&mut self, bytes: u64, cx: &mut Context<Self>) {
+    pub(crate) fn note_generated_thumbnail(&mut self, bytes: u64, cx: &mut Context<Self>) {
         if self.demo_assets.is_some() {
             return;
         }
@@ -256,20 +241,16 @@ impl App {
     /// `begin` ignores cached, pending, failed, and over-cap requests, so this
     /// is safe to call after every decode completion.
     fn retry_pinned_thumbnail(&mut self, cx: &mut Context<Self>) {
-        let Some(pinned) = self.thumbnails.borrow().pinned else {
-            return;
-        };
-        if self.thumbnails.borrow_mut().get(pinned).is_some() {
-            return;
+        let pinned = self.thumbnails.borrow().pinned_ids();
+        for id in pinned {
+            if self.thumbnails.borrow_mut().get(id).is_some() {
+                continue;
+            }
+            let photo = self.selected_photo.clone().filter(|photo| photo.id == id);
+            if let Some(photo) = photo {
+                self.request_thumbnail(&photo, cx);
+            }
         }
-        let Some(photo) = self
-            .selected_photo
-            .clone()
-            .filter(|photo| photo.id == pinned)
-        else {
-            return;
-        };
-        self.request_thumbnail(&photo, cx);
     }
 
     pub(crate) fn select_photo(&mut self, id: i64, cx: &mut Context<Self>) {
@@ -284,6 +265,7 @@ impl App {
     /// Makes `id` the inspector/viewer photo without changing the selection
     /// list. Multi-selection toggles call this when the primary changes.
     fn set_primary_photo(&mut self, id: i64, cx: &mut Context<Self>) {
+        let previous = self.selected;
         let changed = self.selected != Some(id) || self.selected_photo.is_none();
         // Selecting the photo is an explicit reload request: clear a recent
         // thumbnail failure so it is not hidden until the retry TTL.
@@ -297,7 +279,14 @@ impl App {
                 self.request_full_image(cx);
             }
         }
-        self.thumbnails.borrow_mut().pin(id);
+        if changed {
+            if let Some(previous) = previous
+                && previous != id
+            {
+                self.thumbnails.borrow_mut().unpin(previous);
+            }
+            self.thumbnails.borrow_mut().pin(id);
+        }
         if self.thumbnails.borrow_mut().get(id).is_none()
             && let Some(photo) = self.selected_photo.clone()
         {
@@ -394,7 +383,7 @@ impl App {
         self.zoom = Default::default();
         self.zoom_drag = None;
         if let Some(image) = self.previous_image.take() {
-            self.queue_atlas_drop(image);
+            self.drop_viewer_still(image);
         }
     }
 
@@ -406,7 +395,7 @@ impl App {
         if self.selected == Some(id) {
             self.reset_full_image();
             if let Some(image) = self.previous_image.take() {
-                self.queue_atlas_drop(image);
+                self.drop_viewer_still(image);
             }
             cx.notify();
         }

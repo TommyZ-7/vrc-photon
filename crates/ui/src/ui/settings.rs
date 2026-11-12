@@ -471,33 +471,6 @@ impl App {
                                 v_flex()
                                     .gap(px(6.))
                                     .child(
-                                        h_flex()
-                                            .items_baseline()
-                                            .gap(px(6.))
-                                            .child(
-                                                div()
-                                                    .text_size(px(12.))
-                                                    .text_color(rgb(p.text))
-                                                    .child(tr!("settings.thumbnail.quality")),
-                                            )
-                                            .child(div().flex_1())
-                                            .child(
-                                                div()
-                                                    .text_size(px(12.))
-                                                    .font_semibold()
-                                                    .text_color(rgb(p.text))
-                                                    .child(
-                                                        self.settings.thumbnail_quality.to_string(),
-                                                    ),
-                                            ),
-                                    )
-                                    .child(Slider::new(&self.thumbnail_quality_slider).w_full()),
-                            )
-                            .child(card_divider(&p))
-                            .child(
-                                v_flex()
-                                    .gap(px(6.))
-                                    .child(
                                         div()
                                             .text_size(px(12.))
                                             .text_color(rgb(p.text))
@@ -529,9 +502,18 @@ impl App {
                                                 .on_click(cx.listener(move |this, _, _, cx| {
                                                     this.set_thumbnail_size(size, cx)
                                                 }))
-                                                .child(format!("{size} px"))
+                                                .child({
+                                                    let height = size * 9 / 16;
+                                                    format!("{size}×{height}")
+                                                })
                                         }),
                                     )),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(10.))
+                                    .text_color(rgb(p.muted))
+                                    .child(tr!("settings.thumbnail.regenerate_hint")),
                             )
                             .child(card_divider(&p))
                             .child(

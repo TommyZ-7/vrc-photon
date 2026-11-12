@@ -23,7 +23,7 @@ pub(crate) struct DemoAssets {
 }
 
 /// Bump whenever the fixture layout changes so existing demo roots rebuild.
-const DEMO_DATA_VERSION: u32 = 4;
+const DEMO_DATA_VERSION: u32 = 5;
 const DEMO_VERSION_FILE: &str = "demo.version";
 
 fn demo_data_is_current(root: &Path) -> bool {
@@ -166,8 +166,12 @@ fn prepare_demo_at(
 }
 
 pub(crate) fn demo_thumb_path(assets: &DemoAssets, photo_id: i64) -> PathBuf {
-    assets.thumb_dir.join(format!("{photo_id}.png"))
+    assets.thumb_dir.join(format!("{photo_id}.bc7"))
 }
+
+/// Demo thumbnails are generated at this fixed canvas size.
+pub(crate) const DEMO_THUMBNAIL_WIDTH: u32 = 384;
+pub(crate) const DEMO_THUMBNAIL_HEIGHT: u32 = 216;
 
 fn empty_database() -> Db {
     Db::open_in_memory_with_profile(DbProfile::Ui).expect("fallback in-memory database")
@@ -363,11 +367,23 @@ fn seed_demo(db: &Db, photo_dir: &Path, now: DateTime<Local>) -> Result<(), Stri
                 .map(|metadata| metadata.len())
                 .map_err(|error| format!("{}: {error}", image_path.display()))?,
         );
-        let thumb_path = pool_dir.join(format!("thumb_{variant}.png"));
-        image::open(&image_path)
+        let thumb_path = pool_dir.join(format!("thumb_{variant}.bc7"));
+        let canvas = image::open(&image_path)
             .map_err(|error| format!("{}: {error}", image_path.display()))?
-            .thumbnail(256, 256)
-            .save_with_format(&thumb_path, image::ImageFormat::Png)
+            .into_rgba8();
+        let canvas = image::imageops::resize(
+            &canvas,
+            DEMO_THUMBNAIL_WIDTH,
+            DEMO_THUMBNAIL_HEIGHT,
+            image::imageops::FilterType::Triangle,
+        );
+        let blocks = vrc_photon_core::bc7::encode_rgba(
+            DEMO_THUMBNAIL_WIDTH,
+            DEMO_THUMBNAIL_HEIGHT,
+            canvas.as_raw(),
+        )
+        .map_err(|error| format!("{}: {error}", thumb_path.display()))?;
+        std::fs::write(&thumb_path, blocks)
             .map_err(|error| format!("{}: {error}", thumb_path.display()))?;
         pool_images.push(image_path);
         pool_thumbnails.push(thumb_path);
@@ -415,7 +431,7 @@ fn seed_demo(db: &Db, photo_dir: &Path, now: DateTime<Local>) -> Result<(), Stri
                 blake3: None,
             })?;
 
-            let thumb_path = thumb_dir.join(format!("{id}.png"));
+            let thumb_path = thumb_dir.join(format!("{id}.bc7"));
             std::fs::copy(&pool_thumbnails[variant], &thumb_path).map_err(|error| {
                 vrc_photon_core::CoreError::Invalid(format!("{}: {error}", thumb_path.display()))
             })?;
@@ -508,7 +524,7 @@ mod tests {
             thumb_dir: std::path::PathBuf::from("/tmp/vrc-demo/thumbnails"),
         };
         let path = demo_thumb_path(&assets, 42);
-        assert!(path.ends_with("42.png"));
+        assert!(path.ends_with("42.bc7"));
         assert_eq!(path.parent(), Some(assets.thumb_dir.as_path()));
     }
 
@@ -641,7 +657,7 @@ mod tests {
         let thumb_dir = photo_dir.parent().unwrap().join("thumbnails");
         for entry in &entries {
             assert!(
-                thumb_dir.join(format!("{}.png", entry.id)).exists(),
+                thumb_dir.join(format!("{}.bc7", entry.id)).exists(),
                 "missing thumbnail for {}",
                 entry.id
             );
