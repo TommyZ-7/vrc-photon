@@ -1,0 +1,559 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VRC PhotoN — スクロールバーのトラック非表示 モック (#604)</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --font: "Inter", "Noto Sans JP", "Hiragino Sans", "Yu Gothic UI", system-ui, -apple-system, sans-serif;
+    --text: #eef3fb;
+    --muted: #a3adbd;
+    --dim: #768196;
+    --faint: #59647a;
+    --accent: #66b3ff;
+    --accent-strong: #2f7fd8;
+    --green: #7ee2b8;
+    --amber: #f4c878;
+    --bg: #07090d;
+    --panel: #121722;
+    --panel-deep: #0a1019;
+    --panel-inner: #111927;
+    --panel-card: #0d1420;
+    --panel-header: #101725;
+    --panel-sidebar: #0b111b;
+    --border: #232b38;
+    --border-strong: #364256;
+    --line: rgba(255, 255, 255, 0.105);
+    --line-soft: rgba(255, 255, 255, 0.065);
+    --track: #364256;
+    --thumb: #768196;
+    --thumb-hover: #a3adbd;
+    --radius: 17px;
+    --card-gap: 14px;
+  }
+  * { box-sizing: border-box; }
+  html { overflow-x: hidden; }
+  body {
+    margin: 0;
+    min-width: 320px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -2;
+    background:
+      radial-gradient(ellipse 58% 54% at 10% 2%, rgba(54, 107, 255, 0.28), transparent 66%),
+      radial-gradient(ellipse 46% 52% at 92% 6%, rgba(255, 86, 181, 0.12), transparent 68%),
+      radial-gradient(ellipse 52% 48% at 64% 104%, rgba(30, 202, 178, 0.10), transparent 68%),
+      linear-gradient(140deg, #04060c 0%, #0a0f1e 44%, #060811 100%);
+  }
+  .page { width: min(1320px, calc(100% - 48px)); margin: 0 auto; padding: 44px 0 76px; }
+  .masthead { display: flex; align-items: flex-start; justify-content: space-between; gap: 28px; margin-bottom: 28px; }
+  .eyebrow { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; }
+  .issue-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border: 1px solid rgba(102, 179, 255, .24); border-radius: 999px; background: rgba(102, 179, 255, .08); color: var(--accent); font-size: 10px; letter-spacing: .08em; }
+  h1 { margin: 11px 0 9px; font-size: clamp(25px, 3vw, 36px); line-height: 1.22; letter-spacing: -.035em; font-weight: 620; }
+  .lede { max-width: 830px; margin: 0; color: var(--muted); font-size: 13px; }
+  .lede b { color: var(--text); font-weight: 560; }
+  .meta-card { flex: none; min-width: 278px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 16px; background: rgba(18, 23, 34, .72); }
+  .meta-row { display: flex; justify-content: space-between; gap: 18px; padding: 4px 0; color: var(--dim); font-size: 11px; }
+  .meta-row b { color: var(--text); font-weight: 550; }
+  .meta-row + .meta-row { border-top: 1px solid var(--line-soft); }
+  .section { margin-top: 42px; }
+  .section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 20px; margin-bottom: 14px; }
+  .section-head h2 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
+  .section-head h2 span { color: var(--dim); font-weight: 400; font-size: 12px; margin-left: 8px; }
+  .section-head p { margin: 0; max-width: 760px; color: var(--muted); font-size: 11.5px; text-align: right; }
+  .summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 26px; }
+  .summary-card { padding: 16px 17px; border: 1px solid var(--line-soft); border-radius: var(--radius); background: rgba(13, 20, 32, .82); box-shadow: 0 14px 34px rgba(0, 0, 0, .28); }
+  .summary-card .kicker { color: var(--accent); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; }
+  .summary-card h3 { margin: 6px 0 6px; font-size: 13.5px; font-weight: 600; }
+  .summary-card p { margin: 0; color: var(--muted); font-size: 11.5px; }
+  .summary-card code { color: var(--text); font-size: 10.5px; background: rgba(255, 255, 255, .06); padding: 1px 5px; border-radius: 4px; }
+  .compare { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; }
+  .compare-card { border: 1px solid var(--line-soft); border-radius: 20px; background: var(--panel-card); overflow: hidden; }
+  .compare-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 15px; border-bottom: 1px solid var(--line-soft); background: rgba(16, 23, 37, .72); }
+  .compare-head b { font-size: 11.5px; font-weight: 600; }
+  .compare-head span { color: var(--dim); font-size: 10px; }
+  .compare-body { position: relative; height: 300px; padding: 16px 22px 16px 16px; }
+  .scroll-demo { position: relative; height: 100%; overflow: hidden; }
+  .scroll-demo .content { display: flex; flex-direction: column; gap: 9px; }
+  .demo-row { display: flex; align-items: center; gap: 10px; padding: 9px 11px; border: 1px solid var(--line-soft); border-radius: 10px; background: rgba(17, 25, 39, .72); }
+  .demo-row .avatar { width: 26px; height: 26px; flex: none; border-radius: 7px; background: linear-gradient(145deg, #2a3f66, #172236); border: 1px solid rgba(255, 255, 255, .08); }
+  .demo-row .lines { min-width: 0; flex: 1; }
+  .demo-row .line-a { height: 6px; width: 54%; border-radius: 999px; background: rgba(238, 243, 251, .62); }
+  .demo-row .line-b { height: 5px; width: 78%; margin-top: 6px; border-radius: 999px; background: rgba(163, 173, 189, .28); }
+  .demo-row .pill { flex: none; width: 34px; height: 16px; border-radius: 999px; background: rgba(102, 179, 255, .16); border: 1px solid rgba(102, 179, 255, .26); }
+  .scrollbar { position: absolute; top: 4px; right: 0; bottom: 4px; width: 16px; }
+  .scrollbar .track { position: absolute; inset: 0 4px; border-radius: 0; background: var(--track); }
+  .scrollbar .thumb { position: absolute; top: 16%; left: 5px; width: 6px; height: 24%; border-radius: 3px; background: var(--thumb); }
+  .scrollbar.hover .thumb, .scrollbar.drag .thumb { left: 4px; width: 8px; background: var(--thumb-hover); }
+  .scrollbar.hover .track, .scrollbar.drag .track { background: var(--track); }
+  .callout { position: absolute; right: 26px; display: flex; align-items: center; gap: 6px; color: var(--dim); font-size: 10px; white-space: nowrap; }
+  .callout::after { content: ""; width: 22px; height: 1px; background: var(--line); }
+  .callout.track-label { top: 18px; }
+  .callout.thumb-label { top: 78px; }
+  .after .scrollbar .track { background: transparent; }
+  .after .scrollbar.hover .track, .after .scrollbar.drag .track { background: transparent; }
+  body:has(#state-after:checked) .tab-panel .scrollbar .track,
+  body:has(#state-after:checked) .state-sample .scrollbar .track { background: transparent; }
+  body:has(#state-after:checked) .tab-panel .scrollbar.hover .track,
+  body:has(#state-after:checked) .tab-panel .scrollbar.drag .track { background: transparent; }
+  .theme-strip { display: flex; gap: 14px; margin-top: 16px; }
+  .theme-card { flex: 1; padding: 12px 14px; border: 1px solid var(--line-soft); border-radius: 14px; background: var(--panel-card); }
+  .theme-card.light { background: #f8fcff; color: #1b2534; }
+  .theme-card .theme-title { display: flex; justify-content: space-between; gap: 12px; font-size: 10.5px; color: inherit; opacity: .72; }
+  .theme-card .strip { position: relative; height: 92px; margin-top: 10px; border-radius: 10px; background: rgba(255, 255, 255, .025); }
+  .theme-card.light .strip { background: rgba(15, 23, 42, .04); }
+  .theme-card .scrollbar { top: 8px; bottom: 8px; }
+  .theme-card.light .scrollbar .track { background: #b7c2d2; }
+  .theme-card.light .scrollbar .thumb { background: #6b7688; }
+  .theme-card.light .scrollbar.hover .thumb { background: #4b5566; }
+  .after .theme-card .scrollbar .track,
+  .after .theme-card.light .scrollbar .track { background: transparent; }
+  .mock-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 10px 14px; border: 1px solid var(--line-soft); border-radius: 14px; background: rgba(13, 20, 32, .72); margin-bottom: 16px; }
+  .mock-toolbar .hint { color: var(--dim); font-size: 10.5px; }
+  .segmented { display: flex; gap: 4px; padding: 3px; border: 1px solid var(--line); border-radius: 10px; background: rgba(0, 0, 0, .18); }
+  .segmented label { padding: 5px 12px; border-radius: 7px; color: var(--dim); font-size: 11px; cursor: pointer; }
+  .segmented input { position: absolute; opacity: 0; pointer-events: none; }
+  body:has(#state-before:checked) .segmented label[for="state-before"],
+  body:has(#state-after:checked) .segmented label[for="state-after"] { background: rgba(102, 179, 255, .14); color: var(--accent); }
+  .tabs { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+  .tabs label { padding: 6px 11px; border: 1px solid var(--line-soft); border-radius: 8px; color: var(--dim); font-size: 11px; cursor: pointer; background: rgba(255, 255, 255, .02); }
+  .tabs input { position: absolute; opacity: 0; pointer-events: none; }
+  body:has(#tab-settings:checked) .tabs label[for="tab-settings"],
+  body:has(#tab-integrations:checked) .tabs label[for="tab-integrations"],
+  body:has(#tab-compression:checked) .tabs label[for="tab-compression"],
+  body:has(#tab-dialog:checked) .tabs label[for="tab-dialog"] { border-color: rgba(102, 179, 255, .35); background: rgba(102, 179, 255, .10); color: var(--accent); }
+  .tab-panel { display: none; }
+  body:has(#tab-settings:checked) #panel-settings,
+  body:has(#tab-integrations:checked) #panel-integrations,
+  body:has(#tab-compression:checked) #panel-compression,
+  body:has(#tab-dialog:checked) #panel-dialog { display: block; }
+  .app-frame { display: grid; grid-template-columns: 188px minmax(0, 1fr); min-height: 440px; border: 1px solid var(--line-soft); border-radius: 22px; background: var(--panel-deep); overflow: hidden; box-shadow: 0 18px 44px rgba(0, 0, 0, .38); }
+  .app-frame.single { grid-template-columns: minmax(0, 1fr); }
+  .mini-sidebar { padding: 16px 12px; border-right: 1px solid var(--line-soft); background: var(--panel-sidebar); }
+  .mini-nav { display: flex; flex-direction: column; gap: 5px; }
+  .mini-nav div { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 9px; color: var(--dim); font-size: 11px; }
+  .mini-nav div.active { background: rgba(102, 179, 255, .13); color: var(--accent); border-left: 2px solid var(--accent); }
+  .mini-nav .dot { width: 12px; height: 12px; border-radius: 4px; border: 1px solid rgba(255, 255, 255, .16); }
+  .mini-nav .count { margin-left: auto; color: var(--faint); font-size: 9.5px; }
+  .mini-main { display: flex; flex-direction: column; min-width: 0; background: var(--panel); }
+  .mini-header { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line-soft); background: var(--panel-header); }
+  .mini-header b { font-size: 12px; font-weight: 600; }
+  .mini-header span { color: var(--dim); font-size: 10px; }
+  .mini-header .right { margin-left: auto; display: flex; gap: 6px; }
+  .mini-chip { padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--dim); font-size: 9px; }
+  .scroll-view { position: relative; flex: 1; min-height: 0; padding: 14px 24px 14px 14px; }
+  .card-stack { display: flex; flex-direction: column; gap: 10px; }
+  .mini-card { padding: 12px 14px; border: 1px solid var(--line-soft); border-radius: 14px; background: var(--panel-card); }
+  .mini-card .card-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .mini-card b { font-size: 11.5px; font-weight: 600; }
+  .mini-card p { margin: 5px 0 0; color: var(--dim); font-size: 10px; }
+  .mini-card .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px solid var(--line-soft); margin-top: 8px; color: var(--muted); font-size: 10.5px; }
+  .mini-card .row:first-of-type { border-top: 0; margin-top: 2px; }
+  .toggle { width: 30px; height: 17px; flex: none; border-radius: 999px; background: rgba(255, 255, 255, .10); border: 1px solid var(--line); position: relative; }
+  .toggle.on { background: rgba(102, 179, 255, .32); border-color: rgba(102, 179, 255, .42); }
+  .toggle::after { content: ""; position: absolute; top: 2px; left: 2px; width: 11px; height: 11px; border-radius: 999px; background: #d9e7ff; }
+  .toggle.on::after { transform: translateX(13px); background: #f4f9ff; }
+  .master-detail { display: grid; grid-template-columns: 196px minmax(0, 1fr); min-height: 440px; border: 1px solid var(--line-soft); border-radius: 22px; background: var(--panel-deep); overflow: hidden; box-shadow: 0 18px 44px rgba(0, 0, 0, .38); }
+  .master-list { padding: 14px; border-right: 1px solid var(--line-soft); background: var(--panel-sidebar); display: flex; flex-direction: column; gap: 7px; }
+  .master-item { padding: 10px 11px; border: 1px solid var(--line-soft); border-radius: 11px; background: rgba(255, 255, 255, .02); }
+  .master-item.active { border-color: rgba(102, 179, 255, .32); background: rgba(102, 179, 255, .08); }
+  .master-item b { display: block; font-size: 11px; font-weight: 550; }
+  .master-item span { display: block; margin-top: 3px; color: var(--dim); font-size: 9.5px; }
+  .detail-pane { display: flex; flex-direction: column; min-width: 0; background: var(--panel); }
+  .detail-head { padding: 12px 16px; border-bottom: 1px solid var(--line-soft); background: var(--panel-header); }
+  .detail-head b { font-size: 12px; font-weight: 600; }
+  .detail-head span { display: block; color: var(--dim); font-size: 10px; margin-top: 2px; }
+  .detail-scroll { position: relative; flex: 1; min-height: 0; padding: 14px 24px 14px 14px; }
+  .queue-grid { display: grid; grid-template-columns: 220px minmax(0, 1fr); min-height: 440px; border: 1px solid var(--line-soft); border-radius: 22px; background: var(--panel-deep); overflow: hidden; box-shadow: 0 18px 44px rgba(0, 0, 0, .38); }
+  .profile-pane { padding: 14px; border-right: 1px solid var(--line-soft); background: var(--panel-sidebar); display: flex; flex-direction: column; gap: 7px; }
+  .profile-card { padding: 10px 11px; border: 1px solid var(--line-soft); border-radius: 11px; background: rgba(255, 255, 255, .02); }
+  .profile-card.active { border-color: rgba(102, 179, 255, .32); background: rgba(102, 179, 255, .08); }
+  .profile-card b { display: block; font-size: 11px; font-weight: 550; }
+  .profile-card span { display: block; margin-top: 3px; color: var(--dim); font-size: 9.5px; }
+  .queue-pane { display: flex; flex-direction: column; min-width: 0; background: var(--panel); }
+  .queue-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--line-soft); background: var(--panel-header); }
+  .queue-head b { font-size: 12px; font-weight: 600; }
+  .queue-head span { color: var(--dim); font-size: 10px; }
+  .queue-scroll { position: relative; flex: 1; min-height: 0; padding: 12px 24px 12px 12px; }
+  .queue-row { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-bottom: 1px solid var(--line-soft); }
+  .queue-row:last-child { border-bottom: 0; }
+  .queue-row .status { width: 7px; height: 7px; flex: none; border-radius: 999px; background: var(--amber); }
+  .queue-row .status.done { background: var(--green); }
+  .queue-row .status.fail { background: #ff8c8c; }
+  .queue-row .name { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 10.5px; }
+  .queue-row .meta { flex: none; color: var(--faint); font-size: 9.5px; }
+  .dialog-stage { display: flex; align-items: center; justify-content: center; min-height: 500px; padding: 26px; border: 1px solid var(--line-soft); border-radius: 22px; background: radial-gradient(ellipse 60% 60% at 50% 40%, rgba(47, 127, 216, .12), transparent 70%), var(--panel-deep); box-shadow: 0 18px 44px rgba(0, 0, 0, .38); }
+  .dialog { width: min(560px, 100%); border: 1px solid var(--line); border-radius: 20px; background: var(--panel); overflow: hidden; box-shadow: 0 24px 60px rgba(0, 0, 0, .45); }
+  .dialog-head { display: flex; align-items: center; justify-content: space-between; padding: 13px 16px; border-bottom: 1px solid var(--line-soft); background: var(--panel-header); }
+  .dialog-head b { font-size: 12px; font-weight: 600; }
+  .dialog-head span { color: var(--dim); font-size: 10px; }
+  .dialog-body { position: relative; max-height: 300px; padding: 14px 24px 14px 14px; }
+  .dialog-section { margin-bottom: 12px; }
+  .dialog-section .label { color: var(--dim); font-size: 9.5px; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 6px; }
+  .dialog-list { position: relative; max-height: 112px; padding-right: 20px; overflow: hidden; }
+  .dialog-row { display: flex; align-items: center; gap: 8px; padding: 7px 9px; border: 1px solid var(--line-soft); border-radius: 8px; background: rgba(17, 25, 39, .6); margin-bottom: 5px; }
+  .dialog-row .check { width: 12px; height: 12px; flex: none; border-radius: 4px; border: 1px solid rgba(255, 255, 255, .22); }
+  .dialog-row .check.on { background: rgba(102, 179, 255, .55); border-color: rgba(102, 179, 255, .7); }
+  .dialog-row .text { color: var(--muted); font-size: 10.5px; }
+  .dialog-footer { display: flex; justify-content: flex-end; gap: 7px; padding: 12px 16px; border-top: 1px solid var(--line-soft); background: var(--panel-header); }
+  .btn { padding: 5px 11px; border-radius: 8px; border: 1px solid var(--line); color: var(--muted); font-size: 10.5px; background: rgba(255, 255, 255, .03); }
+  .btn.primary { border-color: rgba(102, 179, 255, .38); background: rgba(102, 179, 255, .16); color: var(--accent); }
+  .rail-card { display: grid; grid-template-columns: minmax(0, 1fr) 250px; gap: 20px; align-items: stretch; padding: 18px; border: 1px solid var(--line-soft); border-radius: 20px; background: var(--panel-card); }
+  .rail-copy h3 { margin: 0 0 7px; font-size: 14px; font-weight: 600; }
+  .rail-copy p { margin: 0 0 9px; color: var(--muted); font-size: 11.5px; }
+  .rail-copy ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 11px; }
+  .rail-copy li { margin: 3px 0; }
+  .rail-shot { display: flex; align-items: center; justify-content: center; border: 1px solid var(--line-soft); border-radius: 14px; background: var(--panel-deep); overflow: hidden; }
+  .rail-shot img { display: block; max-height: 360px; width: auto; }
+  .state-table, .impl-table { width: 100%; border-collapse: collapse; border: 1px solid var(--line-soft); border-radius: 14px; overflow: hidden; background: var(--panel-card); }
+  .state-table th, .state-table td, .impl-table th, .impl-table td { padding: 10px 12px; border-bottom: 1px solid var(--line-soft); text-align: left; vertical-align: top; font-size: 11px; }
+  .state-table th, .impl-table th { color: var(--dim); font-weight: 500; background: rgba(255, 255, 255, .025); }
+  .state-table tr:last-child td, .impl-table tr:last-child td { border-bottom: 0; }
+  .state-table code, .impl-table code { color: var(--text); background: rgba(255, 255, 255, .06); padding: 1px 4px; border-radius: 4px; font-size: 10px; }
+  .state-samples { display: flex; gap: 12px; margin-top: 14px; }
+  .state-sample { flex: 1; position: relative; height: 150px; border: 1px solid var(--line-soft); border-radius: 14px; background: var(--panel-card); overflow: hidden; }
+  .state-sample .sample-label { position: absolute; left: 12px; top: 10px; color: var(--dim); font-size: 10px; }
+  .state-sample .scrollbar { top: 10px; right: 10px; bottom: 10px; }
+  .state-sample.hover .scrollbar .thumb, .state-sample.drag .scrollbar .thumb { left: 4px; width: 8px; background: var(--thumb-hover); }
+  .after .state-sample .scrollbar .track { background: transparent; }
+  .approve { padding: 18px 20px; border: 1px solid rgba(126, 226, 184, .22); border-radius: 20px; background: rgba(126, 226, 184, .05); }
+  .approve h3 { margin: 0 0 10px; font-size: 14px; font-weight: 600; color: var(--green); }
+  .approve ul { margin: 0; padding-left: 19px; color: var(--muted); font-size: 11.5px; }
+  .approve li { margin: 5px 0; }
+  .note { margin-top: 12px; color: var(--dim); font-size: 10.5px; }
+  .note strong { color: var(--amber); font-weight: 550; }
+  @media (max-width: 900px) {
+    .masthead { flex-direction: column; }
+    .meta-card { width: 100%; }
+    .summary { grid-template-columns: 1fr; }
+    .compare { grid-template-columns: 1fr; }
+    .theme-strip { flex-direction: column; }
+    .app-frame, .master-detail, .queue-grid { grid-template-columns: 1fr; }
+    .mini-sidebar, .master-list, .profile-pane { border-right: 0; border-bottom: 1px solid var(--line-soft); }
+    .rail-card { grid-template-columns: 1fr; }
+    .state-samples { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+<main class="page">
+  <header class="masthead">
+    <div>
+      <div class="eyebrow"><span class="issue-chip">Issue #604</span> UI mock</div>
+      <h1>スクロールバーのトラックを表示しない</h1>
+      <p class="lede">
+        標準スクロールバーのトラック（背景）をテーマから透明にし、<b>サムだけ</b>を表示する。
+        設定・連携は App が保持する <b>ScrollHandle</b> を維持したまま wrapper 方式へ揃え、
+        圧縮キューの仮想リストだけを直接配置の例外として残す。
+        写真グリッドの年レールは、年ナビゲーションとして独立しているため<b>今回変更しない</b>。
+      </p>
+    </div>
+    <aside class="meta-card">
+      <div class="meta-row"><span>状態</span><b>モック承認待ち</b></div>
+      <div class="meta-row"><span>対象</span><b>標準スクロールバー</b></div>
+      <div class="meta-row"><span>対象外</span><b>写真グリッドの年レール</b></div>
+      <div class="meta-row"><span>テーマ</span><b>全テーマ共通</b></div>
+    </aside>
+  </header>
+
+  <section class="summary">
+    <article class="summary-card">
+      <div class="kicker">01 / Track</div>
+      <h3>トラックを透明にする</h3>
+      <p><code>colors.scrollbar</code> を透明にし、通常・ホバー・ドラッグのすべてでトラックを描かない。サムの色・幅・表示モードは変えない。</p>
+    </article>
+    <article class="summary-card">
+      <div class="kicker">02 / Attachment</div>
+      <h3>設定・連携を wrapper 化</h3>
+      <p>右端の 8 px ガターと <code>Scrollbar::vertical</code> の直接配置をやめ、外側ラッパーへ <code>.vertical_scrollbar(&amp;handle)</code> を付ける。スクロール位置は従来どおり保持する。</p>
+    </article>
+    <article class="summary-card">
+      <div class="kicker">03 / Exception</div>
+      <h3>圧縮キューは直接配置</h3>
+      <p><code>VirtualList</code> は wrapper API 非対応のため、<code>VirtualListScrollHandle</code> を共有する直接配置だけを例外として残す。</p>
+    </article>
+  </section>
+
+  <section class="section">
+    <div class="section-head">
+      <h2>標準スクロールバー <span>拡大比較</span></h2>
+      <p>左が現状、右が変更後。トラックの 16 px 領域は残るが、背景は描かれない。サムの位置・幅・色は同じ。</p>
+    </div>
+    <div class="compare">
+      <article class="compare-card">
+        <div class="compare-head"><b>現状</b><span>トラック + サム</span></div>
+        <div class="compare-body">
+          <div class="scroll-demo">
+            <div class="content">
+              <div class="demo-row"><span class="avatar"></span><span class="lines"><span class="line-a"></span><span class="line-b"></span></span><span class="pill"></span></div>
+              <div class="demo-row"><span class="avatar"></span><span class="lines"><span class="line-a"></span><span class="line-b"></span></span><span class="pill"></span></div>
+              <div class="demo-row"><span class="avatar"></span><span class="lines"><span class="line-a"></span><span class="line-b"></span></span><span class="pill"></span></div>
+              <div class="demo-row"><span class="avatar"></span><span class="lines"><span class="line-a"></span><span class="line-b"></span></span><span class="pill"></span></div>
+              <div class="demo-row"><span class="avatar"></span><span class="lines"><span class="line-a"></span><span class="line-b"></span></span><span class="pill"></span></div>
+            </div>
+            <div class="scrollbar"><span class="track"></span><span class="thumb"></span></div>
+            <span class="callout track-label">トラック</span>
+            <span class="callout thumb-label">サム</span>
+          </div>
+        </div>
+      </article>
+      <article class="compare-card after">
+        <div class="compare-head"><b>変更後</b><span>サムのみ</span></div>
+        <div class="compare-body">
+          <div class="scroll-demo">
+            <div class="content">
+              <div class="demo-row"><span class="avatar"></span><span class="lines"><span class="line-a"></span><span class="line-b"></span></span><span class="pill"></span></div>
+              <div class="demo-row"><span class="avatar"></span><span class="lines"><span class="line-a"></span><span class="line-b"></span></span><span class="pill"></span></div>
+              <div class="demo-row"><span class="avatar"></span><span class="lines"><span class="line-a"></span><span class="line-b"></span></span><span class="pill"></span></div>
+              <div class="demo-row"><span class="avatar"></span><span class="lines"><span class="line-a"></span><span class="line-b"></span></span><span class="pill"></span></div>
+              <div class="demo-row"><span class="avatar"></span><span class="lines"><span class="line-a"></span><span class="line-b"></span></span><span class="pill"></span></div>
+            </div>
+            <div class="scrollbar"><span class="track"></span><span class="thumb"></span></div>
+            <span class="callout track-label">トラックなし</span>
+            <span class="callout thumb-label">サム</span>
+          </div>
+        </div>
+      </article>
+    </div>
+    <div class="theme-strip after">
+      <article class="theme-card">
+        <div class="theme-title"><span>ダークテーマ</span><span>track / thumb</span></div>
+        <div class="strip"><div class="scrollbar"><span class="track"></span><span class="thumb"></span></div></div>
+      </article>
+      <article class="theme-card light">
+        <div class="theme-title"><span>ライトテーマ</span><span>track / thumb</span></div>
+        <div class="strip"><div class="scrollbar"><span class="track"></span><span class="thumb"></span></div></div>
+      </article>
+    </div>
+  </section>
+
+  <section class="section" id="screens">
+    <div class="section-head">
+      <h2>画面別の適用例 <span>変更前 / 変更後</span></h2>
+      <p>設定・連携・圧縮・ダイアログの代表例。すべての標準スクロールバーでトラックが消え、サムだけが残る。</p>
+    </div>
+    <div class="mock-toolbar">
+      <span class="hint">表示を切り替えて、トラックの有無を確認してください。</span>
+      <div class="segmented">
+        <input type="radio" name="state" id="state-before">
+        <label for="state-before">変更前</label>
+        <input type="radio" name="state" id="state-after" checked>
+        <label for="state-after">変更後</label>
+      </div>
+    </div>
+    <div class="tabs">
+      <input type="radio" name="tab" id="tab-settings" checked>
+      <label for="tab-settings">設定</label>
+      <input type="radio" name="tab" id="tab-integrations">
+      <label for="tab-integrations">連携・自動</label>
+      <input type="radio" name="tab" id="tab-compression">
+      <label for="tab-compression">圧縮キュー</label>
+      <input type="radio" name="tab" id="tab-dialog">
+      <label for="tab-dialog">ダイアログ</label>
+    </div>
+
+    <div class="tab-panel" id="panel-settings">
+      <div class="app-frame">
+        <div class="mini-sidebar">
+          <div class="mini-nav">
+            <div><span class="dot"></span>写真<span class="count">300</span></div>
+            <div><span class="dot"></span>検索</div>
+            <div><span class="dot"></span>圧縮</div>
+            <div><span class="dot"></span>ダッシュボード</div>
+            <div><span class="dot"></span>連携・自動</div>
+            <div class="active"><span class="dot"></span>設定</div>
+          </div>
+        </div>
+        <div class="mini-main">
+          <div class="mini-header"><b>設定</b><span>カードを縦に並べ、列全体をスクロール</span><span class="right"><span class="mini-chip">言語</span><span class="mini-chip">テーマ</span><span class="mini-chip">表示</span></span></div>
+          <div class="scroll-view">
+            <div class="card-stack">
+              <div class="mini-card"><div class="card-top"><b>言語</b><span class="toggle on"></span></div><p>日本語 / English</p></div>
+              <div class="mini-card"><div class="card-top"><b>テーマ</b><span class="toggle on"></span></div><p>メインカラーとサブカラー</p><div class="row"><span>メイン</span><span>チャコール</span></div><div class="row"><span>サブ</span><span>スカイ</span></div></div>
+              <div class="mini-card"><div class="card-top"><b>ライブラリ</b><span class="toggle on"></span></div><p>写真フォルダ / ログフォルダ / 取り込み先</p></div>
+              <div class="mini-card"><div class="card-top"><b>表示（ライブラリ・検索）</b><span class="toggle on"></span></div><p>圧縮状態 / ワールド名 / 日付 / サイズ</p><div class="row"><span>グリッド間隔</span><span>14 px</span></div><div class="row"><span>カードの角丸</span><span>13 px</span></div></div>
+              <div class="mini-card"><div class="card-top"><b>サムネイル</b><span class="toggle on"></span></div><p>384×216 / キャッシュ使用量</p></div>
+              <div class="mini-card"><div class="card-top"><b>起動と圧縮</b><span class="toggle on"></span></div><p>自動起動 / トレイ常駐 / 自動圧縮</p></div>
+            </div>
+            <div class="scrollbar hover"><span class="track"></span><span class="thumb"></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-panel" id="panel-integrations">
+      <div class="master-detail">
+        <div class="master-list">
+          <div class="master-item active"><b>Discord 連携</b><span>有効 / 即時送信</span></div>
+          <div class="master-item"><b>自動圧縮</b><span>3 プロファイル</span></div>
+          <div class="master-item"><b>AI タグ付け</b><span>待機 12 件</span></div>
+          <div class="master-item"><b>クリップボード</b><span>有効</span></div>
+        </div>
+        <div class="detail-pane">
+          <div class="detail-head"><b>Discord 連携</b><span>選択中項目のカードだけを内部スクロール</span></div>
+          <div class="detail-scroll">
+            <div class="card-stack">
+              <div class="mini-card"><div class="card-top"><b>Discord 連携</b><span class="toggle on"></span></div><p>非公開インスタンスの写真も送信対象になります。</p><div class="row"><span>送信先</span><span>テスト用チャンネル</span></div><div class="row"><span>自動送信</span><span>即時</span></div></div>
+              <div class="mini-card"><div class="card-top"><b>送信履歴</b><span class="mini-chip">最新 100 件</span></div><p>待機 3 件 / 失敗 1 件</p><div class="row"><span>テスト送信</span><span>送信済み</span></div><div class="row"><span>The Black Cat</span><span>待機</span></div><div class="row"><span>Sunset Bar</span><span>送信済み</span></div></div>
+              <div class="mini-card"><div class="card-top"><b>自動圧縮</b><span class="toggle"></span></div><p>新規写真を自動で圧縮する</p></div>
+              <div class="mini-card"><div class="card-top"><b>AI タグ付け</b><span class="toggle on"></span></div><p>待機 12 件 / 処理中 2 件</p></div>
+            </div>
+            <div class="scrollbar hover"><span class="track"></span><span class="thumb"></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-panel" id="panel-compression">
+      <div class="queue-grid">
+        <div class="profile-pane">
+          <div class="profile-card active"><b>Discord 用</b><span>AVIF / 品質 80</span></div>
+          <div class="profile-card"><b>保管用</b><span>JPEG XL / ロスレス</span></div>
+          <div class="profile-card"><b>共有用</b><span>WebP / 品質 85</span></div>
+        </div>
+        <div class="queue-pane">
+          <div class="queue-head"><b>圧縮キュー</b><span>待機 8 件 / 失敗 1 件</span></div>
+          <div class="queue-scroll">
+            <div class="queue-row"><span class="status"></span><span class="name">The Black Cat — 2026-11-11 05:00</span><span class="meta">待機</span></div>
+            <div class="queue-row"><span class="status"></span><span class="name">Sunset Bar — 2026-11-10 21:30</span><span class="meta">待機</span></div>
+            <div class="queue-row"><span class="status done"></span><span class="name">Furality Aqua — 2026-11-10 19:20</span><span class="meta">完了</span></div>
+            <div class="queue-row"><span class="status fail"></span><span class="name">Cozy Cabin — 2026-11-10 18:10</span><span class="meta">失敗</span></div>
+            <div class="queue-row"><span class="status done"></span><span class="name">Midnight Rooftop — 2026-11-10 17:40</span><span class="meta">完了</span></div>
+            <div class="queue-row"><span class="status"></span><span class="name">The Black Cat — 2026-11-10 16:20</span><span class="meta">待機</span></div>
+            <div class="queue-row"><span class="status done"></span><span class="name">未紐付け — 2026-11-10 15:05</span><span class="meta">完了</span></div>
+            <div class="queue-row"><span class="status"></span><span class="name">Furality Aqua — 2026-11-10 14:30</span><span class="meta">待機</span></div>
+          </div>
+          <div class="scrollbar drag"><span class="track"></span><span class="thumb"></span></div>
+        </div>
+      </div>
+      <p class="note">圧縮キューは <code>VirtualList</code> の仮想スクロールを維持するため、この画面だけ <code>Scrollbar::vertical(&amp;queue_scroll).viewport_from_layout()</code> を直接配置する。見た目は他画面と同じで、トラックは表示しない。</p>
+    </div>
+
+    <div class="tab-panel" id="panel-dialog">
+      <div class="dialog-stage">
+        <div class="dialog">
+          <div class="dialog-head"><b>圧縮の設定</b><span>Esc で閉じる</span></div>
+          <div class="dialog-body">
+            <div class="dialog-section">
+              <div class="label">プロファイル</div>
+              <div class="dialog-list">
+                <div class="dialog-row"><span class="check on"></span><span class="text">Discord 用 / AVIF / 品質 80</span></div>
+                <div class="dialog-row"><span class="check"></span><span class="text">保管用 / JPEG XL / ロスレス</span></div>
+                <div class="dialog-row"><span class="check"></span><span class="text">共有用 / WebP / 品質 85</span></div>
+                <div class="dialog-row"><span class="check"></span><span class="text">その他のプロファイル</span></div>
+                <div class="scrollbar hover"><span class="track"></span><span class="thumb"></span></div>
+              </div>
+            </div>
+            <div class="dialog-section">
+              <div class="label">出力</div>
+              <div class="dialog-row"><span class="text">元のフォルダに隣接して保存</span></div>
+              <div class="dialog-row"><span class="text">指定フォルダへ保存</span></div>
+            </div>
+            <div class="dialog-section">
+              <div class="label">詳細</div>
+              <div class="dialog-row"><span class="text">元画像をゴミ箱へ移動する</span></div>
+              <div class="dialog-row"><span class="text">メタデータを保持する</span></div>
+              <div class="dialog-row"><span class="text">同名ファイルは連番を付ける</span></div>
+            </div>
+            <div class="scrollbar"><span class="track"></span><span class="thumb"></span></div>
+          </div>
+          <div class="dialog-footer"><span class="btn">キャンセル</span><span class="btn primary">圧縮する</span></div>
+        </div>
+      </div>
+      <p class="note">ダイアログ本体と、その中のプロファイル一覧のように入れ子になったスクロール領域でも、それぞれのトラックが消える。</p>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-head">
+      <h2>写真グリッドの年レール <span>今回変更しない</span></h2>
+      <p>年レールはスクロールバーではなく年ナビゲーション。2 px の線・年ドット・年ラベル・月ピルを現状のまま残す。</p>
+    </div>
+    <div class="rail-card">
+      <div class="rail-copy">
+        <h3>年レールは対象外</h3>
+        <p>写真グリッド右端の年レールは、年ごとの位置を示すドット、年ラベル、現在位置の月ピル、クリック・ドラッグでジャンプする当たり判定を持つ独自のナビゲーション要素です。</p>
+        <ul>
+          <li>2 px の線はスクロールバーのトラックではなく、年ドットを並べるレールとして機能する。</li>
+          <li>ユーザー決定により、見た目・当たり判定・年ラベル・月ピルを一切変更しない。</li>
+          <li>標準スクロールバーのトラック非表示は、年レール以外の全スクロール領域に適用する。</li>
+        </ul>
+        <p class="note"><strong>Issue との差分:</strong> Issue #604 の受け入れ条件は「写真グリッドの独自オーバーレイもトラックを表示しない」を含むが、このモックでは年レールを対象外とする。承認時に Issue のスコープを更新する。</p>
+      </div>
+      <div class="rail-shot">
+        <img src="superpowers/specs/assets/604/year-rail-current.png" alt="写真グリッド右端の年レール。2pxの線、年ドット、年ラベル、月ピルが表示されている。">
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-head">
+      <h2>表示状態 <span>スクロール中・ホバー・ドラッグ</span></h2>
+      <p>表示モード（スクロール中に表示し、停止後にフェードアウト）は変えない。トラックはどの状態でも描かない。</p>
+    </div>
+    <table class="state-table">
+      <thead>
+        <tr><th>状態</th><th>トラック</th><th>サム</th><th>備考</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>通常（非表示）</td><td>なし</td><td>描画しない</td><td>スクロール停止後、既存のフェードで消える。</td></tr>
+        <tr><td>スクロール中</td><td>なし</td><td>6 px / <code>muted_2</code></td><td>既存の表示モードを維持。</td></tr>
+        <tr><td>ホバー</td><td>なし</td><td>8 px / <code>muted</code></td><td>サムの太さと色だけ変化。</td></tr>
+        <tr><td>ドラッグ</td><td>なし</td><td>8 px / <code>muted</code></td><td>ドラッグ中のスクロール操作は従来どおり。</td></tr>
+      </tbody>
+    </table>
+    <div class="state-samples">
+      <div class="state-sample"><span class="sample-label">通常</span><div class="scrollbar"><span class="track"></span><span class="thumb"></span></div></div>
+      <div class="state-sample hover"><span class="sample-label">ホバー</span><div class="scrollbar"><span class="track"></span><span class="thumb"></span></div></div>
+      <div class="state-sample drag"><span class="sample-label">ドラッグ</span><div class="scrollbar"><span class="track"></span><span class="thumb"></span></div></div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-head">
+      <h2>実装メモ <span>取り付け方式</span></h2>
+      <p>通常のスクロール領域は wrapper、App がハンドルを保持する画面は外側ラッパーへのスクロールバー、仮想リストだけ直接配置。</p>
+    </div>
+    <table class="impl-table">
+      <thead>
+        <tr><th>対象</th><th>現在</th><th>変更後</th><th>理由</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>一般的なスクロール領域（ダッシュボード、通知、検索フィルター、ダイアログ本体、写真インスペクタ内など）</td><td><code>overflow_y_scrollbar()</code></td><td>変更なし</td><td>既に wrapper 方式。</td></tr>
+        <tr><td>設定</td><td><code>overflow_y_scroll()</code> + 8 px ガター + <code>Scrollbar::vertical</code></td><td>外側ラッパーへ <code>.vertical_scrollbar(&amp;settings_scroll)</code></td><td>App の <code>ScrollHandle</code> を維持し、直接配置をなくす。</td></tr>
+        <tr><td>連携・自動</td><td><code>overflow_y_scroll()</code> + 8 px ガター + <code>Scrollbar::vertical</code></td><td>外側ラッパーへ <code>.vertical_scrollbar(&amp;integrations_scroll)</code></td><td>同上。マスター・ディテールの詳細ペインだけに適用。</td></tr>
+        <tr><td>圧縮キュー</td><td><code>Scrollbar::vertical(&amp;queue_scroll).viewport_from_layout()</code></td><td>変更なし（例外）</td><td><code>VirtualList</code> は <code>ScrollableElement</code> 非対応。仮想スクロールとハンドル共有を優先。</td></tr>
+        <tr><td>写真グリッドの年レール</td><td>独自描画（2 px 線 + ドット + ラベル + 月ピル）</td><td>変更なし</td><td>年ナビゲーションとして独立。ユーザー決定により対象外。</td></tr>
+      </tbody>
+    </table>
+    <p class="note">実装上の変更点: <code>crates/ui/src/ui/palette.rs</code> の <code>theme.colors.scrollbar</code> を透明にし、<code>crates/ui/src/ui/settings.rs</code> と <code>crates/ui/src/ui/integrations.rs</code> の直接配置を外側ラッパーの <code>.vertical_scrollbar</code> に置き換える。年レールと圧縮キューのコードは変更しない。</p>
+  </section>
+
+  <section class="section">
+    <div class="approve">
+      <h3>承認してほしい点</h3>
+      <ul>
+        <li>標準スクロールバーは、通常・ホバー・ドラッグのすべてでトラックを描かず、サムだけを表示する。</li>
+        <li>サムの色・幅・表示モード（スクロール中の表示と停止後のフェード）は現状のままにする。</li>
+        <li>設定と連携・自動は、App が保持する <code>ScrollHandle</code> を維持したまま外側ラッパーの wrapper 方式へ変更する。</li>
+        <li>圧縮キューは <code>VirtualList</code> の制約により、直接配置の例外として残す。</li>
+        <li>写真グリッドの年レールは一切変更しない。Issue #604 の該当する受け入れ条件はスコープから外す。</li>
+      </ul>
+      <p class="note">承認後、設計・計画を確定し、実装 PR でコード・テスト・回帰確認を行う。</p>
+    </div>
+  </section>
+</main>
+</body>
+</html>
