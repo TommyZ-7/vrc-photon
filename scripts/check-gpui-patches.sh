@@ -30,6 +30,6 @@ check_patch() {
 }
 
 check_patch gpui-component TommyZ-7/gpui-kit ee98b887e620e7c47e0cbe41500959fde7bfdfb5
-check_patch gpui-fast TommyZ-7/gpui-fast c66d3da88c26cc2f65033a374f1fd3be85f0bd23
-check_patch gpui-fast-wgpu TommyZ-7/gpui-fast c66d3da88c26cc2f65033a374f1fd3be85f0bd23
-check_patch gpui-fast-windows TommyZ-7/gpui-fast c66d3da88c26cc2f65033a374f1fd3be85f0bd23
+check_patch gpui-fast TommyZ-7/gpui-fast 53778313ceeee1a1e47eedec73893b45663e8ff0
+check_patch gpui-fast-wgpu TommyZ-7/gpui-fast 53778313ceeee1a1e47eedec73893b45663e8ff0
+check_patch gpui-fast-windows TommyZ-7/gpui-fast 53778313ceeee1a1e47eedec73893b45663e8ff0
