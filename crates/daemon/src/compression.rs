@@ -128,8 +128,8 @@ pub(crate) fn worker_loop(
                     batch
                 }
                 Err(error) => {
-                    // The loop polls every 400 ms; warn once per distinct
-                    // failure instead of flooding the log while it persists.
+                    // The loop retries after a 30 s idle fallback; warn once
+                    // per distinct failure instead of flooding the log.
                     let message = error.to_string();
                     if last_poll_error.as_deref() != Some(&message) {
                         tracing::warn!(%error, "cannot load pending compression jobs");
@@ -141,7 +141,7 @@ pub(crate) fn worker_loop(
         };
         if batch.is_empty() {
             // Poll first so a batch keeps all workers busy; the signal only
-            // saves the 400 ms wait when the queue was empty.
+            // saves the 30 s fallback wait when the queue was empty.
             jobs.wait(&mut seen_generation, COMPRESSION_IDLE_WAIT);
             continue;
         }

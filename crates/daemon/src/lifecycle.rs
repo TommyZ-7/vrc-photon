@@ -176,11 +176,6 @@ pub struct Daemon {
     pub(crate) ai_http: Arc<dyn ModelHttpClient>,
 }
 
-/// Re-links photos whose XMP has already been read outside the database lock.
-///
-/// `read_xmp` must be called while no database lock is held; the daemon passes
-/// a closure that reads the PNG sidecar. The database lock is taken again for
-/// each short link/retry write.
 /// Earliest deadline, capped at `cap` and floored at 10 ms so an already-due
 /// task cannot spin the loop.
 pub(crate) fn min_wait(waits: &[Duration], cap: Duration) -> Duration {

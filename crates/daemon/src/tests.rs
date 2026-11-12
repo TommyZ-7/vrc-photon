@@ -5071,7 +5071,7 @@ fn periodic_settings_refresh_applies_saved_thumbnail_limit() {
     let mut daemon = test_daemon(&dir);
     save_daemon_settings(&daemon, |settings| settings.thumbnail_cache_mb = 1);
     // The main loop calls this on every iteration, paused or not; make
-    // the refresh due as it is half a second after the previous one.
+    // the refresh due as it is one second after the previous one.
     daemon.last_settings_check = Instant::now() - Duration::from_secs(5);
     daemon.refresh_periodic_settings();
     assert_eq!(

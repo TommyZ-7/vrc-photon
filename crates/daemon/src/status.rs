@@ -41,6 +41,9 @@ pub(crate) fn cgroup_has_unit(cgroup: &str, unit: &str) -> bool {
 
 /// Compares the observable status fields. `version` is stamped on every
 /// snapshot and must not make an unchanged status look different.
+///
+/// Keep this list in sync with [`StatusSnapshot`]: a new field that is not
+/// compared here silently suppresses events whose only change is that field.
 fn same_status_fields(a: &StatusSnapshot, b: &StatusSnapshot) -> bool {
     a.paused == b.paused
         && a.watching == b.watching

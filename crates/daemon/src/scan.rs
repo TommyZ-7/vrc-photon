@@ -4,6 +4,11 @@ use super::logs::missing_display_derivatives;
 use super::thumbnails::ThumbnailRequest;
 use super::*;
 
+/// Re-links photos whose XMP has already been read outside the database lock.
+///
+/// `read_xmp` must be called while no database lock is held; the daemon passes
+/// a closure that reads the PNG sidecar. The database lock is taken again for
+/// each short link/retry write.
 pub(crate) fn relink_photos_outside_lock<F>(
     db: &Arc<Mutex<Db>>,
     photos: Vec<Photo>,
