@@ -201,7 +201,7 @@ impl App {
                 .top_0()
                 .left_0()
                 .size_full()
-                .child(viewer_still_element(&previous))
+                .child(viewer_still_element(&previous, ObjectFit::Contain))
                 .with_animation(
                     ("viewer-nav-previous", nav_epoch),
                     Animation::new(nav_duration)
@@ -222,7 +222,7 @@ impl App {
                 .left(px(zoom_left))
                 .w(px(zoom_width))
                 .h(px(zoom_height))
-                .child(viewer_still_element(&image))
+                .child(viewer_still_element(&image, ObjectFit::Contain))
                 .with_animation(
                     ("viewer-nav-current", nav_epoch),
                     Animation::new(nav_duration)
@@ -484,7 +484,7 @@ impl ViewerMorphView {
 /// Paints a viewer still: full images use the ordinary image element, while
 /// thumbnails come from the texture array and are stretched into the frame's
 /// photo-shaped bounds.
-fn viewer_still_element(still: &ViewerStill) -> AnyElement {
+fn viewer_still_element(still: &ViewerStill, thumbnail_fit: ObjectFit) -> AnyElement {
     match still {
         ViewerStill::Full(image) => gpui_kit::img(image.clone())
             .object_fit(ObjectFit::Contain)
@@ -492,7 +492,7 @@ fn viewer_still_element(still: &ViewerStill) -> AnyElement {
             .into_any_element(),
         ViewerStill::Thumbnail {
             handle, dimensions, ..
-        } => thumbnail_layer(*handle, *dimensions, ObjectFit::Fill, 0.0).into_any_element(),
+        } => thumbnail_layer(*handle, *dimensions, thumbnail_fit, 0.0).into_any_element(),
     }
 }
 
@@ -522,7 +522,7 @@ impl Render for ViewerMorphView {
             .absolute()
             .overflow_hidden()
             .bg(rgb(color))
-            .child(viewer_still_element(&still))
+            .child(viewer_still_element(&still, ObjectFit::Cover))
             .with_animation(
                 ("viewer-morph-frame", epoch),
                 Animation::new(MOTION_MORPH)
