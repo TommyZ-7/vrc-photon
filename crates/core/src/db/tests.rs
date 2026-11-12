@@ -7551,8 +7551,12 @@ fn photos_without_hash_after_skips_earlier_ids() {
     let mut ids = Vec::new();
     for name in ["a.png", "b.png", "c.png"] {
         ids.push(
-            db.upsert_photo(&sample_photo(root, &format!("/photos/{name}"), 1_700_000_000))
-                .unwrap(),
+            db.upsert_photo(&sample_photo(
+                root,
+                &format!("/photos/{name}"),
+                1_700_000_000,
+            ))
+            .unwrap(),
         );
     }
 
@@ -7582,7 +7586,10 @@ fn has_daemon_commands_reports_only_queued_rows() {
 
     db.request_daemon_command(DaemonCommand::Rescan).unwrap();
     assert!(db.has_daemon_commands().unwrap());
-    assert_eq!(db.take_daemon_commands().unwrap(), vec![DaemonCommand::Rescan]);
+    assert_eq!(
+        db.take_daemon_commands().unwrap(),
+        vec![DaemonCommand::Rescan]
+    );
     assert!(!db.has_daemon_commands().unwrap());
 }
 

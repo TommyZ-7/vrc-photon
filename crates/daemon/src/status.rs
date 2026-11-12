@@ -131,12 +131,12 @@ impl Daemon {
             .is_none_or(|previous| !same_status_fields(previous, &snapshot));
         if changed {
             self.last_published_status = Some(snapshot.clone());
-            self.events.publish(Event::StatusChanged { status: snapshot });
+            self.events
+                .publish(Event::StatusChanged { status: snapshot });
         }
     }
 
     pub(crate) fn write_heartbeat(&mut self) {
-
         let db = lock_db(&self.db);
         if let Err(error) = db.set_setting(
             "daemon_heartbeat",

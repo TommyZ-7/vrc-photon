@@ -221,7 +221,10 @@ impl ProcessTable for WindowsProcessTable {
             Ok(()) => {
                 let length = length.min(buffer.len() as u32) as usize;
                 let path = String::from_utf16_lossy(&buffer[..length]);
-                let name = path.rsplit(|c| c == '\\' || c == '/').next().unwrap_or(&path);
+                let name = path
+                    .rsplit(|c| c == '\\' || c == '/')
+                    .next()
+                    .unwrap_or(&path);
                 Ok(Some(name.to_string()))
             }
             Err(error) => Err(io::Error::other(error.to_string())),
@@ -323,7 +326,11 @@ mod tests {
         assert_eq!(table.list_calls(), 1);
 
         assert_eq!(probe.poll_with(&table), Some(true));
-        assert_eq!(table.list_calls(), 1, "cached poll must not list /proc again");
+        assert_eq!(
+            table.list_calls(),
+            1,
+            "cached poll must not list /proc again"
+        );
         assert_eq!(table.comm_calls(), 1);
     }
 

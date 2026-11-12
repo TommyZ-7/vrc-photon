@@ -612,7 +612,10 @@ mod tests {
         assert_eq!(locator.scans, 1);
 
         assert!(locator.latest().unwrap().is_some());
-        assert_eq!(locator.scans, 1, "unchanged directory must not be rescanned");
+        assert_eq!(
+            locator.scans, 1,
+            "unchanged directory must not be rescanned"
+        );
     }
 
     #[test]

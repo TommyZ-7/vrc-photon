@@ -690,7 +690,8 @@ impl Daemon {
         let old_spec = self.thumbnail_spec.load(Ordering::Relaxed);
         let new_limit = thumbnail_cache_limit_bytes(settings.thumbnail_cache_mb);
         let new_spec = pack_thumbnail_spec(settings.thumbnail_spec());
-        self.thumbnail_cache_limit.store(new_limit, Ordering::Relaxed);
+        self.thumbnail_cache_limit
+            .store(new_limit, Ordering::Relaxed);
         self.thumbnail_spec.store(new_spec, Ordering::Relaxed);
         let log_dir_changed = self.settings.log_dir != settings.log_dir;
         let thumbnail_size_changed = self.settings.thumbnail_size != settings.thumbnail_size;
@@ -1254,7 +1255,8 @@ impl Daemon {
         let old_spec = self.thumbnail_spec.load(Ordering::Relaxed);
         let new_limit = thumbnail_cache_limit_bytes(settings.thumbnail_cache_mb);
         let new_spec = pack_thumbnail_spec(settings.thumbnail_spec());
-        self.thumbnail_cache_limit.store(new_limit, Ordering::Relaxed);
+        self.thumbnail_cache_limit
+            .store(new_limit, Ordering::Relaxed);
         self.thumbnail_spec.store(new_spec, Ordering::Relaxed);
         if old_limit != new_limit || old_spec != new_spec || thumbnail_size_changed {
             self.notify_thumbnail_worker();

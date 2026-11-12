@@ -121,11 +121,11 @@ impl Db {
     /// Returns whether any command is queued. Lets the daemon avoid opening a
     /// write transaction on every idle loop iteration.
     pub fn has_daemon_commands(&self) -> Result<bool> {
-        let exists: bool = self.conn.query_row(
-            "SELECT EXISTS(SELECT 1 FROM daemon_commands)",
-            [],
-            |row| row.get(0),
-        )?;
+        let exists: bool =
+            self.conn
+                .query_row("SELECT EXISTS(SELECT 1 FROM daemon_commands)", [], |row| {
+                    row.get(0)
+                })?;
         Ok(exists)
     }
 

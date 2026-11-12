@@ -4436,10 +4436,7 @@ fn thumbnail_settings_change_wakes_the_worker() {
     daemon.thumbnail_tx = Some(tx);
     daemon.thumbnail_cache_limit.store(1, Ordering::Relaxed);
     daemon.refresh_compression_settings();
-    assert!(matches!(
-        rx.try_recv().unwrap(),
-        ThumbnailRequest::Refresh
-    ));
+    assert!(matches!(rx.try_recv().unwrap(), ThumbnailRequest::Refresh));
 }
 
 #[test]
@@ -4451,10 +4448,7 @@ fn notify_workers_wakes_hash_and_thumbnail() {
     let before = daemon.hash_wake.generation();
     daemon.notify_workers();
     assert!(daemon.hash_wake.generation() > before);
-    assert!(matches!(
-        rx.try_recv().unwrap(),
-        ThumbnailRequest::Refresh
-    ));
+    assert!(matches!(rx.try_recv().unwrap(), ThumbnailRequest::Refresh));
 }
 
 #[test]
@@ -5012,10 +5006,13 @@ fn command_inserted_without_wake_is_still_processed() {
     let dir = tempfile::tempdir().unwrap();
     let mut daemon = test_daemon(&dir);
     daemon.set_tray_enabled(false);
-    write_photo(&dir.path().join("photos/VRChat_2026-10-21_21-24-00.000_4x3.png"));
+    write_photo(
+        &dir.path()
+            .join("photos/VRChat_2026-10-21_21-24-00.000_4x3.png"),
+    );
 
     {
-        let db = Db::open(&dir.path().join("library.db")).unwrap();
+        let db = Db::open(dir.path().join("library.db")).unwrap();
         db.request_daemon_command(DaemonCommand::Rescan).unwrap();
     }
 
