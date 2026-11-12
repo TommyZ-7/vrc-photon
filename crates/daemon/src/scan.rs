@@ -261,6 +261,7 @@ impl Daemon {
             }
         }
         self.hash_wake.notify();
+        self.invalidate_counts();
         Ok(())
     }
 
@@ -299,6 +300,7 @@ impl Daemon {
         // Covers both the full scan and ScanRoot commands. A no-op when the
         // scan found nothing; the hash worker also has a long fallback.
         self.hash_wake.notify();
+        self.invalidate_counts();
         report_result
     }
 

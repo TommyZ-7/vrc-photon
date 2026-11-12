@@ -29,7 +29,9 @@ use vrc_photon_core::scanner::{
 };
 use vrc_photon_core::settings::{AppSettings, detect_vrchat_paths};
 use vrc_photon_core::thumbnail;
-use vrc_photon_ipc::{Endpoint, Event, JobStatus, Operation, ScanPhase as IpcScanPhase};
+use vrc_photon_ipc::{
+    Endpoint, Event, JobStatus, Operation, ScanPhase as IpcScanPhase, StatusSnapshot,
+};
 
 #[cfg(test)]
 mod ai_e2e;
@@ -92,6 +94,11 @@ const LOG_DIR_RESCAN_FALLBACK: Duration = Duration::from_secs(60);
 /// explicitly; this only catches rows inserted by another path or a missed
 /// notification.
 const HASH_IDLE_WAIT: Duration = Duration::from_secs(60);
+/// Session/world/player fields are cheap and change with log ingestion.
+const SESSION_STATUS_INTERVAL: Duration = Duration::from_secs(2);
+/// Photo and queue counts are full-table aggregates; refresh them rarely and
+/// immediately after a scan, command, or indexing event changes the library.
+const COUNTS_STATUS_INTERVAL: Duration = Duration::from_secs(30);
 /// Complete log lines one poll may return. The next poll continues from the
 /// last committed offset.
 const LOG_READ_MAX_LINES: usize = 5_000;

@@ -383,7 +383,8 @@ impl Daemon {
         self.vrchat_session_id = None;
         if closed {
             tracing::info!(ended_at, "closed session after VRChat exited");
-            self.refresh_status()?;
+            self.refresh_session_status()?;
+            self.publish_status_if_changed();
         }
         Ok(())
     }
@@ -584,7 +585,8 @@ impl Daemon {
             drop(db);
             tail.offset = new_offset;
         }
-        self.refresh_status()?;
+        self.refresh_session_status()?;
+        self.publish_status_if_changed();
         self.link_unlinked()?;
         Ok(pass)
     }

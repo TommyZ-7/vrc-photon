@@ -4538,6 +4538,92 @@ fn paused_loop_keeps_heartbeat_status_and_log_ingestion() {
 }
 
 #[test]
+fn session_refresh_does_not_touch_counts() {
+    let dir = tempfile::tempdir().unwrap();
+    let daemon = test_daemon(&dir);
+    {
+        let mut status = daemon.status.lock().unwrap();
+        status.photo_count = 123;
+        status.pending_jobs = 4;
+        status.pending_sends = 5;
+        status.pending_tagging_jobs = 6;
+    }
+    daemon.refresh_session_status().unwrap();
+    let status = daemon.status.lock().unwrap();
+    assert_eq!(status.photo_count, 123);
+    assert_eq!(status.pending_jobs, 4);
+    assert_eq!(status.pending_sends, 5);
+    assert_eq!(status.pending_tagging_jobs, 6);
+}
+
+#[test]
+fn counts_refresh_does_not_touch_session_fields() {
+    let dir = tempfile::tempdir().unwrap();
+    let daemon = test_daemon(&dir);
+    {
+        let mut status = daemon.status.lock().unwrap();
+        status.world_name = Some("keep".to_string());
+        status.players = 7;
+    }
+    daemon.refresh_counts().unwrap();
+    let status = daemon.status.lock().unwrap();
+    assert_eq!(status.world_name.as_deref(), Some("keep"));
+    assert_eq!(status.players, 7);
+}
+
+#[test]
+fn status_publish_is_skipped_when_nothing_changed() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    let events = daemon.events.subscribe();
+    daemon.publish_status_if_changed();
+    daemon.publish_status_if_changed();
+    assert_eq!(
+        events
+            .try_iter()
+            .filter(|event| matches!(event, Event::StatusChanged { .. }))
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn status_publish_fires_when_a_field_changes() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    let events = daemon.events.subscribe();
+    daemon.publish_status_if_changed();
+    daemon.set_paused(true);
+    while events.try_recv().is_ok() {}
+    daemon.publish_status_if_changed();
+    assert!(
+        events
+            .try_iter()
+            .any(|event| matches!(event, Event::StatusChanged { .. }))
+    );
+}
+
+#[test]
+fn loop_refreshes_counts_only_when_due() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    daemon.set_tray_enabled(false);
+
+    daemon.last_counts_status = Instant::now();
+    {
+        let mut status = daemon.status.lock().unwrap();
+        status.photo_count = 42;
+    }
+    daemon.run_loop_iteration();
+    assert_eq!(daemon.status.lock().unwrap().photo_count, 42);
+
+    daemon.last_counts_status = Instant::now() - COUNTS_STATUS_INTERVAL;
+    daemon.run_loop_iteration();
+    let expected = daemon.db.lock().unwrap().count_photos().unwrap();
+    assert_eq!(daemon.status.lock().unwrap().photo_count, expected);
+}
+
+#[test]
 fn presence_check_runs_only_after_its_interval() {
     let dir = tempfile::tempdir().unwrap();
     let mut daemon = test_daemon(&dir);

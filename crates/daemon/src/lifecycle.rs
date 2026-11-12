@@ -145,6 +145,9 @@ pub struct Daemon {
     pub(crate) deletion_handle: Option<JoinHandle<()>>,
     pub(crate) last_autostart_check: std::time::Instant,
     pub(crate) last_settings_check: std::time::Instant,
+    pub(crate) last_session_status: Instant,
+    pub(crate) last_counts_status: Instant,
+    pub(crate) last_published_status: Option<StatusSnapshot>,
     pub(crate) last_heartbeat: std::time::Instant,
     pub(crate) last_asset_check: Instant,
     pub(crate) thumbnail_dir: PathBuf,
@@ -377,6 +380,9 @@ impl Daemon {
             deletion_handle: None,
             last_autostart_check: std::time::Instant::now(),
             last_settings_check: Instant::now() - Duration::from_secs(2),
+            last_session_status: Instant::now() - SESSION_STATUS_INTERVAL,
+            last_counts_status: Instant::now() - COUNTS_STATUS_INTERVAL,
+            last_published_status: None,
             last_heartbeat: std::time::Instant::now() - Duration::from_secs(10),
             last_asset_check: Instant::now() - Duration::from_secs(30),
             thumbnail_dir,
@@ -1025,8 +1031,19 @@ impl Daemon {
             }
             self.last_presence_check = std::time::Instant::now();
         }
-        if let Err(error) = self.refresh_status() {
-            tracing::warn!(%error, "cannot refresh daemon status");
+        if self.last_session_status.elapsed() >= SESSION_STATUS_INTERVAL {
+            if let Err(error) = self.refresh_session_status() {
+                tracing::warn!(%error, "cannot refresh daemon session status");
+            }
+            self.last_session_status = Instant::now();
+            self.publish_status_if_changed();
+        }
+        if self.last_counts_status.elapsed() >= COUNTS_STATUS_INTERVAL {
+            if let Err(error) = self.refresh_counts() {
+                tracing::warn!(%error, "cannot refresh daemon counts");
+            }
+            self.last_counts_status = Instant::now();
+            self.publish_status_if_changed();
         }
         if !paused && self.last_asset_check.elapsed() >= Duration::from_secs(30) {
             if let Err(error) = self.verify_replaced_assets() {
