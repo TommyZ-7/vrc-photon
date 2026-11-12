@@ -4483,6 +4483,20 @@ fn presence_check_runs_only_after_its_interval() {
 }
 
 #[test]
+fn changing_the_log_dir_invalidates_the_locator() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    daemon.ingest_logs().unwrap();
+    assert!(daemon.log_locator.is_some());
+
+    save_daemon_settings(&daemon, |settings| {
+        settings.log_dir = Some(dir.path().join("logs2").to_string_lossy().to_string());
+    });
+    daemon.reload_settings().unwrap();
+    assert!(daemon.log_locator.is_none());
+}
+
+#[test]
 fn paused_loop_collects_watcher_events_and_indexes_them_after_resume() {
     let dir = tempfile::tempdir().unwrap();
     let mut daemon = test_daemon(&dir);

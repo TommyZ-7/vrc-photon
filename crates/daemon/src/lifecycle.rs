@@ -121,6 +121,7 @@ pub struct Daemon {
     /// `--once`); the caller generates their thumbnails directly.
     pub(crate) deferred_thumbnail_ids: Vec<i64>,
     pub(crate) log_tail: Option<LogTail>,
+    pub(crate) log_locator: Option<LogLocator>,
     pub(crate) vrchat_probe: VrchatProcessProbe,
     pub(crate) vrchat_missing_polls: u8,
     pub(crate) vrchat_session_id: Option<i64>,
@@ -353,6 +354,7 @@ impl Daemon {
             watcher_error,
             deferred_thumbnail_ids: Vec::new(),
             log_tail: None,
+            log_locator: None,
             vrchat_probe: VrchatProcessProbe::new(),
             vrchat_missing_polls: 0,
             vrchat_session_id: None,
@@ -658,6 +660,7 @@ impl Daemon {
             pack_thumbnail_spec(settings.thumbnail_spec()),
             Ordering::Relaxed,
         );
+        let log_dir_changed = self.settings.log_dir != settings.log_dir;
         let thumbnail_size_changed = self.settings.thumbnail_size != settings.thumbnail_size;
         if thumbnail_size_changed {
             if let Err(error) = thumbnail::clear_thumbnail_cache_in(&self.thumbnail_dir) {
@@ -667,6 +670,9 @@ impl Daemon {
         }
         let world_name_enabled = settings.world_name_resolution_enabled;
         self.settings = settings;
+        if log_dir_changed {
+            self.log_locator = None;
+        }
         let was_world_name_enabled = self
             .world_name_resolution_enabled
             .swap(world_name_enabled, Ordering::Relaxed);

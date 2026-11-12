@@ -1,3 +1,5 @@
+use std::time::SystemTime;
+
 use super::compression::modified_utc;
 use super::lifecycle::LocalizedError;
 use super::*;
@@ -47,6 +49,72 @@ pub(crate) fn latest_log_file(dir: &Path) -> Result<Option<PathBuf>> {
         .collect();
     files.sort();
     Ok(files.pop())
+}
+
+/// Caches the newest log file and only rescans the directory when its mtime
+/// changes, the cached file disappears, or the fallback interval expires.
+pub(crate) struct LogLocator {
+    dir: PathBuf,
+    dir_mtime: Option<SystemTime>,
+    latest: Option<PathBuf>,
+    last_scan: Instant,
+    #[cfg(test)]
+    scans: usize,
+}
+
+impl LogLocator {
+    pub(crate) fn new(dir: PathBuf) -> Self {
+        Self {
+            dir,
+            dir_mtime: None,
+            latest: None,
+            last_scan: Instant::now(),
+            #[cfg(test)]
+            scans: 0,
+        }
+    }
+
+    pub(crate) fn dir(&self) -> &Path {
+        &self.dir
+    }
+
+    pub(crate) fn invalidate(&mut self) {
+        self.latest = None;
+        self.dir_mtime = None;
+        self.last_scan = Instant::now() - LOG_DIR_RESCAN_FALLBACK;
+    }
+
+    pub(crate) fn latest(&mut self) -> Result<Option<PathBuf>> {
+        let metadata = match std::fs::metadata(&self.dir) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                self.invalidate();
+                return Ok(None);
+            }
+            Err(error) => {
+                return Err(error)
+                    .with_context(|| format!("cannot read log folder {}", self.dir.display()));
+            }
+        };
+        let mtime = metadata.modified().ok();
+        let cached_ok = self.dir_mtime.is_some()
+            && mtime == self.dir_mtime
+            && self.latest.as_ref().is_none_or(|path| path.is_file());
+        let fallback_due = self.last_scan.elapsed() >= LOG_DIR_RESCAN_FALLBACK;
+        if cached_ok && !fallback_due {
+            return Ok(self.latest.clone());
+        }
+
+        #[cfg(test)]
+        {
+            self.scans += 1;
+        }
+        let latest = latest_log_file(&self.dir)?;
+        self.latest = latest.clone();
+        self.dir_mtime = mtime;
+        self.last_scan = Instant::now();
+        Ok(latest)
+    }
 }
 
 /// Returns the ids of replaced photos whose display derivative is missing.
@@ -333,7 +401,14 @@ impl Daemon {
             )?;
             return Ok(());
         }
-        let path = match latest_log_file(&log_dir) {
+        if self
+            .log_locator
+            .as_ref()
+            .is_none_or(|locator| locator.dir() != log_dir.as_path())
+        {
+            self.log_locator = Some(LogLocator::new(log_dir.clone()));
+        }
+        let path = match self.log_locator.as_mut().unwrap().latest() {
             Ok(Some(path)) => path,
             Ok(None) => return Ok(()),
             Err(error) => {
@@ -512,5 +587,80 @@ impl Daemon {
         self.refresh_status()?;
         self.link_unlinked()?;
         Ok(pass)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    fn write_log(dir: &Path, name: &str) {
+        fs::write(dir.join(name), "log line\n").unwrap();
+    }
+
+    #[test]
+    fn locator_reuses_the_cached_latest_without_rescanning() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().to_path_buf();
+        write_log(&dir, "output_log_2026-01-01_00-00-00.txt");
+
+        let mut locator = LogLocator::new(dir);
+        assert!(locator.latest().unwrap().is_some());
+        assert_eq!(locator.scans, 1);
+
+        assert!(locator.latest().unwrap().is_some());
+        assert_eq!(locator.scans, 1, "unchanged directory must not be rescanned");
+    }
+
+    #[test]
+    fn locator_detects_a_new_log_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().to_path_buf();
+        write_log(&dir, "output_log_2026-01-01_00-00-00.txt");
+        let mut locator = LogLocator::new(dir.clone());
+        assert_eq!(
+            locator.latest().unwrap().unwrap().file_name().unwrap(),
+            "output_log_2026-01-01_00-00-00.txt"
+        );
+        assert_eq!(locator.scans, 1);
+
+        write_log(&dir, "output_log_2026-01-02_00-00-00.txt");
+        assert_eq!(
+            locator.latest().unwrap().unwrap().file_name().unwrap(),
+            "output_log_2026-01-02_00-00-00.txt"
+        );
+        assert_eq!(locator.scans, 2);
+    }
+
+    #[test]
+    fn locator_rescans_when_the_cached_file_disappears() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().to_path_buf();
+        let path = dir.join("output_log_2026-01-01_00-00-00.txt");
+        write_log(&dir, "output_log_2026-01-01_00-00-00.txt");
+
+        let mut locator = LogLocator::new(dir);
+        assert_eq!(locator.latest().unwrap().as_deref(), Some(path.as_path()));
+        assert_eq!(locator.scans, 1);
+
+        fs::remove_file(&path).unwrap();
+        assert!(locator.latest().unwrap().is_none());
+        assert_eq!(locator.scans, 2);
+    }
+
+    #[test]
+    fn locator_rescans_after_the_fallback_interval() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().to_path_buf();
+        write_log(&dir, "output_log_2026-01-01_00-00-00.txt");
+
+        let mut locator = LogLocator::new(dir);
+        assert!(locator.latest().unwrap().is_some());
+        assert_eq!(locator.scans, 1);
+
+        locator.last_scan = Instant::now() - LOG_DIR_RESCAN_FALLBACK - Duration::from_secs(1);
+        assert!(locator.latest().unwrap().is_some());
+        assert_eq!(locator.scans, 2);
     }
 }
