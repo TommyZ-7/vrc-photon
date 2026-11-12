@@ -559,8 +559,11 @@ pub fn ensure_thumbnail_in_with_status(
 ) -> Result<Option<EnsuredThumbnail>> {
     let spec = ThumbnailSpec::new(spec.size);
     let output = thumbnail_path_in(cache_dir, photo_id, spec);
+    let (width, height) = spec.dimensions();
+    let expected_bytes = crate::bc7::encoded_len(width, height);
     let existing_bytes = existing_thumbnail_bytes(&output);
     if let Some(bytes) = existing_bytes
+        && expected_bytes == Some(bytes as usize)
         && cache_metadata::cache_is_fresh(&output, source)
         && let Some((color, rotated)) = cache_metadata::read_color_rotation(&output)
     {
@@ -580,7 +583,6 @@ pub fn ensure_thumbnail_in_with_status(
         tracing::warn!(path = %source.display(), "cannot read thumbnail source metadata");
         return Ok(None);
     };
-    let (width, height) = spec.dimensions();
     let Some((canvas, rotated)) =
         crate::image_decode::decode_thumbnail_canvas(source, width, height)
     else {
@@ -895,6 +897,27 @@ mod tests {
             thumbnail_path_in(Path::new("/cache"), 7, ThumbnailSpec::new(512)),
             Path::new("/cache/7-s512x288.bc7")
         );
+    }
+
+    #[test]
+    fn a_fresh_cache_entry_with_the_wrong_size_is_regenerated() {
+        let dir = tempdir().unwrap();
+        let source = dir.path().join("source.png");
+        RgbaImage::from_pixel(640, 360, Rgba([10, 20, 30, 255]))
+            .save(&source)
+            .unwrap();
+        let spec = ThumbnailSpec::new(384);
+        let output = thumbnail_path_in(dir.path(), 999_994, spec);
+        fs::write(&output, vec![0u8; 10]).unwrap();
+        let stamp = cache_metadata::source_stamp(&source).unwrap();
+        cache_metadata::write_stamp(&output, stamp, 0, false).unwrap();
+
+        let ensured = ensure_thumbnail_in_with_status(999_994, &source, dir.path(), spec)
+            .unwrap()
+            .expect("regenerated");
+
+        assert!(ensured.created);
+        assert_eq!(fs::metadata(&output).unwrap().len(), (384 * 216) as u64);
     }
 
     #[test]
