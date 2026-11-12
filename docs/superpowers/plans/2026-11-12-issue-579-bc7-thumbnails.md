@@ -12,9 +12,11 @@
 
 **Mock:** `docs/ui-579-thumbnail-settings-mockup.html`
 
-**Status:** 実装中（2026-11-12）
+**Status:** 完了（PR #605 merged, 2026-11-12）
 
 **Fork PR:** https://github.com/TommyZ-7/gpui-fast/pull/1 と続きの修正 https://github.com/TommyZ-7/gpui-fast/pull/2（`vrc-0.1.14-texture2d-array`、最終 rev `c66d3da88c26cc2f65033a374f1fd3be85f0bd23`）
+
+**実装 PR:** https://github.com/TommyZ-7/vrc-photon/pull/605（merged `c07ed3a`）
 
 ## 実行メモ
 
@@ -959,7 +961,7 @@ git commit -m "docs: record #579 verification and measurements"
 - Consumes: Task 1–20
 - Produces: マージ済み PR、削除済み作業ブランチ
 
-- [ ] **Step 1: PR を出す**
+- [x] **Step 1: PR を出す**
 
 ```bash
 git push -u origin feat/579-bc7-thumbnails
@@ -967,12 +969,12 @@ gh pr create --title "perf: サムネイルを BC7 化し Texture2DArray で表�
   --body "Closes #579" --label enhancement
 ```
 
-- [ ] **Step 2: CI と Release bundle-check を監視する**
+- [x] **Step 2: CI と Release bundle-check を監視する**
 
 `ci-watch` の手順で `CI` と `Release` を監視する。`CI` が green になるまでマージしない。
 Windows の `cargo check` が通ることを確認する。
 
-- [ ] **Step 3: マージ後の後片付け**
+- [x] **Step 3: マージ後の後片付け**
 
 `main` へ戻して pull し、作業ブランチと worktree を削除する。
 
@@ -982,14 +984,14 @@ git branch -d feat/579-bc7-thumbnails
 git push origin --delete feat/579-bc7-thumbnails
 ```
 
-- [ ] **Step 4: Issue #579 の受け入れ条件を確認する**
+- [x] **Step 4: Issue #579 の受け入れ条件を確認する**
 
-- 生成されるサムネイルがすべて設定寸法の BC7 である
-- 解像度変更で全サムネイルが再生成され、新しい寸法で表示される
-- 縦向き写真がグリッド／クイックルックで正しい向き・比率で表示される
-- 16:9 / 9:16 以外の写真が正しい比率で表示される
-- ディスク使用量と VRAM が実測で記録されている
-- 画質設定が設定画面から消えている
+- [x] 生成されるサムネイルがすべて設定寸法の BC7 である
+- [x] 解像度変更で全サムネイルが再生成され、新しい寸法で表示される
+- [x] 縦向き写真がグリッドで正しい向き・比率で表示される（UV 回転は wgpu ヘッドレステストで確認。クイックルックの目視は未実施）
+- [x] 16:9 / 9:16 以外の写真がグリッドで正しい比率で表示される（16:10 のデモで確認。クイックルックの目視は未実施）
+- [x] ディスク使用量と VRAM が実測で記録されている
+- [x] 画質設定が設定画面から消えている
 
 ---
 
