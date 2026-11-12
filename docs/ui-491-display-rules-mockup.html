@@ -1,0 +1,564 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VRC PhotoN — 余計な表記の出し分け・集約・部分削除 (#491)</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --font: "Inter", "Noto Sans JP", "Hiragino Sans", "Yu Gothic UI", system-ui, -apple-system, sans-serif;
+    --text: #eef4ff;
+    --muted: #a8b4ca;
+    --dim: #7f8ba3;
+    --faint: #5e6a81;
+    --accent: #8bcbff;
+    --green: #7ee2b8;
+    --amber: #f4c878;
+    --rose: #ff94a8;
+    --line: rgba(255, 255, 255, 0.105);
+    --line-soft: rgba(255, 255, 255, 0.065);
+    --panel: #0d1420;
+    --panel-deep: #080d15;
+    --panel-inner: #111927;
+    --panel-raised: #121a28;
+    --r-card: 22px;
+    --r-inner: 16px;
+    --r-ui: 12px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-width: 320px;
+    background: #05070d;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -2;
+    background:
+      radial-gradient(ellipse 58% 54% at 10% 2%, rgba(54, 107, 255, 0.28), transparent 66%),
+      radial-gradient(ellipse 46% 52% at 92% 6%, rgba(255, 86, 181, 0.12), transparent 68%),
+      radial-gradient(ellipse 52% 48% at 64% 104%, rgba(30, 202, 178, 0.10), transparent 68%),
+      linear-gradient(140deg, #04060c 0%, #0a0f1e 44%, #060811 100%);
+  }
+  .page { width: min(1400px, calc(100% - 48px)); margin: 0 auto; padding: 44px 0 80px; }
+  .masthead { display: flex; align-items: flex-start; justify-content: space-between; gap: 28px; margin-bottom: 28px; }
+  .eyebrow { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; }
+  .issue-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border: 1px solid rgba(139,203,255,.24); border-radius: 999px; background: rgba(139,203,255,.08); color: var(--accent); font-size: 10px; letter-spacing: .08em; }
+  h1 { margin: 11px 0 9px; font-size: clamp(25px, 3vw, 36px); line-height: 1.22; letter-spacing: -.035em; font-weight: 620; }
+  .lede { max-width: 820px; margin: 0; color: var(--muted); font-size: 13px; }
+  .lede b { color: var(--text); font-weight: 560; }
+  .meta-card { flex: none; min-width: 250px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 16px; background: rgba(13,20,32,.72); }
+  .meta-row { display: flex; justify-content: space-between; gap: 18px; padding: 4px 0; color: var(--dim); font-size: 11px; }
+  .meta-row b { color: var(--text); font-weight: 550; }
+  .meta-row + .meta-row { border-top: 1px solid var(--line-soft); }
+
+  .section-label { display: flex; align-items: baseline; gap: 12px; margin: 42px 0 14px; }
+  .section-label h2 { margin: 0; font-size: 15px; font-weight: 580; letter-spacing: -.01em; }
+  .section-label span { color: var(--dim); font-size: 11px; }
+  .section-note { max-width: 900px; margin: -4px 0 16px; color: var(--dim); font-size: 11.5px; }
+
+  .decision-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 18px 0 6px; }
+  .decision { padding: 13px 14px; border: 1px solid var(--line); border-radius: 14px; background: rgba(14,21,34,.72); }
+  .decision .q { color: var(--accent); font-size: 10px; letter-spacing: .08em; }
+  .decision h3 { margin: 5px 0 6px; font-size: 12px; font-weight: 580; }
+  .decision p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
+  .decision .alt { display: block; margin-top: 7px; color: var(--faint); font-size: 10.5px; }
+  .decision .ok { display: inline-block; margin-top: 8px; padding: 2px 7px; border-radius: 999px; color: var(--green); background: rgba(126,226,184,.07); border: 1px solid rgba(126,226,184,.18); font-size: 9.5px; }
+
+  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+  .compare.three { grid-template-columns: repeat(3, 1fr); }
+  .compare-item { min-width: 0; }
+  .compare-cap { display: flex; align-items: center; gap: 7px; margin: 0 0 8px; color: var(--dim); font-size: 10.5px; letter-spacing: .04em; }
+  .tag-before, .tag-after { display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 999px; font-size: 9.5px; letter-spacing: .06em; }
+  .tag-before { color: var(--rose); border: 1px solid rgba(255,148,168,.2); background: rgba(255,148,168,.07); }
+  .tag-after { color: var(--green); border: 1px solid rgba(126,226,184,.2); background: rgba(126,226,184,.07); }
+
+  .card {
+    border: 1px solid var(--line);
+    border-radius: var(--r-card);
+    background: linear-gradient(180deg, rgba(18,26,40,.94), rgba(11,17,28,.96));
+    box-shadow: 0 16px 44px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.04);
+    padding: 16px;
+  }
+  .card.compact { padding: 13px; border-radius: 17px; }
+  .card-head { display: flex; align-items: center; gap: 8px; }
+  .card-title { font-size: 13px; font-weight: 600; color: var(--text); }
+  .card-sub { margin-top: 2px; color: var(--dim); font-size: 10px; }
+  .card-body { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+  .divider { height: 1px; background: var(--line-soft); }
+  .row { display: flex; align-items: center; gap: 8px; }
+  .meta-line { display: flex; gap: 8px; font-size: 10px; }
+  .meta-key { width: 74px; flex: none; color: var(--faint); }
+  .meta-val { min-width: 0; color: var(--muted); }
+  .meta-val.mono { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; }
+  .spacer { flex: 1; }
+  .muted { color: var(--dim); }
+  .tiny { font-size: 9.5px; }
+  .badge { display: inline-flex; align-items: center; gap: 5px; padding: 2px 7px; border-radius: 8px; font-size: 10px; font-weight: 500; }
+  .badge .dot { width: 5px; height: 5px; border-radius: 999px; background: currentColor; }
+  .b-green { color: var(--green); background: rgba(126,226,184,.09); }
+  .b-amber { color: var(--amber); background: rgba(244,200,120,.09); }
+  .b-rose { color: var(--rose); background: rgba(255,148,168,.09); }
+  .b-muted { color: var(--dim); background: rgba(168,180,202,.08); }
+  .b-accent { color: var(--accent); background: rgba(139,203,255,.09); }
+  .btn { display: inline-flex; align-items: center; justify-content: center; padding: 4px 9px; border: 1px solid var(--line); border-radius: 8px; color: var(--text); background: var(--panel-inner); font-size: 10px; }
+  .btn.primary { color: #07111f; background: var(--accent); border-color: transparent; font-weight: 600; }
+  .btn.ghost { background: transparent; color: var(--muted); }
+  .chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: 999px; border: 1px solid rgba(126,226,184,.28); background: rgba(126,226,184,.07); color: var(--green); font-size: 9.5px; }
+  .chip.neutral { border-color: var(--line); background: rgba(255,255,255,.03); color: var(--muted); }
+  .counts { display: flex; gap: 14px; }
+  .count { display: flex; align-items: baseline; gap: 4px; }
+  .count .k { color: var(--faint); font-size: 9px; }
+  .count .v { color: var(--text); font-size: 12px; font-weight: 600; }
+  .progress { height: 6px; border-radius: 999px; background: rgba(255,255,255,.07); overflow: hidden; }
+  .progress > span { display: block; height: 100%; width: 42%; border-radius: 999px; background: var(--accent); }
+  .job { display: flex; flex-direction: column; gap: 5px; padding: 8px; border-radius: 8px; background: var(--panel-inner); }
+  .job-top { display: flex; gap: 7px; align-items: center; font-size: 9.5px; }
+  .job-top .name { flex: 1; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .job-top .pct { color: var(--accent); }
+
+  .sidebar-stack { display: flex; flex-direction: column; gap: 10px; max-width: 238px; }
+  .status-card { height: 74px; padding: 10px 12px; border-radius: 14px; border: 1px solid var(--line); background: rgba(13,20,32,.82); display: flex; flex-direction: column; justify-content: center; gap: 2px; }
+  .status-card .headline { font-size: 13px; font-weight: 600; }
+  .status-card .detail { font-size: 10px; color: var(--muted); }
+  .status-card.waiting .headline { color: var(--amber); }
+  .status-card.running .headline { color: var(--accent); }
+  .status-card.failed .headline { color: var(--rose); }
+  .status-card.idle .headline { color: var(--muted); }
+
+  .gallery-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .photo { position: relative; aspect-ratio: 16 / 9; border-radius: 13px; overflow: hidden; border: 1px solid var(--line); background: linear-gradient(135deg, #1a2438, #0c1220); }
+  .photo::before { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at 30% 35%, rgba(139,203,255,.16), transparent 48%), radial-gradient(circle at 75% 70%, rgba(255,148,168,.12), transparent 52%); }
+  .photo .badge { position: absolute; left: 9px; bottom: 8px; background: var(--panel-deep); border: 1px solid var(--line-soft); }
+  .photo .fav { position: absolute; top: 8px; right: 9px; color: var(--amber); font-size: 11px; }
+  .inspector-badges { display: flex; flex-wrap: wrap; gap: 5px; }
+
+  .modal { border: 1px solid rgba(139,203,255,.22); border-radius: 20px; background: rgba(10,16,27,.96); padding: 16px; box-shadow: 0 24px 70px rgba(0,0,0,.45); }
+  .modal-title { display: flex; align-items: center; justify-content: space-between; font-size: 16px; font-weight: 600; }
+  .presence { padding: 12px; border-radius: 10px; border: 1px solid rgba(139,203,255,.24); background: rgba(139,203,255,.06); display: flex; flex-direction: column; gap: 8px; }
+  .presence-head { display: flex; align-items: center; gap: 8px; }
+  .presence-head .name { flex: 1; font-size: 11px; font-weight: 500; }
+  .presence-head .pct { color: var(--accent); font-size: 13px; font-weight: 600; }
+  .slider { height: 4px; border-radius: 999px; background: linear-gradient(90deg, rgba(244,200,120,.55) 0 48%, rgba(139,203,255,.9) 48% 100%); }
+  .footer-note { display: flex; align-items: center; gap: 8px; font-size: 9px; color: var(--dim); }
+
+  .ai-panel { padding: 9px; border-radius: 10px; border: 1px solid rgba(126,226,184,.22); background: rgba(126,226,184,.045); display: flex; flex-direction: column; gap: 7px; }
+  .ai-panel .title { color: var(--green); font-size: 10px; font-weight: 600; }
+  .tag-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+  .tag-chip { display: inline-flex; align-items: center; gap: 3px; padding: 2px 7px; border-radius: 999px; border: 1px solid rgba(126,226,184,.24); background: rgba(126,226,184,.08); color: var(--green); font-size: 10px; }
+  .tag-chip .prob { color: var(--dim); font-size: 9px; }
+  .facts { display: flex; gap: 6px; }
+  .fact { flex: 1; padding: 5px 7px; border-radius: 7px; background: rgba(126,226,184,.04); }
+  .fact .k { color: var(--faint); font-size: 9px; }
+  .fact .v { color: var(--text); font-size: 11px; font-weight: 500; }
+  .foot { color: var(--faint); font-size: 9px; }
+  .tooltip { display: inline-block; margin-top: 6px; padding: 4px 8px; border-radius: 7px; background: #060a12; border: 1px solid var(--line); color: var(--muted); font-size: 9.5px; }
+
+  .copy-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  .copy-table th, .copy-table td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--line-soft); }
+  .copy-table th { color: var(--dim); font-weight: 500; font-size: 10px; letter-spacing: .04em; }
+  .copy-table code { color: var(--accent); font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-size: 10px; }
+  .copy-table .ja { color: var(--text); }
+  .copy-table .en { color: var(--muted); }
+  .strike { color: var(--faint); text-decoration: line-through; }
+
+  .note { padding: 10px 12px; border-left: 2px solid rgba(139,203,255,.35); background: rgba(139,203,255,.04); color: var(--muted); font-size: 11px; border-radius: 0 8px 8px 0; }
+  .note b { color: var(--text); }
+  .pill { display: inline-flex; padding: 2px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); font-size: 9.5px; }
+
+  @media (max-width: 1100px) {
+    .decision-grid { grid-template-columns: repeat(2, 1fr); }
+    .compare { grid-template-columns: 1fr; }
+    .compare.three { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 720px) {
+    .page { width: calc(100% - 28px); padding-top: 28px; }
+    .masthead { flex-direction: column; }
+    .decision-grid { grid-template-columns: 1fr; }
+    .gallery-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="masthead">
+    <div>
+      <div class="eyebrow"><span class="issue-chip">ISSUE #491</span> UI COPY / VISIBILITY</div>
+      <h1>余計な表記の出し分け・集約・部分削除</h1>
+      <p class="lede">
+        正常時には出さない、同じ説明は1か所に集約する、注記の一部だけ残す、0件の内訳を出さない。
+        <b>異常時の表示（停止・失敗・未接続）は現行の文言のまま</b>残します。
+        #490 Q13 で全削除済みの AI カード状態ラベルは再追加しません。
+      </p>
+    </div>
+    <div class="meta-card">
+      <div class="meta-row"><span>対象</span><b>ダッシュボード / サイドバー / 設定</b></div>
+      <div class="meta-row"><span>対象</span><b>写真 / 検索 / 取り込み / ダイアログ</b></div>
+      <div class="meta-row"><span>状態</span><b>承認待ち</b></div>
+      <div class="meta-row"><span>設計</span><b>2026-11-12-issue-491-display-rules-design.md</b></div>
+    </div>
+  </header>
+
+  <div class="section-label"><h2>承認ポイント</h2><span>判断が必要な6項目</span></div>
+  <div class="decision-grid">
+    <div class="decision">
+      <div class="q">Q1</div>
+      <h3>最終同期を出す条件</h3>
+      <p>心拍が60秒以上古いときだけ「N秒前」を出す。心拍がないときは行を出さない。systemd は「N秒前 · systemd」。</p>
+      <span class="alt">決定: 60秒閾値 / 心拍なしは行を出さない</span>
+      <span class="ok">決定済み</span>
+    </div>
+    <div class="decision">
+      <div class="q">Q2</div>
+      <h3>サイドバーの0件内訳</h3>
+      <p>未実行・実行中・失敗の内訳すべてで0件を出さない。内訳が空なら詳細行を出さない。</p>
+      <span class="alt">代替: running.detail / failed.detail だけを対象にする</span>
+      <span class="ok">推奨</span>
+    </div>
+    <div class="decision">
+      <div class="q">Q3</div>
+      <h3>ライブラリ保存通知</h3>
+      <p>成功時は既存の「保存しました。」に統一。save_hint / saved_rescan / saved_restart は削除。</p>
+      <span class="alt">代替: 3キーを残して付記だけ削る</span>
+      <span class="ok">推奨</span>
+    </div>
+    <div class="decision">
+      <div class="q">Q4</div>
+      <h3>アップデートの状態チップ</h3>
+      <p>「更新あり」のときだけ出す。待機・確認中・最新・ダウンロード中・準備完了・適用中・エラーでは出さない。</p>
+      <span class="alt">決定: 更新ありだけ残す。エラーは本文で示す</span>
+      <span class="ok">決定済み</span>
+    </div>
+    <div class="decision">
+      <div class="q">Q5</div>
+      <h3>ギャラリーの状態バッジ</h3>
+      <p>「圧縮済」だけ出す。「未圧縮」「重複」「圧縮版のみ」は出さない。</p>
+      <span class="alt">決定: 圧縮済以外の状態バッジをすべて隠す</span>
+      <span class="ok">決定済み</span>
+    </div>
+    <div class="decision">
+      <div class="q">Q6</div>
+      <h3>AI カードの件数行</h3>
+      <p>0件の項目を隠し、3項目すべて0件なら行ごと隠す。</p>
+      <span class="alt">代替: 0件でもラベルだけ残す</span>
+      <span class="ok">推奨</span>
+    </div>
+  </div>
+
+  <div class="section-label"><h2>1. ダッシュボードのデーモンカード</h2><span>正常時は稼働中・IPC 接続中・最終同期を出さない</span></div>
+  <p class="section-note">停止・一時停止・未接続は現行の文言のまま。最終同期の値から「最終同期」の重複を外します。</p>
+  <div class="compare three">
+    <div class="compare-item">
+      <div class="compare-cap"><span class="tag-before">現行</span> 正常時</div>
+      <div class="card compact">
+        <div class="card-head">
+          <div class="card-title">デーモン</div>
+          <span class="badge b-green"><span class="dot"></span>稼働中</span>
+          <span class="badge b-green"><span class="dot"></span>IPC 接続中</span>
+        </div>
+        <div class="card-body">
+          <div class="meta-line"><span class="meta-key">最終同期</span><span class="meta-val">最終同期 5秒前</span></div>
+          <div class="meta-line"><span class="meta-key">IPC</span><span class="meta-val">IPC 接続中</span></div>
+          <div class="meta-line"><span class="meta-key">監視</span><span class="meta-val">稼働中</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="compare-item">
+      <div class="compare-cap"><span class="tag-after">変更後</span> 正常時</div>
+      <div class="card compact">
+        <div class="card-head">
+          <div class="card-title">デーモン</div>
+        </div>
+        <div class="card-body">
+          <div class="meta-line"><span class="meta-key">IPC</span><span class="meta-val">IPC 接続中</span></div>
+          <div class="meta-line"><span class="meta-key">監視</span><span class="meta-val">稼働中</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="compare-item">
+      <div class="compare-cap"><span class="tag-after">変更後</span> 停滞時</div>
+      <div class="card compact">
+        <div class="card-head">
+          <div class="card-title">デーモン</div>
+          <span class="badge b-amber"><span class="dot"></span>一時停止中</span>
+          <span class="badge b-rose"><span class="dot"></span>IPC 未接続</span>
+        </div>
+        <div class="card-body">
+          <div class="meta-line"><span class="meta-key">最終同期</span><span class="meta-val">72秒前 · systemd</span></div>
+          <div class="meta-line"><span class="meta-key">IPC</span><span class="meta-val">IPC 未接続</span></div>
+          <div class="meta-line"><span class="meta-key">監視</span><span class="meta-val">一時停止中</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-label"><h2>2. ダッシュボードの AI タグ付けカード</h2><span>0件の件数を出さない。状態ラベルは再追加しない</span></div>
+  <div class="compare">
+    <div class="compare-item">
+      <div class="compare-cap"><span class="tag-before">現行</span> すべて0件でも件数行が出る</div>
+      <div class="card compact">
+        <div class="card-title">AIタグ付け</div>
+        <div class="card-body">
+          <div class="counts">
+            <div class="count"><span class="k">待機</span><span class="v">0</span></div>
+            <div class="count"><span class="k">処理中</span><span class="v">0</span></div>
+            <div class="count"><span class="k">失敗</span><span class="v">0</span></div>
+          </div>
+          <div><span class="btn ghost">連携・自動を開く</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="compare-item">
+      <div class="compare-cap"><span class="tag-after">変更後</span> 0件の行は出ない</div>
+      <div class="card compact">
+        <div class="card-title">AIタグ付け</div>
+        <div class="card-body">
+          <div><span class="btn ghost">連携・自動を開く</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="compare" style="margin-top:12px">
+    <div class="compare-item">
+      <div class="compare-cap"><span class="tag-after">変更後</span> 失敗だけある場合</div>
+      <div class="card compact">
+        <div class="card-title">AIタグ付け</div>
+        <div class="card-body">
+          <div class="counts">
+            <div class="count"><span class="k">失敗</span><span class="v">2</span></div>
+          </div>
+          <div class="job">
+            <div class="job-top"><span class="name">VRChat_2026-11-11_21-04-12.png</span><span class="pct">42%</span></div>
+            <div class="progress"><span></span></div>
+            <div class="job-top"><span class="muted">タグを適用中</span><span class="spacer"></span><span class="btn">キャンセル</span></div>
+          </div>
+          <div class="tiny" style="color:var(--rose)">失敗したジョブを連携・自動画面で確認してください。</div>
+          <div><span class="btn ghost">連携・自動を開く</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="compare-item">
+      <div class="compare-cap"><span class="tag-after">変更後</span> 待機と失敗がある場合</div>
+      <div class="card compact">
+        <div class="card-title">AIタグ付け</div>
+        <div class="card-body">
+          <div class="counts">
+            <div class="count"><span class="k">待機</span><span class="v">4</span></div>
+            <div class="count"><span class="k">失敗</span><span class="v">1</span></div>
+          </div>
+          <div><span class="btn ghost">連携・自動を開く</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-label"><h2>3. サイドバーの圧縮キュー</h2><span>0件の内訳を出さない。空の詳細行は消す</span></div>
+  <div class="compare">
+    <div class="compare-item">
+      <div class="compare-cap"><span class="tag-before">現行</span> 0件の内訳が残る</div>
+      <div class="sidebar-stack">
+        <div class="status-card running"><div class="headline">実行中 3</div><div class="detail">未実行 0 · 失敗 0</div></div>
+        <div class="status-card failed"><div class="headline">失敗 2</div><div class="detail">未実行 0 · 実行中 0</div></div>
+        <div class="status-card idle"><div class="headline">キューは空です</div><div class="detail">未実行のジョブはありません</div></div>
+      </div>
+    </div>
+    <div class="compare-item">
+      <div class="compare-cap"><span class="tag-after">変更後</span> 内訳が空なら詳細行なし</div>
+      <div class="sidebar-stack">
+        <div class="status-card waiting"><div class="headline">未実行 5</div><div class="detail">実行中 1 · 失敗 2</div></div>
+        <div class="status-card running"><div class="headline">実行中 3</div></div>
+        <div class="status-card failed"><div class="headline">失敗 2</div></div>
+        <div class="status-card idle"><div class="headline">キューは空です</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-label"><h2>4. 設定のアップデートカード</h2><span>「更新あり」のときだけ状態チップを出す</span></div>
+  <div class="compare three">
+    <div class="compare-item">
+      <div class="compare-cap"><span class="tag-before">現行</span> 待機</div>
+      <div class="card compact">
+        <div class="row"><span class="card-title">アップデート</span><span class="badge b-muted">待機</span></div>
+        <div class="card-body">
+          <div class="meta-line"><span class="meta-key">現在のバージョン</span><span class="meta-val">v0.9.2</span></div>
+          <div class="meta-line"><span class="meta-key">最終確認</span><span class="meta-val">11/12 09:40</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="compare-item">
+      <div class="compare-cap"><span class="tag-after">変更後</span> 待機・確認中・最新（チップなし）</div>
+      <div class="card compact">
+        <div class="row"><span class="card-title">アップデート</span></div>
+        <div class="card-body">
+          <div class="meta-line"><span class="meta-key">現在のバージョン</span><span class="meta-val">v0.9.2</span></div>
+          <div class="meta-line"><span class="meta-key">最終確認</span><span class="meta-val">11/12 09:40</span></div>
+          <div class="tiny muted">本文: 最新です</div>
+        </div>
+      </div>
+    </div>
+    <div class="compare-item">
+      <div class="compare-cap"><span class="tag-after">変更後</span> 更新あり（チップは残る）</div>
+      <div class="card compact">
+        <div class="row"><span class="card-title">アップデート</span><span class="badge b-amber">更新あり</span></div>
+        <div class="card-body">
+          <div class="meta-line"><span class="meta-key">現在のバージョン</span><span class="meta-val">v0.9.2</span></div>
+          <div class="meta-line"><span class="meta-key">最新</span><span class="meta-val">v0.9.3</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="section-note" style="margin-top:10px">確認中・ダウンロード中・準備完了・適用中・エラーもチップは出さず、カード本文の進捗・メッセージで示します。</p>
+
+  <div class="section-label"><h2>5. タグ別閾値モーダル</h2><span>適用タイミングの注記は下部の1か所だけ</span></div>
+  <div class="compare">
+    <div class="compare-item">
+      <div class="compare-cap"><span class="tag-before">現行</span> 3か所に適用タイミング</div>
+      <div class="modal">
+        <div class="modal-title">タグ別閾値 <span class="btn ghost">×</span></div>
+        <div class="presence" style="margin-top:12px">
+          <div class="presence-head"><span class="name">人物の有無（presence）</span><span class="tiny" style="color:var(--amber)">次回のタグ付けから適用</span><span class="pct">50%</span></div>
+          <div class="tiny muted">キャラクターが写っているかの判定に使います。変更は次回のタグ付けから適用されます。</div>
+          <div class="slider"></div>
+          <div class="row tiny muted"><span class="spacer"></span><span class="tiny muted">タグの閾値は保存後すぐ適用</span><span class="btn ghost">リセット</span></div>
+        </div>
+        <div class="footer-note" style="margin-top:12px"><span>タグは保存後すぐ適用 / presence は次回のタグ付けから</span><span class="spacer"></span><span class="btn ghost">すべて既定に戻す</span><span class="btn">キャンセル</span><span class="btn primary">保存</span></div>
+      </div>
+    </div>
+    <div class="compare-item">
+      <div class="compare-cap"><span class="tag-after">変更後</span> 下部の注記だけ残す</div>
+      <div class="modal">
+        <div class="modal-title">タグ別閾値 <span class="btn ghost">×</span></div>
+        <div class="presence" style="margin-top:12px">
+          <div class="presence-head"><span class="name">人物の有無（presence）</span><span class="pct">50%</span></div>
+          <div class="slider"></div>
+          <div class="row"><span class="spacer"></span><span class="btn ghost">リセット</span></div>
+        </div>
+        <div class="footer-note" style="margin-top:12px"><span>タグは保存後すぐ適用 / presence は次回のタグ付けから</span><span class="spacer"></span><span class="btn ghost">すべて既定に戻す</span><span class="btn">キャンセル</span><span class="btn primary">保存</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-label"><h2>6. 圧縮状態バッジ</h2><span>「圧縮済」だけ出す。未圧縮・重複・圧縮版のみは出さない</span></div>
+  <div class="compare">
+    <div class="compare-item">
+      <div class="compare-cap"><span class="tag-before">現行</span> 未圧縮にもバッジ</div>
+      <div class="gallery-grid">
+        <div class="photo"><span class="fav">★</span><span class="badge b-amber"><span class="dot"></span>未圧縮</span></div>
+        <div class="photo"><span class="fav">★</span><span class="badge b-green"><span class="dot"></span>圧縮済</span></div>
+        <div class="photo"><span class="fav">★</span><span class="badge b-muted"><span class="dot"></span>重複</span></div>
+        <div class="photo"><span class="fav">★</span><span class="badge b-accent"><span class="dot"></span>圧縮版のみ</span></div>
+      </div>
+    </div>
+    <div class="compare-item">
+      <div class="compare-cap"><span class="tag-after">変更後</span> 圧縮済だけバッジが出る</div>
+      <div class="gallery-grid">
+        <div class="photo"><span class="fav">★</span></div>
+        <div class="photo"><span class="fav">★</span><span class="badge b-green"><span class="dot"></span>圧縮済</span></div>
+        <div class="photo"><span class="fav">★</span></div>
+        <div class="photo"><span class="fav">★</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="compare" style="margin-top:12px">
+    <div class="compare-item">
+      <div class="compare-cap"><span class="tag-before">現行</span> インスペクタ</div>
+      <div class="card compact"><div class="inspector-badges"><span class="badge b-amber">未圧縮</span><span class="badge b-accent">文脈あり</span><span class="badge b-amber">★ お気に入り</span></div></div>
+    </div>
+    <div class="compare-item">
+      <div class="compare-cap"><span class="tag-after">変更後</span> 未圧縮はバッジなし / 圧縮済は出る</div>
+      <div class="card compact" style="margin-bottom:8px"><div class="inspector-badges"><span class="badge b-accent">文脈あり</span><span class="badge b-amber">★ お気に入り</span></div></div>
+      <div class="card compact"><div class="inspector-badges"><span class="badge b-green">圧縮済</span><span class="badge b-accent">文脈あり</span><span class="badge b-amber">★ お気に入り</span></div></div>
+    </div>
+  </div>
+
+  <div class="section-label"><h2>7. ビューア詳細の AI タグ</h2><span>モデル情報の行を削除し、ツールチップは確率だけ</span></div>
+  <div class="compare">
+    <div class="compare-item">
+      <div class="compare-cap"><span class="tag-before">現行</span> モデル名・バックエンド・生成日時</div>
+      <div class="card compact">
+        <div class="ai-panel">
+          <div class="title">AI タグ</div>
+          <div class="tag-chips"><span class="tag-chip">✦ 海 <span class="prob">96.9%</span></span><span class="tag-chip">✦ 屋外 <span class="prob">91.2%</span></span></div>
+          <div class="facts"><div class="fact"><div class="k">人数（AI）</div><div class="v">1人</div></div><div class="fact"><div class="k">場所（AI）</div><div class="v">屋外</div></div></div>
+          <div class="foot">d1-2B Q8_0 · linux-vulkan · 2026-11-04 12:45</div>
+          <span class="btn primary">AIタグを再生成</span>
+        </div>
+      </div>
+    </div>
+    <div class="compare-item">
+      <div class="compare-cap"><span class="tag-after">変更後</span> 行を削除</div>
+      <div class="card compact">
+        <div class="ai-panel">
+          <div class="title">AI タグ</div>
+          <div class="tag-chips"><span class="tag-chip">✦ 海 <span class="prob">96.9%</span></span><span class="tag-chip">✦ 屋外 <span class="prob">91.2%</span></span></div>
+          <div class="facts"><div class="fact"><div class="k">人数（AI）</div><div class="v">1人</div></div><div class="fact"><div class="k">場所（AI）</div><div class="v">屋外</div></div></div>
+          <span class="btn primary">AIタグを再生成</span>
+        </div>
+      </div>
+      <div class="tooltip">ツールチップ: 確率 0.969</div>
+    </div>
+  </div>
+
+  <div class="section-label"><h2>8. 文言の最終形</h2><span>ja / en を同時に更新</span></div>
+  <div class="card compact">
+    <table class="copy-table">
+      <thead><tr><th>キー / 場所</th><th>ja</th><th>en</th></tr></thead>
+      <tbody>
+        <tr><td><code>daemon.sync.age</code></td><td class="ja">%{age}秒前<br><span class="strike">最終同期 %{age}秒前</span></td><td class="en">%{age}s ago<br><span class="strike">Last sync %{age}s ago</span></td></tr>
+        <tr><td><code>daemon.sync.age_systemd</code></td><td class="ja">%{age}秒前 · systemd</td><td class="en">%{age}s ago · systemd</td></tr>
+        <tr><td><code>compression.name_hint</code></td><td class="ja">%{count}/%{max}文字</td><td class="en">%{count}/%{max} characters</td></tr>
+        <tr><td><code>search.ai.people_hint</code></td><td class="ja">0〜10 の整数。空欄は指定なし。</td><td class="en">Integer 0–10; blank means any.</td></tr>
+        <tr><td><code>gallery.empty</code> / <code>app.empty_library</code></td><td class="ja">写真がありません。VRChatの写真フォルダを設定してください。</td><td class="en">No photos. Set the VRChat photo folder.</td></tr>
+        <tr><td><code>import.structure.default_hint</code></td><td class="ja">階層維持がオフのとき、フォルダ名を含める設定は無効になります。</td><td class="en">Include folder name is disabled while structure is off.</td></tr>
+        <tr><td><code>dashboard.errors.daemon_stopped</code></td><td class="ja">デーモン停止中です</td><td class="en">The daemon is stopped.</td></tr>
+        <tr><td><code>photos.page_load_failed_body</code></td><td class="ja">ページの読み込みに失敗しました。</td><td class="en">This page could not be loaded.</td></tr>
+        <tr><td><code>photos.ai.probability</code>（ツールチップ）</td><td class="ja">確率 %{probability}</td><td class="en">Probability %{probability}</td></tr>
+        <tr><td><code>settings.library.saved</code></td><td class="ja">保存しました。</td><td class="en">Saved.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="note" style="margin-top:12px">
+    <b>削除するキー:</b>
+    <span class="tiny">gallery.badge.uncompressed / duplicate / compressed_only /
+    photos.badge.uncompressed / settings.ai.thresholds.presence_hint / next_run /
+    applies_now / settings.ai.hint / sidebar.status.waiting.detail / running.detail /
+    failed.detail / idle.detail / dialog.trash_note / photos.ai.probability_tooltip /
+    settings.library.save_hint / saved_rescan / saved_restart / update.phase.idle /
+    checking / up_to_date / downloading / ready / applying / error / daemon.sync.ipc /
+    daemon.sync.stopped</span>
+  </div>
+
+  <div class="section-label"><h2>9. 変えないもの</h2><span>異常時と破壊的操作の警告</span></div>
+  <div class="card compact">
+    <div class="card-body">
+      <div class="row" style="flex-wrap:wrap;gap:6px">
+        <span class="badge b-rose"><span class="dot"></span>停止中</span>
+        <span class="badge b-amber"><span class="dot"></span>一時停止中</span>
+        <span class="badge b-rose"><span class="dot"></span>IPC 未接続</span>
+        <span class="badge b-rose">失敗</span>
+        <span class="badge b-rose">エラー</span>
+      </div>
+      <div class="tiny muted">失敗ヒント、エラーメッセージ、ライセンス同意、ゴミ箱移動の警告は現行の文言を維持します。</div>
+      <div class="tiny muted">AI カードの状態ラベル（準備不足・待機中・実行中・失敗）は #490 Q13 で全削除済みのため、再追加しません。</div>
+    </div>
+  </div>
+
+  <div class="section-label"><h2>10. 対象外</h2><span>今回触らないもの</span></div>
+  <div class="card compact">
+    <div class="card-body tiny muted">
+      画面構造・レイアウトの変更、新しい設定項目・アイコン・画面、エラーメッセージ、同意・ライセンス文面、
+      破壊的操作の警告文、AI カード状態ラベルの再追加。
+    </div>
+  </div>
+</div>
+</body>
+</html>
