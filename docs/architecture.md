@@ -11,7 +11,7 @@ VRChatの写真を、撮影時のワールド・同接プレイヤー・撮影�
 │ UIプロセス                    │          │ デーモンプロセス              │
 │ vrc-photon             │          │ vrc-photon-daemon             │
 │                              │          │                              │
-│ gpui-kit 0.9                 │          │ ログ監視 / 写真監視           │
+│ gpui-kit 0.9.1               │          │ ログ監視 / 写真監視           │
 │ 一覧・詳細・圧縮・検索        │          │ 紐付け / 自動圧縮 / トレイ     │
 │ AIタグ表示・設定・監視        │          │ 自動起動 / サムネイル生成      │
 └──────────────┬───────────────┘          │ AIプラグイン / タグ付け        │
@@ -36,7 +36,7 @@ VRChatの写真を、撮影時のワールド・同接プレイヤー・撮影�
 DB・UI・ネットワークには触れない。sidecar が落ちてもデーモンは落ちず、
 該当ジョブだけを失敗させる。
 
-UIとデーモンは同じSQLite（WAL）に加えて、ローカルIPC（Unix domain socket / Windows名前付きパイプ、改行区切りJSON）で接続する。IPCは即時wake-upとイベント配信だけを担い、耐久データの正はSQLiteのまま。
+UIとデーモンは同じSQLite（WAL）に加えて、ローカルIPC（Unix domain socket / Windows名前付きパイプ、改行区切りJSON）で接続する。IPCは即時wake-up、イベント配信、MCPサーバーからの読み取り要求を担い、耐久データの正はSQLiteのまま。
 
 ### プロセスの役割
 
@@ -44,15 +44,18 @@ UIとデーモンは同じSQLite（WAL）に加えて、ローカルIPC（Unix d
 |---|---|---|
 | UI | `crates/ui` → `vrc-photon` | 画面表示、検索、タグ・お気に入り・メモ編集、手動圧縮のキュー投入、取り込み、Discord 設定と送信 enqueue、AI プラグイン設定・AI タグ表示・手動再生成 |
 | デーモン | `crates/daemon` → `vrc-photon-daemon` | 写真・ログの監視、索引、文脈紐付け、サムネイル、自動圧縮、Discord 送信、任意の VRChat API ワールド名解決、AI プラグイン取込・モデル管理・sidecar 起動・タグ付け、トレイ、自動起動、IPCサーバー |
+| MCPサーバー | `crates/mcp` → `vrc-photon-mcp` | stdio の読み取り専用 MCP サーバー。ライブラリ検索、写真詳細・画像、ワールド一覧、統計を IPC 経由でデーモンへ問い合わせる |
 | 共通IPC | `crates/ipc` | プロトコル型、エンドポイント、改行区切りJSON、ローカルソケットの送受信 |
 | 共通コア | `crates/core` | DB、スキャン、ログ解析、XMP、圧縮、Discord の URL 検証・payload・送信元選択、ワールド名解決の状態とレスポンス解析、AI 設定・AI 結果・タグ付けジョブ、設定、サムネイル |
 | AIプロトコル | `crates/ai-protocol` | sidecar 通信の型、`PROTOCOL_VERSION = 1`、JSONL フレーミング、カタログ型、状態 enum |
 | AIホスト | `crates/ai-host` | manifest 検証、minisign、ZIP 取込、モデル DL / 取込 / 検査 / 削除、sidecar の起動・要求・停止 |
 | モックsidecar | `crates/ai-mock-sidecar` | 公開リポジトリのテスト専用バイナリ。配布物には含めない |
 
-UIとデーモンは同じSQLite（WAL）を共有し、状態とジョブをやり取りする。これに加えて、即時コマンドのwake-upとイベント配信のためにローカルIPCを使う（ADR-0011）。UIはデーモンのハートビート（`app_settings.daemon_heartbeat`）とIPC購読のどちらかが生きていれば稼働中と判定する。デーモンの処理エラーは `daemon_errors`、UIからの再実行要求は `daemon_commands` に置く。IPCは `daemon_commands` / `compression_jobs` / `send_outbox` を置き換えず、デーモンを起こすだけ。デーモン停止中も要求はDBに残り、起動後に処理される。AI の取込・モデル・probe・キャンセルは IPC 要求としてデーモンだけが実行し、AI 結果の書き込みもデーモンに限定する。
+UIとデーモンは同じSQLite（WAL）を共有し、状態とジョブをやり取りする。これに加えて、即時コマンドのwake-upとイベント配信のためにローカルIPCを使う（ADR-0011）。UIはデーモンのハートビート（`app_settings.daemon_heartbeat`）とIPC購読のどちらかが生きていれば稼働中と判定する。デーモンの処理エラーは `daemon_errors`、UIからの再実行要求は `daemon_commands` に置く。IPCはUIからの指令について `daemon_commands` / `compression_jobs` / `send_outbox` を置き換えず、デーモンを起こすだけ。デーモン停止中も要求はDBに残り、起動後に処理される。MCPサーバーからの読み取り要求はIPCで処理する。AI の取込・モデル・probe・キャンセルは IPC 要求としてデーモンだけが実行し、AI 結果の書き込みもデーモンに限定する。
 
-IPCは `PROTOCOL_VERSION = 8`。AI プラグインの
+IPCは `PROTOCOL_VERSION = 8`。MCPサーバー向けに、`search_photos` /
+`random_search_photos` / `get_photo` / `list_worlds` / `library_stats` の
+読み取り要求を持つ。AI プラグインの
 取込・アンインストール・probe・variant 切替・モデル DL / 取込 / 削除と、
 タグ付けジョブの起床・キャンセルを扱う。`StatusSnapshot` は
 `pending_tagging_jobs`（`waiting` + `pending` + `processing`）と
@@ -87,11 +90,13 @@ crates/
   ipc/
     src/lib.rs            # プロトコル型、エンドポイント、フレーミング
     src/protocol.rs       # Request / Event / StatusSnapshot / ErrorCode
+    src/library.rs        # 読み取り専用の検索・詳細・統計の型
     src/client.rs         # リクエストと購読
     src/server.rs         # ローカルソケットのbind/accept
   core/
     src/lib.rs            # アプリ名、データディレクトリ
-    src/db.rs             # SQLiteスキーマ、マイグレーション、CRUD、検索
+    src/db/               # schema とドメイン別のCRUD（photos/sessions/compression/send/deletion/ai/settings など）
+    src/db/schema.rs      # SCHEMA_LATEST と SCHEMA_VERSION
     src/model.rs          # Photo / Context / Profile / Job など
     src/ai.rs             # プラグイン・AI結果・タグ付けジョブの型
     src/scanner.rs        # フォルダ走査、増分スキャン
@@ -102,19 +107,36 @@ crates/
     src/metadata.rs       # PNG XMPの読み取り
     src/compressor.rs     # JPEG / WebP / AVIF / JXL
     src/discord.rs        # Webhook URL検証、送信元選択、embed payload
-    src/thumbnail.rs      # 16:9 BC7サムネイル
-    src/importer.rs       # コピー/移動取り込み
+    src/thumbnail.rs      # 16:9 BC7サムネイルとキャッシュ
+    src/bc7.rs            # BC7 エンコード
+    src/cache_metadata.rs # サムネイルキャッシュの mtime+size と平均色
+    src/image_decode.rs   # PNG/JPEG/WebP/JXL のデコード、EXIF 回転
+    src/importer.rs       # コピー/移動取り込み、階層維持
     src/settings.rs       # 設定、VRChatパス検出、AI設定
   daemon/
-    src/lib.rs            # 監視ループ、ジョブワーカー、トレイ制御
+    src/lib.rs            # モジュール宣言だけ
+    src/lifecycle.rs      # Daemon、監視ループ、ワーカーの起動・停止
+    src/main.rs           # CLI、単一インスタンス
+    src/ipc_server.rs     # IPC サーバーと読み取り要求
     src/plugin.rs         # PluginService: 取込・probe・variant・モデル・sidecar所有
     src/tagging.rs        # TaggingWorker: 4段パイプライン、キャンセル、再試行、アイドル停止
     src/discord.rs        # Discord 送信ワーカー、outbox、自動 enqueue
     src/discord_http.rs   # multipart POST、429/4xx/5xx の分類
     src/world_names.rs    # ワールド名解決ワーカー、60秒間隔の予約
     src/world_name_http.rs # VRChat worlds API の HTTP とステータス分類
-    src/main.rs           # CLI、単一インスタンス
+    src/thumbnails.rs     # サムネイルワーカーとキャッシュ管理
+    src/supervisor.rs     # systemd / プロセス起動の判定
     src/tray.rs           # Windows tray-icon / Linux ksni
+  i18n/
+    locales/ja.yml        # 日本語カタログ
+    locales/en.yml        # 英語カタログ
+    src/lib.rs            # ロケール検出、フォールバック、tr! / tr_args!
+  mcp/
+    src/main.rs           # stdio MCP サーバー
+    src/server.rs         # ツール定義
+    src/client.rs         # デーモン IPC クライアント
+  signing/
+    src/lib.rs            # minisign の共通検証
   update/
     src/manifest.rs       # 署名付き更新マニフェストの型と検証
     src/verify.rs         # minisign検証
@@ -130,9 +152,10 @@ crates/
   ui/
     src/main.rs           # ブートストラップ、ウィンドウ、グローバルキーバインド
     src/app.rs            # App/Screen、new/render、アプリ全体の状態
-    src/app/              # 機能別のAppメソッド（lifecycle/photos/search/...）
+    src/app/              # 機能別のAppメソッド（lifecycle/photos/search/session/...）
     src/state/            # UI非依存の状態・キャッシュ・計算
     src/ui/               # シェル、タイトルバー/リボン、画面、共通部品
+    src/ipc_bridge.rs     # IPC 購読とイベント配送
     src/update_view.rs    # 更新カード、バックグラウンド確認/DL/適用
     assets/               # Noto Sans JP、ライセンス
 ```
@@ -142,13 +165,17 @@ crates/
 ```text
 ui ────────┬──> ipc ──> ai-protocol
            ├──> core ──> ai-protocol
-           └──> update
+           ├──> update ──> signing
+           └──> i18n
 daemon ────┼──> ipc ──> ai-protocol
            ├──> core ──> ai-protocol
-           ├──> ai-host ──> core ──> ai-protocol
+           ├──> ai-host ──> core
+           │             ├──> signing
            │             └──> ai-protocol
-           └──> ai-protocol
-release-tool ───> update
+           └──> i18n
+mcp ───────┼──> ipc ──> ai-protocol
+           └──> core ──> ai-protocol
+release-tool ───> update ──> signing
 ai-mock-sidecar ───> ai-protocol
 ```
 
@@ -160,12 +187,17 @@ ai-mock-sidecar ───> ai-protocol
 - `release-tool` は `update` のマニフェスト型を使うRelease専用ツールで、アプリには同梱しない。
 - `ai-protocol` は serde とフレーミングだけを持ち、DB・GPUI・プロセス起動に依存しない。
 - `ai-host` は ZIP 検証・モデル DL / 取込・sidecar クライアントに加えて、
-  `core` の AI 設定・結果・タグ付けジョブ型を使う。デーモン専用で、UI からは呼ばない。
+  `core` の AI 設定・結果・タグ付けジョブ型と `signing` の署名検証を使う。
+  デーモン専用で、UI からは呼ばない。
 - `ai-mock-sidecar` はテスト専用で、配布物には含めない。
 - `daemon` は `core` のDB・スキャナ・解析・圧縮・サムネイル、`ipc` のサーバー/プロトコル、
-  `ai-host` のプラグイン・モデル・sidecar を使う。
-- `ui` は `core` のDB・モデル・設定・圧縮キュー、`ipc` のクライアント/プロトコル、`update` の確認/DL/適用を使う。`ai-host` は使わない。
-- GPUI（`gpui-kit` / `gpui-pre`）に依存するのは `ui` のみ。`core` / `daemon` / `ipc` / `ai-protocol` / `ai-host` / `update` はGPUI非依存。
+  `ai-host` のプラグイン・モデル・sidecar、`i18n` の翻訳カタログを使う。
+- `mcp` は `core` の読み取り型と `ipc` のクライアントを使う。DB を直接書かず、
+  デーモンを起動しない。デーモン未接続時は `daemon_unavailable` を返す。
+- `ui` は `core` のDB・モデル・設定・圧縮キュー、`ipc` のクライアント/プロトコル、
+  `update` の確認/DL/適用、`i18n` の翻訳カタログを使う。`ai-host` は使わない。
+- GPUI（`gpui-kit` / `gpui-pre`）に依存するのは `ui` のみ。`core` / `daemon` / `ipc` /
+  `mcp` / `ai-protocol` / `ai-host` / `update` はGPUI非依存。
 
 ### 3.1 UIモジュール構成
 
@@ -178,34 +210,57 @@ crates/ui/src/
     lifecycle.rs          # 3秒更新、IPC、再読込、画面切替、サイドバー/インスペクタ
     photos.rs             # 選択、サムネイル要求、フル画像デコード、ライブラリ状態
     search.rs             # 検索実行・結果適用
+    search_suggest.rs     # 検索候補
+    session.rs            # 時系列 / セッション表示モード、セッション要約
     compression.rs        # プロファイル/手動圧縮
     discord.rs            # Discord 設定・送信 enqueue・履歴更新
     ai.rs                 # AI プラグイン設定・モデル・AI タグ・手動実行
+    ai_tag_picker.rs      # AI タグ選択
+    ai_thresholds.rs      # タグ別閾値
     daemon.rs             # デーモン操作、ログ、プロセス起動
     import.rs             # 取り込みダイアログ/実行/再試行/再開
-    viewer.rs             # ビューア開閉、フォーカス、前後移動
+    viewer.rs             # ビューア開閉、ズーム/パン、フォーカス、前後移動
+    context_menu.rs       # 写真グリッド/検索の右クリックメニュー
+    tag_edit.rs           # タグ編集モーダル
+    background_read.rs    # 読み取り専用接続の再利用
     demo.rs               # デモデータ
+    demo_fixture.rs       # デモ用フィクスチャ
   state/
     preview.rs            # PreviewKey/PreviewQueue/キャッシュパス
-    thumbnail.rs          # ThumbnailCache/decode_thumbnail
+    thumbnail.rs          # ThumbnailCache/decode_thumbnail/Texture2DArray
     photo_browser.rs      # PhotoIndex/PhotoPageCache/PhotoBrowser/CountDebounce
     year_rail.rs          # YearBucket/年レール計算
-    viewer.rs             # ViewerMorph/ViewerBoxState/ViewerPanelState/幾何
+    session_rows.rs       # セッション見出し・写真行・日付ラベルの行モデル
+    selection.rs          # 複数選択
+    decode_budget.rs      # 画像デコードのメモリ予算
+    display_image.rs      # 表示用画像
+    viewer.rs             # ViewerMorph/ViewerBoxState/ViewerPanelState/ViewerZoom
+    motion.rs             # モーション制御
   ui/
     theme.rs              # トークン、寸法、色、モーション、純粋なレイアウト計算
+    palette.rs            # テーマから全色を導出
     components.rs         # パネル、ボタン、チップ、バッジ、メタ行
     shell.rs              # ルート、アンビエント、サイドバー、画面ディスパッチ
     chrome.rs             # タイトルバー、3タブリボン
-    library.rs            # 写真画面、ギャラリー、インスペクタ、年レール呼び出し
-    year_rail.rs          # 年レールのGPUI要素
+    gallery.rs            # 写真グリッド、セッション行、年レール呼び出し
+    library.rs            # 写真画面、インスペクタ
     search.rs             # 検索画面
+    search_suggest.rs     # 検索候補の表示
     compression.rs        # 圧縮設定画面
     dashboard.rs          # ダッシュボード
+    dashboard_ai.rs       # ダッシュボードのAIカード
     discord.rs            # Discord 連携カード、送信履歴
+    integrations.rs       # 連携・自動（Discord / 自動圧縮 / AI / クリップボード）
     settings.rs           # 設定
     import.rs             # 取り込みモーダル/結果パネル
-    viewer.rs             # フルスクリーンビューア/モーフ
+    notifications.rs      # 通知ベル、通知モーダル、トースト
+    viewer.rs             # フルスクリーンビューア/モーフ/ズーム
     dialogs.rs            # 手動圧縮などのモーダル
+    tag_edit.rs           # タグ編集モーダル
+    ai_tag_picker.rs      # AI タグ選択モーダル
+    ai_thresholds.rs      # タグ別閾値モーダル
+    daemon_error.rs       # 処理エラーカード
+    year_rail.rs          # 年レールのGPUI要素
     actions.rs            # actions!とグローバルアクション登録
   ipc_bridge.rs
   logging.rs
@@ -225,7 +280,7 @@ crates/ui/src/
 
 1. UIまたはデーモンが `Db::open` でSQLiteを開く。
 2. `journal_mode=WAL`、`foreign_keys=ON`、`busy_timeout=5s` を設定。
-3. `PRAGMA user_version` を見てマイグレーションを実行。
+3. `PRAGMA user_version` を検査する。新規 DB は統合 schema を1トランザクションで初期化し、既存 DB は v18 のみ受け付ける。それ以外はファイルを変更せずエラーを返す。
 4. 設定（`app_settings` の `app_settings` キー）を読む。なければVRChatパスを自動検出。
 5. デーモンはIPCサーバーを起動する。UIはIPC購読を開始し、接続できなければハートビート/DB表示にフォールバックする。
 6. デーモンは `scan_photos` で写真ルートを走査し、ログの末尾から解析を開始する。走査中は `scan_started` / `scan_progress` / `scan_finished` を配信する。
@@ -270,16 +325,16 @@ crates/ui/src/
 ### 4.5 サムネイル
 
 - デーモンのサムネイルワーカーがキューから写真IDを受け取る。サムネイルは設定の解像度（256×144 / 384×216 / 512×288）の16:9キャンバスに、表示向きで正規化してBC7へエンコードする。縦向き写真は90°回転して横長で保存する。
-- `image` でデコードし、長辺256pxに縮小、WebP Q80で保存する。
-- 保存先はユーザーデータディレクトリの `thumbnails/<photo_id>.webp`。
+- 保存先はユーザーデータディレクトリの `thumbnails/<photo_id>-s<幅>x<高さ>.bc7`。隣に元ファイルの `mtime + size`、平均色、回転状態を記録した `.bc7.meta` を置く。
 - デーモンは起動時（初回ライブラリ走査より前）と上限超過時に `thumbnails/*.bc7` の合計サイズを確認し、`thumbnail_cache_mb`（既定8GB）を超えた分を最終アクセス時刻の古い順に削除する。旧WebPは起動時に削除する。UIが生成したサムネイルは `thumbnails_generated` 通知でバイト数を追跡し、60秒ごとの定期全走査は行わない。0は無制限。
 - UIはBC7ファイルを読み直してアップロードするだけで、デコード済み画像を保持しない。デーモンの起動時全件走査はmtimeを更新しない。
 - UIは表示中のカードのサムネイルだけを512レイヤーのTexture2DArrayにアップロードし、ピン留めした写真を除くLRUで再利用する。同時デコードは最大1件で、UIスレッドではデコードしない。
 
 ### 4.6 取り込み
 
-- UIの「コピー取込」「移動取込」が `rfd` でファイルを選ぶ。
+- UIの「コピー取込」「移動取込」が `rfd` でファイルまたはフォルダを選ぶ。
 - `importer::import_files` が管理フォルダへコピー/移動する。名前衝突は連番。
+- フォルダ取り込みは `ImportOptions` に従う。`preserve_structure=false`（既定）はフラット、`true` はサブフォルダを再現する。`include_root` は `preserve_structure=true` のときだけ、選択したフォルダ名を先頭に含める。
 - 取り込み先を `library_roots` に `managed` として登録し、`daemon_commands` の
   `scan_root`（payload=取り込み先パス）で**そのルートだけ**を再スキャンする。
   デーモンはコマンド処理時に設定を再読込し、watcher を張り直してから走査する。
@@ -449,7 +504,8 @@ crates/ui/src/
 | 更新ヘルパー（ユーザー権限） | UI/デーモン終了待ち、AppImage/NSISの置換、`pkexec`の起動、健康確認、ロールバック | `updates/`、プロセス |
 | 更新ヘルパー（特権、`pkexec`） | staging・署名・パッケージメタデータの再検証、固定コマンドでのインストール | 一時ファイル、パッケージDB |
 | デーモン監視ループ | notifyポーリング、ログ追記、増分索引、UIコマンドの消化、wake待ち | `Arc<Mutex<Db>>` |
-| デーモンIPCサーバー | 接続ごとにスレッド。hello/status/wake/pause/shutdown/subscribeを処理 | `DaemonStatus`、`WakeSignal`、`JobSignal`、`EventBus` |
+| デーモンIPCサーバー | 接続ごとにスレッド。hello/status/wake/pause/shutdown/subscribeと読み取り専用の検索・詳細・統計を処理 | `DaemonStatus`、`WakeSignal`、`JobSignal`、`EventBus`、読み取り専用DB接続 |
+| MCPサーバー（別プロセス） | stdio で MCP クライアントと通信し、読み取り要求を IPC へ中継 | ローカルソケット（書き込みなし） |
 | 圧縮ワーカー | 1〜4スレッド。ジョブを原子的に取得 | `Arc<Mutex<Db>>` |
 | 削除エグゼキュータ | 1スレッド。依存ジョブの完了後に要求を実行 | `Arc<Mutex<Db>>`、`JobSignal` |
 | Discord送信ワーカー | 1スレッド（`discord-send`）。outboxを原子的に取得し、HTTP中はDBロックを持たない | `Arc<Mutex<Db>>`、`JobSignal`、`EventBus` |
@@ -502,14 +558,17 @@ crates/ui/src/
 - DBが壊れた場合は、ユーザーデータディレクトリの `library.db` をバックアップしてから再作成する（写真ファイルは削除しない）。
 - 生ログは保存しない。解析済みイベントのみ残す。
 
-エラー報告と再試行は、既存のSQLite共有状態を拡張して行う。デーモンはスキャン・ログ解析・紐付けの回復可能な失敗を `daemon_errors` に書き、成功したら行を消す。UIは3秒更新とIPCイベントの両方でこれを読み、全画面の通知バーとダッシュボードの「処理エラー」カードに出す。UIの「再試行」は `daemon_commands` に `rescan` / `relog` / `relink` を積み、IPC接続中なら `wake_commands` でデーモンを即座に起こす。取り込み後は `payload` に取り込み先パスを持つ `scan_root` を積む。デーモンは監視ループの先頭で全件を取り出して設定を再読込し、監視を張り直してから実行する。コマンドは取り出し時に削除するため、失敗しても自動では再実行しない。圧縮と取り込みの失敗はそれぞれのジョブ・取り込み結果に残し、この経路には載せない（圧縮は `compression_jobs.retry_count`、取り込みはUIの結果パネルで再試行する）。
+エラー報告と再試行は、既存のSQLite共有状態を拡張して行う。デーモンはスキャン・ログ解析・紐付けの回復可能な失敗を `daemon_errors` に書き、成功したら行を消す。UIは3秒更新とIPCイベントの両方でこれを読み、タイトルバーの通知ベルと通知モーダル、ダッシュボードの「処理エラー」カードに出す。UIの「再試行」は `daemon_commands` に `rescan` / `relog` / `relink` を積み、IPC接続中なら `wake_commands` でデーモンを即座に起こす。取り込み後は `payload` に取り込み先パスを持つ `scan_root` を積む。デーモンは監視ループの先頭で全件を取り出して設定を再読込し、監視を張り直してから実行する。コマンドは取り出し時に削除するため、失敗しても自動では再実行しない。圧縮と取り込みの失敗はそれぞれのジョブ・取り込み結果に残し、この経路には載せない（圧縮は `compression_jobs.retry_count`、取り込みはUIの結果パネルで再試行する）。
 
-IPCが使えない場合（デーモン停止、ソケット権限、バージョン不一致）は、UIは非致命的に扱い、ハートビートと3秒ポーリングに戻る。IPCのイベントはベストエフォートで、取りこぼしてもDBの最終状態に追いつく。IPCサーバーはSQLiteを直接触らないため、長時間のスキャンがDBロックを保持していても `status` / `wake` / `pause` / `shutdown` に応答できる。
+IPCが使えない場合（デーモン停止、ソケット権限、バージョン不一致）は、UIは非致命的に扱い、ハートビートと3秒ポーリングに戻る。IPCのイベントはベストエフォートで、取りこぼしてもDBの最終状態に追いつく。IPCサーバーは通常の書き込みを行わず（例外はタグ付けキャンセルの短い状態更新）、MCP向けの検索・詳細・統計も読み取り専用接続で処理するため、長時間のスキャンが書き込みロックを保持していても `status` / `wake` / `pause` / `shutdown` に応答できる。
 
 ## 8. 関連ドキュメント
 
 - スキーマ: [data-model.md](data-model.md)
+- schema の初期化: [database-initialization.md](database-initialization.md)
 - 機能仕様: [features.md](features.md)
+- UI: [ui.md](ui.md)
 - ログ/XMP: [log-and-xmp.md](log-and-xmp.md)
+- MCP: [mcp.md](mcp.md)
 - 開発: [development.md](development.md)
 - リリース: [release.md](release.md)

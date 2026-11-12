@@ -7,6 +7,7 @@
 - VRChatアカウントの認証情報を保存しない。
 - 公式WebSocket（pipeline）へ接続しない。
 - 生ログを保存しない。解析済みイベントのみDBに保存する。
+- MCPサーバーは読み取り専用で、ライブラリを変更しない。データは保存せず、デーモンのローカルIPCを経由して読むだけ。
 - 削除はOSゴミ箱のみ。完全削除機能は提供しない。
 
 ## 2. 保存するデータ
@@ -24,7 +25,7 @@
 | AI プラグイン | インストール済み variant / version、manifest、probe 結果 | `plugins/` / DB |
 | AI モデル | `model` / `mmproj` の GGUF ファイル | `plugins/<plugin_id>/models/<revision>/` |
 | AI タグ | presence、人数、場所、タグ別確率、実行環境 | `photo_ai` / `photo_ai_tags` |
-| サムネイル | 設定に従う 256/384/512px WebP | `thumbnails/` |
+| サムネイル | 設定に従う 256/384/512px BC7（`.bc7` と `.bc7.meta`） | `thumbnails/` |
 | 更新 | ダウンロードした成果物、適用ジョブ（署名対象の `latest.json` を含む）、結果、ヘルパーのログ | `updates/` |
 
 Discord の Webhook URL は `AppSettings` の JSON とは別の `app_settings`

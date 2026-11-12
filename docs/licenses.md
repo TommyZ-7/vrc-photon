@@ -6,7 +6,7 @@
 
 | アセット | ライセンス | リポジトリ内の通知 | 通知のパッケージ同梱 |
 |---|---|---|---|
-| Lucide アイコン（`gpui-kit-assets` 0.8.0 経由） | ISC（Feather 由来アイコンは MIT） | `packaging/licenses/LICENSE-LUCIDE` | あり（`LICENSE-LUCIDE`） |
+| Lucide アイコン（`gpui-kit-assets` 0.9.1 経由） | ISC（Feather 由来アイコンは MIT） | `packaging/licenses/LICENSE-LUCIDE` | あり（`LICENSE-LUCIDE`） |
 | アプリ本体 | GPL-3.0-or-later | `LICENSE` | あり（`LICENSE`） |
 | Noto Sans JP | SIL Open Font License 1.1 | `crates/ui/assets/LICENSE-NotoSansJP.txt` | なし（リポジトリのみ） |
 | Intel ISPC Texture Compressor（`intel_tex_2` 経由） | MIT / Apache-2.0 | `packaging/licenses/THIRD-PARTY-NOTICES.md` | あり（`THIRD-PARTY-NOTICES.md`） |
@@ -14,7 +14,7 @@
 
 ## Lucide
 
-- 取得元: `gpui-kit-assets` 0.8.0（<https://github.com/longbridge/gpui-kit>）
+- 取得元: `gpui-kit-assets` 0.9.1（<https://github.com/longbridge/gpui-kit>）
 - Lucide: 1.43.0
 - ファイル: `packaging/licenses/LICENSE-LUCIDE`（上流のファイルを改変せずコピー）
 - sha256: `b495047bd93a9b06913511076f504daba17d5bbeb3e0650f3bb53a4220329c57`

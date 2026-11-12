@@ -125,8 +125,6 @@ MCP サーバーがデーモンのソケットを解決するために使うデ�
 
 Linux で `XDG_RUNTIME_DIR` が設定されている場合、デーモンのソケットは `$XDG_RUNTIME_DIR/vrc-photon/daemon.sock` に置かれます。この場合は通常 `--data-dir` を指定する必要はありません。`XDG_RUNTIME_DIR` が未設定の場合、ソケットは `<data-dir>/run/daemon.sock` になります。
 
-Linux で `XDG_RUNTIME_DIR` が設定されている場合、デーモンのソケットは `$XDG_RUNTIME_DIR/vrc-photon/daemon.sock` に置かれます。この場合は通常 `--data-dir` を指定する必要はありません。`XDG_RUNTIME_DIR` が未設定の場合、ソケットは `<data-dir>/run/daemon.sock` になります。
-
 Windows はユーザーごとの名前付きパイプを使うため、`--data-dir` は接続先の切り替えには影響しません。
 
 ## 5. 提供ツール
