@@ -19,9 +19,10 @@ use vrc_photon_core::{image_decode, thumbnail};
 /// Layers in the single texture array. The array never grows or shrinks.
 pub(crate) const THUMB_LAYERS: usize = 512;
 
-/// Decode and generation share one slot: a thumbnail is the only display
-/// derivative, so serialising them keeps the UI decode peak bounded.
-const THUMB_IN_FLIGHT: usize = 1;
+/// Load and generation share a small pool of in-flight slots. Cache hits
+/// only read stored BC7 blocks, and the process-wide decode budget bounds
+/// the peak when a slot has to generate a thumbnail instead.
+const THUMB_IN_FLIGHT: usize = 4;
 /// A failed decode is retried after this delay, so a transient source or IO
 /// error does not hide the thumbnail until the next cache clear.
 const FAILED_RETRY_AFTER: Duration = Duration::from_secs(30);
@@ -590,6 +591,16 @@ mod tests {
         let _ticket = ticket(&mut cache, 7);
         cache.remove_photo(7);
         assert!(cache.begin_ticket(8).is_some());
+    }
+
+    #[test]
+    fn decode_slots_allow_up_to_the_in_flight_limit() {
+        let mut cache = ThumbnailCache::default();
+        cache.set_array(array());
+        for id in 0..THUMB_IN_FLIGHT as i64 {
+            let _ticket = ticket(&mut cache, id);
+        }
+        assert!(cache.begin_ticket(99).is_none());
     }
 
     #[test]
