@@ -2404,7 +2404,7 @@ dependencies = [
 [[package]]
 name = "gpui-fast"
 version = "0.1.14"
-source = "git+https://github.com/TommyZ-7/gpui-fast?rev=c66d3da88c26cc2f65033a374f1fd3be85f0bd23#c66d3da88c26cc2f65033a374f1fd3be85f0bd23"
+source = "git+https://github.com/TommyZ-7/gpui-fast?rev=53778313ceeee1a1e47eedec73893b45663e8ff0#53778313ceeee1a1e47eedec73893b45663e8ff0"
 dependencies = [
  "accesskit",
  "anyhow",
@@ -2595,7 +2595,7 @@ dependencies = [
 [[package]]
 name = "gpui-fast-macros"
 version = "0.1.14"
-source = "git+https://github.com/TommyZ-7/gpui-fast?rev=c66d3da88c26cc2f65033a374f1fd3be85f0bd23#c66d3da88c26cc2f65033a374f1fd3be85f0bd23"
+source = "git+https://github.com/TommyZ-7/gpui-fast?rev=53778313ceeee1a1e47eedec73893b45663e8ff0#53778313ceeee1a1e47eedec73893b45663e8ff0"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
@@ -2652,7 +2652,7 @@ dependencies = [
 [[package]]
 name = "gpui-fast-wgpu"
 version = "0.1.14"
-source = "git+https://github.com/TommyZ-7/gpui-fast?rev=c66d3da88c26cc2f65033a374f1fd3be85f0bd23#c66d3da88c26cc2f65033a374f1fd3be85f0bd23"
+source = "git+https://github.com/TommyZ-7/gpui-fast?rev=53778313ceeee1a1e47eedec73893b45663e8ff0#53778313ceeee1a1e47eedec73893b45663e8ff0"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -2678,7 +2678,7 @@ dependencies = [
 [[package]]
 name = "gpui-fast-windows"
 version = "0.1.14"
-source = "git+https://github.com/TommyZ-7/gpui-fast?rev=c66d3da88c26cc2f65033a374f1fd3be85f0bd23#c66d3da88c26cc2f65033a374f1fd3be85f0bd23"
+source = "git+https://github.com/TommyZ-7/gpui-fast?rev=53778313ceeee1a1e47eedec73893b45663e8ff0#53778313ceeee1a1e47eedec73893b45663e8ff0"
 dependencies = [
  "accesskit",
  "accesskit_windows",
