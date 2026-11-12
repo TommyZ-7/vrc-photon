@@ -67,6 +67,6 @@ zip = { version = "9", default-features = false, features = ["deflate"] }
 gpui-component = { git = "https://github.com/TommyZ-7/gpui-kit", rev = "ee98b887e620e7c47e0cbe41500959fde7bfdfb5" }
 # Fork-only patches for #537 (1536x1536 atlas) and #579 (BC7 texture arrays).
 # Branch: vrc-0.1.14-texture2d-array (based on vrc-0.1.14-atlas-1536).
-gpui-fast = { git = "https://github.com/TommyZ-7/gpui-fast", rev = "40060421ff31d3aa9215a1b77bf0c9a5d7951636" }
-gpui-fast-wgpu = { git = "https://github.com/TommyZ-7/gpui-fast", rev = "40060421ff31d3aa9215a1b77bf0c9a5d7951636" }
-gpui-fast-windows = { git = "https://github.com/TommyZ-7/gpui-fast", rev = "40060421ff31d3aa9215a1b77bf0c9a5d7951636" }
+gpui-fast = { git = "https://github.com/TommyZ-7/gpui-fast", rev = "c66d3da88c26cc2f65033a374f1fd3be85f0bd23" }
+gpui-fast-wgpu = { git = "https://github.com/TommyZ-7/gpui-fast", rev = "c66d3da88c26cc2f65033a374f1fd3be85f0bd23" }
+gpui-fast-windows = { git = "https://github.com/TommyZ-7/gpui-fast", rev = "c66d3da88c26cc2f65033a374f1fd3be85f0bd23" }

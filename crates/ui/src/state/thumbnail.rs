@@ -13,7 +13,8 @@ use std::time::{Duration, Instant};
 
 use gpui_kit::{RenderImage, TextureArray};
 use smallvec::SmallVec;
-use vrc_photon_core::thumbnail::{self, ThumbnailSpec};
+use vrc_photon_core::thumbnail::ThumbnailSpec;
+use vrc_photon_core::{image_decode, thumbnail};
 
 /// Layers in the single texture array. The array never grows or shrinks.
 pub(crate) const THUMB_LAYERS: usize = 512;
@@ -248,7 +249,9 @@ impl ThumbnailCache {
         let generation = self.photo_generation(id).wrapping_add(1);
         self.photo_generations.insert(id, generation);
         self.release_layer(id);
-        self.pending.remove(&id);
+        if self.pending.remove(&id).is_some() {
+            self.in_flight = self.in_flight.saturating_sub(1);
+        }
         self.failed.remove(&id);
     }
 
@@ -256,7 +259,9 @@ impl ThumbnailCache {
     pub(crate) fn remove_photo(&mut self, id: i64) {
         self.release_layer(id);
         self.colors.remove(&id);
-        self.pending.remove(&id);
+        if self.pending.remove(&id).is_some() {
+            self.in_flight = self.in_flight.saturating_sub(1);
+        }
         self.failed.remove(&id);
         self.photo_generations.remove(&id);
         self.pinned.remove(&id);
@@ -401,7 +406,11 @@ pub(crate) fn decode_thumbnail(
     let Some(cache_dir) = cache_dir else {
         let blocks = thumbnail::read_thumbnail_blocks(cache_path, spec).ok()?;
         let (color, rotated) =
-            thumbnail::read_thumbnail_color_rotation(cache_path).unwrap_or((0, false));
+            thumbnail::read_thumbnail_color_rotation(cache_path).unwrap_or_else(|| {
+                let rotated = image_decode::image_dimensions(source)
+                    .is_some_and(|(width, height)| height > width);
+                (0, rotated)
+            });
         return Some(DecodedThumbnail {
             color,
             blocks,
@@ -563,6 +572,24 @@ mod tests {
         assert!(!upload(&mut cache, 7, old, 0x112233));
         assert!(upload(&mut cache, 7, new, 0x445566));
         assert!(cache.get(7).is_some());
+    }
+
+    #[test]
+    fn invalidating_a_pending_photo_frees_its_decode_slot() {
+        let mut cache = ThumbnailCache::default();
+        cache.set_array(array());
+        let _ticket = ticket(&mut cache, 7);
+        cache.invalidate(7);
+        assert!(cache.begin_ticket(8).is_some());
+    }
+
+    #[test]
+    fn removing_a_pending_photo_frees_its_decode_slot() {
+        let mut cache = ThumbnailCache::default();
+        cache.set_array(array());
+        let _ticket = ticket(&mut cache, 7);
+        cache.remove_photo(7);
+        assert!(cache.begin_ticket(8).is_some());
     }
 
     #[test]

@@ -14,7 +14,7 @@
 
 **Status:** 実装中（2026-11-12）
 
-**Fork PR:** https://github.com/TommyZ-7/gpui-fast/pull/1（`vrc-0.1.14-texture2d-array`、最終 rev `2ed26567d385511a0cf69689f064736068893c41`）
+**Fork PR:** https://github.com/TommyZ-7/gpui-fast/pull/1 と続きの修正 https://github.com/TommyZ-7/gpui-fast/pull/2（`vrc-0.1.14-texture2d-array`、最終 rev `c66d3da88c26cc2f65033a374f1fd3be85f0bd23`）
 
 ## 実行メモ
 

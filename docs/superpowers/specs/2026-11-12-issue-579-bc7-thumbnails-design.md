@@ -70,7 +70,7 @@
 - `crates/ui/src/ui/settings.rs`
   - サムネイル画質スライダーと 256 / 384 / 512 の解像度ボタンがある。
 - `Cargo.toml`
-  - `gpui-fast` は `TommyZ-7/gpui-fast` の `a3c3ac5` に固定。
+  - `gpui-fast` は `TommyZ-7/gpui-fast` の `4006042`（#1 マージ後）に固定。
   - `gpui-fast-wgpu` と `gpui-fast-windows` も同じ rev。
 - gpui-fast フォーク
   - Linux は `gpui_wgpu`、Windows は Direct3D 11 の別レンダラ。
