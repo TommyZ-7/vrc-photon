@@ -224,8 +224,8 @@ impl GalleryView {
             search,
         });
         // P09 keeps the App-wide observation: the gallery reads the index,
-        // page cache, selection, compressed/duplicate badges, settings, and
-        // palette from `App`, so a narrower subscription needs a state split
+        // page cache, selection, compressed badges, settings, and palette
+        // from `App`, so a narrower subscription needs a state split
         // that is out of scope here. IPC bursts now coalesce into one App
         // notify per drained batch (and the three-second live pass notifies
         // only on an actual change), so the gallery repaints once per batch
@@ -1754,8 +1754,6 @@ fn render_card(
     let selected = app.selected_ids.contains(id);
     let primary = app.selected == Some(id);
     let compressed = app.compressed_ids.contains(&id);
-    let duplicate = app.duplicate_ids.contains(&id);
-    let replaced = photo.is_replaced();
     let show_status = app.settings.ui_card_show_status;
     let show_world = app.settings.ui_card_show_world;
     let card_strings = shared
@@ -1809,16 +1807,7 @@ fn render_card(
         .left_0()
         .size_full(),
     );
-    if show_status {
-        let status_color = if replaced {
-            p.accent
-        } else if duplicate {
-            p.muted
-        } else if compressed {
-            p.green
-        } else {
-            p.amber
-        };
+    if show_status && compressed {
         thumb = thumb.child(
             h_flex()
                 .absolute()
@@ -1832,21 +1821,13 @@ fn render_card(
                 .border_color(rgba(p.line_soft))
                 .gap(px(5.))
                 .items_center()
-                .child(div().size(px(5.)).rounded_full().bg(rgb(status_color)))
+                .child(div().size(px(5.)).rounded_full().bg(rgb(p.green)))
                 .child(
                     div()
                         .text_size(px(9.))
                         .font_medium()
-                        .text_color(rgb(status_color))
-                        .child(if replaced {
-                            tr!("gallery.badge.compressed_only")
-                        } else if duplicate {
-                            tr!("gallery.badge.duplicate")
-                        } else if compressed {
-                            tr!("gallery.badge.compressed")
-                        } else {
-                            tr!("gallery.badge.uncompressed")
-                        }),
+                        .text_color(rgb(p.green))
+                        .child(tr!("gallery.badge.compressed")),
                 ),
         );
     }

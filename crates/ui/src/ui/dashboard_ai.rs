@@ -26,6 +26,20 @@ impl App {
         let job_names = self.ai.active_job_names.clone();
         let job_error = self.ai.error_of(AiErrorKind::Job).cloned();
 
+        let waiting = counts.waiting;
+        let processing = counts.pending + counts.processing;
+        let failed = counts.failed;
+        let mut counts_row = h_flex().gap(px(12.));
+        if waiting > 0 {
+            counts_row = counts_row.child(ai_count(&p, tr!("dashboard.ai.waiting"), waiting));
+        }
+        if processing > 0 {
+            counts_row = counts_row.child(ai_count(&p, tr!("dashboard.ai.processing"), processing));
+        }
+        if failed > 0 {
+            counts_row = counts_row.child(ai_count(&p, tr!("dashboard.ai.failed"), failed));
+        }
+
         let mut card = glass_panel(&self.palette)
             .flex()
             .flex_col()
@@ -43,18 +57,10 @@ impl App {
                             .child(tr!("dashboard.ai.title")),
                     ),
                 ),
-            )
-            .child(
-                h_flex()
-                    .gap(px(12.))
-                    .child(ai_count(&p, tr!("dashboard.ai.waiting"), counts.waiting))
-                    .child(ai_count(
-                        &p,
-                        tr!("dashboard.ai.processing"),
-                        counts.pending + counts.processing,
-                    ))
-                    .child(ai_count(&p, tr!("dashboard.ai.failed"), counts.failed)),
             );
+        if waiting > 0 || processing > 0 || failed > 0 {
+            card = card.child(counts_row);
+        }
 
         match view.state {
             AiDashboardState::NotReady => {

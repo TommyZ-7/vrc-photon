@@ -24,8 +24,12 @@ pub(crate) fn status_snapshot_is_newer(version: u64, last_applied: u64) -> bool 
     version == 0 || version > last_applied
 }
 
+const DAEMON_LIVENESS_SECS: i64 = 20;
+/// How old the heartbeat must be before the dashboard surfaces the last sync.
+const DAEMON_STALE_SECS: i64 = 60;
+
 pub(crate) fn daemon_liveness(age_secs: Option<i64>, ipc_connected: bool) -> bool {
-    ipc_connected || age_secs.is_some_and(|age| age < 20)
+    ipc_connected || age_secs.is_some_and(|age| age < DAEMON_LIVENESS_SECS)
 }
 
 pub(crate) fn daemon_state_label(active: bool, paused: bool) -> String {
@@ -48,19 +52,13 @@ pub(crate) fn ipc_status_label(connected: bool, error: Option<&str>) -> String {
     }
 }
 
-pub(crate) fn daemon_sync_label(
-    age_secs: Option<i64>,
-    supervisor: Option<&str>,
-    ipc_connected: bool,
-) -> String {
-    match age_secs.filter(|age| *age < 20) {
-        Some(age) if supervisor == Some("systemd") => {
-            tr_args!("daemon.sync.age_systemd", age = age)
-        }
-        Some(age) => tr_args!("daemon.sync.age", age = age),
-        None if ipc_connected => tr!("daemon.sync.ipc"),
-        None => tr!("daemon.sync.stopped"),
-    }
+pub(crate) fn daemon_sync_label(age_secs: Option<i64>, supervisor: Option<&str>) -> Option<String> {
+    let age = age_secs.filter(|age| *age >= DAEMON_STALE_SECS)?;
+    Some(if supervisor == Some("systemd") {
+        tr_args!("daemon.sync.age_systemd", age = age)
+    } else {
+        tr_args!("daemon.sync.age", age = age)
+    })
 }
 
 pub(crate) fn autostart_description(daemon_active: bool, supervisor: Option<&str>) -> String {
@@ -424,22 +422,18 @@ mod tests {
     }
 
     #[test]
-    fn daemon_sync_label_includes_systemd_supervisor() {
+    fn daemon_sync_label_appears_only_after_it_is_stale() {
+        assert_eq!(daemon_sync_label(Some(59), Some("systemd")), None);
+        assert_eq!(daemon_sync_label(Some(59), Some("app")), None);
         assert_eq!(
-            daemon_sync_label(Some(5), Some("systemd"), false),
-            "最終同期 5秒前 · systemd"
+            daemon_sync_label(Some(60), Some("systemd")),
+            Some("60秒前 · systemd".to_string())
         );
         assert_eq!(
-            daemon_sync_label(Some(5), Some("app"), false),
-            "最終同期 5秒前"
+            daemon_sync_label(Some(60), Some("app")),
+            Some("60秒前".to_string())
         );
-        assert_eq!(
-            daemon_sync_label(Some(30), Some("systemd"), false),
-            "デーモン停止"
-        );
-        assert_eq!(daemon_sync_label(None, None, false), "デーモン停止");
-        assert_eq!(daemon_sync_label(None, None, true), "IPC 接続中");
-        assert_eq!(daemon_sync_label(Some(30), None, true), "IPC 接続中");
+        assert_eq!(daemon_sync_label(None, None), None);
     }
 
     #[test]

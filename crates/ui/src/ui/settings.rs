@@ -115,112 +115,80 @@ impl App {
                             ))
                             .child(card_divider(&p))
                             .child(
-                                h_flex()
-                                    .gap(px(8.))
-                                    .items_center()
-                                    .child(
-                                        Button::new("save-paths")
-                                            .label(tr!("settings.library.save_paths"))
-                                            .small()
-                                            .primary()
-                                            .on_click(cx.listener(|this, _, _, cx| {
-                                                let root = this
-                                                    .photo_root_input
-                                                    .read(cx)
-                                                    .value()
-                                                    .to_string();
-                                                let log =
-                                                    this.log_dir_input.read(cx).value().to_string();
-                                                let imported = this
-                                                    .import_dir_input
-                                                    .read(cx)
-                                                    .value()
-                                                    .to_string();
-                                                let previous = this.settings.clone();
-                                                this.settings.photo_roots =
-                                                    if root.trim().is_empty() {
-                                                        Vec::new()
-                                                    } else {
-                                                        vec![root.trim().to_string()]
-                                                    };
-                                                this.settings.log_dir = if log.trim().is_empty() {
+                                h_flex().gap(px(8.)).items_center().child(
+                                    Button::new("save-paths")
+                                        .label(tr!("settings.library.save_paths"))
+                                        .small()
+                                        .primary()
+                                        .on_click(cx.listener(|this, _, _, cx| {
+                                            let root =
+                                                this.photo_root_input.read(cx).value().to_string();
+                                            let log =
+                                                this.log_dir_input.read(cx).value().to_string();
+                                            let imported =
+                                                this.import_dir_input.read(cx).value().to_string();
+                                            let previous = this.settings.clone();
+                                            this.settings.photo_roots = if root.trim().is_empty() {
+                                                Vec::new()
+                                            } else {
+                                                vec![root.trim().to_string()]
+                                            };
+                                            this.settings.log_dir = if log.trim().is_empty() {
+                                                None
+                                            } else {
+                                                Some(log.trim().to_string())
+                                            };
+                                            this.settings.managed_dir =
+                                                if imported.trim().is_empty() {
                                                     None
                                                 } else {
-                                                    Some(log.trim().to_string())
+                                                    Some(imported.trim().to_string())
                                                 };
-                                                this.settings.managed_dir =
-                                                    if imported.trim().is_empty() {
-                                                        None
-                                                    } else {
-                                                        Some(imported.trim().to_string())
-                                                    };
-                                                let root_changed = this.settings.photo_roots
-                                                    != previous.photo_roots;
-                                                let paths_changed = root_changed
-                                                    || this.settings.log_dir != previous.log_dir
-                                                    || this.settings.managed_dir
-                                                        != previous.managed_dir;
-                                                if let Err(error) = this.settings.save(&this.db) {
-                                                    this.settings = previous;
-                                                    this.toast_error(
-                                                        tr_args!(
-                                                            "settings.language.save_failed",
-                                                            error = error
-                                                        ),
-                                                        cx,
-                                                    );
+                                            let root_changed =
+                                                this.settings.photo_roots != previous.photo_roots;
+                                            let paths_changed = root_changed
+                                                || this.settings.log_dir != previous.log_dir
+                                                || this.settings.managed_dir
+                                                    != previous.managed_dir;
+                                            if let Err(error) = this.settings.save(&this.db) {
+                                                this.settings = previous;
+                                                this.toast_error(
+                                                    tr_args!(
+                                                        "settings.language.save_failed",
+                                                        error = error
+                                                    ),
+                                                    cx,
+                                                );
+                                                tracing::warn!(
+                                                    %error,
+                                                    "cannot save path settings"
+                                                );
+                                                cx.notify();
+                                                return;
+                                            }
+                                            if root_changed {
+                                                let revision = this.db.library_revision().ok();
+                                                this.apply_library_snapshot_with_anchor(
+                                                    revision, false, cx,
+                                                );
+                                            }
+                                            if paths_changed {
+                                                if let Err(error) = this
+                                                    .db
+                                                    .request_daemon_command(DaemonCommand::Rescan)
+                                                {
                                                     tracing::warn!(
                                                         %error,
-                                                        "cannot save path settings"
-                                                    );
-                                                    cx.notify();
-                                                    return;
-                                                }
-                                                if root_changed {
-                                                    let revision = this.db.library_revision().ok();
-                                                    this.apply_library_snapshot_with_anchor(
-                                                        revision, false, cx,
-                                                    );
-                                                }
-                                                if paths_changed {
-                                                    let requested = this.db.request_daemon_command(
-                                                        DaemonCommand::Rescan,
-                                                    );
-                                                    if requested.is_ok() {
-                                                        this.send_wake_commands(cx);
-                                                    }
-                                                    this.toast_success(
-                                                        match requested {
-                                                            Ok(_) => {
-                                                                tr!("settings.library.saved_rescan")
-                                                            }
-                                                            Err(error) => {
-                                                                tracing::warn!(
-                                                                    %error,
-                                                                    "cannot request daemon rescan"
-                                                                );
-                                                                tr!(
-                                                                    "settings.library.saved_restart"
-                                                                )
-                                                            }
-                                                        },
-                                                        cx,
+                                                        "cannot request daemon rescan"
                                                     );
                                                 } else {
-                                                    this.toast_success(
-                                                        tr!("settings.library.saved"),
-                                                        cx,
-                                                    );
+                                                    this.send_wake_commands(cx);
                                                 }
-                                                cx.notify();
-                                            })),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_size(px(10.))
-                                            .text_color(rgb(p.muted_2))
-                                            .child(tr!("settings.library.save_hint")),
-                                    ),
+                                            }
+                                            this.toast_success(tr!("settings.library.saved"), cx);
+                                            cx.notify();
+                                        })),
+                                ),
                             ),
                     )
                     .child(self.ai_plugin_card(cx))
@@ -1082,23 +1050,13 @@ impl App {
             .rounded(px(17.))
             .child(
                 h_flex().items_center().gap(px(10.)).child(
-                    v_flex()
-                        .flex_1()
-                        .min_w_0()
-                        .gap(px(2.))
-                        .child(
-                            div()
-                                .text_size(px(13.))
-                                .font_semibold()
-                                .text_color(rgb(p.text))
-                                .child(tr!("settings.ai.title")),
-                        )
-                        .child(
-                            div()
-                                .text_size(px(10.))
-                                .text_color(rgb(p.muted_2))
-                                .child(tr!("settings.ai.hint")),
-                        ),
+                    v_flex().flex_1().min_w_0().gap(px(2.)).child(
+                        div()
+                            .text_size(px(13.))
+                            .font_semibold()
+                            .text_color(rgb(p.text))
+                            .child(tr!("settings.ai.title")),
+                    ),
                 ),
             );
 
