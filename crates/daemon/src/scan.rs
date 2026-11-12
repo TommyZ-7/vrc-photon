@@ -1,8 +1,14 @@
 use super::compression::{enqueue_auto_jobs, enqueue_auto_tagging, promote_display_derivative};
 use super::lifecycle::LocalizedError;
 use super::logs::missing_display_derivatives;
+use super::thumbnails::ThumbnailRequest;
 use super::*;
 
+/// Re-links photos whose XMP has already been read outside the database lock.
+///
+/// `read_xmp` must be called while no database lock is held; the daemon passes
+/// a closure that reads the PNG sidecar. The database lock is taken again for
+/// each short link/retry write.
 pub(crate) fn relink_photos_outside_lock<F>(
     db: &Arc<Mutex<Db>>,
     photos: Vec<Photo>,
@@ -233,7 +239,7 @@ impl Daemon {
         }
         if let Some(tx) = &self.thumbnail_tx {
             for id in &thumbnail_ids {
-                if let Err(error) = tx.send(*id) {
+                if let Err(error) = tx.send(ThumbnailRequest::Photo(*id)) {
                     tracing::debug!(
                         %error,
                         photo_id = *id,
@@ -260,6 +266,8 @@ impl Daemon {
                 self.sends.notify();
             }
         }
+        self.hash_wake.notify();
+        self.invalidate_counts();
         Ok(())
     }
 
@@ -295,6 +303,10 @@ impl Daemon {
             Err(error) => (Err(error), 0),
         };
         self.finish_scan(&report_result, auto_enqueued, target);
+        // Covers both the full scan and ScanRoot commands. A no-op when the
+        // scan found nothing; the hash worker also has a long fallback.
+        self.hash_wake.notify();
+        self.invalidate_counts();
         report_result
     }
 
@@ -529,7 +541,7 @@ impl Daemon {
         }
         if let Some(tx) = &self.thumbnail_tx {
             for id in &report.new_ids {
-                if let Err(error) = tx.send(*id) {
+                if let Err(error) = tx.send(ThumbnailRequest::Photo(*id)) {
                     tracing::debug!(
                         %error,
                         photo_id = *id,

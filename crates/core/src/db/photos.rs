@@ -650,11 +650,23 @@ impl Db {
     }
 
     pub fn photos_without_hash(&self, limit: i64) -> Result<Vec<(i64, String)>> {
+        self.photos_without_hash_after(limit, 0)
+    }
+
+    /// Returns present photos with no hash whose id is greater than `after_id`.
+    /// The daemon pages through these rows with a cursor so a permanently
+    /// unreadable row cannot block every later photo.
+    pub fn photos_without_hash_after(
+        &self,
+        limit: i64,
+        after_id: i64,
+    ) -> Result<Vec<(i64, String)>> {
         let mut stmt = self.conn.prepare_cached(
             "SELECT id, abs_path FROM photos \
-             WHERE status = 'present' AND blake3 IS NULL ORDER BY id LIMIT ?1",
+             WHERE status = 'present' AND blake3 IS NULL AND id > ?2 \
+             ORDER BY id LIMIT ?1",
         )?;
-        let rows = stmt.query_map(params![clamp_limit(limit)], |row| {
+        let rows = stmt.query_map(params![clamp_limit(limit), after_id], |row| {
             Ok((row.get(0)?, row.get(1)?))
         })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)

@@ -1,5 +1,12 @@
 use super::*;
 
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum ThumbnailRequest {
+    Photo(i64),
+    /// Re-read the cache epoch and limit at the top of the worker loop.
+    Refresh,
+}
+
 pub(crate) struct ThumbnailCacheBudget {
     pub(crate) limit_bytes: u64,
     pub(crate) known_bytes: Option<u64>,
@@ -154,7 +161,7 @@ pub(crate) fn refresh_thumbnail_budget_and_prune(
 pub(crate) fn thumbnail_loop(
     db: Arc<Mutex<Db>>,
     running: Arc<AtomicBool>,
-    rx: &Receiver<i64>,
+    rx: &Receiver<ThumbnailRequest>,
     cache_dir: PathBuf,
     cache_limit: Arc<AtomicU64>,
     spec: Arc<AtomicU32>,
@@ -183,8 +190,11 @@ pub(crate) fn thumbnail_loop(
             schedule.note_pruned();
             refresh_thumbnail_budget_and_prune(&cache_dir, &cache_limit, &mut budget);
         }
-        match rx.recv_timeout(THUMBNAIL_PRUNE_IDLE) {
-            Ok(id) => {
+        match rx.recv_timeout(THUMBNAIL_IDLE_WAIT) {
+            Ok(ThumbnailRequest::Refresh) => {
+                // The top of the loop re-reads the epoch and limit.
+            }
+            Ok(ThumbnailRequest::Photo(id)) => {
                 let external = external_bytes.swap(0, Ordering::Relaxed);
                 budget.note_external(external);
                 let path = {

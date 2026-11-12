@@ -4,6 +4,7 @@ use super::hash::*;
 use super::logs::*;
 use super::status::*;
 use super::thumbnails::*;
+use super::vrchat_process::VrchatProcessProbe;
 use super::*;
 
 #[derive(Debug, Clone, Default)]
@@ -100,6 +101,8 @@ pub struct Daemon {
     pub(crate) supervisor_wake: Arc<WakeSignal>,
     pub(crate) jobs: Arc<JobSignal>,
     pub(crate) sends: Arc<JobSignal>,
+    /// Wakes the photo-hash backfill worker when a scan indexed new rows.
+    pub(crate) hash_wake: Arc<JobSignal>,
     /// Wakes the world name worker when lookups are queued.
     pub(crate) world_names: Arc<JobSignal>,
     /// Live copy of `settings.world_name_resolution_enabled` for the worker.
@@ -120,8 +123,11 @@ pub struct Daemon {
     /// `--once`); the caller generates their thumbnails directly.
     pub(crate) deferred_thumbnail_ids: Vec<i64>,
     pub(crate) log_tail: Option<LogTail>,
+    pub(crate) log_locator: Option<LogLocator>,
+    pub(crate) vrchat_probe: VrchatProcessProbe,
     pub(crate) vrchat_missing_polls: u8,
     pub(crate) vrchat_session_id: Option<i64>,
+    pub(crate) last_presence_check: Instant,
     pub(crate) workers: Vec<JoinHandle<()>>,
     pub(crate) dirty_paths: Vec<PathBuf>,
     /// Commands consumed from the database while paused. They run in order
@@ -130,7 +136,7 @@ pub struct Daemon {
     pub(crate) last_log_poll: std::time::Instant,
     pub(crate) tray: Option<Tray>,
     pub(crate) tray_enabled: bool,
-    pub(crate) thumbnail_tx: Option<mpsc::Sender<i64>>,
+    pub(crate) thumbnail_tx: Option<mpsc::Sender<ThumbnailRequest>>,
     pub(crate) thumbnail_handle: Option<JoinHandle<()>>,
     pub(crate) hash_handle: Option<JoinHandle<()>>,
     pub(crate) send_handle: Option<JoinHandle<()>>,
@@ -139,6 +145,10 @@ pub struct Daemon {
     pub(crate) deletion_handle: Option<JoinHandle<()>>,
     pub(crate) last_autostart_check: std::time::Instant,
     pub(crate) last_settings_check: std::time::Instant,
+    pub(crate) last_data_version: Option<i64>,
+    pub(crate) last_session_status: Instant,
+    pub(crate) last_counts_status: Instant,
+    pub(crate) last_published_status: Option<StatusSnapshot>,
     pub(crate) last_heartbeat: std::time::Instant,
     pub(crate) last_asset_check: Instant,
     pub(crate) thumbnail_dir: PathBuf,
@@ -166,11 +176,18 @@ pub struct Daemon {
     pub(crate) ai_http: Arc<dyn ModelHttpClient>,
 }
 
-/// Re-links photos whose XMP has already been read outside the database lock.
-///
-/// `read_xmp` must be called while no database lock is held; the daemon passes
-/// a closure that reads the PNG sidecar. The database lock is taken again for
-/// each short link/retry write.
+/// Earliest deadline, capped at `cap` and floored at 10 ms so an already-due
+/// task cannot spin the loop.
+pub(crate) fn min_wait(waits: &[Duration], cap: Duration) -> Duration {
+    waits
+        .iter()
+        .copied()
+        .min()
+        .unwrap_or(cap)
+        .min(cap)
+        .max(Duration::from_millis(10))
+}
+
 impl Daemon {
     /// Opens the daemon as the deletion executor. The caller must own the
     /// single-instance lock so no other process can still be executing a
@@ -339,6 +356,7 @@ impl Daemon {
             supervisor_wake: Arc::new(WakeSignal::default()),
             jobs: Arc::new(JobSignal::default()),
             sends: Arc::new(JobSignal::default()),
+            hash_wake: Arc::new(JobSignal::default()),
             world_names: Arc::new(JobSignal::default()),
             world_name_resolution_enabled,
             events,
@@ -350,8 +368,11 @@ impl Daemon {
             watcher_error,
             deferred_thumbnail_ids: Vec::new(),
             log_tail: None,
+            log_locator: None,
+            vrchat_probe: VrchatProcessProbe::new(),
             vrchat_missing_polls: 0,
             vrchat_session_id: None,
+            last_presence_check: Instant::now() - PRESENCE_INTERVAL,
             workers: Vec::new(),
             dirty_paths: Vec::new(),
             deferred_commands: Vec::new(),
@@ -367,6 +388,10 @@ impl Daemon {
             deletion_handle: None,
             last_autostart_check: std::time::Instant::now(),
             last_settings_check: Instant::now() - Duration::from_secs(2),
+            last_data_version: None,
+            last_session_status: Instant::now() - SESSION_STATUS_INTERVAL,
+            last_counts_status: Instant::now() - COUNTS_STATUS_INTERVAL,
+            last_published_status: None,
             last_heartbeat: std::time::Instant::now() - Duration::from_secs(10),
             last_asset_check: Instant::now() - Duration::from_secs(30),
             thumbnail_dir,
@@ -477,6 +502,14 @@ impl Daemon {
         self.sends.notify();
         self.world_names.notify();
         self.tagging.notify();
+        self.hash_wake.notify();
+        self.notify_thumbnail_worker();
+    }
+
+    fn notify_thumbnail_worker(&self) {
+        if let Some(tx) = &self.thumbnail_tx {
+            let _ = tx.send(ThumbnailRequest::Refresh);
+        }
     }
 
     /// Records a supervised restart without changing the IPC status shape.
@@ -585,6 +618,9 @@ impl Daemon {
         let mut commands = std::mem::take(&mut self.deferred_commands);
         {
             let db = lock_db(&self.db);
+            if commands.is_empty() && !db.has_daemon_commands()? {
+                return Ok(());
+            }
             commands.extend(db.take_daemon_commands()?);
         }
         if commands.is_empty() {
@@ -645,14 +681,14 @@ impl Daemon {
         if settings.autostart != self.settings.autostart {
             self.apply_autostart(settings.autostart);
         }
-        self.thumbnail_cache_limit.store(
-            thumbnail_cache_limit_bytes(settings.thumbnail_cache_mb),
-            Ordering::Relaxed,
-        );
-        self.thumbnail_spec.store(
-            pack_thumbnail_spec(settings.thumbnail_spec()),
-            Ordering::Relaxed,
-        );
+        let old_limit = self.thumbnail_cache_limit.load(Ordering::Relaxed);
+        let old_spec = self.thumbnail_spec.load(Ordering::Relaxed);
+        let new_limit = thumbnail_cache_limit_bytes(settings.thumbnail_cache_mb);
+        let new_spec = pack_thumbnail_spec(settings.thumbnail_spec());
+        self.thumbnail_cache_limit
+            .store(new_limit, Ordering::Relaxed);
+        self.thumbnail_spec.store(new_spec, Ordering::Relaxed);
+        let log_dir_changed = self.settings.log_dir != settings.log_dir;
         let thumbnail_size_changed = self.settings.thumbnail_size != settings.thumbnail_size;
         if thumbnail_size_changed {
             if let Err(error) = thumbnail::clear_thumbnail_cache_in(&self.thumbnail_dir) {
@@ -660,8 +696,14 @@ impl Daemon {
             }
             self.thumbnail_cache_epoch.fetch_add(1, Ordering::Relaxed);
         }
+        if old_limit != new_limit || old_spec != new_spec || thumbnail_size_changed {
+            self.notify_thumbnail_worker();
+        }
         let world_name_enabled = settings.world_name_resolution_enabled;
         self.settings = settings;
+        if log_dir_changed {
+            self.log_locator = None;
+        }
         let was_world_name_enabled = self
             .world_name_resolution_enabled
             .swap(world_name_enabled, Ordering::Relaxed);
@@ -966,7 +1008,8 @@ impl Daemon {
                 }
             }
             if self.running.load(Ordering::Relaxed) {
-                self.wake.wait(SCAN_INTERVAL);
+                let wait = self.next_loop_wait();
+                self.wake.wait(wait);
             }
         }
         self.shutdown();
@@ -1002,13 +1045,27 @@ impl Daemon {
             if let Err(error) = self.ingest_logs() {
                 tracing::error!(%error, "log ingestion failed");
             }
+            self.last_log_poll = std::time::Instant::now();
+        }
+        if self.last_presence_check.elapsed() >= PRESENCE_INTERVAL {
             if let Err(error) = self.poll_vrchat_presence() {
                 tracing::error!(%error, "VRChat process check failed");
             }
-            self.last_log_poll = std::time::Instant::now();
+            self.last_presence_check = std::time::Instant::now();
         }
-        if let Err(error) = self.refresh_status() {
-            tracing::warn!(%error, "cannot refresh daemon status");
+        if self.last_session_status.elapsed() >= SESSION_STATUS_INTERVAL {
+            if let Err(error) = self.refresh_session_status() {
+                tracing::warn!(%error, "cannot refresh daemon session status");
+            }
+            self.last_session_status = Instant::now();
+            self.publish_status_if_changed();
+        }
+        if self.last_counts_status.elapsed() >= COUNTS_STATUS_INTERVAL {
+            if let Err(error) = self.refresh_counts() {
+                tracing::warn!(%error, "cannot refresh daemon counts");
+            }
+            self.last_counts_status = Instant::now();
+            self.publish_status_if_changed();
         }
         if !paused && self.last_asset_check.elapsed() >= Duration::from_secs(30) {
             if let Err(error) = self.verify_replaced_assets() {
@@ -1026,6 +1083,37 @@ impl Daemon {
         !self.running.load(Ordering::Relaxed)
     }
 
+    /// Time until the next periodic task is due, capped so an IPC or watcher
+    /// wake is never the only way the loop notices a missed deadline.
+    pub(crate) fn next_loop_wait(&self) -> Duration {
+        let now = Instant::now();
+        // Asset verification is skipped while paused. Including an overdue
+        // deadline would make the loop wake every 10 ms for no work.
+        let asset_deadline = if self.is_paused() {
+            now + Duration::from_secs(30)
+        } else {
+            self.last_asset_check + Duration::from_secs(30)
+        };
+        let waits = [
+            self.last_log_poll + LOG_INTERVAL,
+            self.last_presence_check + PRESENCE_INTERVAL,
+            self.last_session_status + SESSION_STATUS_INTERVAL,
+            self.last_counts_status + COUNTS_STATUS_INTERVAL,
+            self.last_settings_check + SETTINGS_INTERVAL,
+            self.last_autostart_check + Duration::from_secs(10),
+            self.last_heartbeat + Duration::from_secs(10),
+            asset_deadline,
+        ]
+        .map(|deadline| deadline.saturating_duration_since(now));
+
+        let cap = if self.tray_enabled {
+            MAIN_LOOP_MAX_WAIT
+        } else {
+            MAIN_LOOP_HEADLESS_WAIT
+        };
+        min_wait(&waits, cap)
+    }
+
     pub(crate) fn start_ipc(&mut self) {
         if self.ipc.is_some() {
             return;
@@ -1040,6 +1128,7 @@ impl Daemon {
             wake: self.wake.clone(),
             jobs: self.jobs.clone(),
             sends: self.sends.clone(),
+            hash: self.hash_wake.clone(),
             world_names: self.world_names.clone(),
             events: self.events.clone(),
             thumbnail_dir: self.thumbnail_dir.clone(),
@@ -1089,8 +1178,16 @@ impl Daemon {
     /// is applied promptly instead of waiting until the daemon resumes.
     pub(crate) fn refresh_periodic_settings(&mut self) {
         if self.last_settings_check.elapsed() >= SETTINGS_INTERVAL {
-            self.refresh_compression_settings();
+            let version = {
+                let db = lock_db(&self.db);
+                db.data_version().ok()
+            };
+            let changed = version.is_none() || version != self.last_data_version;
+            self.last_data_version = version;
             self.last_settings_check = Instant::now();
+            if changed {
+                self.refresh_compression_settings();
+            }
         }
         if self.last_autostart_check.elapsed() >= Duration::from_secs(10) {
             self.refresh_autostart_setting();
@@ -1149,14 +1246,16 @@ impl Daemon {
             let _ = thumbnail::clear_thumbnail_cache_in(&self.thumbnail_dir);
             self.thumbnail_cache_epoch.fetch_add(1, Ordering::Relaxed);
         }
-        self.thumbnail_cache_limit.store(
-            thumbnail_cache_limit_bytes(settings.thumbnail_cache_mb),
-            Ordering::Relaxed,
-        );
-        self.thumbnail_spec.store(
-            pack_thumbnail_spec(settings.thumbnail_spec()),
-            Ordering::Relaxed,
-        );
+        let old_limit = self.thumbnail_cache_limit.load(Ordering::Relaxed);
+        let old_spec = self.thumbnail_spec.load(Ordering::Relaxed);
+        let new_limit = thumbnail_cache_limit_bytes(settings.thumbnail_cache_mb);
+        let new_spec = pack_thumbnail_spec(settings.thumbnail_spec());
+        self.thumbnail_cache_limit
+            .store(new_limit, Ordering::Relaxed);
+        self.thumbnail_spec.store(new_spec, Ordering::Relaxed);
+        if old_limit != new_limit || old_spec != new_spec || thumbnail_size_changed {
+            self.notify_thumbnail_worker();
+        }
         let world_name_enabled = settings.world_name_resolution_enabled;
         let was_enabled = self
             .world_name_resolution_enabled
@@ -1250,10 +1349,12 @@ impl Daemon {
                 continue;
             }
             let tx = tx.clone();
+            let wake = self.wake.clone();
             let mut watcher = notify::recommended_watcher(move |event| {
                 if let Err(error) = tx.send(event) {
                     tracing::debug!(%error, "photo watcher receiver closed; dropping event");
                 }
+                wake.notify();
             })
             .context("cannot create photo watcher")?;
             watcher
@@ -1382,7 +1483,7 @@ impl Daemon {
                     db.list_photos(5000, 0, vrc_photon_core::model::PhotoSort::Newest)
                 {
                     for photo in photos {
-                        if let Err(error) = tx.send(photo.id) {
+                        if let Err(error) = tx.send(ThumbnailRequest::Photo(photo.id)) {
                             tracing::debug!(
                                 %error,
                                 photo_id = photo.id,
@@ -1393,7 +1494,7 @@ impl Daemon {
                 }
                 drop(db);
                 for id in std::mem::take(&mut self.deferred_thumbnail_ids) {
-                    if let Err(error) = tx.send(id) {
+                    if let Err(error) = tx.send(ThumbnailRequest::Photo(id)) {
                         tracing::debug!(
                             %error,
                             photo_id = id,
@@ -1407,8 +1508,9 @@ impl Daemon {
             let db = self.db.clone();
             let running = self.running.clone();
             let paused = self.paused.clone();
+            let wake = self.hash_wake.clone();
             self.hash_handle = self.spawn_supervised_worker("photo-hashes", move || {
-                hash_loop(db.clone(), running.clone(), paused.clone())
+                hash_loop(db.clone(), running.clone(), paused.clone(), wake.clone())
             });
         }
         if self.owns_deletion_executor && self.deletion_handle.is_none() {
@@ -1494,6 +1596,7 @@ impl Daemon {
         self.sends.notify();
         self.world_names.notify();
         self.tagging.notify();
+        self.hash_wake.notify();
         self.supervisor_wake.notify();
         self.thumbnail_tx = None;
         if let Some(handle) = self.thumbnail_handle.take()
@@ -1579,6 +1682,7 @@ impl Drop for Daemon {
         self.sends.notify();
         self.world_names.notify();
         self.tagging.notify();
+        self.hash_wake.notify();
         self.supervisor_wake.notify();
         self.wake.notify();
     }

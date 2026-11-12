@@ -1,3 +1,5 @@
+use vrc_photon_ipc::StatusSnapshot;
+
 use super::*;
 
 pub(crate) fn ipc_operation(operation: DaemonOperation) -> Operation {
@@ -37,22 +39,59 @@ pub(crate) fn cgroup_has_unit(cgroup: &str, unit: &str) -> bool {
         .any(|part| part == unit)
 }
 
+/// Compares the observable status fields. `version` is stamped on every
+/// snapshot and must not make an unchanged status look different.
+///
+/// Keep this list in sync with [`StatusSnapshot`]: a new field that is not
+/// compared here silently suppresses events whose only change is that field.
+fn same_status_fields(a: &StatusSnapshot, b: &StatusSnapshot) -> bool {
+    a.paused == b.paused
+        && a.watching == b.watching
+        && a.scanning == b.scanning
+        && a.scan_phase == b.scan_phase
+        && a.scan_processed == b.scan_processed
+        && a.scan_total == b.scan_total
+        && a.scan_indexed == b.scan_indexed
+        && a.scan_root == b.scan_root
+        && a.scan_roots == b.scan_roots
+        && a.photo_count == b.photo_count
+        && a.pending_jobs == b.pending_jobs
+        && a.pending_sends == b.pending_sends
+        && a.pending_tagging_jobs == b.pending_tagging_jobs
+        && a.tagging_ready == b.tagging_ready
+}
+
 impl Daemon {
-    pub(crate) fn refresh_status(&self) -> Result<()> {
-        let (world_name, players, photo_count, pending_jobs, pending_sends) = {
+    /// Refreshes the cheap session view: world, players, watching, last log.
+    pub(crate) fn refresh_session_status(&self) -> Result<()> {
+        let (world_name, players) = {
             let db = lock_db(&self.db);
             let now = chrono::Utc::now().timestamp();
-            let session = db.session_at(now)?;
-            let (world_name, players) = if let Some(session) = &session {
-                let world = db.world_by_id(session.world_id)?;
-                let players = db.players_at(session.id, now)?.len();
-                (world.and_then(|world| world.alias.or(world.name)), players)
-            } else {
-                (None, 0)
-            };
+            match db.session_at(now)? {
+                Some(session) => {
+                    let world = db.world_by_id(session.world_id)?;
+                    let players = db.players_at(session.id, now)?.len();
+                    (world.and_then(|world| world.alias.or(world.name)), players)
+                }
+                None => (None, 0),
+            }
+        };
+        let mut status = lock_status(&self.status);
+        status.watching = self.settings.log_dir.is_some();
+        status.world_name = world_name;
+        status.players = players;
+        status.last_log = self
+            .log_tail
+            .as_ref()
+            .map(|tail| tail.path.to_string_lossy().to_string());
+        Ok(())
+    }
+
+    /// Refreshes the expensive library and queue aggregates.
+    pub(crate) fn refresh_counts(&self) -> Result<()> {
+        let (photo_count, pending_jobs, pending_sends) = {
+            let db = lock_db(&self.db);
             (
-                world_name,
-                players,
                 db.count_photos()?,
                 db.count_jobs(QueueStatus::Pending)?,
                 db.count_pending_sends()?,
@@ -63,19 +102,41 @@ impl Daemon {
         // cheap and lock-order safe.
         let (pending_tagging_jobs, tagging_ready) = tagging_status(&self.db, &self.plugin);
         let mut status = lock_status(&self.status);
-        status.watching = self.settings.log_dir.is_some();
-        status.world_name = world_name;
-        status.players = players;
         status.photo_count = photo_count;
         status.pending_jobs = pending_jobs;
         status.pending_sends = pending_sends;
         status.pending_tagging_jobs = pending_tagging_jobs;
         status.tagging_ready = tagging_ready;
-        status.last_log = self
-            .log_tail
-            .as_ref()
-            .map(|tail| tail.path.to_string_lossy().to_string());
         Ok(())
+    }
+
+    /// Refreshes both halves. Used by startup and command execution, where a
+    /// precise snapshot matters more than saving one aggregate query.
+    pub(crate) fn refresh_status(&self) -> Result<()> {
+        self.refresh_session_status()?;
+        self.refresh_counts()
+    }
+
+    /// Marks the aggregate counts for a refresh on the next loop iteration.
+    pub(crate) fn invalidate_counts(&mut self) {
+        self.last_counts_status = Instant::now() - COUNTS_STATUS_INTERVAL;
+    }
+
+    /// Publishes a status event only when the observable fields changed.
+    pub(crate) fn publish_status_if_changed(&mut self) {
+        let snapshot = {
+            let mut status = lock_status(&self.status);
+            status_snapshot(&mut status)
+        };
+        let changed = self
+            .last_published_status
+            .as_ref()
+            .is_none_or(|previous| !same_status_fields(previous, &snapshot));
+        if changed {
+            self.last_published_status = Some(snapshot.clone());
+            self.events
+                .publish(Event::StatusChanged { status: snapshot });
+        }
     }
 
     pub(crate) fn write_heartbeat(&mut self) {

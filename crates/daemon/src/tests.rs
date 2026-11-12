@@ -2068,6 +2068,76 @@ fn start_workers_spawns_and_stops_the_tagging_worker() {
 }
 
 #[test]
+fn hash_worker_passes_missing_rows_and_hashes_later_photos() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    daemon.set_tray_enabled(false);
+
+    let valid_path = dir.path().join("photos/valid.bin");
+    std::fs::write(&valid_path, b"hash me").unwrap();
+
+    {
+        let db = daemon.db.lock().unwrap();
+        let root = db
+            .add_root(dir.path().join("photos").to_str().unwrap(), "reference")
+            .unwrap();
+        for index in 0..16 {
+            db.upsert_photo(&NewPhoto {
+                root_id: root,
+                rel_path: format!("missing-{index}.bin"),
+                abs_path: dir
+                    .path()
+                    .join(format!("photos/missing-{index}.bin"))
+                    .to_string_lossy()
+                    .to_string(),
+                file_name: format!("missing-{index}.bin"),
+                captured_at_utc: index,
+                captured_at_local: "2026-10-21 21:24:00.000".to_string(),
+                tz_offset_sec: 9 * 3600,
+                width: 1,
+                height: 1,
+                file_size: 1,
+                mtime: index,
+                blake3: None,
+            })
+            .unwrap();
+        }
+        db.upsert_photo(&NewPhoto {
+            root_id: root,
+            rel_path: "valid.bin".to_string(),
+            abs_path: valid_path.to_string_lossy().to_string(),
+            file_name: "valid.bin".to_string(),
+            captured_at_utc: 100,
+            captured_at_local: "2026-10-21 21:24:00.000".to_string(),
+            tz_offset_sec: 9 * 3600,
+            width: 1,
+            height: 1,
+            file_size: 7,
+            mtime: 100,
+            blake3: None,
+        })
+        .unwrap();
+    }
+
+    daemon.start_workers();
+    wait_for(
+        || {
+            daemon
+                .db
+                .lock()
+                .unwrap()
+                .photo_by_path(valid_path.to_str().unwrap())
+                .unwrap()
+                .unwrap()
+                .blake3
+                .is_some()
+        },
+        Duration::from_secs(2),
+    );
+    daemon.stop_workers();
+}
+
+#[test]
 fn startup_resumes_interrupted_tagging_jobs() {
     let dir = tempfile::tempdir().unwrap();
     let photo_dir = dir.path().join("photos");
@@ -2642,7 +2712,12 @@ fn external_notice_prunes_through_a_channel_message() {
     daemon
         .thumbnail_external_bytes
         .fetch_add(1_000_000, Ordering::Relaxed);
-    daemon.thumbnail_tx.as_ref().unwrap().send(999_999).unwrap();
+    daemon
+        .thumbnail_tx
+        .as_ref()
+        .unwrap()
+        .send(ThumbnailRequest::Photo(999_999))
+        .unwrap();
     wait_for(
         || daemon.thumbnail_external_bytes.load(Ordering::Relaxed) == 0,
         Duration::from_secs(5),
@@ -4326,7 +4401,10 @@ fn scan_root_sends_new_photos_to_the_thumbnail_queue() {
     let report = daemon.scan_root_photos(root.clone()).unwrap();
     assert_eq!(report.new_ids.len(), 1);
 
-    assert_eq!(rx.try_recv().unwrap(), report.new_ids[0]);
+    assert_eq!(
+        rx.try_recv().unwrap(),
+        ThumbnailRequest::Photo(report.new_ids[0])
+    );
     assert!(rx.try_recv().is_err());
 
     let mut finished = None;
@@ -4348,6 +4426,29 @@ fn scan_root_sends_new_photos_to_the_thumbnail_queue() {
         }
         _ => panic!("scan did not finish"),
     }
+}
+
+#[test]
+fn thumbnail_settings_change_wakes_the_worker() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    let (tx, rx) = std::sync::mpsc::channel();
+    daemon.thumbnail_tx = Some(tx);
+    daemon.thumbnail_cache_limit.store(1, Ordering::Relaxed);
+    daemon.refresh_compression_settings();
+    assert!(matches!(rx.try_recv().unwrap(), ThumbnailRequest::Refresh));
+}
+
+#[test]
+fn notify_workers_wakes_hash_and_thumbnail() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    let (tx, rx) = std::sync::mpsc::channel();
+    daemon.thumbnail_tx = Some(tx);
+    let before = daemon.hash_wake.generation();
+    daemon.notify_workers();
+    assert!(daemon.hash_wake.generation() > before);
+    assert!(matches!(rx.try_recv().unwrap(), ThumbnailRequest::Refresh));
 }
 
 #[test]
@@ -4465,6 +4566,182 @@ fn paused_loop_keeps_heartbeat_status_and_log_ingestion() {
         Some(log_path.to_string_lossy().to_string())
     );
     assert!(status.watching);
+}
+
+#[test]
+fn session_refresh_does_not_touch_counts() {
+    let dir = tempfile::tempdir().unwrap();
+    let daemon = test_daemon(&dir);
+    {
+        let mut status = daemon.status.lock().unwrap();
+        status.photo_count = 123;
+        status.pending_jobs = 4;
+        status.pending_sends = 5;
+        status.pending_tagging_jobs = 6;
+    }
+    daemon.refresh_session_status().unwrap();
+    let status = daemon.status.lock().unwrap();
+    assert_eq!(status.photo_count, 123);
+    assert_eq!(status.pending_jobs, 4);
+    assert_eq!(status.pending_sends, 5);
+    assert_eq!(status.pending_tagging_jobs, 6);
+}
+
+#[test]
+fn counts_refresh_does_not_touch_session_fields() {
+    let dir = tempfile::tempdir().unwrap();
+    let daemon = test_daemon(&dir);
+    {
+        let mut status = daemon.status.lock().unwrap();
+        status.world_name = Some("keep".to_string());
+        status.players = 7;
+    }
+    daemon.refresh_counts().unwrap();
+    let status = daemon.status.lock().unwrap();
+    assert_eq!(status.world_name.as_deref(), Some("keep"));
+    assert_eq!(status.players, 7);
+}
+
+#[test]
+fn status_publish_is_skipped_when_nothing_changed() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    let events = daemon.events.subscribe();
+    daemon.publish_status_if_changed();
+    daemon.publish_status_if_changed();
+    assert_eq!(
+        events
+            .try_iter()
+            .filter(|event| matches!(event, Event::StatusChanged { .. }))
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn status_publish_fires_when_a_field_changes() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    let events = daemon.events.subscribe();
+    daemon.publish_status_if_changed();
+    daemon.set_paused(true);
+    while events.try_recv().is_ok() {}
+    daemon.publish_status_if_changed();
+    assert!(
+        events
+            .try_iter()
+            .any(|event| matches!(event, Event::StatusChanged { .. }))
+    );
+}
+
+#[test]
+fn loop_refreshes_counts_only_when_due() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    daemon.set_tray_enabled(false);
+
+    daemon.last_counts_status = Instant::now();
+    {
+        let mut status = daemon.status.lock().unwrap();
+        status.photo_count = 42;
+    }
+    daemon.run_loop_iteration();
+    assert_eq!(daemon.status.lock().unwrap().photo_count, 42);
+
+    daemon.last_counts_status = Instant::now() - COUNTS_STATUS_INTERVAL;
+    daemon.run_loop_iteration();
+    let expected = daemon.db.lock().unwrap().count_photos().unwrap();
+    assert_eq!(daemon.status.lock().unwrap().photo_count, expected);
+}
+
+#[test]
+fn min_wait_uses_the_earliest_deadline_and_caps_at_the_maximum() {
+    assert_eq!(
+        crate::lifecycle::min_wait(
+            &[Duration::from_secs(5), Duration::from_secs(2)],
+            Duration::from_secs(1)
+        ),
+        Duration::from_secs(1)
+    );
+    assert_eq!(
+        crate::lifecycle::min_wait(
+            &[Duration::from_millis(200), Duration::from_secs(5)],
+            Duration::from_secs(1)
+        ),
+        Duration::from_millis(200)
+    );
+    assert_eq!(
+        crate::lifecycle::min_wait(&[], Duration::from_secs(1)),
+        Duration::from_secs(1)
+    );
+    assert_eq!(
+        crate::lifecycle::min_wait(&[Duration::ZERO], Duration::from_secs(1)),
+        Duration::from_millis(10)
+    );
+}
+
+#[test]
+fn headless_idle_wait_is_at_most_one_second() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    daemon.set_tray_enabled(false);
+    daemon.last_log_poll = Instant::now() - LOG_INTERVAL;
+    assert!(daemon.next_loop_wait() <= Duration::from_secs(1));
+}
+
+#[test]
+fn tray_idle_wait_is_at_most_five_hundred_milliseconds() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    daemon.set_tray_enabled(true);
+    assert!(daemon.next_loop_wait() <= Duration::from_millis(500));
+}
+
+#[test]
+fn paused_idle_wait_does_not_spin_on_an_overdue_asset_check() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    daemon.set_tray_enabled(false);
+    let now = Instant::now();
+    daemon.last_log_poll = now;
+    daemon.last_presence_check = now;
+    daemon.last_session_status = now;
+    daemon.last_counts_status = now;
+    daemon.last_settings_check = now;
+    daemon.last_autostart_check = now;
+    daemon.last_heartbeat = now;
+    daemon.last_asset_check = now - Duration::from_secs(60);
+    daemon.set_paused(true);
+    assert!(daemon.next_loop_wait() >= Duration::from_millis(100));
+}
+
+#[test]
+fn presence_check_runs_only_after_its_interval() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    daemon.set_tray_enabled(false);
+
+    daemon.last_presence_check = Instant::now() - PRESENCE_INTERVAL;
+    daemon.run_loop_iteration();
+    let after_due = daemon.last_presence_check;
+    assert!(after_due.elapsed() < Duration::from_secs(1));
+
+    daemon.run_loop_iteration();
+    assert_eq!(daemon.last_presence_check, after_due);
+}
+
+#[test]
+fn changing_the_log_dir_invalidates_the_locator() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    daemon.ingest_logs().unwrap();
+    assert!(daemon.log_locator.is_some());
+
+    save_daemon_settings(&daemon, |settings| {
+        settings.log_dir = Some(dir.path().join("logs2").to_string_lossy().to_string());
+    });
+    daemon.reload_settings().unwrap();
+    assert!(daemon.log_locator.is_none());
 }
 
 #[test]
@@ -4725,12 +5002,76 @@ fn auto_jobs_use_replace_policy_and_waiting_status() {
 }
 
 #[test]
+fn command_inserted_without_wake_is_still_processed() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    daemon.set_tray_enabled(false);
+    write_photo(
+        &dir.path()
+            .join("photos/VRChat_2026-10-21_21-24-00.000_4x3.png"),
+    );
+
+    {
+        let db = Db::open(dir.path().join("library.db")).unwrap();
+        db.request_daemon_command(DaemonCommand::Rescan).unwrap();
+    }
+
+    daemon.poll_commands().unwrap();
+    assert_eq!(daemon.db.lock().unwrap().count_photos().unwrap(), 1);
+}
+
+#[test]
+fn settings_reload_is_skipped_when_data_version_is_unchanged() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    daemon.set_tray_enabled(false);
+
+    let version = {
+        let db = daemon.db.lock().unwrap();
+        db.data_version().unwrap()
+    };
+    daemon.last_data_version = Some(version);
+    daemon.thumbnail_cache_limit.store(999, Ordering::Relaxed);
+    daemon.last_settings_check = Instant::now() - SETTINGS_INTERVAL;
+    daemon.refresh_periodic_settings();
+    assert_eq!(daemon.thumbnail_cache_limit.load(Ordering::Relaxed), 999);
+}
+
+#[test]
+fn settings_reload_applies_an_external_change() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    daemon.set_tray_enabled(false);
+
+    let db_path = dir.path().join("library.db");
+    let before = {
+        let db = daemon.db.lock().unwrap();
+        db.data_version().unwrap()
+    };
+    daemon.last_data_version = Some(before);
+
+    let mut settings = AppSettings::load(&daemon.db.lock().unwrap()).unwrap();
+    settings.thumbnail_cache_mb = 1;
+    {
+        let other = Db::open(&db_path).unwrap();
+        settings.save(&other).unwrap();
+    }
+
+    daemon.last_settings_check = Instant::now() - SETTINGS_INTERVAL;
+    daemon.refresh_periodic_settings();
+    assert_eq!(
+        daemon.thumbnail_cache_limit.load(Ordering::Relaxed),
+        1024 * 1024
+    );
+}
+
+#[test]
 fn periodic_settings_refresh_applies_saved_thumbnail_limit() {
     let dir = tempfile::tempdir().unwrap();
     let mut daemon = test_daemon(&dir);
     save_daemon_settings(&daemon, |settings| settings.thumbnail_cache_mb = 1);
     // The main loop calls this on every iteration, paused or not; make
-    // the refresh due as it is half a second after the previous one.
+    // the refresh due as it is one second after the previous one.
     daemon.last_settings_check = Instant::now() - Duration::from_secs(5);
     daemon.refresh_periodic_settings();
     assert_eq!(
