@@ -44,7 +44,7 @@
 - Consumes: `gpui_kit::transparent_black() -> Hsla`
 - Produces: `fn scrollbar_track_color() -> Hsla`（palette モジュール内。`apply_component_theme` とテストだけが使う）
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 `crates/ui/src/ui/palette.rs` の `mod tests` に追加する。
 
@@ -55,13 +55,13 @@ fn scrollbar_track_is_transparent() {
 }
 ```
 
-- [ ] **Step 2: テストが失敗することを確認する**
+- [x] **Step 2: テストが失敗することを確認する**
 
 Run: `cargo test -p vrc-photon-ui scrollbar_track_is_transparent`
 
 Expected: `cannot find function scrollbar_track_color in this scope` でコンパイルエラー。
 
-- [ ] **Step 3: ヘルパーと割り当てを実装する**
+- [x] **Step 3: ヘルパーと割り当てを実装する**
 
 `crates/ui/src/ui/palette.rs` の `use gpui_kit::{...}` に `Hsla` を追加する。
 
@@ -91,13 +91,13 @@ theme.colors.scrollbar = rgb(palette.border_strong).into();
 theme.colors.scrollbar = scrollbar_track_color().into();
 ```
 
-- [ ] **Step 4: テストが通ることを確認する**
+- [x] **Step 4: テストが通ることを確認する**
 
 Run: `cargo test -p vrc-photon-ui scrollbar_track_is_transparent`
 
 Expected: `test ui::palette::tests::scrollbar_track_is_transparent ... ok`
 
-- [ ] **Step 5: コミットする**
+- [x] **Step 5: コミットする**
 
 ```bash
 git add crates/ui/src/ui/palette.rs
@@ -117,7 +117,7 @@ git commit -m "feat: スクロールバーのトラックを透明にする"
 - Consumes: `ScrollableElement::vertical_scrollbar(&self.settings_scroll)`（gpui-kit 0.9.1）
 - Produces: なし（画面内部の変更）
 
-- [ ] **Step 1: import を置き換える**
+- [x] **Step 1: import を置き換える**
 
 次の行を削除する。
 
@@ -131,7 +131,7 @@ use gpui_kit::component::scroll::Scrollbar;
 use gpui_kit::component::scroll::ScrollableElement as _;
 ```
 
-- [ ] **Step 2: 外側 `h_flex` にスクロールバーを付ける**
+- [x] **Step 2: 外側 `h_flex` にスクロールバーを付ける**
 
 `settings_screen` の外側 `h_flex()` の `.items_stretch()` の直後に追加する。
 
@@ -154,7 +154,7 @@ h_flex()
             // ...
 ```
 
-- [ ] **Step 3: 8 px ガターの直接配置を削除する**
+- [x] **Step 3: 8 px ガターの直接配置を削除する**
 
 `settings_screen` の末尾にある次のブロックを削除する。
 
@@ -170,13 +170,13 @@ h_flex()
 )
 ```
 
-- [ ] **Step 4: コンパイルを確認する**
+- [x] **Step 4: コンパイルを確認する**
 
 Run: `cargo check -p vrc-photon-ui`
 
 Expected: `Finished` で終わり、`Scrollbar` の未使用 import や型エラーがない。
 
-- [ ] **Step 5: 実機で設定画面を確認する**
+- [x] **Step 5: 実機で設定画面を確認する**
 
 `--demo` でアプリを起動し、設定画面を開く。次を確認する。
 
@@ -185,7 +185,7 @@ Expected: `Finished` で終わり、`Scrollbar` の未使用 import や型エラ
 - 設定画面を下へスクロールし、別画面へ移動して戻ったときに位置が保持される。
 - 画面幅を狭くしても、バーが右端からずれない。
 
-- [ ] **Step 6: コミットする**
+- [x] **Step 6: コミットする**
 
 ```bash
 git add crates/ui/src/ui/settings.rs
@@ -204,7 +204,7 @@ git commit -m "refactor: 設定画面のスクロールバーを取り付けラ�
 - Consumes: `ScrollableElement::vertical_scrollbar(&self.integrations_scroll)`（gpui-kit 0.9.1）
 - Produces: なし（画面内部の変更）
 
-- [ ] **Step 1: import から `Scrollbar` を外す**
+- [x] **Step 1: import から `Scrollbar` を外す**
 
 次の行を置き換える。
 
@@ -218,7 +218,7 @@ use gpui_kit::component::scroll::{ScrollableElement as _, Scrollbar};
 use gpui_kit::component::scroll::ScrollableElement as _;
 ```
 
-- [ ] **Step 2: `detail` の `h_flex` にスクロールバーを付ける**
+- [x] **Step 2: `detail` の `h_flex` にスクロールバーを付ける**
 
 `detail` の `.items_stretch()` の直後に追加する。
 
@@ -239,7 +239,7 @@ let detail = h_flex()
     .child(detail_body)
 ```
 
-- [ ] **Step 3: 8 px ガターの直接配置を削除する**
+- [x] **Step 3: 8 px ガターの直接配置を削除する**
 
 `detail` の末尾にある次のブロックを削除する。
 
@@ -255,13 +255,13 @@ let detail = h_flex()
 )
 ```
 
-- [ ] **Step 4: コンパイルを確認する**
+- [x] **Step 4: コンパイルを確認する**
 
 Run: `cargo check -p vrc-photon-ui`
 
 Expected: `Finished` で終わり、`Scrollbar` の未使用 import や型エラーがない。
 
-- [ ] **Step 5: 実機で連携・自動画面を確認する**
+- [x] **Step 5: 実機で連携・自動画面を確認する**
 
 `--demo` でアプリを起動し、連携・自動画面を開く。次を確認する。
 
@@ -270,7 +270,7 @@ Expected: `Finished` で終わり、`Scrollbar` の未使用 import や型エラ
 - ウィンドウ幅を狭くして一覧が詳細の上に積まれる表示でも、詳細ペインのバーが右端に収まる。
 - 設定画面と同じ見た目・操作感である。
 
-- [ ] **Step 6: コミットする**
+- [x] **Step 6: コミットする**
 
 ```bash
 git add crates/ui/src/ui/integrations.rs
@@ -289,7 +289,7 @@ git commit -m "refactor: 連携画面のスクロールバーを取り付けラ�
 - Consumes: `Scrollbar::vertical(&queue_scroll).viewport_from_layout()`
 - Produces: なし
 
-- [ ] **Step 1: 直接配置の例外理由をコメントする**
+- [x] **Step 1: 直接配置の例外理由をコメントする**
 
 `compression.rs` の次の行の直前にコメントを追加する。
 
@@ -304,7 +304,7 @@ git commit -m "refactor: 連携画面のスクロールバーを取り付けラ�
 // the shared VirtualListScrollHandle and uses the layout bounds.
 ```
 
-- [ ] **Step 2: フォーマット・Clippy・全テストを実行する**
+- [x] **Step 2: フォーマット・Clippy・全テストを実行する**
 
 Run:
 
@@ -314,7 +314,7 @@ cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warni
 
 Expected: すべて成功。Clippy の警告なし。
 
-- [ ] **Step 3: 年レールに変更がないことを確認する**
+- [x] **Step 3: 年レールに変更がないことを確認する**
 
 Run:
 
@@ -324,7 +324,7 @@ git diff main -- crates/ui/src/ui/year_rail.rs crates/ui/src/state/year_rail.rs
 
 Expected: 出力なし。
 
-- [ ] **Step 4: 全画面の回帰を確認する**
+- [x] **Step 4: 全画面の回帰を確認する**
 
 `--demo` でアプリを起動し、次を確認する。
 
@@ -336,7 +336,7 @@ Expected: 出力なし。
 - ダーク・ライト・パステルの各テーマで、トラックが再表示されない。
 - スクロール停止後にサムがフェードアウトする。
 
-- [ ] **Step 5: コミットする**
+- [x] **Step 5: コミットする**
 
 ```bash
 git add crates/ui/src/ui/compression.rs docs/superpowers/plans/2026-11-12-issue-604-scrollbar.md
@@ -354,13 +354,13 @@ git commit -m "docs: 圧縮キューのスクロールバー例外を記録す�
 - Consumes: Task 1〜4 のコミット
 - Produces: PR
 
-- [ ] **Step 1: ブランチを push する**
+- [x] **Step 1: ブランチを push する**
 
 ```bash
 git push -u origin feat/604-scrollbar
 ```
 
-- [ ] **Step 2: PR を作成する**
+- [x] **Step 2: PR を作成する**
 
 ```bash
 gh pr create --base main --head feat/604-scrollbar \
@@ -369,18 +369,18 @@ gh pr create --base main --head feat/604-scrollbar \
   --label enhancement
 ```
 
-- [ ] **Step 3: CI を監視する**
+- [x] **Step 3: CI を監視する**
 
 `.opencode/skills/ci-watch/scripts/ci-watch.sh feat/604-scrollbar CI` を background で実行し、最新 run を毎回解決する。成功したら次へ進む。
 
-- [ ] **Step 4: 最終レビューを受ける**
+- [x] **Step 4: 最終レビューを受ける**
 
 `requesting-code-review` の code-reviewer を fresh context で実行する。Critical / Important の指摘は 1 回の fix pass で直し、テストで RED→GREEN を確認する。Minor は記録してユーザーへ報告する。
 
-- [ ] **Step 5: マージする**
+- [x] **Step 5: マージする**
 
 CI が green でレビュー指摘が解消したら `gh pr merge <n> --merge`。マージ後は main へ戻って pull し、作業ブランチをローカル・リモートから削除する。
 
-- [ ] **Step 6: Issue #604 のスコープを更新する**
+- [x] **Step 6: Issue #604 のスコープを更新する**
 
 年レールを対象外にした決定を Issue #604 へコメントする。必要なら受け入れ条件を更新する。
