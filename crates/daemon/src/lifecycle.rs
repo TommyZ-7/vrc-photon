@@ -136,7 +136,7 @@ pub struct Daemon {
     pub(crate) last_log_poll: std::time::Instant,
     pub(crate) tray: Option<Tray>,
     pub(crate) tray_enabled: bool,
-    pub(crate) thumbnail_tx: Option<mpsc::Sender<i64>>,
+    pub(crate) thumbnail_tx: Option<mpsc::Sender<ThumbnailRequest>>,
     pub(crate) thumbnail_handle: Option<JoinHandle<()>>,
     pub(crate) hash_handle: Option<JoinHandle<()>>,
     pub(crate) send_handle: Option<JoinHandle<()>>,
@@ -496,6 +496,13 @@ impl Daemon {
         self.world_names.notify();
         self.tagging.notify();
         self.hash_wake.notify();
+        self.notify_thumbnail_worker();
+    }
+
+    fn notify_thumbnail_worker(&self) {
+        if let Some(tx) = &self.thumbnail_tx {
+            let _ = tx.send(ThumbnailRequest::Refresh);
+        }
     }
 
     /// Records a supervised restart without changing the IPC status shape.
@@ -667,14 +674,12 @@ impl Daemon {
         if settings.autostart != self.settings.autostart {
             self.apply_autostart(settings.autostart);
         }
-        self.thumbnail_cache_limit.store(
-            thumbnail_cache_limit_bytes(settings.thumbnail_cache_mb),
-            Ordering::Relaxed,
-        );
-        self.thumbnail_spec.store(
-            pack_thumbnail_spec(settings.thumbnail_spec()),
-            Ordering::Relaxed,
-        );
+        let old_limit = self.thumbnail_cache_limit.load(Ordering::Relaxed);
+        let old_spec = self.thumbnail_spec.load(Ordering::Relaxed);
+        let new_limit = thumbnail_cache_limit_bytes(settings.thumbnail_cache_mb);
+        let new_spec = pack_thumbnail_spec(settings.thumbnail_spec());
+        self.thumbnail_cache_limit.store(new_limit, Ordering::Relaxed);
+        self.thumbnail_spec.store(new_spec, Ordering::Relaxed);
         let log_dir_changed = self.settings.log_dir != settings.log_dir;
         let thumbnail_size_changed = self.settings.thumbnail_size != settings.thumbnail_size;
         if thumbnail_size_changed {
@@ -682,6 +687,9 @@ impl Daemon {
                 tracing::warn!(%error, "cannot clear thumbnails after a resolution change");
             }
             self.thumbnail_cache_epoch.fetch_add(1, Ordering::Relaxed);
+        }
+        if old_limit != new_limit || old_spec != new_spec || thumbnail_size_changed {
+            self.notify_thumbnail_worker();
         }
         let world_name_enabled = settings.world_name_resolution_enabled;
         self.settings = settings;
@@ -1198,14 +1206,15 @@ impl Daemon {
             let _ = thumbnail::clear_thumbnail_cache_in(&self.thumbnail_dir);
             self.thumbnail_cache_epoch.fetch_add(1, Ordering::Relaxed);
         }
-        self.thumbnail_cache_limit.store(
-            thumbnail_cache_limit_bytes(settings.thumbnail_cache_mb),
-            Ordering::Relaxed,
-        );
-        self.thumbnail_spec.store(
-            pack_thumbnail_spec(settings.thumbnail_spec()),
-            Ordering::Relaxed,
-        );
+        let old_limit = self.thumbnail_cache_limit.load(Ordering::Relaxed);
+        let old_spec = self.thumbnail_spec.load(Ordering::Relaxed);
+        let new_limit = thumbnail_cache_limit_bytes(settings.thumbnail_cache_mb);
+        let new_spec = pack_thumbnail_spec(settings.thumbnail_spec());
+        self.thumbnail_cache_limit.store(new_limit, Ordering::Relaxed);
+        self.thumbnail_spec.store(new_spec, Ordering::Relaxed);
+        if old_limit != new_limit || old_spec != new_spec || thumbnail_size_changed {
+            self.notify_thumbnail_worker();
+        }
         let world_name_enabled = settings.world_name_resolution_enabled;
         let was_enabled = self
             .world_name_resolution_enabled
@@ -1431,7 +1440,7 @@ impl Daemon {
                     db.list_photos(5000, 0, vrc_photon_core::model::PhotoSort::Newest)
                 {
                     for photo in photos {
-                        if let Err(error) = tx.send(photo.id) {
+                        if let Err(error) = tx.send(ThumbnailRequest::Photo(photo.id)) {
                             tracing::debug!(
                                 %error,
                                 photo_id = photo.id,
@@ -1442,7 +1451,7 @@ impl Daemon {
                 }
                 drop(db);
                 for id in std::mem::take(&mut self.deferred_thumbnail_ids) {
-                    if let Err(error) = tx.send(id) {
+                    if let Err(error) = tx.send(ThumbnailRequest::Photo(id)) {
                         tracing::debug!(
                             %error,
                             photo_id = id,

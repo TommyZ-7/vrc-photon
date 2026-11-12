@@ -10,13 +10,13 @@ pub(crate) fn deletion_loop(
     let mut seen_generation = 0;
     while running.load(Ordering::Relaxed) {
         if paused.load(Ordering::Relaxed) {
-            jobs.wait(&mut seen_generation, PAUSED_WORKER_POLL);
+            jobs.wait(&mut seen_generation, DELETION_IDLE_WAIT);
             continue;
         }
         if let Err(error) = run_deletions_once(&db) {
             tracing::error!(%error, "deletion executor failed");
         }
-        jobs.wait(&mut seen_generation, Duration::from_millis(500));
+        jobs.wait(&mut seen_generation, DELETION_IDLE_WAIT);
     }
 }
 

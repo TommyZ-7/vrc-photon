@@ -35,8 +35,8 @@ use crate::signals::JobSignal;
 const MAX_ERROR_DETAIL_CHARS: usize = 200;
 /// Terminal send rows kept after a successful upload.
 const SEND_HISTORY_LIMIT: i64 = 500;
-/// Worker poll interval while the outbox has no due row.
-const POLL_INTERVAL: Duration = Duration::from_millis(500);
+/// Fallback wait while the outbox has no due row. Enqueues send a signal.
+const POLL_INTERVAL: Duration = crate::DISCORD_IDLE_WAIT;
 /// Minimum spacing between two successful webhook requests.
 const SUCCESS_INTERVAL: Duration = Duration::from_millis(400);
 /// Automatic retryable failures stop after this many attempts.

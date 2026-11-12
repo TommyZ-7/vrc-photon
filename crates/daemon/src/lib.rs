@@ -77,9 +77,17 @@ const PARSER_VERSION: &str = "1";
 /// Number of skipped-line sentences kept in one log error detail.
 const MAX_SKIPPED_DETAILS: usize = 5;
 const SCAN_INTERVAL: Duration = Duration::from_millis(500);
-/// How often a paused worker rechecks its gate at a dequeue point. Resume also
-/// notifies the worker signals, so this is only a fallback.
-const PAUSED_WORKER_POLL: Duration = Duration::from_millis(500);
+/// Idle fallbacks for queue workers. Enqueue paths notify the matching signal;
+/// these only cover missed notifications.
+const COMPRESSION_IDLE_WAIT: Duration = Duration::from_secs(30);
+const TAGGING_IDLE_WAIT: Duration = Duration::from_secs(30);
+const DISCORD_IDLE_WAIT: Duration = Duration::from_secs(30);
+/// Deletion requests can become unblocked when compression, tagging, or a
+/// send completes, so this fallback stays shorter.
+const DELETION_IDLE_WAIT: Duration = Duration::from_secs(5);
+/// Thumbnail pruning also reacts to file notices from the UI; a two-second
+/// fallback keeps that response close to the old behavior.
+const THUMBNAIL_IDLE_WAIT: Duration = Duration::from_secs(2);
 const LOG_INTERVAL: Duration = Duration::from_millis(750);
 /// How often the daemon checks whether the VRChat process is still running.
 /// Three consecutive misses close the session, so a stopped client is noticed
@@ -117,7 +125,6 @@ const VRCHAT_MISSING_POLLS_BEFORE_CLOSE: u8 = 3;
 /// so a change is applied within roughly one interval plus one loop wait.
 const SETTINGS_INTERVAL: Duration = Duration::from_secs(1);
 const THUMBNAIL_PRUNE_BATCH: usize = 128;
-const THUMBNAIL_PRUNE_IDLE: Duration = Duration::from_millis(500);
 
 #[cfg(test)]
 #[path = "tests.rs"]

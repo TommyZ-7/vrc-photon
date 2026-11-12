@@ -116,7 +116,7 @@ impl Default for TaggingWorkerConfig {
         Self {
             retry_delays: [Duration::from_secs(5), Duration::from_secs(30)],
             idle_timeout: DEFAULT_IDLE_TIMEOUT,
-            poll_interval: Duration::from_millis(400),
+            poll_interval: crate::TAGGING_IDLE_WAIT,
         }
     }
 }

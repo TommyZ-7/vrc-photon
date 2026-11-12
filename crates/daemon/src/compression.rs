@@ -117,7 +117,7 @@ pub(crate) fn worker_loop(
     let mut last_poll_error: Option<String> = None;
     while running.load(Ordering::Relaxed) {
         if paused.load(Ordering::Relaxed) {
-            jobs.wait(&mut seen_generation, PAUSED_WORKER_POLL);
+            jobs.wait(&mut seen_generation, COMPRESSION_IDLE_WAIT);
             continue;
         }
         let batch = {
@@ -142,7 +142,7 @@ pub(crate) fn worker_loop(
         if batch.is_empty() {
             // Poll first so a batch keeps all workers busy; the signal only
             // saves the 400 ms wait when the queue was empty.
-            jobs.wait(&mut seen_generation, Duration::from_millis(400));
+            jobs.wait(&mut seen_generation, COMPRESSION_IDLE_WAIT);
             continue;
         }
         for job in &batch {

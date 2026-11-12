@@ -2712,7 +2712,12 @@ fn external_notice_prunes_through_a_channel_message() {
     daemon
         .thumbnail_external_bytes
         .fetch_add(1_000_000, Ordering::Relaxed);
-    daemon.thumbnail_tx.as_ref().unwrap().send(999_999).unwrap();
+    daemon
+        .thumbnail_tx
+        .as_ref()
+        .unwrap()
+        .send(ThumbnailRequest::Photo(999_999))
+        .unwrap();
     wait_for(
         || daemon.thumbnail_external_bytes.load(Ordering::Relaxed) == 0,
         Duration::from_secs(5),
@@ -4396,7 +4401,10 @@ fn scan_root_sends_new_photos_to_the_thumbnail_queue() {
     let report = daemon.scan_root_photos(root.clone()).unwrap();
     assert_eq!(report.new_ids.len(), 1);
 
-    assert_eq!(rx.try_recv().unwrap(), report.new_ids[0]);
+    assert_eq!(
+        rx.try_recv().unwrap(),
+        ThumbnailRequest::Photo(report.new_ids[0])
+    );
     assert!(rx.try_recv().is_err());
 
     let mut finished = None;
@@ -4418,6 +4426,35 @@ fn scan_root_sends_new_photos_to_the_thumbnail_queue() {
         }
         _ => panic!("scan did not finish"),
     }
+}
+
+#[test]
+fn thumbnail_settings_change_wakes_the_worker() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    let (tx, rx) = std::sync::mpsc::channel();
+    daemon.thumbnail_tx = Some(tx);
+    daemon.thumbnail_cache_limit.store(1, Ordering::Relaxed);
+    daemon.refresh_compression_settings();
+    assert!(matches!(
+        rx.try_recv().unwrap(),
+        ThumbnailRequest::Refresh
+    ));
+}
+
+#[test]
+fn notify_workers_wakes_hash_and_thumbnail() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    let (tx, rx) = std::sync::mpsc::channel();
+    daemon.thumbnail_tx = Some(tx);
+    let before = daemon.hash_wake.generation();
+    daemon.notify_workers();
+    assert!(daemon.hash_wake.generation() > before);
+    assert!(matches!(
+        rx.try_recv().unwrap(),
+        ThumbnailRequest::Refresh
+    ));
 }
 
 #[test]

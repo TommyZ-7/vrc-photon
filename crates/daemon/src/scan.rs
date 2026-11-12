@@ -1,6 +1,7 @@
 use super::compression::{enqueue_auto_jobs, enqueue_auto_tagging, promote_display_derivative};
 use super::lifecycle::LocalizedError;
 use super::logs::missing_display_derivatives;
+use super::thumbnails::ThumbnailRequest;
 use super::*;
 
 pub(crate) fn relink_photos_outside_lock<F>(
@@ -233,7 +234,7 @@ impl Daemon {
         }
         if let Some(tx) = &self.thumbnail_tx {
             for id in &thumbnail_ids {
-                if let Err(error) = tx.send(*id) {
+                if let Err(error) = tx.send(ThumbnailRequest::Photo(*id)) {
                     tracing::debug!(
                         %error,
                         photo_id = *id,
@@ -535,7 +536,7 @@ impl Daemon {
         }
         if let Some(tx) = &self.thumbnail_tx {
             for id in &report.new_ids {
-                if let Err(error) = tx.send(*id) {
+                if let Err(error) = tx.send(ThumbnailRequest::Photo(*id)) {
                     tracing::debug!(
                         %error,
                         photo_id = *id,
