@@ -4910,6 +4910,67 @@ fn auto_jobs_use_replace_policy_and_waiting_status() {
 }
 
 #[test]
+fn command_inserted_without_wake_is_still_processed() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    daemon.set_tray_enabled(false);
+    write_photo(&dir.path().join("photos/VRChat_2026-10-21_21-24-00.000_4x3.png"));
+
+    {
+        let db = Db::open(&dir.path().join("library.db")).unwrap();
+        db.request_daemon_command(DaemonCommand::Rescan).unwrap();
+    }
+
+    daemon.poll_commands().unwrap();
+    assert_eq!(daemon.db.lock().unwrap().count_photos().unwrap(), 1);
+}
+
+#[test]
+fn settings_reload_is_skipped_when_data_version_is_unchanged() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    daemon.set_tray_enabled(false);
+
+    let version = {
+        let db = daemon.db.lock().unwrap();
+        db.data_version().unwrap()
+    };
+    daemon.last_data_version = Some(version);
+    daemon.thumbnail_cache_limit.store(999, Ordering::Relaxed);
+    daemon.last_settings_check = Instant::now() - SETTINGS_INTERVAL;
+    daemon.refresh_periodic_settings();
+    assert_eq!(daemon.thumbnail_cache_limit.load(Ordering::Relaxed), 999);
+}
+
+#[test]
+fn settings_reload_applies_an_external_change() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    daemon.set_tray_enabled(false);
+
+    let db_path = dir.path().join("library.db");
+    let before = {
+        let db = daemon.db.lock().unwrap();
+        db.data_version().unwrap()
+    };
+    daemon.last_data_version = Some(before);
+
+    let mut settings = AppSettings::load(&daemon.db.lock().unwrap()).unwrap();
+    settings.thumbnail_cache_mb = 1;
+    {
+        let other = Db::open(&db_path).unwrap();
+        settings.save(&other).unwrap();
+    }
+
+    daemon.last_settings_check = Instant::now() - SETTINGS_INTERVAL;
+    daemon.refresh_periodic_settings();
+    assert_eq!(
+        daemon.thumbnail_cache_limit.load(Ordering::Relaxed),
+        1024 * 1024
+    );
+}
+
+#[test]
 fn periodic_settings_refresh_applies_saved_thumbnail_limit() {
     let dir = tempfile::tempdir().unwrap();
     let mut daemon = test_daemon(&dir);

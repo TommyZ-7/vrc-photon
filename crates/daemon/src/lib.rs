@@ -115,7 +115,7 @@ const VRCHAT_MISSING_POLLS_BEFORE_CLOSE: u8 = 3;
 /// How often the daemon re-reads the compression settings and thumbnail
 /// cache limit the UI saved. Runs on every loop iteration, paused or not,
 /// so a change is applied within roughly one interval plus one loop wait.
-const SETTINGS_INTERVAL: Duration = Duration::from_millis(500);
+const SETTINGS_INTERVAL: Duration = Duration::from_secs(1);
 const THUMBNAIL_PRUNE_BATCH: usize = 128;
 const THUMBNAIL_PRUNE_IDLE: Duration = Duration::from_millis(500);
 

@@ -7574,3 +7574,26 @@ fn photos_without_hash_after_skips_earlier_ids() {
 
     assert!(db.photos_without_hash_after(2, ids[2]).unwrap().is_empty());
 }
+
+#[test]
+fn has_daemon_commands_reports_only_queued_rows() {
+    let db = Db::open_in_memory().unwrap();
+    assert!(!db.has_daemon_commands().unwrap());
+
+    db.request_daemon_command(DaemonCommand::Rescan).unwrap();
+    assert!(db.has_daemon_commands().unwrap());
+    assert_eq!(db.take_daemon_commands().unwrap(), vec![DaemonCommand::Rescan]);
+    assert!(!db.has_daemon_commands().unwrap());
+}
+
+#[test]
+fn data_version_changes_after_another_connection_commits() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("library.db");
+    let reader = Db::open(&path).unwrap();
+    let writer = Db::open(&path).unwrap();
+
+    let before = reader.data_version().unwrap();
+    writer.set_setting("version_probe", "1").unwrap();
+    assert!(reader.data_version().unwrap() > before);
+}

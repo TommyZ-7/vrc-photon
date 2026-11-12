@@ -145,6 +145,7 @@ pub struct Daemon {
     pub(crate) deletion_handle: Option<JoinHandle<()>>,
     pub(crate) last_autostart_check: std::time::Instant,
     pub(crate) last_settings_check: std::time::Instant,
+    pub(crate) last_data_version: Option<i64>,
     pub(crate) last_session_status: Instant,
     pub(crate) last_counts_status: Instant,
     pub(crate) last_published_status: Option<StatusSnapshot>,
@@ -380,6 +381,7 @@ impl Daemon {
             deletion_handle: None,
             last_autostart_check: std::time::Instant::now(),
             last_settings_check: Instant::now() - Duration::from_secs(2),
+            last_data_version: None,
             last_session_status: Instant::now() - SESSION_STATUS_INTERVAL,
             last_counts_status: Instant::now() - COUNTS_STATUS_INTERVAL,
             last_published_status: None,
@@ -602,6 +604,9 @@ impl Daemon {
         let mut commands = std::mem::take(&mut self.deferred_commands);
         {
             let db = lock_db(&self.db);
+            if commands.is_empty() && !db.has_daemon_commands()? {
+                return Ok(());
+            }
             commands.extend(db.take_daemon_commands()?);
         }
         if commands.is_empty() {
@@ -1125,8 +1130,16 @@ impl Daemon {
     /// is applied promptly instead of waiting until the daemon resumes.
     pub(crate) fn refresh_periodic_settings(&mut self) {
         if self.last_settings_check.elapsed() >= SETTINGS_INTERVAL {
-            self.refresh_compression_settings();
+            let version = {
+                let db = lock_db(&self.db);
+                db.data_version().ok()
+            };
+            let changed = version.is_none() || version != self.last_data_version;
+            self.last_data_version = version;
             self.last_settings_check = Instant::now();
+            if changed {
+                self.refresh_compression_settings();
+            }
         }
         if self.last_autostart_check.elapsed() >= Duration::from_secs(10) {
             self.refresh_autostart_setting();

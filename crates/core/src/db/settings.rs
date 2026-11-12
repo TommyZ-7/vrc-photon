@@ -68,6 +68,16 @@ impl Db {
         Ok(())
     }
 
+    /// SQLite's per-connection change counter. It changes when another
+    /// connection commits, so the daemon can skip re-parsing settings that no
+    /// other process touched.
+    pub fn data_version(&self) -> Result<i64> {
+        let version = self
+            .conn
+            .query_row("PRAGMA data_version", [], |row| row.get(0))?;
+        Ok(version)
+    }
+
     pub fn get_setting(&self, key: &str) -> Result<Option<String>> {
         let value = self
             .conn
