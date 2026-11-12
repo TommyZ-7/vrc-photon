@@ -19,6 +19,7 @@
 ```bash
 cargo build -p vrc-photon-ui
 cargo build -p vrc-photon-daemon
+cargo build -p vrc-photon-mcp
 cargo build -p vrc-photon-update
 cargo build -p vrc-photon-ai-protocol -p vrc-photon-ai-host -p vrc-photon-ai-mock-sidecar
 ```
@@ -63,7 +64,16 @@ cargo run -p vrc-photon-daemon -- \
 | `--once` | 1回スキャン/ログ取り込みして終了 |
 | `--compress-pending` | ペンディングの圧縮を処理して終了 |
 | `--no-tray` | トレイなし |
-| `--background` | UI側のみ。デーモンを子プロセスで起動して待機（AppImage用） |
+| `--print-data-dir` | 解決したデータディレクトリを表示して終了 |
+
+UIの主な引数:
+
+| 引数 | 内容 |
+|---|---|
+| `--demo` | サンプルデータのデモモードで起動 |
+| `--demo-reset` | デモ用ディレクトリとDBを作り直す |
+| `--window-size WxH` | 初期ウィンドウサイズ（既定 1280×820） |
+| `--background` | UIを開かず、デーモンのバックグラウンドスーパーバイザとして起動（AppImage用） |
 
 ### ヘッドレス
 
@@ -79,6 +89,7 @@ cargo run -p vrc-photon-daemon -- --no-tray
 | `VRC_LOG_DIR` | ログフォルダの上書き |
 | `VRC_PHOTON_DB` | DBパスの上書き |
 | `RUST_LOG` | ログレベル（例: `debug`） |
+| `VRC_PHOTON_TIMING` | 設定すると起動・描画のタイミングを stderr に出す |
 | `APPIMAGE` | AppImage実行時に自動設定される。自動起動と更新のパス解決に使用 |
 | `VRC_PHOTON_UPDATE_FEED` | 更新マニフェストURLの上書き（ミラー・QA用） |
 | `VRC_PHOTON_UPDATE_PUBLIC_KEY` | デバッグビルドのみ。埋め込み公開鍵を1つ上書き（QA用） |
@@ -92,7 +103,7 @@ cargo run -p vrc-photon-daemon -- --no-tray
 - DB: ユーザーデータディレクトリの `vrc-photon/library.db`
   - Linux: `~/.local/share/vrc-photon/`
   - Windows: `%LOCALAPPDATA%\vrc-photon\`
-- サムネイル: 同 `thumbnails/`
+- サムネイル: 同 `thumbnails/`（`<photo_id>-s<幅>x<高さ>.bc7` と `.bc7.meta`）
 - 取り込み先の既定: 同 `imported/`
 - AI プラグイン / モデル: 同 `plugins/<plugin_id>/`
 - タグ付け用一時ファイル: 同 `cache/tagging/`
@@ -110,17 +121,23 @@ cargo run -p vrc-photon-daemon -- --no-tray
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
+./scripts/check-docs-drift.sh
 ```
+
+`check-docs-drift.sh` は IPC プロトコル、schema バージョン、サムネイル層数など、
+ドキュメントに重複して書かれている値をソースと照合する。docs-only のPRでも CI の
+`changes` ジョブで実行される。
 
 **重要**: WSLでは `cargo check` / `build` を並列・バックグラウンドで走らせると操作不能になることがある。1つずつ直列で実行する。
 
-### 5.1 AI タグ付けのテスト
+### 5.1 AI タグ付けと MCP のテスト
 
 ```bash
 cargo test -p vrc-photon-ai-protocol
 cargo test -p vrc-photon-ai-host --features test-support
 cargo test -p vrc-photon-ai-mock-sidecar
 cargo test -p vrc-photon-daemon ai_e2e
+cargo test -p vrc-photon-mcp
 ```
 
 - `ai-protocol` は hello / probe / 4 op / error / cancel / shutdown の JSON 往復と
@@ -133,6 +150,8 @@ cargo test -p vrc-photon-daemon ai_e2e
 - `vrc-photon-daemon` の `ai_e2e` はモック sidecar でインストール・モデル取込・
   4段パイプライン・キャンセル・クラッシュ復旧を通す。実 sidecar のテストは
   `#[ignore]` なので、通常の `cargo test` では実行されない。
+- `vrc-photon-mcp` はツール定義、パラメータの丸め、エラーのマッピング、
+  デーモン IPC への転送をテストする。
 
 ### 5.2 実 sidecar E2E（手動）
 
@@ -174,8 +193,7 @@ VRC_PHOTON_AUTOTAG_MODEL_DIR=/path/to/models \
 [2026-11-04-ai-tagging-m2-e2e.md](superpowers/notes/2026-11-04-ai-tagging-m2-e2e.md)
 に記録している。
 
-release ビルドは M3 までプラグイン鍵を埋め込まないため、開発用 ZIP を
-取り込めない。実 sidecar の確認は debug ビルドで行う。
+release ビルドは本番鍵を埋め込み、debug ビルドは開発鍵も受け入れる。実 sidecar の確認は debug ビルドで行う。
 
 ## 6. 圧縮のメモリ・時間計測
 
@@ -216,21 +234,24 @@ AVIF はエンコード時間が支配的なため、デコード削減（約40m
 
 ## 7. コードの読み方
 
-1. `crates/core/src/db.rs` — スキーマとDB API。
-2. `crates/core/src/scanner.rs` — 写真索引。
-3. `crates/core/src/log_parser.rs` — ログイベントとセッション状態。
-4. `crates/core/src/linker.rs` — 写真と文脈の紐付け。
-5. `crates/core/src/compressor.rs` — 画像圧縮。
-6. `crates/core/src/ai.rs` — AI プラグイン・AI 結果・タグ付けジョブの型。
-7. `crates/ai-protocol/src/` — sidecar 通信型、JSONL、カタログ。
-8. `crates/ai-host/src/` — manifest、署名、ZIP、モデル、sidecar クライアント。
-9. `crates/ipc/src/` — IPCプロトコル、エンドポイント、クライアント/サーバー。
-10. `crates/daemon/src/{ipc_server,signals}.rs` — IPCサーバーとwakeシグナル。
-11. `crates/daemon/src/{plugin,tagging}.rs` — プラグイン管理、sidecar、タグ付けワーカー。
-12. `crates/daemon/src/lib.rs` — 監視ループ、ワーカー、トレイ制御。
-13. `crates/ui/src/{main,ipc_bridge,update_view}.rs` — 画面、状態、IPC購読、更新UI。
-14. `crates/update/src/` — 署名付き更新確認、ダウンロード、適用ジョブ、ヘルパー。
-15. `crates/release-tool/src/` — Release時の署名と `latest.json` 生成。
+1. `crates/core/src/db/mod.rs` — DB のオープン、schema バージョン検査、接続設定。
+2. `crates/core/src/db/schema.rs` — 統合 schema（`SCHEMA_LATEST`）と `SCHEMA_VERSION`。
+3. `crates/core/src/db/{photos,sessions,compression,send,deletion,ai,settings}.rs` — ドメイン別の CRUD と検索。
+4. `crates/core/src/scanner.rs` — 写真索引。
+5. `crates/core/src/log_parser.rs` — ログイベントとセッション状態。
+6. `crates/core/src/linker.rs` — 写真と文脈の紐付け。
+7. `crates/core/src/compressor.rs` / `thumbnail.rs` / `bc7.rs` — 画像圧縮と BC7 サムネイル。
+8. `crates/core/src/ai.rs` — AI プラグイン・AI 結果・タグ付けジョブの型。
+9. `crates/ai-protocol/src/` — sidecar 通信型、JSONL、カタログ。
+10. `crates/ai-host/src/` — manifest、署名、ZIP、モデル、sidecar クライアント。
+11. `crates/ipc/src/` — IPCプロトコル、エンドポイント、クライアント/サーバー。
+12. `crates/daemon/src/lifecycle.rs` — 監視ループ、ワーカーの起動・停止。
+13. `crates/daemon/src/{ipc_server,plugin,tagging}.rs` — IPCサーバー、プラグイン管理、タグ付けワーカー。
+14. `crates/mcp/src/` — stdio MCP サーバーとデーモン IPC クライアント。
+15. `crates/ui/src/{main,app,ipc_bridge}.rs` — 画面、状態、IPC購読。
+16. `crates/ui/src/app/` / `state/` / `ui/` — 機能別の状態遷移、UI非依存の計算、画面。
+17. `crates/update/src/` — 署名付き更新確認、ダウンロード、適用ジョブ、ヘルパー。
+18. `crates/release-tool/src/` — Release時の署名と `latest.json` 生成。
 
 ## 8. 変更時のルール
 
@@ -241,17 +262,20 @@ AVIF はエンコード時間が支配的なため、デコード削減（約40m
   `docs/protocol.md` を同じ PR シリーズで更新する。公開側のテストは
   公開設計の JSON 例を使い、非公開ファイルに依存させない。
 - AI プラグインの開発鍵は debug ビルドだけに埋め込み、release ビルドへ
-  本番鍵を入れるのは M3 以降。開発鍵の secret はコミットしない。
+  本番鍵を入れる。開発鍵の secret はコミットしない。
 - 破壊的変更（既存DBの列削除・意味変更）はしない。必要なら新テーブル＋コピー。
 - 生ログを保存する変更は、プライバシー影響をADRに残す。
 
-## 9. DBマイグレーションの追加
+## 9. schema の変更
 
-1. `db.rs` に次の `SCHEMA_V*` を追加する（例: `SCHEMA_V13_AI_TAGGING`）。
-2. `migrate` に `if version < N` を追加する。
-3. `schema_migrations` と `user_version` を更新する。
-4. 既存DB（v12 など）からの起動テストと、新規DBの起動テストを追加する。
-5. `docs/data-model.md` のバージョン表を更新する。
+1. `crates/core/src/db/schema.rs` の `SCHEMA_LATEST` を変更し、`SCHEMA_VERSION` を1つ上げる。
+2. 新規 DB の初期化テストと、直前のバージョンの DB を拒否するテストを追加する。
+3. `docs/data-model.md` のバージョン表と `docs/database-initialization.md` を更新する。
+4. `scripts/check-docs-drift.sh` が `SCHEMA_VERSION` を参照しているため、ドキュメント側の値を同じPRで更新する。
+
+このアプリは過去バージョン向けの `migrate_v*` を持たない。v1〜v17 の既存 DB は
+自動移行せず、バックアップして新しいライブラリを作成する。破壊的変更（既存DBの
+列削除・意味変更）はしない。必要なら新テーブル＋コピーを検討する。
 
 ## 10. デバッグ
 

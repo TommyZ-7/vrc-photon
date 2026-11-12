@@ -5,7 +5,7 @@
 - DB: ユーザーデータディレクトリ配下 `vrc-photon/library.db`
   - Linux: `~/.local/share/vrc-photon/library.db`
   - Windows: `%LOCALAPPDATA%\vrc-photon\library.db`
-- サムネイル: 同ディレクトリの `thumbnails/<photo_id>-q<quality>-s<size>.webp`（旧 `<photo_id>.webp` も読める）。隣に元ファイルの `mtime + size` を記録した `.meta` を置く。
+- サムネイル: 同ディレクトリの `thumbnails/<photo_id>-s<幅>x<高さ>.bc7`（旧 `<photo_id>.webp` などは起動時に削除）。隣に元ファイルの `mtime + size`、平均色、回転状態を記録した `.bc7.meta` を置く。
 - AI プラグイン: 同ディレクトリの `plugins/<plugin_id>/<variant>/<version>/`
 - AI モデル: 同ディレクトリの `plugins/<plugin_id>/models/<revision>/`
 - タグ付け用スナップショット: 同ディレクトリの `cache/tagging/<job_id>.jpg`（一時ファイル）
@@ -199,8 +199,8 @@ idx_sessions_ended(ended_at) WHERE ended_at IS NOT NULL
 | world_id | INTEGER FK | |
 | world_name | TEXT | ログ/XMP/API の表示名。リンク時点で NULL なら、名前が解決したときにバックフィルされる |
 | instance_id | TEXT | |
-| link_method | TEXT | `log` / `log+xmp` / `xmp` / `demo` |
-| confidence | REAL | 1.0（log+xmp）、0.9（log）、0.4（xmp） |
+| link_method | TEXT | `log` / `log+xmp` / `xmp` / `log-estimated` / `demo` |
+| confidence | REAL | 1.0（log+xmp）、0.9（log）、0.6（log-estimated）、0.4（xmp） |
 | author | TEXT | XMPの撮影者（v2で追加） |
 | linked_at | TEXT | |
 
@@ -431,9 +431,15 @@ CREATE UNIQUE INDEX idx_tagging_jobs_active
 `CompressionProfile.discord`（JSON 内、`#[serde(default)]`）は Discord 送信に使う
 プロファイルの単一選択フラグ。`Db::save_profile` は `clipboard` と同様に、
 `discord == true` の行を保存するとき他のプロファイルの `discord` を false にする。
-複製したプロファイルは `discord = false` で作る。新規 DB では既定プロファイル
-`discord用webp`（WebP、2560×1440、`discord/` 出力、`_discord`）だけが
-`discord = true`。既存 DB はユーザーが連携タブで選ぶ。
+複製したプロファイルは `discord = false` で作る。新規 DB では次の3件をシードする。
+
+| 名前 | 形式 | 自動 | クリップボード | Discord | 備考 |
+|---|---|---|---|---|---|
+| `無劣化webp` | WebP ロスレス | ON | OFF | OFF | 出力 `compressed/` |
+| `discord用webp` | WebP ロスレス | OFF | ON | ON | 2560×1440、`discord/`、`_discord` |
+| `高画質webp` | WebP Q90 | OFF | OFF | OFF | 出力 `webp/` |
+
+既存 DB は利用者が連携・自動タブで選ぶ。
 
 ### `derivatives`
 
@@ -672,9 +678,16 @@ UIからデーモンへの再実行要求。FIFOの小さなキュー。
 
 ```text
 photo_roots, log_dir, managed_dir, language,
+import_preserve_folder_structure, import_include_root_folder,
 autostart, tray, auto_compress, auto_compress_backlog,
 auto_compress_immediate, auto_compress_keep_original,
-estimated_link, thumbnail_cache_mb, compression_workers,
+estimated_link, thumbnail_cache_mb, thumbnail_size,
+compression_workers, clipboard_enabled,
+ui_sidebar_collapsed, ui_inspector_collapsed, ui_reduce_motion, ui_max_fps,
+ui_ribbon_collapsed, ui_card_show_status, ui_card_show_world,
+ui_card_show_date, ui_card_show_size, ui_card_size, ui_grid_gap,
+ui_card_radius, ui_photos_view_mode, ui_theme_main, ui_theme_accent,
+auto_update_check, update_last_checked_at,
 world_name_resolution_enabled,
 discord_enabled, discord_destination, discord_include_players,
 discord_send_original, discord_auto_mode, discord_auto_since,
@@ -683,6 +696,16 @@ ai_tagging_enabled, ai_tagging_auto, ai_tagging_backlog,
 ai_presence_threshold, ai_tagging_backend, ai_tagging_idle_timeout_sec,
 ai_model_license_consent_at
 ```
+
+- `thumbnail_size` は 256 / 384 / 512 のいずれか（既定 384）。`thumbnail_cache_mb` は既定 8192、0 は無制限。
+- `compression_workers` は 1〜4（既定 1）。`clipboard_enabled` は既定 true。
+- `ui_grid_gap` は 0〜32（既定 14）、`ui_card_radius` は 0〜24（既定 13）。
+- `ui_card_size` は `small` / `medium` / `large` / `extra_large`（既定 `medium`）。
+- `ui_photos_view_mode` は `timeline` / `sessions`（既定 `timeline`）。
+- `ui_max_fps` は 30 / 60 / 120 / 144 / 240 / 0（無制限、既定 60）。
+- `import_preserve_folder_structure` / `import_include_root_folder` は既定 false。`include_root` は `preserve` が true のときだけ効果を持つ。
+- `estimated_link` は既定 true、`auto_compress_keep_original` は既定 true、`auto_compress_immediate` は既定 true、`auto_compress_backlog` は既定 false。
+- `thumbnail_cache_mb` / `compression_workers` / `estimated_link` は保存値のみで、設定画面には表示しない。
 
 ワールド名解決の既定値:
 
@@ -742,8 +765,6 @@ Discord 関連の既定値:
 - 紐付けはローカル時刻ではなく `captured_at_utc` で行う。
 - DSTの曖昧時刻は早期の解釈を採用する（`time::from_naive`）。
 
-## 6. マイグレーション
-
 ## 6. schema の初期化
 
 新規 DB は `crates/core/src/db/schema.rs` の `SCHEMA_LATEST` を 1 回の
@@ -764,7 +785,7 @@ schema を変更するときは `SCHEMA_LATEST` と `SCHEMA_VERSION` を同時�
 
 - 一覧は `photos` + `photo_context` のLEFT JOIN。`status IN ('present', 'replaced')` を対象に `captured_at_utc` 降順。
 - 検索は `photo_context` / `photo_players` / `photo_tags` のEXISTS句。
-- UIは `photo_index` / `photo_index_text` で一致する写真の軽量索引（`id`, `captured_at_utc`, `captured_month`）を全件読み、表示範囲の写真だけを `photos_by_ids` で256枚ページ取得する。件数上限はない。
+- UIは `photo_index` / `photo_index_text` で一致する写真の軽量索引（`id`, `captured_at_utc`, `captured_month`, `captured_day`, `session_id`）を全件読み、表示範囲の写真だけを `photos_by_ids` で256枚ページ取得する。件数上限はない。
 - `idx_photos_captured_id` はV5で `status IN ('present', 'replaced')` の部分インデックスへ更新した。100k合成DB（`photo_context` 5万行を含む）のrelease測定は索引61.5 ms、ページ0.72 ms。
 - 圧縮キューの取得は `idx_jobs_claim`、新しい順の一覧は `idx_jobs_created` を使う。
 - 推定リンクの `sessions_near` は `idx_sessions_started` と `idx_sessions_ended` の範囲検索を `UNION` する。写真×セッションの総当たりを避ける。

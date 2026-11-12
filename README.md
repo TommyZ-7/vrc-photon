@@ -13,7 +13,7 @@
 
 A desktop app for organizing your VRChat photos together with the world they were taken in, the players you were with, and when they were taken.
 
-VRChat screenshots tell you nothing from their file names alone. VRC PhotoN watches your photo folder and reads "when, where, and who with" from VRChat's output logs and the PNG XMP metadata, and links that context to each photo. All records are stored in a local SQLite database; your photos and logs are never sent anywhere.
+VRChat screenshots tell you nothing from their file names alone. VRC PhotoN watches your photo folder and reads "when, where, and who with" from VRChat's output logs and the PNG XMP metadata, then links that context to each photo. The library, thumbnails, and settings stay on your PC. Network access is limited to update checks, optional Discord posting, optional VRChat world-name lookup, and AI model downloads that you start yourself.
 
 
 <!-- TODO: Place a screenshot of the actual app at docs/images/main.png and enable the line below
@@ -22,28 +22,32 @@ VRChat screenshots tell you nothing from their file names alone. VRC PhotoN watc
 
 ## Features
 
-**Find**
+**Browse**
 
-- The photo grid uses virtual scrolling, so even large libraries scroll in one go
-- Search by world name, player name, tags, date and time, and favorites
-- Each photo is automatically linked to its world and the players present from the logs. Photos without logs fall back to XMP metadata
+- Timeline and session views. Sessions group photos by the world visit recorded in the logs.
+- Virtual scrolling, a year rail, and paged loading keep large libraries responsive.
+- Full-screen viewer with zoom and pan. Duplicate photos are marked using their BLAKE3 hash.
+- Search by world, player, manual tags, applied AI tags, AI people count, date, and favorites, with suggestions while you type.
+- Photos are linked to their world and the players present from the logs. Photos without logs fall back to XMP metadata. Unresolved world names can be looked up through the VRChat API when enabled.
+
+**Organize**
+
+- Tags, notes, favorites, multi-select, and a right-click menu for compression, Discord, tag editing, path copy, folder opening, and trash.
+- Copy or move import from files and folders, with an option to preserve the source folder hierarchy.
+- Deletion goes to the OS trash. The deletion queue waits for running compression, uploads, and AI tagging.
 
 **Compress**
 
-- Convert to JPEG / WebP / AVIF / JPEG XL, with resizing
-- Create profiles once, and the same settings drive both automatic compression on import and batch compression of selected photos
-- For each run, choose whether to keep the originals or replace them (sent to the OS trash)
+- Convert to JPEG / WebP / AVIF / JPEG XL, with resizing and lossless output where the format supports it.
+- Create profiles once, then use them for automatic compression on indexing, one-off or batch compression, clipboard output, and Discord uploads.
+- For each run, choose whether to keep the originals or replace them after verification (the original goes to the OS trash).
 
-**And more**
+**Connect**
 
-- The photo details view shows the preview, world, instance, players present, tags, notes, and compression history, and lets you edit them
-- Send photos to a Discord webhook (optional, off by default)
-- System tray residency and autostart, with signed automatic updates
-- The UI is available in Japanese and English
-
-**AI tagging (paid plugin)**
-
-A separately sold plugin tags photos by the presence and number of people, the location, and the atmosphere, all inferred locally. Inference runs entirely on your own PC. See the [AI tagging documentation](docs/ai-tagging/README.md) (in Japanese) for installation and system requirements.
+- Optional Discord webhook with manual and automatic posting, send history, and retries.
+- A bundled read-only MCP server lets MCP clients search the library, fetch photo details and images, and read world and library statistics.
+- AI tagging (paid plugin, separately distributed) infers character presence, people count, indoor/outdoor, and atmosphere/scene tags locally. See the [AI tagging documentation](docs/ai-tagging/README.md) (in Japanese).
+- Japanese / English UI, theme colors, system tray residency, autostart, and signed automatic updates.
 
 ## Installation
 
@@ -60,14 +64,21 @@ The photo folder and the log folder are detected automatically on first launch. 
 
 ## How it works
 
-Two processes: a UI and a daemon. The daemon watches folders, parses logs, compresses, and generates thumbnails; the UI handles display and interaction. Both share the same SQLite database (`library.db`) and use local IPC for immediate operations.
+The app runs a UI and a background daemon. The daemon watches folders, imports logs, links photos, compresses, and generates thumbnails; the UI handles display and editing. Both share the same SQLite database (`library.db`) and use local IPC for immediate operations. The MCP server is a separate read-only process that talks to the daemon over the same IPC.
 
 ```text
 crates/
-  core/     Database, photo indexing, log parsing, XMP, linking, compression, thumbnails
-  ipc/      Local IPC protocol and transport
-  daemon/   Watching, automatic compression, tray, autostart, IPC server
-  ui/       GPUI-based UI, IPC client
+  core/       Database, photo indexing, log/XMP parsing, linking, compression, thumbnails
+  daemon/     Watchers, log import, workers, tray, autostart, IPC server
+  ui/         GPUI-based UI, IPC client
+  mcp/        Read-only stdio MCP server
+  ipc/        Local IPC protocol and transport
+  ai-protocol/  AI plugin protocol, catalog types, JSONL framing
+  ai-host/      Plugin verification, model handling, sidecar client
+  update/       Signed update checks, downloads, apply jobs, helper
+  signing/      Shared minisign verification
+  i18n/         Japanese / English catalogs
+  release-tool/ Release manifest signing and verification
 ```
 
 See [docs/architecture.md](docs/architecture.md) for the full picture.
@@ -77,8 +88,7 @@ See [docs/architecture.md](docs/architecture.md) for the full picture.
 You need Rust stable plus a few platform-specific packages (on Linux, `libxkbcommon-dev`, `libwayland-dev`, `libvulkan-dev`, and so on; building JPEG XL requires CMake / Ninja / a C++ compiler). See [docs/development.md](docs/development.md) for details.
 
 ```bash
-cargo build -p vrc-photon-ui
-cargo build -p vrc-photon-daemon
+cargo build --workspace
 ```
 
 To try just the UI with sample data, use `cargo run -p vrc-photon-ui -- --demo`.
@@ -88,12 +98,15 @@ To try just the UI with sample data, use `cargo run -p vrc-photon-ui -- --demo`.
 Documentation is currently written in Japanese.
 
 - [Documentation index](docs/README.md)
+- [Features](docs/features.md)
 - [Architecture](docs/architecture.md)
+- [Data model](docs/data-model.md)
+- [UI specification](docs/ui.md)
 - [Development setup](docs/development.md)
+- [Testing](docs/testing.md)
 - [Release and packaging](docs/release.md)
 - [AI tagging plugin](docs/ai-tagging/README.md)
 - [MCP server](docs/mcp.md)
-- [Roadmap](docs/roadmap.md)
 - [Contributing](CONTRIBUTING.md)
 
 ## License

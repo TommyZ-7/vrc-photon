@@ -101,7 +101,7 @@ unit は `/usr/lib/systemd/user/vrc-photon-daemon.service` に配置される。
 プロセス起動にフォールバックする。これにより、更新後のデーモンが unit 外の
 プロセスにならない。
 
-有効化の前に、UIの「設定 → 起動と圧縮 → 自動起動」をOFFにする。ONのままだとログイン時にXDG側が先にデーモンを起動し、systemdサービスがinactiveのまま残る競合が起こり得る。
+有効化の前に、UIの「設定 → 起動 → 自動起動」をOFFにする。ONのままだとログイン時にXDG側が先にデーモンを起動し、systemdサービスがinactiveのまま残る競合が起こり得る。
 
 ```bash
 systemctl --user daemon-reload
@@ -186,7 +186,7 @@ ls -lh dist
   で `system_packages` が pacman / deb の2件だけを持ち、`format` が一致することを
   検査する
 
-Releaseノートは前回タグとの差分から `feat:` / `fix:` / その他を分類して生成する。
+Releaseノートの分類は `.github/release.yml` と GitHub の generate-notes API に従う。
 
 ## 7. CIとブランチ保護
 
@@ -205,7 +205,6 @@ Required check名を変更した場合は、GitHubのbranch protectionも更新�
 
 - [ ] `Cargo.toml` と `Cargo.lock` のバージョンが一致
 - [ ] CI / Release（PR）が緑
-- [ ] `docs/roadmap.md` の未解決事項を確認
 - [ ] 破壊的DB変更がない、または旧DBの扱い（v18のみ・v1〜v17は自動移行せず明示エラー）がリリースノートに明記されている
 - [ ] パッケージ生成物にUIとデーモンの両方が入っている
 - [ ] deb / pacman に `usr/lib/systemd/user/vrc-photon-daemon.service` が入っている
@@ -417,4 +416,4 @@ job と staged が掃除され、インストール後・健康確認の失敗�
 - Flatpak / Snap / AUR
 - UIを閉じている間の更新確認
 
-これらは [roadmap.md](roadmap.md) で優先度を決める。
+これらは GitHub Issues で優先度を決める。

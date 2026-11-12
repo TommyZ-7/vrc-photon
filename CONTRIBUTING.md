@@ -50,13 +50,13 @@ Issue / PR を歓迎します。English is welcome.
 | 変更 | 更新先 |
 |---|---|
 | 画面・操作 | `docs/ui.md` |
-| DB・マイグレーション | `docs/data-model.md` |
+| DB・schema | `docs/data-model.md`, `docs/database-initialization.md` |
 | ログ・XMP | `docs/log-and-xmp.md` |
 | 機能・制約 | `docs/features.md` |
 | ビルド・実行 | `docs/development.md` |
 | テスト | `docs/testing.md` |
 | パッケージ・リリース | `docs/release.md`, `packaging/README.md` |
-| 優先度・残作業 | `docs/roadmap.md` |
+| 優先度・残作業 | GitHub Issues / Milestones |
 | 設計判断 | `docs/adr/` に新規ADR |
 
 既存ADRは書き換えず、新しい番号で追加する。
