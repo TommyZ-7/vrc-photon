@@ -54,7 +54,10 @@ const MAX_RATE_LIMIT_AGE_SECS: i64 = 24 * 60 * 60;
 pub(crate) enum ProcessOutcome {
     Idle,
     Sent,
-    Rescheduled,
+    Rescheduled {
+        /// Unix timestamp when the row becomes due again.
+        next_attempt_at: i64,
+    },
     Failed,
     /// Discord rate-limited the webhook; every send must wait this long.
     RateLimited {
@@ -451,8 +454,12 @@ pub(crate) fn worker_loop(
                 sends.wait(&mut seen_generation, POLL_INTERVAL);
             }
             // Keep at least 400 ms between requests, whatever the result.
-            ProcessOutcome::Sent | ProcessOutcome::Rescheduled | ProcessOutcome::Failed => {
+            ProcessOutcome::Sent | ProcessOutcome::Failed => {
                 thread::sleep(SUCCESS_INTERVAL);
+            }
+            ProcessOutcome::Rescheduled { next_attempt_at } => {
+                let now = chrono::Utc::now().timestamp();
+                sends.wait(&mut seen_generation, reschedule_wait(next_attempt_at, now));
             }
             ProcessOutcome::RateLimited { retry_after } => {
                 paused_until = Some(Instant::now() + retry_after);
@@ -787,7 +794,7 @@ fn record_outcome(
                 "Discord send will be retried"
             );
             Ok(SendUpdate {
-                outcome: ProcessOutcome::Rescheduled,
+                outcome: ProcessOutcome::Rescheduled { next_attempt_at },
                 status: SendStatus::Pending,
                 error_code: Some(code.as_str()),
             })
@@ -850,6 +857,13 @@ fn publish_send(
 }
 
 /// `min(2^(attempts - 1) * 2, 300)` seconds: 2, 4, 8, ... capped at 300.
+/// Wait before the next dequeue after a retryable failure. The early backoff
+/// steps are seconds, so waiting the full idle interval would replace them.
+fn reschedule_wait(next_attempt_at: i64, now: i64) -> Duration {
+    let seconds = next_attempt_at.saturating_sub(now).max(0) as u64;
+    Duration::from_secs(seconds).clamp(Duration::from_millis(100), POLL_INTERVAL)
+}
+
 fn retry_delay_seconds(attempts: i64) -> i64 {
     let exponent = attempts.saturating_sub(1).clamp(0, 8) as u32;
     (2i64.saturating_pow(exponent)).saturating_mul(2).min(300)
@@ -991,7 +1005,7 @@ mod tests {
         for attempt in 1..MAX_SEND_ATTEMPTS {
             assert!(matches!(
                 process_next_send(db, transport, &events, now).unwrap(),
-                ProcessOutcome::Rescheduled
+                ProcessOutcome::Rescheduled { .. }
             ));
             let entry = with_db(db, |db| db.send_entry_by_id(id).unwrap().unwrap());
             assert_eq!(entry.attempts, attempt);
@@ -1399,6 +1413,21 @@ mod tests {
     }
 
     #[test]
+    fn rescheduled_wait_uses_the_retry_deadline() {
+        assert_eq!(reschedule_wait(110, 100), Duration::from_secs(10));
+        assert_eq!(
+            reschedule_wait(100, 100),
+            Duration::from_millis(100),
+            "a due retry must not spin the loop"
+        );
+        assert_eq!(
+            reschedule_wait(200, 100),
+            crate::DISCORD_IDLE_WAIT,
+            "the idle wait caps the retry delay"
+        );
+    }
+
+    #[test]
     fn network_error_reschedules_with_attempts_and_backoff() {
         let dir = tempfile::tempdir().unwrap();
         let (db, photo) = discord_db(&dir);
@@ -1415,7 +1444,9 @@ mod tests {
         let events = EventBus::default();
         assert!(matches!(
             process_next_send(&db, &transport, &events, 100).unwrap(),
-            ProcessOutcome::Rescheduled
+            ProcessOutcome::Rescheduled {
+                next_attempt_at: 102
+            }
         ));
         let entry = with_db(&db, |db| db.send_entry_by_id(id).unwrap().unwrap());
         assert_eq!(entry.status, SendStatus::Pending);
