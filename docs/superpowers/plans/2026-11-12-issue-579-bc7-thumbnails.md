@@ -673,7 +673,7 @@ Expected: FAIL
 
 - [x] **Step 3: 最小実装を書く**
 
-`images` / `image_bytes` / `total_bytes` / `take_removed` を削除する。`layers: Vec<Option<LayerEntry>>` を 512 で初期化し、free list と recency を持つ。`pinned` は `HashSet<i64>` に広げる。`THUMB_CACHE_BYTES` / `THUMB_CACHE_ENTRIES` を削除する。`THUMB_IN_FLIGHT` と失敗再試行は維持する。
+`images` / `image_bytes` / `total_bytes` / `take_removed` を削除する。`layers: Vec<Option<LayerEntry>>` を 512 で初期化し、free list と recency を持つ。`pinned` は `HashSet<i64>` に広げる。`THUMB_CACHE_BYTES` / `THUMB_CACHE_ENTRIES` を削除し、`THUMB_LAYERS = 512` を追加する。`THUMB_IN_FLIGHT` と失敗再試行は維持する。
 
 - [x] **Step 4: テストが通ることを確認する**
 

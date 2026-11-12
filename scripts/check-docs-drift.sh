@@ -35,10 +35,10 @@ schema=$(read_const \
     crates/core/src/db/schema.rs \
     's/^.*const SCHEMA_VERSION: i64 = \([0-9][0-9]*\);$/\1/p' \
     SCHEMA_VERSION)
-thumb_entries=$(read_const \
+thumb_layers=$(read_const \
     crates/ui/src/state/thumbnail.rs \
-    's/^const THUMB_CACHE_ENTRIES: usize = \([0-9][0-9]*\);$/\1/p' \
-    THUMB_CACHE_ENTRIES)
+    's/^pub(crate) const THUMB_LAYERS: usize = \([0-9][0-9]*\);$/\1/p' \
+    THUMB_LAYERS)
 thumb_in_flight=$(read_const \
     crates/ui/src/state/thumbnail.rs \
     's/^const THUMB_IN_FLIGHT: usize = \([0-9][0-9]*\);$/\1/p' \
@@ -49,10 +49,10 @@ grep -Fq "PROTOCOL_VERSION = ${protocol}" docs/architecture.md \
 grep -Fq "PROTOCOL_VERSION = ${protocol}" docs/features.md \
     || fail "docs/features.md must say PROTOCOL_VERSION = ${protocol}"
 
-grep -Fq "${thumb_entries}件のLRU" docs/architecture.md \
-    || fail "docs/architecture.md must say ${thumb_entries}件のLRU"
-grep -Fq "${thumb_entries}件LRU" docs/features.md \
-    || fail "docs/features.md must say ${thumb_entries}件LRU"
+grep -Fq "${thumb_layers}レイヤー" docs/architecture.md \
+    || fail "docs/architecture.md must say ${thumb_layers}レイヤー"
+grep -Fq "${thumb_layers}レイヤー" docs/features.md \
+    || fail "docs/features.md must say ${thumb_layers}レイヤー"
 grep -Fq "同時デコードは最大${thumb_in_flight}件" docs/architecture.md \
     || fail "docs/architecture.md must say 同時デコードは最大${thumb_in_flight}件"
 
@@ -74,4 +74,4 @@ else
     fi
 fi
 
-echo "docs drift check OK (PROTOCOL_VERSION=${protocol}, SCHEMA_VERSION=${schema}, thumbnails=${thumb_entries}/${thumb_in_flight})"
+echo "docs drift check OK (PROTOCOL_VERSION=${protocol}, SCHEMA_VERSION=${schema}, thumbnails=${thumb_layers}/${thumb_in_flight})"
