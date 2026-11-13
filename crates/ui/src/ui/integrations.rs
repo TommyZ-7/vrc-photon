@@ -9,7 +9,6 @@ use gpui_kit::component::*;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use vrc_photon_ai_protocol::{TaggingJobStatus, TaggingStage};
-use vrc_photon_core::model::{CompressionOptions, ResizeSettings};
 use vrc_photon_i18n::{tr, tr_args};
 
 use crate::app::App;
@@ -39,56 +38,6 @@ enum AiToggle {
     Enabled,
     Auto,
     Backlog,
-}
-
-fn on_off_label(enabled: bool) -> String {
-    if enabled {
-        tr!("integrations.summary.enabled")
-    } else {
-        tr!("integrations.summary.disabled")
-    }
-}
-
-/// One-line Discord state for the master list.
-pub(crate) fn discord_summary(configured: bool, destination: &str) -> String {
-    let state = if configured {
-        tr!("integrations.discord.webhook.configured")
-    } else {
-        tr!("integrations.discord.webhook.missing_short")
-    };
-    tr_args!(
-        "integrations.summary.discord",
-        state = state,
-        destination = destination
-    )
-}
-
-/// One-line automatic compression state for the master list.
-pub(crate) fn auto_compression_summary(enabled: bool, options: &CompressionOptions) -> String {
-    tr_args!(
-        "integrations.summary.auto",
-        state = on_off_label(enabled),
-        compression = options_summary(options)
-    )
-}
-
-/// One-line AI tagging state for the master list.
-pub(crate) fn ai_tagging_summary(enabled: bool, running: i64, waiting: i64) -> String {
-    tr_args!(
-        "integrations.summary.ai",
-        state = on_off_label(enabled),
-        running = running,
-        waiting = waiting
-    )
-}
-
-/// One-line clipboard state for the master list.
-pub(crate) fn clipboard_summary(enabled: bool, resize: &ResizeSettings) -> String {
-    tr_args!(
-        "integrations.summary.clipboard",
-        state = on_off_label(enabled),
-        resize = resize_summary(resize)
-    )
 }
 
 impl App {
@@ -151,7 +100,7 @@ impl App {
     }
 
     /// Master list of the four integration sections. Each row carries the
-    /// same title as its detail card, a status dot, and a one-line summary.
+    /// same title as its detail card and a status dot.
     fn integrations_list(
         &self,
         selected: IntegrationsSection,
@@ -159,101 +108,76 @@ impl App {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let p = self.palette;
-        let running = self.ai.job_counts.pending + self.ai.job_counts.processing;
-        let configured = self.discord_url.is_some();
 
         let items = [
             (
                 IntegrationsSection::Discord,
                 "integrations-list-discord",
                 tr!("integrations.discord.title"),
-                discord_summary(configured, &self.settings.discord_destination),
-                configured,
+                self.discord_url.is_some(),
             ),
             (
                 IntegrationsSection::AutoCompression,
                 "integrations-list-auto",
                 tr!("integrations.auto.title"),
-                auto_compression_summary(
-                    self.settings.auto_compress,
-                    &self.settings.auto_compression,
-                ),
                 self.settings.auto_compress,
             ),
             (
                 IntegrationsSection::AiTagging,
                 "integrations-list-ai",
                 tr!("integrations.ai.title"),
-                ai_tagging_summary(
-                    self.settings.ai_tagging_enabled,
-                    running,
-                    self.ai.job_counts.waiting,
-                ),
                 self.settings.ai_tagging_enabled,
             ),
             (
                 IntegrationsSection::Clipboard,
                 "integrations-list-clipboard",
                 tr!("integrations.clipboard.title"),
-                clipboard_summary(
-                    self.settings.clipboard_enabled,
-                    &self.settings.clipboard_compression,
-                ),
                 self.settings.clipboard_enabled,
             ),
         ];
 
-        let rows = v_flex().gap(px(4.)).children(items.into_iter().map(
-            |(section, id, name, summary, on)| {
-                let active = section == selected;
-                v_flex()
-                    .id(SharedString::from(id))
-                    .gap(px(3.))
-                    .p(px(11.))
-                    .rounded(px(9.))
-                    .border_1()
-                    .border_color(if active {
-                        rgba(with_alpha(p.accent, 0x66))
-                    } else {
-                        rgba(0x00000000)
-                    })
-                    .when(active, |this| this.bg(rgb(p.accent_soft)))
-                    .cursor_pointer()
-                    .when(!active, |this| this.hover(|this| this.bg(rgb(p.panel_2))))
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.integrations_selected = section;
-                        this.integrations_scroll.set_offset(point(px(0.), px(0.)));
-                        cx.notify();
-                    }))
-                    .child(
-                        h_flex()
-                            .items_center()
-                            .gap(px(8.))
-                            .child(div().size(px(8.)).rounded_full().bg(rgb(if on {
-                                p.green
-                            } else {
-                                p.muted_2
-                            })))
-                            .child(
-                                div()
-                                    .text_size(px(13.))
-                                    .font_semibold()
-                                    .text_color(rgb(p.text))
-                                    .child(name),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .w_full()
-                            .min_w_0()
-                            .truncate()
-                            .text_size(px(11.))
-                            .text_color(rgb(p.muted_2))
-                            .child(summary),
-                    )
-                    .into_any_element()
-            },
-        ));
+        let rows =
+            v_flex()
+                .gap(px(4.))
+                .children(items.into_iter().map(|(section, id, name, on)| {
+                    let active = section == selected;
+                    v_flex()
+                        .id(SharedString::from(id))
+                        .p(px(11.))
+                        .rounded(px(9.))
+                        .border_1()
+                        .border_color(if active {
+                            rgba(with_alpha(p.accent, 0x66))
+                        } else {
+                            rgba(0x00000000)
+                        })
+                        .when(active, |this| this.bg(rgb(p.accent_soft)))
+                        .cursor_pointer()
+                        .when(!active, |this| this.hover(|this| this.bg(rgb(p.panel_2))))
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.integrations_selected = section;
+                            this.integrations_scroll.set_offset(point(px(0.), px(0.)));
+                            cx.notify();
+                        }))
+                        .child(
+                            h_flex()
+                                .items_center()
+                                .gap(px(8.))
+                                .child(div().size(px(8.)).rounded_full().bg(rgb(if on {
+                                    p.green
+                                } else {
+                                    p.muted_2
+                                })))
+                                .child(
+                                    div()
+                                        .text_size(px(13.))
+                                        .font_semibold()
+                                        .text_color(rgb(p.text))
+                                        .child(name),
+                                ),
+                        )
+                        .into_any_element()
+                }));
 
         glass_panel(&p)
             .id("integrations-list")
@@ -319,13 +243,7 @@ impl App {
                 &options,
                 FeatureCompressionTarget::Auto,
                 cx,
-            ))
-            .child(
-                div()
-                    .text_size(px(10.))
-                    .text_color(rgb(p.muted_2))
-                    .child(tr!("integrations.compression.output_note.auto")),
-            );
+            ));
 
         glass_panel(&self.palette)
             .flex()
@@ -377,23 +295,13 @@ impl App {
             .rounded(px(17.))
             .child(
                 h_flex().items_center().gap(px(12.)).child(
-                    v_flex()
-                        .flex_1()
-                        .min_w_0()
-                        .gap(px(2.))
-                        .child(
-                            div()
-                                .text_size(px(13.))
-                                .font_semibold()
-                                .text_color(rgb(p.text))
-                                .child(tr!("integrations.ai.title")),
-                        )
-                        .child(
-                            div()
-                                .text_size(px(10.))
-                                .text_color(rgb(p.muted_2))
-                                .child(tr!("integrations.ai.hint")),
-                        ),
+                    v_flex().flex_1().min_w_0().child(
+                        div()
+                            .text_size(px(13.))
+                            .font_semibold()
+                            .text_color(rgb(p.text))
+                            .child(tr!("integrations.ai.title")),
+                    ),
                 ),
             );
 
@@ -403,13 +311,6 @@ impl App {
                     v_flex()
                         .pt(px(12.))
                         .gap(px(10.))
-                        .child(card_divider(&p))
-                        .child(
-                            div()
-                                .text_size(px(10.))
-                                .text_color(rgb(p.muted))
-                                .child(tr!("integrations.ai.not_ready")),
-                        )
                         .child(card_divider(&p))
                         .child(
                             Button::new("integrations-ai-open-settings-not-ready")
@@ -486,25 +387,9 @@ impl App {
                             )),
                     )
                 })
-                .child(if active_jobs.is_empty() {
-                    v_flex()
-                        .gap(px(2.))
-                        .p(px(10.))
-                        .rounded(px(10.))
-                        .bg(rgb(p.panel_2))
-                        .child(
-                            div()
-                                .text_size(px(11.))
-                                .font_medium()
-                                .text_color(rgb(p.muted))
-                                .child(tr!("integrations.ai.jobs.empty")),
-                        )
-                        .into_any_element()
-                } else {
-                    v_flex()
-                        .id("integrations-ai-jobs")
-                        .gap(px(6.))
-                        .children(active_jobs.into_iter().map(|job| {
+                .when(!active_jobs.is_empty(), |this| {
+                    this.child(v_flex().id("integrations-ai-jobs").gap(px(6.)).children(
+                        active_jobs.into_iter().map(|job| {
                             let job_id = job.id.clone();
                             let photo_label = active_job_photo_label(
                                 job_names.get(&job.photo_id).map(String::as_str),
@@ -565,8 +450,8 @@ impl App {
                                         ),
                                 )
                                 .into_any_element()
-                        }))
-                        .into_any_element()
+                        }),
+                    ))
                 })
                 .when(counts.waiting > 0, |this| {
                     this.child(
@@ -770,13 +655,7 @@ impl App {
             .gap(px(8.))
             .child(card_divider(&p))
             .child(self.section_label(tr!("compression.section.resize")))
-            .child(self.resize_settings_editor("clipboard-resize", &resize, cx))
-            .child(
-                div()
-                    .text_size(px(10.))
-                    .text_color(rgb(p.muted_2))
-                    .child(tr!("integrations.clipboard.resize_note")),
-            );
+            .child(self.resize_settings_editor("clipboard-resize", &resize, cx));
 
         glass_panel(&self.palette)
             .flex()
@@ -915,56 +794,8 @@ pub(crate) fn ai_stage_label(stage: Option<TaggingStage>) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        ai_stage_label, ai_tagging_summary, auto_compression_summary, clipboard_summary,
-        discord_summary,
-    };
+    use super::ai_stage_label;
     use vrc_photon_ai_protocol::TaggingStage;
-    use vrc_photon_core::model::{CompressionOptions, ResizeSettings};
-
-    #[test]
-    fn section_summaries_follow_the_existing_card_values() {
-        assert_eq!(
-            discord_summary(true, "VRChat写真部"),
-            "設定済み ・ 送信先：VRChat写真部"
-        );
-        assert_eq!(
-            discord_summary(false, "Discord"),
-            "未設定 ・ 送信先：Discord"
-        );
-        assert_eq!(
-            auto_compression_summary(true, &CompressionOptions::auto_default()),
-            "有効 ・ WebP · Lossless"
-        );
-        assert_eq!(
-            auto_compression_summary(false, &CompressionOptions::discord_default()),
-            "無効 ・ WebP · Lossless"
-        );
-        assert_eq!(
-            ai_tagging_summary(true, 1, 12),
-            "有効 ・ 実行中 1 件 / 待機 12 件"
-        );
-        assert_eq!(
-            clipboard_summary(true, &ResizeSettings::clipboard_default()),
-            "有効 ・ 2560×1440（大きい場合のみ）"
-        );
-        assert_eq!(
-            clipboard_summary(false, &ResizeSettings::default()),
-            "無効 ・ リサイズなし"
-        );
-    }
-
-    #[test]
-    fn auto_compression_summary_uses_the_auto_options() {
-        let options = CompressionOptions::discord_default();
-        assert!(auto_compression_summary(true, &options).contains("WebP"));
-    }
-
-    #[test]
-    fn clipboard_summary_uses_the_resize_settings() {
-        let resize = ResizeSettings::clipboard_default();
-        assert!(clipboard_summary(true, &resize).contains("2560"));
-    }
 
     #[test]
     fn atmosphere_stage_has_a_label() {
