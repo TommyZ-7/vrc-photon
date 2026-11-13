@@ -487,6 +487,70 @@ fn command_reloads_settings_and_rebuilds_watchers() {
 }
 
 #[test]
+fn watcher_roots_include_library_roots_outside_settings_roots() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    let imported = dir.path().join("imported");
+    std::fs::create_dir_all(&imported).unwrap();
+    add_replaced_photo(
+        &daemon,
+        &imported.join("VRChat_imported.png"),
+        &imported.join("compressed/imported.webp"),
+    );
+
+    daemon.restart_watchers();
+
+    assert!(daemon.watcher_roots.contains(&imported));
+    assert!(daemon.watcher_roots.contains(&dir.path().join("photos")));
+}
+
+#[test]
+fn poll_watchers_queues_removals_and_ignores_derivative_creates() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    daemon.restart_watchers();
+    let (tx, rx) = std::sync::mpsc::channel();
+    daemon.watcher_rx = Some(rx);
+    let photo_dir = dir.path().join("photos");
+    let compressed = photo_dir.join("compressed");
+
+    let created = compressed.join("created.webp");
+    let removed = compressed.join("removed.webp");
+    let old = compressed.join("old.webp");
+    let new = compressed.join("new.webp");
+    let source = photo_dir.join("VRChat_new.png");
+
+    tx.send(Ok(notify::Event::new(notify::EventKind::Create(
+        notify::event::CreateKind::File,
+    ))
+    .add_path(created.clone())))
+        .unwrap();
+    tx.send(Ok(notify::Event::new(notify::EventKind::Remove(
+        notify::event::RemoveKind::File,
+    ))
+    .add_path(removed.clone())))
+        .unwrap();
+    tx.send(Ok(notify::Event::new(notify::EventKind::Modify(
+        notify::event::ModifyKind::Name(notify::event::RenameMode::Both),
+    ))
+    .add_path(old.clone())
+    .add_path(new)))
+        .unwrap();
+    tx.send(Ok(notify::Event::new(notify::EventKind::Remove(
+        notify::event::RemoveKind::File,
+    ))
+    .add_path(source.clone())))
+        .unwrap();
+
+    daemon.poll_watchers();
+
+    assert!(!daemon.dirty_paths.contains(&created));
+    assert!(daemon.dirty_paths.contains(&removed));
+    assert!(daemon.dirty_paths.contains(&old));
+    assert!(daemon.dirty_paths.contains(&source));
+}
+
+#[test]
 fn poll_commands_preserves_buffered_watcher_events() {
     let dir = tempfile::tempdir().unwrap();
     let mut daemon = test_daemon(&dir);

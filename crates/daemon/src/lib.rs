@@ -130,6 +130,13 @@ const VRCHAT_MISSING_POLLS_BEFORE_CLOSE: u8 = 3;
 const SETTINGS_INTERVAL: Duration = Duration::from_secs(1);
 const THUMBNAIL_PRUNE_BATCH: usize = 128;
 
+/// True when `path` lives under a compressed derivative directory that the
+/// incremental photo indexer must not treat as a source photo.
+pub(crate) fn is_compressed_path(path: &Path) -> bool {
+    path.components()
+        .any(|part| part.as_os_str() == "compressed")
+}
+
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;

@@ -666,6 +666,9 @@ impl Daemon {
                 }
             }
         }
+        // A ScanRoot command can add a library root after the watcher rebuild
+        // above. Reconcile once more so the new root is watched immediately.
+        self.restart_watchers();
         self.refresh_status()
     }
 
@@ -729,24 +732,44 @@ impl Daemon {
     /// command batch must not lose photo events that arrived while it ran.
     pub(crate) fn rebuild_watchers(&mut self) -> Result<()> {
         self.poll_watchers();
-        let wanted: Vec<PathBuf> = self
-            .settings
-            .photo_roots()
-            .into_iter()
-            .filter(|root| root.is_dir())
-            .collect();
+        let wanted = self.watched_roots()?;
         if self.watcher_rx.is_some() && self.watcher_roots == wanted {
             return Ok(());
         }
         self.watchers.clear();
         self.watcher_rx = None;
         self.watcher_roots.clear();
-        let result = self.setup_watchers();
+        let result = self.setup_watchers(wanted);
         if result.is_err() {
             self.watchers.clear();
             self.watcher_roots.clear();
         }
         result
+    }
+
+    /// Roots covered by the current watchers: configured photo roots plus
+    /// every library root recorded by scans (import destinations are stored
+    /// only in `library_roots`). Nested roots collapse to their parent because
+    /// one recursive watch covers the subtree.
+    pub(crate) fn watched_roots(&self) -> Result<Vec<PathBuf>> {
+        let mut roots: Vec<PathBuf> = self.settings.photo_roots();
+        {
+            let db = lock_db(&self.db);
+            roots.extend(
+                db.roots()?
+                    .into_iter()
+                    .map(|root| PathBuf::from(root.path)),
+            );
+        }
+        roots.retain(|root| root.is_dir());
+        roots.sort();
+        roots.dedup();
+        let pruned: Vec<PathBuf> = roots
+            .iter()
+            .filter(|root| !roots.iter().any(|other| other != *root && root.starts_with(other)))
+            .cloned()
+            .collect();
+        Ok(pruned)
     }
 
     /// Rebuilds the watchers, recording a `Scan` failure instead of aborting
@@ -1340,16 +1363,12 @@ impl Daemon {
         }
     }
 
-    pub(crate) fn setup_watchers(&mut self) -> Result<()> {
+    pub(crate) fn setup_watchers(&mut self, roots: Vec<PathBuf>) -> Result<()> {
         if self.watcher_rx.is_some() {
             return Ok(());
         }
         let (tx, rx) = mpsc::channel();
-        let mut watched = Vec::new();
-        for root in self.settings.photo_roots() {
-            if !root.is_dir() {
-                continue;
-            }
+        for root in &roots {
             let tx = tx.clone();
             let wake = self.wake.clone();
             let mut watcher = notify::recommended_watcher(move |event| {
@@ -1360,13 +1379,12 @@ impl Daemon {
             })
             .context("cannot create photo watcher")?;
             watcher
-                .watch(&root, RecursiveMode::Recursive)
+                .watch(root, RecursiveMode::Recursive)
                 .with_context(|| format!("cannot watch {}", root.display()))?;
             self.watchers.push(watcher);
-            watched.push(root);
         }
         self.watcher_rx = Some(rx);
-        self.watcher_roots = watched;
+        self.watcher_roots = roots;
         Ok(())
     }
 
@@ -1377,20 +1395,21 @@ impl Daemon {
         while let Ok(result) = rx.try_recv() {
             match result {
                 Ok(event) => {
-                    if matches!(
-                        event.kind,
+                    let removal = matches!(
+                        &event.kind,
+                        notify::EventKind::Remove(_)
+                            | notify::EventKind::Modify(notify::event::ModifyKind::Name(_))
+                    );
+                    let relevant = matches!(
+                        &event.kind,
                         notify::EventKind::Create(_)
                             | notify::EventKind::Modify(_)
                             | notify::EventKind::Remove(_)
-                    ) {
+                    );
+                    if relevant {
                         for path in event.paths {
-                            if path
-                                .components()
-                                .any(|part| part.as_os_str() == "compressed")
+                            if removal || (!is_compressed_path(&path) && is_source_photo(&path))
                             {
-                                continue;
-                            }
-                            if is_source_photo(&path) {
                                 self.dirty_paths.push(path);
                             }
                         }
