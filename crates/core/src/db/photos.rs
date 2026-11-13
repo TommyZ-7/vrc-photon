@@ -691,6 +691,20 @@ impl Db {
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
+    /// Returns the photo that currently displays `path` and the library root
+    /// that owns it. Only replaced photos with that display derivative match.
+    pub fn display_derivative_owner(&self, path: &str) -> Result<Option<(i64, String)>> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT p.id, r.path FROM photos p \
+             JOIN derivatives d ON d.id = p.display_derivative_id \
+             JOIN library_roots r ON r.id = p.root_id \
+             WHERE d.path = ?1 AND p.status = 'replaced' LIMIT 1",
+        )?;
+        stmt.query_row(params![path], |row| Ok((row.get(0)?, row.get(1)?)))
+            .optional()
+            .map_err(Into::into)
+    }
+
     pub fn set_photo_blake3(&self, photo_id: i64, blake3: &str) -> Result<()> {
         self.conn.execute(
             "UPDATE photos SET blake3 = ?1 WHERE id = ?2 AND blake3 IS NULL",
