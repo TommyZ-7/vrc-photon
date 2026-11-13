@@ -1,6 +1,6 @@
 # 表示用派生ファイルの検証をイベント駆動化する (#616) 実装計画
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 表示用派生ファイルの 30 秒ごとの全件 stat を廃止し、notify の削除・移動イベントで該当写真だけを missing 化する。全件確認は起動時・6時間ごと・イベント溢れ時に限定する。
 
@@ -10,7 +10,7 @@
 
 **Spec:** https://github.com/TommyZ-7/vrc-photon/issues/616
 
-**Status:** 決定事項 Q1–Q4 確定（2026-11-13）。計画レビュー待ち。
+**Status:** 実装完了（2026-11-13）。コード PR レビュー中。
 
 ---
 
@@ -82,7 +82,7 @@ Q1–Q4 は 2026-11-13 に確定した。実装時はこの表の「確定案」
   - `photos.status = 'replaced'` かつ `photos.display_derivative_id` が `path` を指す行だけを返す。
   - `derivatives.path` は UNIQUE インデックスを持つため、1 パス検索は軽量。
 
-- [ ] **Step 1: 失敗する DB テストを書く**
+- [x] **Step 1: 失敗する DB テストを書く**
 
 `crates/core/src/db/tests.rs` の `photo_effective_path_prefers_the_display_derivative` の近くに追加する。
 
@@ -137,13 +137,13 @@ fn display_derivative_owner_matches_only_the_active_display_derivative() {
 }
 ```
 
-- [ ] **Step 2: テストが失敗することを確認する**
+- [x] **Step 2: テストが失敗することを確認する**
 
 Run: `cargo test -p vrc-photon-core display_derivative_owner_matches_only_the_active_display_derivative`
 
 Expected: FAIL（`display_derivative_owner` が存在しない）
 
-- [ ] **Step 3: `Db::display_derivative_owner` を実装する**
+- [x] **Step 3: `Db::display_derivative_owner` を実装する**
 
 `crates/core/src/db/photos.rs` の `display_derivative_paths` の直後に追加する。
 
@@ -163,13 +163,13 @@ pub fn display_derivative_owner(&self, path: &str) -> Result<Option<(i64, String
 }
 ```
 
-- [ ] **Step 4: テストが通ることを確認する**
+- [x] **Step 4: テストが通ることを確認する**
 
 Run: `cargo test -p vrc-photon-core display_derivative_owner_matches_only_the_active_display_derivative`
 
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add crates/core/src/db/photos.rs crates/core/src/db/tests.rs
@@ -191,7 +191,7 @@ git commit -m "feat(db): look up the photo that displays a derivative"
 - Produces: `Daemon::setup_watchers(&mut self, roots: Vec<PathBuf>) -> Result<()>`
 - Consumes: Task 1 の `Db::display_derivative_owner` はまだ使わない。
 
-- [ ] **Step 1: 失敗する watcher ルートのテストを書く**
+- [x] **Step 1: 失敗する watcher ルートのテストを書く**
 
 `crates/daemon/src/tests.rs` の `command_reloads_settings_and_rebuilds_watchers` の近くに追加する。
 
@@ -215,13 +215,13 @@ fn watcher_roots_include_library_roots_outside_settings_roots() {
 }
 ```
 
-- [ ] **Step 2: テストが失敗することを確認する**
+- [x] **Step 2: テストが失敗することを確認する**
 
 Run: `cargo test -p vrc-photon-daemon watcher_roots_include_library_roots_outside_settings_roots`
 
 Expected: FAIL（`imported` が監視対象に入らない）
 
-- [ ] **Step 3: 失敗するイベント振り分けテストを書く**
+- [x] **Step 3: 失敗するイベント振り分けテストを書く**
 
 ```rust
 #[test]
@@ -271,13 +271,13 @@ fn poll_watchers_queues_removals_and_ignores_derivative_creates() {
 }
 ```
 
-- [ ] **Step 4: 失敗することを確認する**
+- [x] **Step 4: 失敗することを確認する**
 
 Run: `cargo test -p vrc-photon-daemon poll_watchers_queues_removals_and_ignores_derivative_creates`
 
 Expected: FAIL（`compressed/` の削除パスが捨てられる）
 
-- [ ] **Step 5: `is_compressed_path` を追加する**
+- [x] **Step 5: `is_compressed_path` を追加する**
 
 `crates/daemon/src/lib.rs` の定数群の近くに追加する。
 
@@ -290,7 +290,7 @@ pub(crate) fn is_compressed_path(path: &Path) -> bool {
 }
 ```
 
-- [ ] **Step 6: 監視ルートを決定する**
+- [x] **Step 6: 監視ルートを決定する**
 
 `crates/daemon/src/lifecycle.rs` に追加する。
 
@@ -340,7 +340,7 @@ result
 
 `poll_commands_with_initial` のコマンドループの後、`self.refresh_status()` の前に `self.restart_watchers();` を追加する。`ScanRoot` で追加されたルートを次のループを待たずに監視へ反映するため。
 
-- [ ] **Step 7: `poll_watchers` を削除・移動イベント対応にする**
+- [x] **Step 7: `poll_watchers` を削除・移動イベント対応にする**
 
 `poll_watchers` のイベント分岐を次の形にする。作成・更新は従来どおり `compressed/` と原画以外を捨て、削除・移動はパス種別を問わず `dirty_paths` に積む。
 
@@ -363,7 +363,7 @@ if relevant {
 }
 ```
 
-- [ ] **Step 8: テストが通ることを確認する**
+- [x] **Step 8: テストが通ることを確認する**
 
 Run: `cargo test -p vrc-photon-daemon watcher_roots_include_library_roots_outside_settings_roots`
 
@@ -373,13 +373,13 @@ Run: `cargo test -p vrc-photon-daemon poll_watchers_queues_removals_and_ignores_
 
 Expected: PASS
 
-- [ ] **Step 9: 既存の watcher テストを確認する**
+- [x] **Step 9: 既存の watcher テストを確認する**
 
 Run: `cargo test -p vrc-photon-daemon watcher`
 
 Expected: PASS（`poll_commands_preserves_buffered_watcher_events` などの既存観点を壊さない）
 
-- [ ] **Step 10: コミット**
+- [x] **Step 10: コミット**
 
 ```bash
 git add crates/daemon/src/lib.rs crates/daemon/src/lifecycle.rs crates/daemon/src/tests.rs
@@ -399,7 +399,7 @@ git commit -m "feat(daemon): watch library roots and route derivative events"
 - Consumes: 既存の `missing_display_derivatives(rows, root_is_dir, file_is_file) -> Vec<i64>`（`crates/daemon/src/logs.rs`）。
 - Produces: なし（`index_dirty_paths` の内部挙動）。
 
-- [ ] **Step 1: 失敗する削除イベントのテストを書く**
+- [x] **Step 1: 失敗する削除イベントのテストを書く**
 
 `crates/daemon/src/tests.rs` の `verify_replaced_assets_*` テスト群の近くに追加する。
 
@@ -442,13 +442,13 @@ fn removed_display_derivative_marks_photo_missing_and_clears_display() {
 }
 ```
 
-- [ ] **Step 2: 失敗することを確認する**
+- [x] **Step 2: 失敗することを確認する**
 
 Run: `cargo test -p vrc-photon-daemon removed_display_derivative_marks_photo_missing_and_clears_display`
 
 Expected: FAIL（写真が `replaced` のまま）
 
-- [ ] **Step 3: `index_dirty_paths` の削除処理を実装する**
+- [x] **Step 3: `index_dirty_paths` の削除処理を実装する**
 
 ループの先頭で `path.is_file()` を分岐する形に組み替える。
 
@@ -487,13 +487,13 @@ if let Some((photo_id, root)) = owner {
 }
 ```
 
-- [ ] **Step 4: テストが通ることを確認する**
+- [x] **Step 4: テストが通ることを確認する**
 
 Run: `cargo test -p vrc-photon-daemon removed_display_derivative_marks_photo_missing_and_clears_display`
 
 Expected: PASS
 
-- [ ] **Step 5: 移動・生存・オフライン・取り込み先のテストを追加する**
+- [x] **Step 5: 移動・生存・オフライン・取り込み先のテストを追加する**
 
 ```rust
 #[test]
@@ -537,7 +537,7 @@ fn removed_unknown_path_does_not_bump_library_revision() {
 
 各テストは Step 1 と同じく手動チャネルへイベントを送り、`poll_watchers` → `index_dirty_paths` の順で検証する。
 
-- [ ] **Step 6: 追加テストと既存の増分索引テストを通す**
+- [x] **Step 6: 追加テストと既存の増分索引テストを通す**
 
 Run: `cargo test -p vrc-photon-daemon index_dirty_paths`
 
@@ -547,7 +547,7 @@ Run: `cargo test -p vrc-photon-daemon removed_display_derivative`
 
 Expected: PASS
 
-- [ ] **Step 7: コミット**
+- [x] **Step 7: コミット**
 
 ```bash
 git add crates/daemon/src/scan.rs crates/daemon/src/tests.rs
@@ -570,7 +570,7 @@ git commit -m "feat(daemon): mark photos missing when display derivatives disapp
 - Produces: `Daemon::run_full_asset_check(&mut self)`
   - `verify_replaced_assets` を呼び、成否にかかわらず `last_asset_check` を現在時刻へ更新し、`full_asset_check_due` を false にする。
 
-- [ ] **Step 1: 失敗するスケジュールテストを書く**
+- [x] **Step 1: 失敗するスケジュールテストを書く**
 
 ```rust
 #[test]
@@ -618,13 +618,13 @@ fn full_asset_check_runs_after_six_hours() {
 }
 ```
 
-- [ ] **Step 2: 失敗することを確認する**
+- [x] **Step 2: 失敗することを確認する**
 
 Run: `cargo test -p vrc-photon-daemon full_asset_check_`
 
 Expected: FAIL（`FULL_ASSET_CHECK_INTERVAL` が存在しない。直しても 30 秒周期のままで挙動が合わない）
 
-- [ ] **Step 3: 定数と実行ラッパーを追加する**
+- [x] **Step 3: 定数と実行ラッパーを追加する**
 
 `crates/daemon/src/lib.rs` に追加する。
 
@@ -649,7 +649,7 @@ pub(crate) fn run_full_asset_check(&mut self) {
 
 `Daemon` に `pub(crate) full_asset_check_due: bool` を追加し、`Daemon::open` で `false` に初期化する。
 
-- [ ] **Step 4: 実行点を差し替える**
+- [x] **Step 4: 実行点を差し替える**
 
 - `poll_watchers` のイベント分岐の先頭で `need_rescan` を記録する。
 
@@ -688,13 +688,13 @@ let asset_deadline = if self.is_paused() {
 - `crates/daemon/src/scan.rs` の `scan_roots_inner` から `self.verify_replaced_assets()?;` を削除する。
 - `verify_replaced_assets` の doc コメントを「イベント駆動のフォールバック。起動時・6時間ごと・rescan 要求時だけ実行する」に更新する。
 
-- [ ] **Step 5: スケジュールテストを通す**
+- [x] **Step 5: スケジュールテストを通す**
 
 Run: `cargo test -p vrc-photon-daemon full_asset_check_`
 
 Expected: PASS
 
-- [ ] **Step 6: 起動時と rescan のテストを追加する**
+- [x] **Step 6: 起動時と rescan のテストを追加する**
 
 ```rust
 #[test]
@@ -711,17 +711,17 @@ fn rescan_flag_forces_the_full_asset_check() {
 }
 ```
 
-- [ ] **Step 7: 既存テストを更新する**
+- [x] **Step 7: 既存テストを更新する**
 
 `paused_idle_wait_does_not_spin_on_an_overdue_asset_check` の `last_asset_check` を `now - FULL_ASSET_CHECK_INTERVAL - Duration::from_secs(1)` に更新する。
 
-- [ ] **Step 8: daemon のテストを通す**
+- [x] **Step 8: daemon のテストを通す**
 
 Run: `cargo test -p vrc-photon-daemon`
 
 Expected: PASS
 
-- [ ] **Step 9: コミット**
+- [x] **Step 9: コミット**
 
 ```bash
 git add crates/daemon/src/lib.rs crates/daemon/src/lifecycle.rs crates/daemon/src/scan.rs crates/daemon/src/tests.rs
@@ -736,7 +736,7 @@ git commit -m "feat(daemon): limit full asset checks to startup and six-hour int
 - Modify: `docs/architecture.md`（4.2 写真の索引）
 - Modify: `docs/features.md`（1. 写真の索引）
 
-- [ ] **Step 1: `docs/architecture.md` を更新する**
+- [x] **Step 1: `docs/architecture.md` を更新する**
 
 4.2 の手順を次の内容に合わせる。
 
@@ -744,24 +744,24 @@ git commit -m "feat(daemon): limit full asset checks to startup and six-hour int
 - 2: 作成・更新イベントは `compressed/` 配下と原画以外を除外して `dirty_paths` に積む。削除・移動イベントは表示用派生ファイルも対象にする。
 - 6 の後: 表示用派生が外部で削除・移動された場合、所有ルートがオンラインで保存済みパスが存在しないときだけ `status='missing'` と表示用紐付け解除を行う。全件確認は起動時・6時間ごと・notify の rescan 要求時だけ行う。
 
-- [ ] **Step 2: `docs/features.md` を更新する**
+- [x] **Step 2: `docs/features.md` を更新する**
 
 - `compressed/` の行を「索引の走査対象外。削除・移動イベントは表示用派生の検証に使う」に更新する。
 - 外部削除の行に、表示用派生は notify の削除・移動イベントで検出し、全件確認は起動時と 6 時間ごと、イベント溢れ時だけ行うことを追記する。
 
-- [ ] **Step 3: ドキュメントのドリフト検査を通す**
+- [x] **Step 3: ドキュメントのドリフト検査を通す**
 
 Run: `./scripts/check-docs-drift.sh`
 
 Expected: PASS
 
-- [ ] **Step 4: 全体検証を通す**
+- [x] **Step 4: 全体検証を通す**
 
 Run: `cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`
 
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add docs/architecture.md docs/features.md

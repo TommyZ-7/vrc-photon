@@ -426,6 +426,83 @@ fn photo_effective_path_prefers_the_display_derivative() {
 }
 
 #[test]
+fn display_derivative_owner_matches_only_the_active_display_derivative() {
+    let db = Db::open_in_memory().unwrap();
+    let photo = seed_photo(&db);
+    db.add_derivative(
+        photo,
+        "/photos/a_1.webp",
+        "webp",
+        16,
+        10,
+        8,
+        Some("p"),
+        CompressionOrigin::Manual,
+        "keep",
+    )
+    .unwrap();
+    let second = db
+        .add_derivative(
+            photo,
+            "/photos/a_2.webp",
+            "webp",
+            16,
+            10,
+            8,
+            Some("p"),
+            CompressionOrigin::Manual,
+            "keep",
+        )
+        .unwrap();
+    assert!(db.set_replaced(photo, second).unwrap());
+
+    assert_eq!(
+        db.display_derivative_owner("/photos/a_2.webp").unwrap(),
+        Some((photo, "/photos".to_string()))
+    );
+    assert_eq!(
+        db.display_derivative_owner("/photos/a_1.webp").unwrap(),
+        None
+    );
+    assert_eq!(
+        db.display_derivative_owner("/photos/missing.webp").unwrap(),
+        None
+    );
+
+    db.clear_display_derivative(photo).unwrap();
+    assert_eq!(
+        db.display_derivative_owner("/photos/a_2.webp").unwrap(),
+        None
+    );
+}
+
+#[test]
+fn display_derivative_owner_searches_by_derivative_path() {
+    let db = Db::open_in_memory().unwrap();
+    let mut stmt = db
+        .connection()
+        .prepare(&format!(
+            "EXPLAIN QUERY PLAN {}",
+            Db::DISPLAY_DERIVATIVE_OWNER_SQL
+        ))
+        .unwrap();
+    let plan: Vec<String> = stmt
+        .query_map(params!["/photos/a.webp"], |row| row.get(3))
+        .unwrap()
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .unwrap();
+    assert!(
+        plan.iter().any(|line| line.contains("SEARCH d")),
+        "derivative path must be searched: {plan:?}"
+    );
+    assert!(
+        plan.iter()
+            .any(|line| line.contains("SEARCH p USING INTEGER PRIMARY KEY")),
+        "photo lookup must use the primary key: {plan:?}"
+    );
+}
+
+#[test]
 fn auto_replace_request_keeps_the_photo_visible() {
     let db = Db::open_in_memory().unwrap();
     let id = seed_photo(&db);
