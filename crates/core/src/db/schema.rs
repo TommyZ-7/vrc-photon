@@ -1,10 +1,10 @@
 /// Highest schema version this build understands.
-pub(crate) const SCHEMA_VERSION: i64 = 19;
+pub(crate) const SCHEMA_VERSION: i64 = 20;
 
-/// Integrated schema for a new v19 database.
+/// Integrated schema for a new v20 database.
 ///
 /// This is the schema produced by the previous migration chain. Existing
-/// v19 databases are opened as-is; older schemas are rejected without
+/// v20 databases are opened as-is; older schemas are rejected without
 /// modification instead of being migrated in place.
 pub(crate) const SCHEMA_LATEST: &str = r##"
 CREATE TABLE ai_tag_definitions (
@@ -48,7 +48,6 @@ CREATE TABLE compression_jobs (
 CREATE TABLE compression_profiles (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
-    enabled INTEGER NOT NULL,
     json TEXT NOT NULL,
     sort_order INTEGER NOT NULL DEFAULT 0
 );

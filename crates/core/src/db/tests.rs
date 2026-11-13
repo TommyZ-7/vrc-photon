@@ -6373,8 +6373,8 @@ fn ensure_default_profiles_does_not_seed_on_read_error() {
     let db = Db::open_in_memory().unwrap();
     db.connection()
         .execute(
-            "INSERT INTO compression_profiles(id, name, enabled, json, sort_order) \
-                 VALUES ('broken', 'broken', 1, '{', 0)",
+            "INSERT INTO compression_profiles(id, name, json, sort_order) \
+                 VALUES ('broken', 'broken', '{', 0)",
             [],
         )
         .unwrap();
@@ -7471,7 +7471,7 @@ fn bundled_sqlite_supports_strftime_in_stored_generated_columns() {
 }
 
 #[test]
-fn fresh_database_is_initialized_to_v19() {
+fn fresh_database_is_initialized_to_v20() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("library.db");
     let db = Db::open(&path).unwrap();
@@ -7480,7 +7480,7 @@ fn fresh_database_is_initialized_to_v19() {
         .connection()
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 19);
+    assert_eq!(version, 20);
 
     let tables: i64 = db
         .connection()
@@ -7517,7 +7517,7 @@ fn fresh_database_is_initialized_to_v19() {
 }
 
 #[test]
-fn existing_v19_database_opens_without_reinitializing() {
+fn existing_v20_database_opens_without_reinitializing() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("library.db");
     let db = Db::open(&path).unwrap();

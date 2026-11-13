@@ -26,17 +26,11 @@ impl Db {
     ) -> Result<()> {
         let json = serde_json::to_string(profile)?;
         conn.execute(
-            "INSERT INTO compression_profiles(id, name, enabled, json, sort_order) \
-             VALUES (?1, ?2, ?3, ?4, ?5) \
-             ON CONFLICT(id) DO UPDATE SET name = excluded.name, enabled = excluded.enabled, \
+            "INSERT INTO compression_profiles(id, name, json, sort_order) \
+             VALUES (?1, ?2, ?3, ?4) \
+             ON CONFLICT(id) DO UPDATE SET name = excluded.name, \
                 json = excluded.json",
-            params![
-                profile.id,
-                profile.name,
-                profile.enabled as i64,
-                json,
-                sort_order,
-            ],
+            params![profile.id, profile.name, json, sort_order,],
         )?;
         Ok(())
     }
