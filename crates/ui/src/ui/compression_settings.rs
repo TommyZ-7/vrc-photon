@@ -14,7 +14,7 @@ use vrc_photon_i18n::tr;
 use crate::app::App;
 use crate::app::compression::FeatureCompressionTarget;
 use crate::ui::components::chip;
-use crate::ui::theme::{format_label, lossless_hint, options_summary};
+use crate::ui::theme::format_label;
 
 #[derive(Debug, Clone, Copy)]
 enum ResizeOwner {
@@ -55,12 +55,6 @@ impl App {
 
         v_flex()
             .gap(px(7.))
-            .child(
-                div()
-                    .text_size(px(10.))
-                    .text_color(rgb(p.muted_2))
-                    .child(options_summary(options)),
-            )
             .child(
                 h_flex()
                     .flex_wrap()
@@ -106,12 +100,6 @@ impl App {
                                     cx,
                                 );
                             })),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(10.))
-                            .text_color(rgb(p.muted_2))
-                            .child(lossless_hint(&options.format)),
                     ),
             )
             .child(

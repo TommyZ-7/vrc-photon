@@ -1459,7 +1459,7 @@ impl App {
         cx: &mut Context<Self>,
     ) {
         if self.ai.active.is_none() {
-            self.toast_warning(tr!("integrations.ai.not_ready"), cx);
+            self.toast_warning(tr!("tagging.error.not_ready"), cx);
             cx.notify();
             return;
         }
@@ -1663,13 +1663,8 @@ impl App {
             self.ai.ready(),
             photo_ids,
         ) {
-            Ok(ManualRetagOutcome::Disabled) => {
-                self.toast_warning(tr!("integrations.ai.disabled"), cx);
-                cx.notify();
-                return;
-            }
-            Ok(ManualRetagOutcome::NotReady) => {
-                self.toast_warning(tr!("integrations.ai.not_ready"), cx);
+            Ok(ManualRetagOutcome::Disabled | ManualRetagOutcome::NotReady) => {
+                self.toast_warning(tr!("tagging.error.not_ready"), cx);
                 cx.notify();
                 return;
             }

@@ -127,15 +127,6 @@ fn non_empty(value: String) -> Option<String> {
     (!value.is_empty()).then(|| value.to_string())
 }
 
-/// The masked URL when a webhook is stored, otherwise the "not configured"
-/// prompt. Never returns the raw value.
-pub(crate) fn webhook_state_label(url: Option<&str>) -> String {
-    match url {
-        Some(url) => mask_webhook_url(url),
-        None => tr!("integrations.discord.webhook.missing"),
-    }
-}
-
 /// Warning shown when the Discord compression settings use a format Discord
 /// embeds do not render. Sending is not blocked: the upload still works and
 /// Discord may show a download link instead of an inline preview.
@@ -252,7 +243,6 @@ impl App {
             .child(self.discord_toggle_row(
                 "discord-send-original",
                 tr!("integrations.discord.source.prefer_original"),
-                tr!("integrations.discord.source.prefer_original_hint"),
                 send_original,
                 cx,
                 App::set_discord_send_original,
@@ -261,7 +251,6 @@ impl App {
             .child(self.discord_toggle_row(
                 "discord-include-players",
                 tr!("integrations.discord.players.label"),
-                tr!("integrations.discord.players.hint"),
                 include_players,
                 cx,
                 App::set_discord_include_players,
@@ -285,12 +274,6 @@ impl App {
                         .child(warning),
                 )
             })
-            .child(
-                div()
-                    .text_size(px(10.))
-                    .text_color(rgb(p.muted_2))
-                    .child(tr!("integrations.compression.output_note.discord")),
-            )
             .child(card_divider(&p))
             .child(self.discord_auto_section(cx));
 
@@ -395,36 +378,18 @@ impl App {
                             })),
                     ),
             )
-            .child(card_divider(&p))
-            .when(waiting > 0, |this| {
-                this.child(
-                    div()
-                        .px(px(4.))
-                        .text_size(px(10.))
-                        .text_color(rgb(p.muted_2))
-                        .child(tr!("integrations.discord.history.release_hint")),
+            .when(!history.is_empty(), |this| {
+                this.child(card_divider(&p)).child(
+                    v_flex()
+                        .id("integrations-send-history")
+                        .max_h(px(SEND_HISTORY_MAX))
+                        .overflow_y_scrollbar()
+                        .children(
+                            history
+                                .into_iter()
+                                .map(|entry| self.send_history_row(entry, cx)),
+                        ),
                 )
-                .child(card_divider(&p))
-            })
-            .child(if history.is_empty() {
-                div()
-                    .px(px(4.))
-                    .py(px(8.))
-                    .text_size(px(11.))
-                    .text_color(rgb(p.muted_2))
-                    .child(tr!("integrations.discord.history.empty"))
-                    .into_any_element()
-            } else {
-                v_flex()
-                    .id("integrations-send-history")
-                    .max_h(px(SEND_HISTORY_MAX))
-                    .overflow_y_scrollbar()
-                    .children(
-                        history
-                            .into_iter()
-                            .map(|entry| self.send_history_row(entry, cx)),
-                    )
-                    .into_any_element()
             })
             .into_any_element()
     }
@@ -683,7 +648,7 @@ impl App {
                         .bg(rgb(p.panel_2))
                         .text_size(px(11.))
                         .text_color(rgb(p.muted))
-                        .child(webhook_state_label(Some(url))),
+                        .child(mask_webhook_url(url)),
                 )
                 .child(
                     Button::new("discord-webhook-change")
@@ -713,12 +678,6 @@ impl App {
                             this.begin_discord_url_edit(window, cx);
                         })),
                 )
-                .child(
-                    div()
-                        .text_size(px(10.))
-                        .text_color(rgb(p.muted_2))
-                        .child(webhook_state_label(None)),
-                )
                 .into_any_element(),
         }
     }
@@ -727,7 +686,6 @@ impl App {
         &self,
         id: &'static str,
         label: String,
-        hint: String,
         checked: bool,
         cx: &mut Context<Self>,
         toggle: fn(&mut App, bool, &mut Context<App>),
@@ -738,22 +696,13 @@ impl App {
             .gap(px(12.))
             .py(px(2.))
             .child(
-                v_flex()
-                    .gap(px(2.))
-                    .child(
-                        div()
-                            .text_size(px(12.))
-                            .text_color(rgb(p.text))
-                            .child(label),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(10.))
-                            .text_color(rgb(p.muted_2))
-                            .child(hint),
-                    ),
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .text_size(px(12.))
+                    .text_color(rgb(p.text))
+                    .child(label),
             )
-            .child(div().flex_1())
             .child(Switch::new(id).checked(checked).on_click(cx.listener(
                 move |this, value, _, cx| {
                     toggle(this, *value, cx);
@@ -794,12 +743,6 @@ impl App {
                     .text_color(rgb(p.text))
                     .child(tr!("integrations.discord.auto.title")),
             )
-            .child(
-                div()
-                    .text_size(px(10.))
-                    .text_color(rgb(p.muted_2))
-                    .child(tr!("integrations.discord.auto.hint")),
-            )
             .children(options.into_iter().map(|(mode, id, title)| {
                 manual_option_row(&p, SharedString::from(id), title, "", current == mode, true)
                     .on_click(cx.listener(move |this, _, window, cx| {
@@ -825,8 +768,8 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::{
-        discord_format_warning, discord_message_url, retry_at_label, send_error_label,
-        send_source_label, send_status_label, stored_webhook_error, webhook_state_label,
+        discord_format_warning, discord_message_url, mask_webhook_url, retry_at_label,
+        send_error_label, send_source_label, send_status_label, stored_webhook_error,
     };
     use vrc_photon_core::model::{CompressionFormat, CompressionOptions, SendSource, SendStatus};
     use vrc_photon_i18n::{tr, tr_args};
@@ -855,17 +798,9 @@ mod tests {
     }
 
     #[test]
-    fn webhook_state_label_distinguishes_missing_and_configured() {
-        assert_eq!(
-            webhook_state_label(None),
-            tr!("integrations.discord.webhook.missing")
-        );
-        assert!(webhook_state_label(Some("https://discord.com/api/webhooks/1/t")).contains("••••"));
-    }
-
-    #[test]
-    fn webhook_state_label_never_exposes_the_token() {
-        let masked = webhook_state_label(Some("https://discord.com/api/webhooks/1/secret"));
+    fn stored_webhook_never_exposes_the_token() {
+        let masked = mask_webhook_url("https://discord.com/api/webhooks/1/secret");
+        assert!(masked.contains("••••"), "{masked}");
         assert!(!masked.contains("secret"), "{masked}");
     }
 
