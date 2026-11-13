@@ -32,15 +32,14 @@ impl Db {
         }
         let json = serde_json::to_string(profile)?;
         conn.execute(
-            "INSERT INTO compression_profiles(id, name, enabled, auto_enabled, json, sort_order) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6) \
+            "INSERT INTO compression_profiles(id, name, enabled, json, sort_order) \
+             VALUES (?1, ?2, ?3, ?4, ?5) \
              ON CONFLICT(id) DO UPDATE SET name = excluded.name, enabled = excluded.enabled, \
-                auto_enabled = excluded.auto_enabled, json = excluded.json",
+                json = excluded.json",
             params![
                 profile.id,
                 profile.name,
                 profile.enabled as i64,
-                profile.auto_enabled as i64,
                 json,
                 sort_order,
             ],
@@ -338,8 +337,8 @@ impl Db {
     ) -> Result<String> {
         let id = uuid::Uuid::new_v4().to_string();
         let inserted = self.conn.execute(
-            "INSERT INTO compression_jobs(id, photo_id, profile_id, status, progress, policy, output_dir, created_at) \
-             SELECT ?1, ?2, ?3, ?4, 0, ?5, ?6, ?7 \
+            "INSERT INTO compression_jobs(id, photo_id, profile_id, origin, status, progress, policy, output_dir, created_at) \
+             SELECT ?1, ?2, ?3, 'manual', ?4, 0, ?5, ?6, ?7 \
              WHERE EXISTS (SELECT 1 FROM photos WHERE id = ?2 AND status <> 'deleting') \
                AND NOT EXISTS (SELECT 1 FROM deletion_requests \
                    WHERE photo_id = ?2 AND status IN ('pending', 'blocked', 'running'))",
@@ -398,8 +397,8 @@ impl Db {
     ) -> Result<bool> {
         let id = uuid::Uuid::new_v4().to_string();
         let inserted = self.conn.execute(
-            "INSERT INTO compression_jobs(id, photo_id, profile_id, status, progress, policy, output_dir, created_at) \
-             SELECT ?1, ?2, ?3, ?4, 0, ?5, NULL, ?6 \
+            "INSERT INTO compression_jobs(id, photo_id, profile_id, origin, status, progress, policy, output_dir, created_at) \
+             SELECT ?1, ?2, ?3, 'auto', ?4, 0, ?5, NULL, ?6 \
              WHERE EXISTS (SELECT 1 FROM compression_profiles WHERE id = ?3) \
                AND EXISTS (SELECT 1 FROM photos WHERE id = ?2 AND status <> 'deleting') \
                AND NOT EXISTS (SELECT 1 FROM deletion_requests \
@@ -446,8 +445,8 @@ impl Db {
     ) -> Result<bool> {
         let id = uuid::Uuid::new_v4().to_string();
         let inserted = self.conn.execute(
-            "INSERT INTO compression_jobs(id, photo_id, profile_id, status, progress, policy, output_dir, created_at) \
-             SELECT ?1, ?2, ?3, ?4, 0, ?5, ?6, ?7 \
+            "INSERT INTO compression_jobs(id, photo_id, profile_id, origin, status, progress, policy, output_dir, created_at) \
+             SELECT ?1, ?2, ?3, 'manual', ?4, 0, ?5, ?6, ?7 \
              WHERE EXISTS (SELECT 1 FROM compression_profiles WHERE id = ?3) \
                AND EXISTS (SELECT 1 FROM photos WHERE id = ?2 AND status <> 'deleting') \
                AND NOT EXISTS (SELECT 1 FROM deletion_requests \
@@ -472,7 +471,7 @@ impl Db {
                 "UPDATE compression_jobs SET status = 'processing', started_at = ?1 \
                  WHERE id = (SELECT id FROM compression_jobs WHERE status = 'pending' \
                     ORDER BY created_at, rowid LIMIT 1) \
-                 RETURNING id, photo_id, profile_id, status, progress, error, output_path, policy, output_dir, \
+                 RETURNING id, photo_id, profile_id, origin, status, progress, error, output_path, policy, output_dir, \
                     retry_count, created_at, started_at, finished_at",
                 params![now_string()],
                 row_to_job,
@@ -505,11 +504,11 @@ impl Db {
             let mut stmt = tx.prepare_cached(
                 "UPDATE compression_jobs SET status = 'processing', started_at = ?1 \
                  WHERE status = 'pending' AND photo_id = ?2 \
-                 RETURNING id, photo_id, profile_id, status, progress, error, output_path, policy, output_dir, \
+                 RETURNING id, photo_id, profile_id, origin, status, progress, error, output_path, policy, output_dir, \
                     retry_count, created_at, started_at, finished_at, rowid",
             )?;
             let rows = stmt.query_map(params![now_string(), photo_id], |row| {
-                Ok((row.get::<_, i64>(13)?, row_to_job(row)?))
+                Ok((row.get::<_, i64>(14)?, row_to_job(row)?))
             })?;
             rows.collect::<rusqlite::Result<Vec<_>>>()?
         };
@@ -572,7 +571,7 @@ impl Db {
     }
 
     /// Columns read for every `compression_jobs` row, in `row_to_job` order.
-    const JOB_COLUMNS: &str = "id, photo_id, profile_id, status, progress, error, \
+    const JOB_COLUMNS: &str = "id, photo_id, profile_id, origin, status, progress, error, \
         output_path, policy, output_dir, retry_count, created_at, started_at, finished_at";
 
     /// Lists the newest jobs first. `limit` is normalized by
@@ -708,15 +707,16 @@ fn row_to_job(row: &Row<'_>) -> rusqlite::Result<CompressionJob> {
         id: row.get(0)?,
         photo_id: row.get(1)?,
         profile_id: row.get(2)?,
-        status: QueueStatus::parse(&row.get::<_, String>(3)?),
-        progress: row.get(4)?,
-        error: row.get(5)?,
-        output_path: row.get(6)?,
-        policy: row.get(7)?,
-        output_dir: row.get(8)?,
-        retry_count: row.get(9)?,
-        created_at: row.get(10)?,
-        started_at: row.get(11)?,
-        finished_at: row.get(12)?,
+        origin: CompressionOrigin::parse(&row.get::<_, String>(3)?),
+        status: QueueStatus::parse(&row.get::<_, String>(4)?),
+        progress: row.get(5)?,
+        error: row.get(6)?,
+        output_path: row.get(7)?,
+        policy: row.get(8)?,
+        output_dir: row.get(9)?,
+        retry_count: row.get(10)?,
+        created_at: row.get(11)?,
+        started_at: row.get(12)?,
+        finished_at: row.get(13)?,
     })
 }

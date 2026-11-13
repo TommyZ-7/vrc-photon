@@ -257,7 +257,7 @@ fn find_profile_derivative<'a>(
 ) -> Option<&'a Derivative> {
     derivatives.iter().find(|derivative| {
         derivative.photo_id == photo_id
-            && derivative.profile_id == profile_id
+            && derivative.profile_id.as_deref() == Some(profile_id)
             && Path::new(&derivative.path).is_file()
     })
 }
@@ -389,7 +389,7 @@ fn timestamp_rfc3339(timestamp: i64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{CompressionProfile, Derivative, Photo, PhotoStatus};
+    use crate::model::{CompressionOrigin, CompressionProfile, Derivative, Photo, PhotoStatus};
     use std::path::Path;
 
     #[test]
@@ -473,7 +473,8 @@ mod tests {
             width: 16,
             height: 10,
             file_size: std::fs::metadata(path).unwrap().len(),
-            profile_id: profile_id.into(),
+            profile_id: Some(profile_id.into()),
+            origin: CompressionOrigin::Manual,
             policy: "keep".into(),
             created_at: "2026-11-02T00:00:00Z".into(),
         }

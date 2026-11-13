@@ -889,7 +889,8 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use vrc_photon_core::model::{
-        DeletionReason, NewPhoto, SendErrorCode, SendKind, SendOrigin, SendSource, SendStatus,
+        CompressionOrigin, DeletionReason, NewPhoto, SendErrorCode, SendKind, SendOrigin,
+        SendSource, SendStatus,
     };
     use vrc_photon_core::settings::{
         AppSettings, DiscordAutoMode, clear_discord_webhook, save_discord_webhook,
@@ -1667,7 +1668,8 @@ mod tests {
                 16,
                 10,
                 std::fs::metadata(&display).unwrap().len(),
-                "other",
+                Some("other"),
+                CompressionOrigin::Manual,
                 "replace",
             )
             .unwrap()

@@ -16,7 +16,7 @@ use crate::ai::{
 };
 use crate::error::{CoreError, Result};
 use crate::model::{
-    AiPhotoFilter, CompressionJob, CompressionProfile, DaemonCommand, DaemonError, DaemonOperation,
+    AiPhotoFilter, CompressionJob, CompressionOrigin, CompressionProfile, DaemonCommand, DaemonError, DaemonOperation,
     DeletionBlockers, DeletionCounts, DeletionJobSummary, DeletionReason, DeletionRequest,
     DeletionStatus, Derivative, JobStatusCounts, LibraryRoot, LibraryStats, MAX_JOB_RETRIES,
     MAX_PROFILE_NAME_CHARS, NewPhoto, Photo, PhotoContext, PhotoFilter, PhotoIndexEntry,

@@ -748,7 +748,7 @@ mod tests {
     use std::time::Duration;
     use vrc_photon_core::db::Db;
     use vrc_photon_core::model::{
-        DeletionCounts, DeletionReason, DeletionRequest, DeletionStatus, NewPhoto,
+        CompressionOrigin, DeletionCounts, DeletionReason, DeletionRequest, DeletionStatus, NewPhoto,
     };
 
     #[test]
@@ -928,7 +928,7 @@ mod tests {
     fn snapshot_collects_badge_ids_with_the_revision() {
         let db = Db::open_in_memory().unwrap();
         let id = seed_photo(&db);
-        db.add_derivative(id, "/photos/a.webp", "webp", 16, 10, 8, "p", "keep")
+        db.add_derivative(id, "/photos/a.webp", "webp", 16, 10, 8, Some("p"), CompressionOrigin::Manual, "keep")
             .unwrap();
         let revision = db.library_revision().unwrap();
         let snapshot = collect_live_snapshot(&db, revision - 1, None);

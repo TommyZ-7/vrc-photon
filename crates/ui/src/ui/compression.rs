@@ -1158,7 +1158,7 @@ fn render_queue_row(app: &mut App, row: QueueRow, cx: &mut Context<App>) -> AnyE
             let profile_name = app
                 .profiles
                 .iter()
-                .find(|profile| profile.id == job.profile_id)
+                .find(|profile| Some(profile.id.as_str()) == job.profile_id.as_deref())
                 .map(|profile| profile.name.clone())
                 .unwrap_or_else(|| tr!("compression.unknown_profile"));
             h_flex()
@@ -1208,7 +1208,7 @@ fn render_queue_row(app: &mut App, row: QueueRow, cx: &mut Context<App>) -> AnyE
             let profile_name = app
                 .profiles
                 .iter()
-                .find(|profile| profile.id == job.profile_id)
+                .find(|profile| Some(profile.id.as_str()) == job.profile_id.as_deref())
                 .map(|profile| profile.name.clone());
             let error = job_error_label(job);
             let retryable = job_retry_available(job);
@@ -1290,13 +1290,14 @@ mod tests {
         QueueRow, job_error_label, job_retry_available, job_retry_label, queue_row_height,
         queue_rows, queue_status_badge,
     };
-    use vrc_photon_core::model::{CompressionJob, QueueStatus};
+    use vrc_photon_core::model::{CompressionJob, CompressionOrigin, QueueStatus};
 
     fn test_job(status: QueueStatus, retry_count: i64) -> CompressionJob {
         CompressionJob {
             id: "job".to_string(),
             photo_id: 1,
-            profile_id: "p".to_string(),
+            profile_id: Some("p".to_string()),
+            origin: CompressionOrigin::Manual,
             status,
             progress: 0.0,
             error: Some("boom".to_string()),

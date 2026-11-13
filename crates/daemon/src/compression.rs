@@ -94,7 +94,7 @@ pub(crate) fn preferred_display_derivative<'a>(
             (
                 profiles
                     .iter()
-                    .position(|profile| profile.id == derivative.profile_id)
+                    .position(|profile| Some(profile.id.as_str()) == derivative.profile_id.as_deref())
                     .map(std::cmp::Reverse),
                 derivative.id,
             )
@@ -357,7 +357,7 @@ pub(crate) fn process_decoded_job(
         let db = lock_db(db);
         db.list_profiles()?
             .into_iter()
-            .find(|profile| profile.id == job.profile_id)
+            .find(|profile| Some(profile.id.as_str()) == job.profile_id.as_deref())
             .context("compression profile no longer exists")?
     };
     if let Some(output_dir) = job
@@ -385,7 +385,8 @@ pub(crate) fn process_decoded_job(
             result.width,
             result.height,
             result.compressed_size,
-            &profile.id,
+            job.profile_id.as_deref(),
+            job.origin,
             &job.policy,
         )?;
         let current_status = db.photo_by_id(photo.id)?.map(|row| row.status);

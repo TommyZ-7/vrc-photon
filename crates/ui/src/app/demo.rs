@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Local, Utc};
 use vrc_photon_core::db::{Db, DbProfile};
-use vrc_photon_core::model::{NewPhoto, PhotoContext};
+use vrc_photon_core::model::{CompressionOrigin, NewPhoto, PhotoContext};
 use vrc_photon_i18n::tr_args;
 
 use crate::app::cli::LaunchOptions;
@@ -464,7 +464,8 @@ fn seed_demo(db: &Db, photo_dir: &Path, now: DateTime<Local>) -> Result<(), Stri
                     1280,
                     800,
                     1_800_000,
-                    "demo",
+                    Some("demo"),
+                    CompressionOrigin::Manual,
                     "keep",
                 )?;
             }

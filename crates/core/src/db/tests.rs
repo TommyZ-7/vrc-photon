@@ -199,7 +199,7 @@ fn concurrent_open_of_a_fresh_database_succeeds() {
         }
         for handle in handles {
             let opened = handle.join().unwrap();
-            assert_eq!(opened.unwrap().unwrap(), 18);
+            assert_eq!(opened.unwrap().unwrap(), SCHEMA_VERSION);
         }
     }
 }
@@ -208,7 +208,7 @@ fn concurrent_open_of_a_fresh_database_succeeds() {
 fn deleting_photo_is_hidden_from_index_search_and_counts() {
     let db = Db::open_in_memory().unwrap();
     let id = seed_photo(&db);
-    db.add_derivative(id, "/photos/a.webp", "webp", 16, 10, 8, "p", "keep")
+    db.add_derivative(id, "/photos/a.webp", "webp", 16, 10, 8, Some("p"), CompressionOrigin::Manual, "keep")
         .unwrap();
     db.connection()
         .execute(
@@ -271,7 +271,7 @@ fn upsert_preserves_replaced_display_while_auto_deletion_is_active() {
     let db = Db::open_in_memory().unwrap();
     let id = seed_photo(&db);
     let derivative = db
-        .add_derivative(id, "/photos/a_webp.webp", "webp", 16, 10, 8, "p", "replace")
+        .add_derivative(id, "/photos/a_webp.webp", "webp", 16, 10, 8, Some("p"), CompressionOrigin::Manual, "replace")
         .unwrap();
     db.set_replaced(id, derivative).unwrap();
     insert_deletion_request(&db, id, "auto_replace", "pending");
@@ -287,7 +287,7 @@ fn set_replaced_does_not_unhide_a_deleting_photo() {
     let db = Db::open_in_memory().unwrap();
     let id = seed_photo(&db);
     let derivative = db
-        .add_derivative(id, "/photos/a_webp.webp", "webp", 16, 10, 8, "p", "replace")
+        .add_derivative(id, "/photos/a_webp.webp", "webp", 16, 10, 8, Some("p"), CompressionOrigin::Manual, "replace")
         .unwrap();
     insert_deletion_request(&db, id, "manual", "pending");
     db.connection()
@@ -308,7 +308,7 @@ fn complete_replacement_marks_replaced_and_requests_auto_deletion() {
     let db = Db::open_in_memory().unwrap();
     let id = seed_photo(&db);
     let derivative = db
-        .add_derivative(id, "/photos/a_webp.webp", "webp", 16, 10, 8, "p", "replace")
+        .add_derivative(id, "/photos/a_webp.webp", "webp", 16, 10, 8, Some("p"), CompressionOrigin::Manual, "replace")
         .unwrap();
 
     db.complete_replacement(id, derivative).unwrap();
@@ -365,7 +365,7 @@ fn photo_effective_path_prefers_the_display_derivative() {
     assert_eq!(db.photo_effective_path(999_999).unwrap(), None);
 
     let derivative = db
-        .add_derivative(id, "/photos/a_webp.webp", "webp", 16, 10, 8, "p", "replace")
+        .add_derivative(id, "/photos/a_webp.webp", "webp", 16, 10, 8, Some("p"), CompressionOrigin::Manual, "replace")
         .unwrap();
     db.set_replaced(id, derivative).unwrap();
 
@@ -2240,7 +2240,8 @@ fn photo_scan_states_reads_all_chunks_with_metadata() {
             4,
             3,
             10,
-            "p",
+            Some("p"),
+            CompressionOrigin::Manual,
             "replace",
         )
         .unwrap();
@@ -6245,8 +6246,8 @@ fn ensure_default_profiles_does_not_seed_on_read_error() {
     let db = Db::open_in_memory().unwrap();
     db.connection()
         .execute(
-            "INSERT INTO compression_profiles(id, name, enabled, auto_enabled, json, sort_order) \
-                 VALUES ('broken', 'broken', 1, 0, '{', 0)",
+            "INSERT INTO compression_profiles(id, name, enabled, json, sort_order) \
+                 VALUES ('broken', 'broken', 1, '{', 0)",
             [],
         )
         .unwrap();
@@ -6661,7 +6662,8 @@ fn delete_profile_blocks_active_jobs_and_keeps_history() {
         16,
         10,
         10,
-        "p",
+        Some("p"),
+        CompressionOrigin::Manual,
         "keep",
     )
     .unwrap();
@@ -6676,7 +6678,7 @@ fn delete_profile_blocks_active_jobs_and_keeps_history() {
     assert_eq!(db.list_jobs(10).unwrap().len(), 2);
     let derivatives = db.derivatives_for_photo(photo).unwrap();
     assert_eq!(derivatives.len(), 1);
-    assert_eq!(derivatives[0].profile_id, "p");
+    assert_eq!(derivatives[0].profile_id.as_deref(), Some("p"));
 
     assert!(matches!(db.delete_profile("q"), Err(CoreError::Invalid(_))));
     assert_eq!(db.list_profiles().unwrap().len(), 1);
@@ -6721,10 +6723,10 @@ fn add_derivative_rejects_a_path_owned_by_another_photo() {
     let path = "/photos/compressed/shared.webp";
 
     let id = db
-        .add_derivative(first, path, "webp", 10, 20, 30, "p", "keep")
+        .add_derivative(first, path, "webp", 10, 20, 30, Some("p"), CompressionOrigin::Manual, "keep")
         .unwrap();
     assert!(matches!(
-        db.add_derivative(second, path, "webp", 10, 20, 30, "p", "keep"),
+        db.add_derivative(second, path, "webp", 10, 20, 30, Some("p"), CompressionOrigin::Manual, "keep"),
         Err(CoreError::Invalid(_))
     ));
     let first_rows = db.derivatives_for_photo(first).unwrap();
@@ -6748,7 +6750,8 @@ fn replaced_photo_stays_visible_and_stats_use_derivative_size() {
             16,
             10,
             1_234,
-            "p",
+            Some("p"),
+            CompressionOrigin::Manual,
             "replace",
         )
         .unwrap();
@@ -6795,7 +6798,8 @@ fn upserting_a_restored_original_clears_the_display_derivative() {
             16,
             10,
             1_234,
-            "p",
+            Some("p"),
+            CompressionOrigin::Manual,
             "replace",
         )
         .unwrap();
@@ -7061,7 +7065,8 @@ fn unlinked_hash_and_derivative_limits_use_the_shared_policy() {
                 1280,
                 800,
                 1_000,
-                "profile",
+                Some("profile"),
+                CompressionOrigin::Manual,
                 "keep",
             )
             .unwrap();
@@ -7434,7 +7439,7 @@ fn bundled_sqlite_supports_strftime_in_stored_generated_columns() {
 }
 
 #[test]
-fn fresh_database_is_initialized_to_v18() {
+fn fresh_database_is_initialized_to_v19() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("library.db");
     let db = Db::open(&path).unwrap();
@@ -7443,7 +7448,7 @@ fn fresh_database_is_initialized_to_v18() {
         .connection()
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 18);
+    assert_eq!(version, 19);
 
     let tables: i64 = db
         .connection()
@@ -7480,7 +7485,7 @@ fn fresh_database_is_initialized_to_v18() {
 }
 
 #[test]
-fn existing_v18_database_opens_without_reinitializing() {
+fn existing_v19_database_opens_without_reinitializing() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("library.db");
     let db = Db::open(&path).unwrap();
@@ -7506,7 +7511,7 @@ fn existing_v18_database_opens_without_reinitializing() {
 }
 
 #[test]
-fn v17_database_is_rejected_without_modification() {
+fn v18_database_is_rejected_without_modification() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("library.db");
     {
@@ -7516,18 +7521,18 @@ fn v17_database_is_rejected_without_modification() {
              INSERT INTO legacy_marker(value) VALUES ('keep');",
         )
         .unwrap();
-        conn.pragma_update(None, "user_version", 17).unwrap();
+        conn.pragma_update(None, "user_version", 18).unwrap();
     }
     let before = std::fs::read(&path).unwrap();
 
     let error = match Db::open(&path) {
-        Ok(_) => panic!("expected the v17 database to be rejected"),
+        Ok(_) => panic!("expected the v18 database to be rejected"),
         Err(error) => error,
     };
     let CoreError::Invalid(message) = error else {
         panic!("expected an explicit schema error, got {error:?}");
     };
-    assert!(message.contains("17"), "{message}");
+    assert!(message.contains("18"), "{message}");
     assert!(message.contains("cannot be migrated"), "{message}");
 
     let after = std::fs::read(&path).unwrap();
@@ -7537,11 +7542,120 @@ fn v17_database_is_rejected_without_modification() {
     let version: i64 = conn
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 17);
+    assert_eq!(version, 18);
     let marker: String = conn
         .query_row("SELECT value FROM legacy_marker", [], |row| row.get(0))
         .unwrap();
     assert_eq!(marker, "keep");
+}
+
+#[test]
+fn compression_job_origin_roundtrips() {
+    let db = Db::open_in_memory().unwrap();
+    let root = db.add_root("/photos", "reference").unwrap();
+    let photo = db
+        .upsert_photo(&sample_photo(root, "/photos/a.png", 100))
+        .unwrap();
+
+    db.save_profile(&CompressionProfile {
+        id: "auto-profile".to_string(),
+        ..CompressionProfile::default()
+    })
+    .unwrap();
+    db.enqueue_job(photo, "p", "keep").unwrap();
+    db.enqueue_auto_job_for_existing_profile_with_status(
+        photo,
+        "auto-profile",
+        "keep",
+        QueueStatus::Pending,
+    )
+    .unwrap();
+
+    let jobs = db.list_jobs(10).unwrap();
+    assert_eq!(jobs.len(), 2);
+    assert!(
+        jobs.iter()
+            .any(|job| job.origin == CompressionOrigin::Manual
+                && job.profile_id.as_deref() == Some("p"))
+    );
+    assert!(
+        jobs.iter()
+            .any(|job| job.origin == CompressionOrigin::Auto
+                && job.profile_id.as_deref() == Some("auto-profile"))
+    );
+}
+
+#[test]
+fn compression_job_profile_id_is_nullable_in_the_schema() {
+    let db = Db::open_in_memory().unwrap();
+    let root = db.add_root("/photos", "reference").unwrap();
+    let photo = db
+        .upsert_photo(&sample_photo(root, "/photos/a.png", 100))
+        .unwrap();
+
+    db.connection()
+        .execute(
+            "INSERT INTO compression_jobs(id, photo_id, profile_id, origin, status, progress, policy, created_at) \
+             VALUES ('auto-null', ?1, NULL, 'auto', 'pending', 0, 'keep', '2026-01-01T00:00:00Z')",
+            params![photo],
+        )
+        .unwrap();
+
+    let job = db
+        .list_jobs(1)
+        .unwrap()
+        .into_iter()
+        .find(|job| job.id == "auto-null")
+        .unwrap();
+    assert_eq!(job.origin, CompressionOrigin::Auto);
+    assert_eq!(job.profile_id, None);
+}
+
+#[test]
+fn derivative_origin_and_nullable_profile_roundtrip() {
+    let db = Db::open_in_memory().unwrap();
+    let root = db.add_root("/photos", "reference").unwrap();
+    let photo = db
+        .upsert_photo(&sample_photo(root, "/photos/a.png", 100))
+        .unwrap();
+
+    db.add_derivative(
+        photo,
+        "/photos/compressed/auto.webp",
+        "webp",
+        16,
+        10,
+        10,
+        None,
+        CompressionOrigin::Auto,
+        "replace",
+    )
+    .unwrap();
+    db.add_derivative(
+        photo,
+        "/photos/compressed/manual.webp",
+        "webp",
+        16,
+        10,
+        11,
+        Some("p"),
+        CompressionOrigin::Manual,
+        "keep",
+    )
+    .unwrap();
+
+    let derivatives = db.derivatives_for_photo(photo).unwrap();
+    assert_eq!(derivatives.len(), 2);
+    assert!(
+        derivatives.iter().any(|derivative| derivative.origin
+            == CompressionOrigin::Auto
+            && derivative.profile_id.is_none())
+    );
+    assert!(
+        derivatives.iter().any(|derivative| derivative.origin
+            == CompressionOrigin::Manual
+            && derivative.profile_id.as_deref() == Some("p"))
+    );
 }
 
 #[test]

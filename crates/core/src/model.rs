@@ -378,6 +378,33 @@ impl CompressionProfile {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub enum CompressionOrigin {
+    /// Created by the automatic compression feature.
+    Auto,
+    /// Created by a manual compression job using a profile.
+    Manual,
+}
+
+impl CompressionOrigin {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Manual => "manual",
+        }
+    }
+
+    /// Unknown values are display-only; treat them as manual so a newer row
+    /// never becomes an automatic replacement.
+    pub fn parse(value: &str) -> Self {
+        match value {
+            "auto" => Self::Auto,
+            _ => Self::Manual,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum QueueStatus {
     Waiting,
     Pending,
@@ -750,7 +777,10 @@ pub struct Derivative {
     pub width: u32,
     pub height: u32,
     pub file_size: u64,
-    pub profile_id: String,
+    /// The manual profile that produced this file, or `None` for automatic
+    /// compression.
+    pub profile_id: Option<String>,
+    pub origin: CompressionOrigin,
     pub policy: String,
     pub created_at: String,
 }
@@ -802,7 +832,9 @@ pub const MAX_JOB_RETRIES: i64 = 3;
 pub struct CompressionJob {
     pub id: String,
     pub photo_id: i64,
-    pub profile_id: String,
+    /// The manual profile, or `None` for automatic compression.
+    pub profile_id: Option<String>,
+    pub origin: CompressionOrigin,
     pub status: QueueStatus,
     pub progress: f64,
     pub error: Option<String>,

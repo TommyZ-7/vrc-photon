@@ -11,7 +11,8 @@ use vrc_photon_ai_host::test_support::sample_manifest;
 use vrc_photon_ai_protocol::Probe;
 use vrc_photon_core::ai::PluginInstallation;
 use vrc_photon_core::model::{
-    DeletionStatus, JobStatusCounts, NewPhoto, PhotoContext, SendOrigin, SendStatus,
+    CompressionOrigin, DeletionStatus, JobStatusCounts, NewPhoto, PhotoContext, SendOrigin,
+    SendStatus,
 };
 use vrc_photon_core::settings::{DiscordAutoMode, save_discord_webhook};
 
@@ -1726,7 +1727,7 @@ fn add_replaced_photo(daemon: &Daemon, photo: &Path, derivative: &Path) -> i64 {
         .unwrap();
     let derivative = derivative.to_string_lossy().to_string();
     let derivative_id = db
-        .add_derivative(id, &derivative, "webp", 16, 10, 1, "test", "replace")
+        .add_derivative(id, &derivative, "webp", 16, 10, 1, Some("test"), CompressionOrigin::Manual, "replace")
         .unwrap();
     assert!(db.set_replaced(id, derivative_id).unwrap());
     id
@@ -3290,7 +3291,8 @@ fn cancel_blocked_job_failed_manual_deletion_keeps_files() {
         16,
         10,
         std::fs::metadata(&derivative_path).unwrap().len(),
-        "p",
+        Some("p"),
+        CompressionOrigin::Manual,
         "keep",
     )
     .unwrap();
@@ -3365,7 +3367,8 @@ fn preferred_display_derivative_uses_profile_order_then_id() {
         width: 16,
         height: 10,
         file_size: 1,
-        profile_id: profile.to_string(),
+        profile_id: Some(profile.to_string()),
+        origin: CompressionOrigin::Manual,
         policy: "replace".to_string(),
         created_at: String::new(),
     };
@@ -3549,7 +3552,8 @@ fn unknown_deletion_reason_is_blocked_without_deleting() {
         16,
         10,
         std::fs::metadata(&derivative).unwrap().len(),
-        "p",
+        Some("p"),
+        CompressionOrigin::Manual,
         "keep",
     )
     .unwrap();
@@ -3659,7 +3663,8 @@ fn auto_replace_keeps_the_preferred_display_derivative() {
             16,
             10,
             5,
-            "lossy",
+            Some("lossy"),
+            CompressionOrigin::Manual,
             "replace",
         )
         .unwrap();
@@ -3672,7 +3677,8 @@ fn auto_replace_keeps_the_preferred_display_derivative() {
             16,
             10,
             8,
-            "lossless",
+            Some("lossless"),
+            CompressionOrigin::Manual,
             "replace",
         )
         .unwrap();
@@ -3742,12 +3748,12 @@ fn multi_profile_replace_is_worker_count_independent() {
             .iter()
             .find(|derivative| derivative.id == display_id)
             .expect("display derivative row");
-        assert_eq!(display.profile_id, "lossy", "workers={workers}");
+        assert_eq!(display.profile_id.as_deref(), Some("lossy"), "workers={workers}");
         assert!(Path::new(&display.path).is_file(), "workers={workers}");
 
         let lossless = derivatives
             .iter()
-            .find(|d| d.profile_id == "lossless")
+            .find(|d| d.profile_id.as_deref() == Some("lossless"))
             .unwrap();
         let actual = vrc_photon_core::image_decode::decode_image(Path::new(&lossless.path))
             .unwrap()
@@ -3931,11 +3937,11 @@ fn batch_keeps_the_original_source_after_a_replace_job() {
     let derivatives = db.derivatives_for_photo(photo.id).unwrap();
     let small = derivatives
         .iter()
-        .find(|derivative| derivative.profile_id == "small")
+        .find(|derivative| derivative.profile_id.as_deref() == Some("small"))
         .unwrap();
     let full = derivatives
         .iter()
-        .find(|derivative| derivative.profile_id == "full")
+        .find(|derivative| derivative.profile_id.as_deref() == Some("full"))
         .unwrap();
     assert_eq!((small.width, small.height), (8, 5));
     assert_eq!(
@@ -3979,8 +3985,8 @@ fn batch_continues_after_one_profile_fails() {
 
     let db = Db::open(dir.path().join("library.db")).unwrap();
     let jobs = db.list_jobs(10).unwrap();
-    let good = jobs.iter().find(|job| job.profile_id == "good").unwrap();
-    let bad = jobs.iter().find(|job| job.profile_id == "bad").unwrap();
+    let good = jobs.iter().find(|job| job.profile_id.as_deref() == Some("good")).unwrap();
+    let bad = jobs.iter().find(|job| job.profile_id.as_deref() == Some("bad")).unwrap();
     assert_eq!(good.status, QueueStatus::Completed);
     assert_eq!(bad.status, QueueStatus::Failed);
     assert_eq!(db.derivatives_for_photo(photo.id).unwrap().len(), 1);
@@ -4968,7 +4974,7 @@ fn auto_jobs_follow_profile_sort_order() {
     while let Some(job) = db.next_pending_job().unwrap() {
         order.push(job.profile_id);
     }
-    assert_eq!(order, vec![c.id, a.id, b.id]);
+    assert_eq!(order, vec![Some(c.id), Some(a.id), Some(b.id)]);
 }
 
 #[test]
@@ -5553,7 +5559,8 @@ fn deleting_the_original_promotes_an_existing_derivative() {
             16,
             10,
             std::fs::metadata(&compressed).unwrap().len(),
-            "p",
+            Some("p"),
+            CompressionOrigin::Manual,
             "keep",
         )
         .unwrap();
@@ -5604,7 +5611,8 @@ fn missing_original_promotes_the_preferred_profile() {
             16,
             10,
             5,
-            "lossy",
+            Some("lossy"),
+            CompressionOrigin::Manual,
             "keep",
         )
         .unwrap();
@@ -5617,7 +5625,8 @@ fn missing_original_promotes_the_preferred_profile() {
             16,
             10,
             8,
-            "lossless",
+            Some("lossless"),
+            CompressionOrigin::Manual,
             "keep",
         )
         .unwrap();
