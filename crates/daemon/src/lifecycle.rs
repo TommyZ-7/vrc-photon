@@ -755,18 +755,18 @@ impl Daemon {
         let mut roots: Vec<PathBuf> = self.settings.photo_roots();
         {
             let db = lock_db(&self.db);
-            roots.extend(
-                db.roots()?
-                    .into_iter()
-                    .map(|root| PathBuf::from(root.path)),
-            );
+            roots.extend(db.roots()?.into_iter().map(|root| PathBuf::from(root.path)));
         }
         roots.retain(|root| root.is_dir());
         roots.sort();
         roots.dedup();
         let pruned: Vec<PathBuf> = roots
             .iter()
-            .filter(|root| !roots.iter().any(|other| other != *root && root.starts_with(other)))
+            .filter(|root| {
+                !roots
+                    .iter()
+                    .any(|other| other != *root && root.starts_with(other))
+            })
             .cloned()
             .collect();
         Ok(pruned)
@@ -1408,8 +1408,7 @@ impl Daemon {
                     );
                     if relevant {
                         for path in event.paths {
-                            if removal || (!is_compressed_path(&path) && is_source_photo(&path))
-                            {
+                            if removal || (!is_compressed_path(&path) && is_source_photo(&path)) {
                                 self.dirty_paths.push(path);
                             }
                         }
