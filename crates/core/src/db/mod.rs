@@ -161,6 +161,21 @@ impl Db {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
+        // Probe an existing database read-only first. Opening it read-write
+        // would recover/checkpoint a WAL before the version check, modifying a
+        // database this build is about to reject.
+        if path.exists() {
+            let probe = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+            let version = schema_version(&probe)?;
+            if version != 0 && version != SCHEMA_VERSION {
+                check_schema_version(version)?;
+            }
+            if version == 0 && has_user_tables(&probe)? {
+                return Err(CoreError::Invalid(
+                    "database has tables but user_version is 0; refusing to modify it".to_string(),
+                ));
+            }
+        }
         let conn = Connection::open(path)?;
         let version = schema_version(&conn)?;
         if version != 0 && version != SCHEMA_VERSION {

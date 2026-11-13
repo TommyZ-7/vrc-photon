@@ -101,7 +101,8 @@ pub struct AppSettings {
     pub auto_compress: bool,
     pub auto_compress_backlog: bool,
     /// Whether automatic compression keeps the original after a successful
-    /// encode. Manual compression chooses this per run and never reads it.
+    /// encode. Manual compression always keeps the original and never reads
+    /// this value.
     #[serde(default = "default_true", alias = "compression_keep_original")]
     pub auto_compress_keep_original: bool,
     #[serde(default = "default_true")]

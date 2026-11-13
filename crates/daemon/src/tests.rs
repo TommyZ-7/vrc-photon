@@ -5606,6 +5606,61 @@ fn manual_job_with_replace_policy_does_not_change_the_display() {
 }
 
 #[test]
+fn failed_job_blocks_deletion_until_retry_succeeds() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = replace_test_daemon(&dir);
+    let db_path = dir.path().join("library.db");
+    let original = original_path(&dir);
+    daemon.run_once().unwrap();
+
+    let db = Db::open(&db_path).unwrap();
+    let photo = db
+        .photo_by_path(original.to_str().unwrap())
+        .unwrap()
+        .unwrap();
+    db.save_profile(&CompressionProfile {
+        id: "manual".to_string(),
+        name: "Manual".to_string(),
+        ..CompressionProfile::default()
+    })
+    .unwrap();
+    // Enqueue the failing manual job before the auto replacement runs. The
+    // batch processes the auto job first, then this one fails.
+    let blocked_output = dir.path().join("photos/blocked");
+    std::fs::write(&blocked_output, b"not a directory").unwrap();
+    db.enqueue_job_with_output_dir(
+        photo.id,
+        "manual",
+        "replace",
+        Some(blocked_output.to_str().unwrap()),
+    )
+    .unwrap();
+    drop(db);
+
+    daemon.compress_pending().unwrap();
+
+    let db = Db::open(&db_path).unwrap();
+    let photo = db.photo_by_id(photo.id).unwrap().unwrap();
+    assert!(original.exists(), "a failed job must keep the original");
+    assert_eq!(photo.status, PhotoStatus::Replaced);
+    let request = db.active_deletion_request(photo.id).unwrap().unwrap();
+    assert_eq!(request.status, DeletionStatus::Blocked);
+    assert_eq!(request.blocked_reason.as_deref(), Some("job_failed"));
+
+    std::fs::remove_file(&blocked_output).unwrap();
+    let failed = db.list_jobs_by_status(QueueStatus::Failed, 10).unwrap();
+    assert_eq!(failed.len(), 1);
+    db.retry_job(&failed[0].id).unwrap();
+    drop(db);
+    daemon.compress_pending().unwrap();
+
+    let db = Db::open(&db_path).unwrap();
+    assert!(!original.exists());
+    assert!(db.active_deletion_request(photo.id).unwrap().is_none());
+    assert_eq!(db.count_jobs(QueueStatus::Failed).unwrap(), 0);
+}
+
+#[test]
 fn auto_replace_compression_keeps_the_photo_visible() {
     let dir = tempfile::tempdir().unwrap();
     let mut daemon = replace_test_daemon(&dir);

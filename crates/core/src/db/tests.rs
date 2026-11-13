@@ -7603,6 +7603,58 @@ fn derivative_origin_and_nullable_profile_roundtrip() {
 }
 
 #[test]
+fn v18_wal_database_is_rejected_without_modification() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("source.db");
+    let source_wal = dir.path().join("source.db-wal");
+    let source_shm = dir.path().join("source.db-shm");
+    let writer = Connection::open(&source).unwrap();
+    writer
+        .execute_batch(
+            "PRAGMA journal_mode = WAL; \
+             PRAGMA wal_autocheckpoint = 0; \
+             CREATE TABLE legacy_marker(value TEXT); \
+             INSERT INTO legacy_marker(value) VALUES ('keep'); \
+             PRAGMA user_version = 18;",
+        )
+        .unwrap();
+    // A second write leaves frames in the WAL that a read-write open would
+    // recover/checkpoint before the version check.
+    writer
+        .execute(
+            "INSERT INTO legacy_marker(value) VALUES ('pending-wal')",
+            [],
+        )
+        .unwrap();
+    assert!(source_wal.is_file());
+    assert!(std::fs::metadata(&source_wal).unwrap().len() > 0);
+
+    // Copy while the writer still holds the WAL, then close it so the copy
+    // retains an uncheckpointed WAL like a crashed process would.
+    let path = dir.path().join("library.db");
+    let wal_path = dir.path().join("library.db-wal");
+    let shm_path = dir.path().join("library.db-shm");
+    std::fs::copy(&source, &path).unwrap();
+    std::fs::copy(&source_wal, &wal_path).unwrap();
+    std::fs::copy(&source_shm, &shm_path).unwrap();
+    drop(writer);
+
+    let main_before = std::fs::read(&path).unwrap();
+    let wal_before = std::fs::read(&wal_path).unwrap();
+
+    let error = Db::open(&path).err().expect("v18 DB must be rejected");
+    let CoreError::Invalid(message) = error else {
+        panic!("expected an explicit schema error");
+    };
+    assert!(message.contains("18"), "{message}");
+    assert!(Db::open_read_only(&path).is_err());
+
+    assert_eq!(std::fs::read(&path).unwrap(), main_before);
+    assert_eq!(std::fs::read(&wal_path).unwrap(), wal_before);
+    assert!(wal_path.is_file());
+}
+
+#[test]
 fn photos_without_hash_after_skips_earlier_ids() {
     let db = Db::open_in_memory().unwrap();
     let root = db.add_root("/photos", "reference").unwrap();

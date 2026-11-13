@@ -1753,6 +1753,35 @@ mod tests {
     }
 
     #[test]
+    fn planning_errors_terminalise_the_claimed_row() {
+        let dir = tempfile::tempdir().unwrap();
+        let (db, photo) = discord_db(&dir);
+        with_db(&db, |db| {
+            let mut settings = AppSettings::load(db).unwrap();
+            settings.discord_enabled = true;
+            settings.discord_include_players = true;
+            settings.save(db).unwrap();
+            save_discord_webhook(db, "https://discord.com/api/webhooks/1/t").unwrap();
+            // The claim itself does not read player rows, but planning does.
+            db.connection()
+                .execute("DROP TABLE photo_players", [])
+                .unwrap();
+        });
+        let id = enqueue_photo(&db, photo);
+        let transport = FakeTransport::default();
+        let events = EventBus::default();
+        assert!(
+            process_next_send(&db, &transport, &events, 100).is_err(),
+            "the planning error must surface for logging"
+        );
+        let entry = with_db(&db, |db| db.send_entry_by_id(id).unwrap().unwrap());
+        assert_eq!(entry.status, SendStatus::Failed);
+        assert_eq!(entry.error_code.as_deref(), Some("unknown"));
+        assert_eq!(entry.error_detail.as_deref(), Some("internal error"));
+        assert!(transport.requests.lock().unwrap().is_empty());
+    }
+
+    #[test]
     fn failed_send_prunes_terminal_history() {
         let dir = tempfile::tempdir().unwrap();
         let (db, photo) = discord_db(&dir);
