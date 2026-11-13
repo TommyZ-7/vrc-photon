@@ -32,15 +32,6 @@ pub(crate) enum FeatureCompressionTarget {
 pub(crate) enum ManualOutputTarget {
     Folder,
     Profile,
-    Clipboard,
-}
-
-pub(crate) fn manual_output_available(
-    photo_count: usize,
-    target: ManualOutputTarget,
-    clipboard_enabled: bool,
-) -> bool {
-    target != ManualOutputTarget::Clipboard || (clipboard_enabled && photo_count == 1)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -136,28 +127,6 @@ impl App {
         self.settings.clipboard_compression.normalize();
         if let Err(error) = self.settings.save(&self.db) {
             tracing::warn!(%error, "cannot save clipboard compression settings");
-        }
-        cx.notify();
-    }
-
-    pub(crate) fn set_clipboard_profile(
-        &mut self,
-        profile_id: &str,
-        enabled: bool,
-        cx: &mut Context<Self>,
-    ) {
-        let mut updates = Vec::new();
-        for profile in &mut self.profiles {
-            let should_enable = enabled && profile.id == profile_id;
-            if profile.clipboard != should_enable {
-                profile.clipboard = should_enable;
-                updates.push(profile.clone());
-            }
-        }
-        for profile in updates {
-            if let Err(error) = self.db.save_profile(&profile) {
-                tracing::warn!(%error, profile_id = %profile.id, "cannot save clipboard flag");
-            }
         }
         cx.notify();
     }
@@ -302,30 +271,65 @@ impl App {
             return;
         }
         if ids.len() != 1 {
-            // A clipboard holds one image. Opening the normal modal would hide
-            // the output selector and leave the confirm button disabled.
             self.toast_error(tr!("compression.clipboard_single"), cx);
             cx.notify();
             return;
         }
-        if let Some(profile) = self
-            .profiles
-            .iter()
-            .find(|profile| profile.clipboard && profile.enabled)
-            .cloned()
-        {
-            self.manual_compress = Some(ManualCompressionDialog {
-                photo_ids: ids,
-                profile_id: profile.id,
-                output: ManualOutputTarget::Clipboard,
-                folder: None,
-                keep_original: true,
-                hide_output: true,
-            });
-            self.confirm_manual_compression(cx);
+        let photo_id = ids[0];
+        let Some(photo) = self.db.photo_by_id(photo_id).ok().flatten() else {
+            self.toast_error(tr!("compression.photo_missing"), cx);
+            cx.notify();
             return;
-        }
-        self.open_manual_compression_with_target(ids, ManualOutputTarget::Clipboard, None, cx);
+        };
+        let source = PathBuf::from(photo.effective_path());
+        let resize = self.settings.clipboard_compression;
+        self.toast_info(tr!("compression.clipboard_copying"), cx);
+        cx.notify();
+        cx.spawn(async move |this, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    let png = compressor::render_clipboard_png(&source, &resize)
+                        .map_err(|error| error.to_string())?;
+                    #[cfg(any(target_os = "linux", target_os = "windows"))]
+                    {
+                        crate::clipboard::write_png(&png)?;
+                        Ok::<Vec<u8>, String>(png)
+                    }
+                    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+                    {
+                        Ok::<Vec<u8>, String>(png)
+                    }
+                })
+                .await;
+            this.update(cx, |this, cx| {
+                match result {
+                    Ok(png) => {
+                        #[cfg(any(target_os = "linux", target_os = "windows"))]
+                        {
+                            let _ = png;
+                            this.toast_success(tr!("compression.clipboard_copied"), cx);
+                        }
+                        #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+                        {
+                            cx.write_to_clipboard(gpui_kit::ClipboardItem::new_image(
+                                &gpui_kit::Image::from_bytes(gpui_kit::ImageFormat::Png, png),
+                            ));
+                            this.toast_success(tr!("compression.clipboard_copied"), cx);
+                        }
+                    }
+                    Err(error) => {
+                        this.toast_error(
+                            tr_args!("compression.clipboard_error", error = error),
+                            cx,
+                        );
+                    }
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
     }
 
     fn open_manual_compression_with_target(
@@ -335,11 +339,6 @@ impl App {
         folder: Option<String>,
         cx: &mut Context<Self>,
     ) {
-        if output == ManualOutputTarget::Clipboard && !self.settings.clipboard_enabled {
-            self.toast_error(tr!("compression.clipboard_disabled"), cx);
-            cx.notify();
-            return;
-        }
         let ids = self.existing_photo_ids(photo_ids);
         if ids.is_empty() {
             self.toast_error(tr!("compression.select_photos"), cx);
@@ -411,81 +410,6 @@ impl App {
             cx.notify();
             return;
         };
-        if !manual_output_available(
-            dialog.photo_ids.len(),
-            dialog.output,
-            self.settings.clipboard_enabled,
-        ) {
-            let message = if self.settings.clipboard_enabled {
-                tr!("compression.clipboard_single")
-            } else {
-                tr!("compression.clipboard_disabled")
-            };
-            self.toast_error(message, cx);
-            cx.notify();
-            return;
-        }
-
-        if dialog.output == ManualOutputTarget::Clipboard {
-            let photo_id = dialog.photo_ids[0];
-            let Some(photo) = self.db.photo_by_id(photo_id).ok().flatten() else {
-                self.manual_compress = None;
-                self.toast_error(tr!("compression.photo_missing"), cx);
-                cx.notify();
-                return;
-            };
-            let source = PathBuf::from(photo.effective_path());
-            self.manual_compress = None;
-            self.toast_info(tr!("compression.clipboard_copying"), cx);
-            cx.notify();
-            cx.spawn(async move |this, cx| {
-                let result = cx
-                    .background_executor()
-                    .spawn(async move {
-                        let png = compressor::render_clipboard_png(&source, &profile)
-                            .map_err(|error| error.to_string())?;
-                        #[cfg(any(target_os = "linux", target_os = "windows"))]
-                        {
-                            crate::clipboard::write_png(&png)?;
-                            Ok::<Vec<u8>, String>(png)
-                        }
-                        #[cfg(not(any(target_os = "linux", target_os = "windows")))]
-                        {
-                            Ok::<Vec<u8>, String>(png)
-                        }
-                    })
-                    .await;
-                this.update(cx, |this, cx| {
-                    match result {
-                        Ok(png) => {
-                            #[cfg(any(target_os = "linux", target_os = "windows"))]
-                            {
-                                let _ = png;
-                                this.toast_success(tr!("compression.clipboard_copied"), cx);
-                            }
-                            #[cfg(not(any(target_os = "linux", target_os = "windows")))]
-                            {
-                                cx.write_to_clipboard(gpui_kit::ClipboardItem::new_image(
-                                    &gpui_kit::Image::from_bytes(gpui_kit::ImageFormat::Png, png),
-                                ));
-                                this.toast_success(tr!("compression.clipboard_copied"), cx);
-                            }
-                        }
-                        Err(error) => {
-                            this.toast_error(
-                                tr_args!("compression.clipboard_error", error = error),
-                                cx,
-                            );
-                        }
-                    }
-                    cx.notify();
-                })
-                .ok();
-            })
-            .detach();
-            return;
-        }
-
         let output_dir = if dialog.output == ManualOutputTarget::Folder {
             let Some(folder) = dialog.folder.as_deref() else {
                 self.toast_warning(tr!("compression.choose_output"), cx);
@@ -841,8 +765,8 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::{
-        MAX_PROFILE_NAME_CHARS, ManualOutputTarget, ProfileNameError, discord_profile_toggle,
-        manual_output_available, normalize_profile_name, profile_name_update,
+        MAX_PROFILE_NAME_CHARS, ProfileNameError, discord_profile_toggle,
+        normalize_profile_name, profile_name_update,
     };
     use vrc_photon_core::model::CompressionProfile;
 
@@ -861,35 +785,6 @@ mod tests {
         assert!(discord_profile_toggle(&profile, "disabled", true));
         assert!(!discord_profile_toggle(&profile, "other", true));
         assert!(!discord_profile_toggle(&profile, "disabled", false));
-    }
-
-    #[test]
-    fn clipboard_output_is_limited_to_one_photo_and_the_enabled_setting() {
-        assert!(manual_output_available(
-            1,
-            ManualOutputTarget::Clipboard,
-            true
-        ));
-        assert!(!manual_output_available(
-            2,
-            ManualOutputTarget::Clipboard,
-            true
-        ));
-        assert!(!manual_output_available(
-            1,
-            ManualOutputTarget::Clipboard,
-            false
-        ));
-        assert!(manual_output_available(
-            2,
-            ManualOutputTarget::Folder,
-            false
-        ));
-        assert!(manual_output_available(
-            2,
-            ManualOutputTarget::Profile,
-            false
-        ));
     }
 
     #[test]

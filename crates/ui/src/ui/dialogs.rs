@@ -12,7 +12,7 @@ use gpui_kit::*;
 use vrc_photon_i18n::{tr, tr_args};
 
 use crate::app::App;
-use crate::app::compression::{ManualOutputTarget, manual_output_available};
+use crate::app::compression::ManualOutputTarget;
 use crate::ui::components::{dialog_panel, manual_option_row};
 use crate::ui::theme::*;
 
@@ -48,9 +48,6 @@ impl App {
         let can_confirm = match dialog.output {
             ManualOutputTarget::Folder => folder_ready,
             ManualOutputTarget::Profile => selected_profile.is_some(),
-            ManualOutputTarget::Clipboard => {
-                manual_output_available(count, dialog.output, self.settings.clipboard_enabled)
-            }
         };
 
         let profiles = self.profiles.clone();
@@ -103,34 +100,6 @@ impl App {
             cx.notify();
         }));
 
-        let clipboard_enabled = manual_output_available(
-            count,
-            ManualOutputTarget::Clipboard,
-            self.settings.clipboard_enabled,
-        );
-        let clipboard_row = manual_option_row(
-            &self.palette,
-            "manual-output-clipboard",
-            tr!("dialog.output.clipboard"),
-            if !self.settings.clipboard_enabled {
-                tr!("dialog.output.clipboard_disabled")
-            } else if clipboard_enabled {
-                tr!("dialog.output.clipboard_hint")
-            } else {
-                tr!("dialog.output.clipboard_single")
-            },
-            dialog.output == ManualOutputTarget::Clipboard,
-            clipboard_enabled,
-        )
-        .when(clipboard_enabled, |this| {
-            this.on_click(cx.listener(|this, _, _, cx| {
-                if let Some(dialog) = &mut this.manual_compress {
-                    dialog.output = ManualOutputTarget::Clipboard;
-                }
-                cx.notify();
-            }))
-        });
-
         let keep_row = manual_option_row(
             &self.palette,
             "manual-keep-original",
@@ -164,11 +133,7 @@ impl App {
             .folder
             .clone()
             .unwrap_or_else(|| tr!("dialog.folder.not_selected"));
-        let confirm_label = if dialog.output == ManualOutputTarget::Clipboard {
-            tr!("dialog.output.clipboard_target")
-        } else {
-            tr_args!("dialog.compress_count", count = count)
-        };
+        let confirm_label = tr_args!("dialog.compress_count", count = count);
 
         let header = v_flex().gap(px(16.)).child(
             h_flex()
@@ -240,23 +205,9 @@ impl App {
                         },
                     ))
                     .child(profile_row)
-                    .child(clipboard_row)
             })
-            .when(dialog.output != ManualOutputTarget::Clipboard, |this| {
-                this.child(self.section_label(tr!("dialog.section.original")))
-                    .child(v_flex().gap(px(6.)).child(keep_row).child(trash_row))
-            })
-            .when(dialog.output == ManualOutputTarget::Clipboard, |this| {
-                this.child(
-                    div()
-                        .p(px(10.))
-                        .rounded(px(8.))
-                        .bg(rgb(p.panel_2))
-                        .text_size(px(10.))
-                        .text_color(rgb(p.muted))
-                        .child(tr!("dialog.clipboard_note")),
-                )
-            });
+            .child(self.section_label(tr!("dialog.section.original")))
+            .child(v_flex().gap(px(6.)).child(keep_row).child(trash_row));
 
         let footer = h_flex()
             .flex_shrink_0()

@@ -6,7 +6,7 @@ use image::DynamicImage;
 
 use crate::error::{CoreError, Result};
 use crate::fs_safe::{self, PlaceOutcome};
-use crate::model::{CompressionFormat, CompressionProfile, ResizeMode};
+use crate::model::{CompressionFormat, CompressionProfile, ResizeMode, ResizeSettings};
 
 #[derive(Debug, Clone)]
 pub struct CompressionResult {
@@ -136,14 +136,14 @@ fn resize_for_profile<'a>(
     }
 }
 
-/// Renders the profile's resize result as PNG bytes for the system clipboard.
+/// Renders the resize settings as PNG bytes for the system clipboard.
 ///
-/// Clipboard image consumers expect PNG regardless of the profile's output
-/// format, so the encoder format and quality do not apply here.
-pub fn render_clipboard_png(source: &Path, profile: &CompressionProfile) -> Result<Vec<u8>> {
+/// Clipboard image consumers expect PNG regardless of any encoder settings, so
+/// only the resize parameters apply here.
+pub fn render_clipboard_png(source: &Path, resize: &ResizeSettings) -> Result<Vec<u8>> {
     let image = crate::image_decode::decode_image(source)
         .ok_or_else(|| CoreError::Invalid(format!("cannot decode {}", source.display())))?;
-    let image = resize_for_profile(&image, profile);
+    let image = resize_for_settings(&image, resize);
     let mut bytes = Vec::new();
     image
         .write_to(
@@ -152,6 +152,34 @@ pub fn render_clipboard_png(source: &Path, profile: &CompressionProfile) -> Resu
         )
         .map_err(|error| CoreError::Invalid(format!("cannot encode clipboard PNG: {error}")))?;
     Ok(bytes)
+}
+
+fn resize_for_settings<'a>(
+    image: &'a DynamicImage,
+    resize: &ResizeSettings,
+) -> Cow<'a, DynamicImage> {
+    if !resize.resize_enabled || resize.width == 0 || resize.height == 0 {
+        return Cow::Borrowed(image);
+    }
+    if resize.resize_mode == ResizeMode::DownscaleOnly
+        && image.width() <= resize.width
+        && image.height() <= resize.height
+    {
+        return Cow::Borrowed(image);
+    }
+    if resize.maintain_aspect {
+        Cow::Owned(image.resize(
+            resize.width,
+            resize.height,
+            image::imageops::FilterType::Lanczos3,
+        ))
+    } else {
+        Cow::Owned(image.resize_exact(
+            resize.width,
+            resize.height,
+            image::imageops::FilterType::Lanczos3,
+        ))
+    }
 }
 
 /// Removes characters that would change the output path or are invalid in
@@ -703,19 +731,34 @@ mod tests {
     }
 
     #[test]
-    fn renders_png_for_the_clipboard_with_profile_resize() {
+    fn clipboard_png_applies_resize_settings_only() {
         let dir = tempdir().unwrap();
         let source = dir.path().join("VRChat_2026-10-21_21-14-03.221_16x10.png");
         sample(&source);
-        let mut profile = profile(CompressionFormat::Webp);
-        profile.resize_enabled = true;
-        profile.width = 8;
-        profile.height = 8;
+        let resize = ResizeSettings {
+            resize_enabled: true,
+            resize_mode: ResizeMode::Always,
+            width: 8,
+            height: 8,
+            maintain_aspect: false,
+        };
 
-        let bytes = render_clipboard_png(&source, &profile).unwrap();
+        let bytes = render_clipboard_png(&source, &resize).unwrap();
 
         assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
         let decoded = image::load_from_memory(&bytes).unwrap();
-        assert_eq!(decoded.dimensions(), (8, 5));
+        assert_eq!(decoded.dimensions(), (8, 8));
+    }
+
+    #[test]
+    fn clipboard_render_writes_no_files() {
+        let dir = tempdir().unwrap();
+        let source = dir.path().join("photo.png");
+        sample(&source);
+        let resize = ResizeSettings::clipboard_default();
+
+        render_clipboard_png(&source, &resize).unwrap();
+
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
     }
 }

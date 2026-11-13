@@ -23,8 +23,7 @@ use crate::app::ai::{
 use crate::app::compression::FeatureCompressionTarget;
 use crate::state::motion::ToggleMotion;
 use crate::ui::components::{
-    card_divider, chip, compression_policy_warning, glass_panel, manual_option_row,
-    status_progress_bar,
+    card_divider, chip, compression_policy_warning, glass_panel, status_progress_bar,
 };
 use crate::ui::theme::*;
 
@@ -764,49 +763,20 @@ impl App {
         let p = self.palette;
         let enabled = self.settings.clipboard_enabled;
         let motion = self.integrations_clipboard_motion;
-        let profiles = self.profiles.clone();
+        let resize = self.settings.clipboard_compression;
 
         let body = v_flex()
             .pt(px(12.))
             .gap(px(8.))
             .child(card_divider(&p))
+            .child(self.section_label(tr!("compression.section.resize")))
+            .child(self.resize_settings_editor("clipboard-resize", &resize, cx))
             .child(
                 div()
                     .text_size(px(10.))
                     .text_color(rgb(p.muted_2))
-                    .child(tr!("integrations.clipboard.profiles_hint")),
-            )
-            .child(card_divider(&p))
-            .child(if profiles.is_empty() {
-                div()
-                    .text_size(px(10.))
-                    .text_color(rgb(p.muted_2))
-                    .child(tr!("integrations.clipboard.profiles_empty"))
-                    .into_any_element()
-            } else {
-                v_flex()
-                    .id("integrations-clipboard-profiles")
-                    .max_h(px(180.))
-                    .overflow_y_scrollbar()
-                    .gap(px(4.))
-                    .children(profiles.into_iter().map(|profile| {
-                        let id = profile.id.clone();
-                        let selected = profile.clipboard;
-                        manual_option_row(
-                            &p,
-                            SharedString::from(format!("clipboard-profile-{}", profile.id)),
-                            profile.name.clone(),
-                            profile_summary(&profile),
-                            selected,
-                            true,
-                        )
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.set_clipboard_profile(&id, !selected, cx);
-                        }))
-                        .into_any_element()
-                    }))
-                    .into_any_element()
-            });
+                    .child(tr!("integrations.clipboard.resize_note")),
+            );
 
         glass_panel(&self.palette)
             .flex()
@@ -988,6 +958,12 @@ mod tests {
     fn auto_compression_summary_uses_the_auto_options() {
         let options = CompressionOptions::discord_default();
         assert!(auto_compression_summary(true, &options).contains("WebP"));
+    }
+
+    #[test]
+    fn clipboard_summary_uses_the_resize_settings() {
+        let resize = ResizeSettings::clipboard_default();
+        assert!(clipboard_summary(true, &resize).contains("2560"));
     }
 
     #[test]
