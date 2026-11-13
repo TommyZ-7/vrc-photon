@@ -187,17 +187,19 @@ impl App {
             Ok(entries) => {
                 let anchor = {
                     let mut view = self.search_view.borrow_mut();
-                    view.replace_index(Arc::new(PhotoIndex::new(entries)));
+                    let changed = view.replace_index_if_changed(Arc::new(PhotoIndex::new(entries)));
                     let anchor = search_anchor_after_result(requested_anchor, &view.index);
-                    let columns = view.columns.max(1);
-                    let row = anchor.and_then(|id| view.index.row_of_id(id));
-                    match row {
-                        Some(row) => {
-                            view.scroll
-                                .scroll_to_item_strict(row / columns, ScrollStrategy::Top);
-                        }
-                        None => {
-                            view.scroll.scroll_to_item_strict(0, ScrollStrategy::Top);
+                    if changed {
+                        let columns = view.columns.max(1);
+                        let row = anchor.and_then(|id| view.index.row_of_id(id));
+                        match row {
+                            Some(row) => {
+                                view.scroll
+                                    .scroll_to_item_strict(row / columns, ScrollStrategy::Top);
+                            }
+                            None => {
+                                view.scroll.scroll_to_item_strict(0, ScrollStrategy::Top);
+                            }
                         }
                     }
                     anchor
