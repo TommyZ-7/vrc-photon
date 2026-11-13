@@ -82,6 +82,160 @@ impl std::fmt::Display for CompressionFormat {
     }
 }
 
+impl CompressionFormat {
+    /// JPEG has no lossless mode in this encoder chain; AVIF is approximated
+    /// with quality 100.
+    pub fn supports_lossless(&self) -> bool {
+        !matches!(self, Self::Jpeg)
+    }
+}
+
+/// Quality bounds shared by the settings normalizer and the UI sliders.
+pub const COMPRESSION_QUALITY_MIN: u8 = 1;
+pub const COMPRESSION_QUALITY_MAX: u8 = 100;
+/// Encoder speed bounds (1 = slowest/best, 10 = fastest).
+pub const COMPRESSION_SPEED_MIN: u8 = 1;
+pub const COMPRESSION_SPEED_MAX: u8 = 10;
+/// Resize bounds accepted from persisted settings.
+pub const COMPRESSION_DIMENSION_MIN: u32 = 1;
+pub const COMPRESSION_DIMENSION_MAX: u32 = 16_384;
+
+/// Resize parameters shared by profiles and feature-specific compression.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResizeSettings {
+    pub resize_enabled: bool,
+    #[serde(default)]
+    pub resize_mode: ResizeMode,
+    pub width: u32,
+    pub height: u32,
+    pub maintain_aspect: bool,
+}
+
+impl Default for ResizeSettings {
+    fn default() -> Self {
+        Self {
+            resize_enabled: false,
+            resize_mode: ResizeMode::DownscaleOnly,
+            width: 3840,
+            height: 2160,
+            maintain_aspect: true,
+        }
+    }
+}
+
+impl ResizeSettings {
+    /// Clipboard default: the former "discord用webp" resize bounds.
+    pub fn clipboard_default() -> Self {
+        Self {
+            resize_enabled: true,
+            resize_mode: ResizeMode::DownscaleOnly,
+            width: 2560,
+            height: 1440,
+            maintain_aspect: true,
+        }
+    }
+
+    pub fn normalize(&mut self) {
+        self.width = self
+            .width
+            .clamp(COMPRESSION_DIMENSION_MIN, COMPRESSION_DIMENSION_MAX);
+        self.height = self
+            .height
+            .clamp(COMPRESSION_DIMENSION_MIN, COMPRESSION_DIMENSION_MAX);
+    }
+}
+
+/// Compression parameters owned by one feature (automatic compression,
+/// Discord sending, or the manual profile editor).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CompressionOptions {
+    pub format: CompressionFormat,
+    pub quality: u8,
+    pub lossless: bool,
+    /// 1 = slowest/best, 10 = fastest
+    pub encode_speed: u8,
+    #[serde(flatten)]
+    pub resize: ResizeSettings,
+}
+
+impl Default for CompressionOptions {
+    fn default() -> Self {
+        Self {
+            format: CompressionFormat::Webp,
+            quality: 82,
+            lossless: false,
+            encode_speed: 6,
+            resize: ResizeSettings::default(),
+        }
+    }
+}
+
+impl CompressionOptions {
+    /// Default for automatic compression: the former "無劣化webp" profile.
+    pub fn auto_default() -> Self {
+        Self {
+            lossless: true,
+            ..Self::default()
+        }
+    }
+
+    /// Default for Discord sending: the former "discord用webp" profile.
+    pub fn discord_default() -> Self {
+        Self {
+            lossless: true,
+            resize: ResizeSettings::clipboard_default(),
+            ..Self::default()
+        }
+    }
+
+    pub fn normalize(&mut self) {
+        self.quality = self
+            .quality
+            .clamp(COMPRESSION_QUALITY_MIN, COMPRESSION_QUALITY_MAX);
+        self.encode_speed = self
+            .encode_speed
+            .clamp(COMPRESSION_SPEED_MIN, COMPRESSION_SPEED_MAX);
+        self.resize.normalize();
+    }
+
+    /// Switches the encoder format and drops lossless when the format cannot
+    /// represent it.
+    pub fn set_format(&mut self, format: CompressionFormat) {
+        if !format.supports_lossless() {
+            self.lossless = false;
+        }
+        self.format = format;
+    }
+
+    pub fn to_profile(
+        &self,
+        id: &str,
+        name: &str,
+        output_dir: Option<String>,
+        suffix: String,
+    ) -> CompressionProfile {
+        CompressionProfile {
+            id: id.to_string(),
+            name: name.to_string(),
+            enabled: true,
+            auto_enabled: false,
+            clipboard: false,
+            discord: false,
+            format: self.format.clone(),
+            quality: self.quality,
+            lossless: self.lossless,
+            resize_enabled: self.resize.resize_enabled,
+            resize_mode: self.resize.resize_mode,
+            width: self.resize.width,
+            height: self.resize.height,
+            maintain_aspect: self.resize.maintain_aspect,
+            output_dir,
+            suffix,
+            encode_speed: self.encode_speed,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ResizeMode {
@@ -159,6 +313,23 @@ impl Default for CompressionProfile {
 }
 
 impl CompressionProfile {
+    /// Copies the compression parameters into the feature-level shape.
+    pub fn options(&self) -> CompressionOptions {
+        CompressionOptions {
+            format: self.format.clone(),
+            quality: self.quality,
+            lossless: self.lossless,
+            encode_speed: self.encode_speed,
+            resize: ResizeSettings {
+                resize_enabled: self.resize_enabled,
+                resize_mode: self.resize_mode,
+                width: self.width,
+                height: self.height,
+                maintain_aspect: self.maintain_aspect,
+            },
+        }
+    }
+
     /// Built-in presets seeded into an empty database.
     pub fn defaults() -> Vec<Self> {
         vec![

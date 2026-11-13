@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::db::Db;
 use crate::error::Result;
+use crate::model::{CompressionOptions, ResizeSettings};
 
 const SETTINGS_KEY: &str = "app_settings";
 
@@ -105,6 +106,16 @@ pub struct AppSettings {
     pub auto_compress_keep_original: bool,
     #[serde(default = "default_true")]
     pub auto_compress_immediate: bool,
+    /// Compression parameters used by automatic compression. They are
+    /// independent of the manual compression profiles.
+    #[serde(default = "default_auto_compression")]
+    pub auto_compression: CompressionOptions,
+    /// Resize-only parameters used by the clipboard action.
+    #[serde(default = "default_clipboard_compression")]
+    pub clipboard_compression: ResizeSettings,
+    /// Compression parameters used when Discord has to encode an upload.
+    #[serde(default = "default_discord_compression")]
+    pub discord_compression: CompressionOptions,
     pub estimated_link: bool,
     pub thumbnail_cache_mb: u64,
     /// Width of the fixed 16:9 thumbnail canvas (256, 384, or 512).
@@ -206,6 +217,18 @@ pub struct AppSettings {
 
 fn default_true() -> bool {
     true
+}
+
+fn default_auto_compression() -> CompressionOptions {
+    CompressionOptions::auto_default()
+}
+
+fn default_clipboard_compression() -> ResizeSettings {
+    ResizeSettings::clipboard_default()
+}
+
+fn default_discord_compression() -> CompressionOptions {
+    CompressionOptions::discord_default()
 }
 
 fn default_max_fps() -> u32 {
@@ -327,6 +350,9 @@ impl Default for AppSettings {
             auto_compress_backlog: false,
             auto_compress_keep_original: true,
             auto_compress_immediate: true,
+            auto_compression: default_auto_compression(),
+            clipboard_compression: default_clipboard_compression(),
+            discord_compression: default_discord_compression(),
             estimated_link: true,
             thumbnail_cache_mb: 8192,
             thumbnail_size: crate::thumbnail::THUMBNAIL_SIZE_DEFAULT,
@@ -382,6 +408,7 @@ impl AppSettings {
                     settings.normalize_discord_destination();
                     settings.normalize_ai_settings();
                     settings.normalize_grid_display();
+                    settings.normalize_compression_settings();
                     Ok(settings)
                 }
                 Err(error) => {
@@ -412,6 +439,7 @@ impl AppSettings {
         settings.normalize_discord_destination();
         settings.normalize_ai_settings();
         settings.normalize_grid_display();
+        settings.normalize_compression_settings();
         let json = serde_json::to_string_pretty(&settings)?;
         db.set_setting(SETTINGS_KEY, &json)
     }
@@ -448,6 +476,12 @@ impl AppSettings {
         self.ui_card_radius = self
             .ui_card_radius
             .clamp(UI_CARD_RADIUS_MIN, UI_CARD_RADIUS_MAX);
+    }
+
+    fn normalize_compression_settings(&mut self) {
+        self.auto_compression.normalize();
+        self.clipboard_compression.normalize();
+        self.discord_compression.normalize();
     }
 
     pub fn photo_roots(&self) -> Vec<PathBuf> {
@@ -619,6 +653,54 @@ pub fn clear_discord_webhook(db: &Db) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::{CompressionFormat, CompressionOptions, ResizeMode, ResizeSettings};
+
+    #[test]
+    fn legacy_settings_without_feature_compression_use_defaults() {
+        let settings: AppSettings = serde_json::from_str("{}").unwrap();
+        assert_eq!(
+            settings.auto_compression,
+            CompressionOptions::auto_default()
+        );
+        assert_eq!(
+            settings.clipboard_compression,
+            ResizeSettings::clipboard_default()
+        );
+        assert_eq!(
+            settings.discord_compression,
+            CompressionOptions::discord_default()
+        );
+    }
+
+    #[test]
+    fn feature_compression_defaults_match_the_builtin_profiles() {
+        let auto = CompressionOptions::auto_default();
+        assert_eq!(auto.format, CompressionFormat::Webp);
+        assert!(auto.lossless);
+        assert!(!auto.resize.resize_enabled);
+
+        let discord = CompressionOptions::discord_default();
+        assert_eq!(discord.format, CompressionFormat::Webp);
+        assert!(discord.lossless);
+        assert!(discord.resize.resize_enabled);
+        assert_eq!((discord.resize.width, discord.resize.height), (2560, 1440));
+        assert_eq!(discord.resize.resize_mode, ResizeMode::DownscaleOnly);
+        assert_eq!(discord.encode_speed, 6);
+    }
+
+    #[test]
+    fn feature_compression_settings_normalize_out_of_range_values() {
+        let mut options = CompressionOptions::auto_default();
+        options.quality = 0;
+        options.encode_speed = 99;
+        options.resize.width = 0;
+        options.resize.height = 999_999;
+        options.normalize();
+        assert_eq!(options.quality, 1);
+        assert_eq!(options.encode_speed, 10);
+        assert_eq!(options.resize.width, 1);
+        assert_eq!(options.resize.height, 16_384);
+    }
 
     #[test]
     fn missing_ribbon_collapsed_defaults_to_true_and_keeps_other_settings() {
