@@ -412,7 +412,6 @@ impl App {
                             .text_color(rgb(p.text))
                             .child(profile.name.clone()),
                     )
-                    .child(self.badge(&format_label(&profile.format), p.accent, p.accent_soft))
                     .child(div().flex_1())
                     .child(
                         Button::new("duplicate-profile")
@@ -532,12 +531,6 @@ impl App {
                                             cx,
                                         );
                                     })),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(10.))
-                                    .text_color(rgb(p.muted_2))
-                                    .child(lossless_hint(&profile.format)),
                             ),
                     )
                     .child(

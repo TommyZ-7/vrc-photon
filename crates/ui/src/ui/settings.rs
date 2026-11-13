@@ -32,7 +32,7 @@ use crate::app::ai::{
     ai_error_detail_in, ai_error_summary_in, ai_manifest_view, installation_row_id,
     is_active_installation, model_progress_ratio, variant_backend_label,
 };
-use crate::app::daemon::{autostart_description, open_path};
+use crate::app::daemon::open_path;
 use crate::ipc_bridge;
 use crate::ui::components::{card_divider, dialog_panel, glass_panel, status_progress_bar};
 use crate::ui::palette::{
@@ -66,8 +66,6 @@ impl ThemeAxis {
 impl App {
     pub(crate) fn settings_screen(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let p = self.palette;
-        let autostart_hint =
-            autostart_description(self.daemon_active, self.daemon_supervisor.as_deref());
         h_flex()
             .relative()
             .flex_1()
@@ -214,14 +212,7 @@ impl App {
                                 false,
                                 cx,
                                 |settings, value| settings.world_name_resolution_enabled = value,
-                            ))
-                            .child(card_divider(&p))
-                            .child(
-                                div()
-                                    .text_size(px(10.))
-                                    .text_color(rgb(p.muted_2))
-                                    .child(tr!("settings.world_name.privacy")),
-                            ),
+                            )),
                     )
                     .child(
                         glass_panel(&self.palette)
@@ -531,7 +522,7 @@ impl App {
                             .child(card_divider(&p))
                             .child(self.setting_switch(
                                 tr!("settings.startup.autostart"),
-                                autostart_hint,
+                                "",
                                 self.settings.autostart,
                                 false,
                                 cx,
@@ -553,22 +544,10 @@ impl App {
                                     .gap(px(12.))
                                     .py(px(2.))
                                     .child(
-                                        v_flex()
-                                            .gap(px(2.))
-                                            .child(
-                                                div()
-                                                    .text_size(px(12.))
-                                                    .text_color(rgb(p.text))
-                                                    .child(tr!("settings.startup.reduce_motion")),
-                                            )
-                                            .child(
-                                                div()
-                                                    .text_size(px(10.))
-                                                    .text_color(rgb(p.muted_2))
-                                                    .child(tr!(
-                                                        "settings.startup.reduce_motion_hint"
-                                                    )),
-                                            ),
+                                        div()
+                                            .text_size(px(12.))
+                                            .text_color(rgb(p.text))
+                                            .child(tr!("settings.startup.reduce_motion")),
                                     )
                                     .child(div().flex_1())
                                     .child(

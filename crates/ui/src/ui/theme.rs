@@ -597,15 +597,6 @@ pub(crate) fn lossless_supported(format: &CompressionFormat) -> bool {
     !matches!(format, CompressionFormat::Jpeg)
 }
 
-pub(crate) fn lossless_hint(format: &CompressionFormat) -> String {
-    match format {
-        CompressionFormat::Jpeg => tr!("theme.lossless.jpeg"),
-        CompressionFormat::Avif => tr!("theme.lossless.avif"),
-        CompressionFormat::Webp => tr!("theme.lossless.webp"),
-        CompressionFormat::JpegXl => tr!("theme.lossless.jpegxl"),
-    }
-}
-
 pub(crate) fn profile_summary(profile: &CompressionProfile) -> String {
     if profile.lossless {
         format!("{} · Lossless", format_label(&profile.format))
@@ -1318,14 +1309,6 @@ mod tests {
         profile.lossless = true;
         apply_profile_format(&mut profile, CompressionFormat::Webp);
         assert!(profile.lossless);
-    }
-
-    #[test]
-    fn lossless_hints_cover_every_format() {
-        assert!(lossless_hint(&CompressionFormat::Jpeg).contains("非対応"));
-        assert!(lossless_hint(&CompressionFormat::Avif).contains("近似"));
-        assert!(lossless_hint(&CompressionFormat::Webp).contains("可逆"));
-        assert!(lossless_hint(&CompressionFormat::JpegXl).contains("可逆"));
     }
 
     #[test]

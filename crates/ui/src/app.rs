@@ -344,12 +344,6 @@ pub struct App {
     /// Tag-threshold editor state.
     pub(crate) ai_thresholds: ai_thresholds::AiThresholdEditorState,
     pub(crate) _ai_threshold_query_subscription: Subscription,
-    /// 0 = body expanded, 1 = collapsed to the card header.
-    pub(crate) integrations_auto_motion: ToggleMotion,
-    /// 0 = runtime details expanded, 1 = collapsed while AI is disabled.
-    pub(crate) integrations_ai_motion: ToggleMotion,
-    pub(crate) integrations_clipboard_motion: ToggleMotion,
-    pub(crate) integrations_discord_motion: ToggleMotion,
     /// Stored webhook URL. It is never rendered in full: the card masks it via
     /// `mask_webhook_url` and the editor starts empty.
     pub(crate) discord_url: Option<String>,
@@ -1242,30 +1236,6 @@ impl App {
             _ai_tag_picker_query_subscription: ai_tag_picker_query_subscription,
             ai_thresholds,
             _ai_threshold_query_subscription: ai_threshold_query_subscription,
-            integrations_auto_motion: ToggleMotion::settled(if initial_settings.auto_compress {
-                0.0
-            } else {
-                1.0
-            }),
-            integrations_ai_motion: ToggleMotion::settled(if initial_settings.ai_tagging_enabled {
-                0.0
-            } else {
-                1.0
-            }),
-            integrations_clipboard_motion: ToggleMotion::settled(
-                if initial_settings.clipboard_enabled {
-                    0.0
-                } else {
-                    1.0
-                },
-            ),
-            integrations_discord_motion: ToggleMotion::settled(
-                if initial_settings.discord_enabled {
-                    0.0
-                } else {
-                    1.0
-                },
-            ),
             discord_url: initial_discord_url,
             discord_url_editing: false,
             discord_url_input,

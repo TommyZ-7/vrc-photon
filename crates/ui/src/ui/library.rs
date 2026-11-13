@@ -495,9 +495,6 @@ impl App {
             );
 
         let mut badges = h_flex().flex_wrap().gap(px(5.));
-        if photo.world_name.is_some() || photo.world_id.is_some() {
-            badges = badges.child(self.badge(tr!("photos.badge.context"), p.accent, p.accent_soft));
-        }
         if photo.is_favorite {
             badges = badges.child(self.badge(tr!("photos.badge.favorite"), p.amber, p.amber_soft));
         }
@@ -639,7 +636,10 @@ impl App {
         id: i64,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> impl IntoElement {
+    ) -> AnyElement {
+        if !self.ai.installed() {
+            return div().hidden().into_any_element();
+        }
         let p = self.palette;
         let language = self.settings.language.clone();
         let ai = self.selected_ai.clone();
@@ -853,16 +853,18 @@ impl App {
                 .child(fact(tr!("photos.ai.people"), people))
                 .child(fact(tr!("photos.ai.place"), place)),
         );
-        panel.child(
-            Button::new(SharedString::from(format!("ai-retag-{id}")))
-                .label(tr!("photos.ai.retag"))
-                .small()
-                .primary()
-                .w_full()
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.enqueue_ai_tagging(&[id], cx);
-                })),
-        )
+        panel
+            .child(
+                Button::new(SharedString::from(format!("ai-retag-{id}")))
+                    .label(tr!("photos.ai.retag"))
+                    .small()
+                    .primary()
+                    .w_full()
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.enqueue_ai_tagging(&[id], cx);
+                    })),
+            )
+            .into_any_element()
     }
 
     /// Metadata and actions for one photo. Shared by the full-screen viewer.
