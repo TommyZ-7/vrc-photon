@@ -19,7 +19,7 @@ use vrc_photon_core::discord::{
     upload_filename, validate_webhook_url,
 };
 use vrc_photon_core::model::{
-    CompressionProfile, Photo, PhotoStatus, SendCompletion, SendErrorCode, SendKind, SendOrigin,
+    CompressionOptions, Photo, PhotoStatus, SendCompletion, SendErrorCode, SendKind, SendOrigin,
     SendOutboxEntry, SendSource, SendStatus,
 };
 use vrc_photon_core::settings::{AppSettings, DiscordAutoMode, load_discord_webhook};
@@ -84,7 +84,7 @@ struct PhotoPlan {
     players: Vec<String>,
     include_players: bool,
     source: SendImageSource,
-    profile: Option<CompressionProfile>,
+    options: CompressionOptions,
 }
 
 struct PreparedRequest {
@@ -246,17 +246,8 @@ fn build_photo_plan(
     let Some(photo) = db.photo_by_id(photo_id)? else {
         return Ok(None);
     };
-    let profile = db
-        .list_profiles()?
-        .into_iter()
-        .find(|profile| profile.discord && profile.enabled);
-    let derivatives = db.derivatives_for_photo(photo.id)?;
-    let source = choose_send_source(
-        &photo,
-        settings.discord_send_original,
-        profile.as_ref(),
-        &derivatives,
-    );
+    let options = settings.discord_compression.clone();
+    let source = choose_send_source(&photo, settings.discord_send_original, &options);
     let players = if settings.discord_include_players {
         db.photo_players(photo.id)?
             .into_iter()
@@ -271,7 +262,7 @@ fn build_photo_plan(
         players,
         include_players: settings.discord_include_players,
         source,
-        profile,
+        options,
     }))
 }
 
@@ -300,9 +291,9 @@ fn prepare_request(
                 players,
                 include_players,
                 source,
-                profile,
+                options,
             } = *plan;
-            let (image, source, profile_id) = materialise_source(&photo, profile.as_ref(), source)?;
+            let (image, source, profile_id) = materialise_source(&photo, &options, source)?;
             let captured_at = tr!("discord.embed.captured_at");
             let players_label = tr!("discord.embed.players");
             let unlinked = tr!("discord.embed.unlinked");
@@ -508,7 +499,7 @@ impl SendFailure {
 
 fn materialise_source(
     photo: &Photo,
-    profile: Option<&CompressionProfile>,
+    options: &CompressionOptions,
     source: SendImageSource,
 ) -> std::result::Result<(SendImage, Option<SendSource>, Option<String>), SendFailure> {
     match source {
@@ -553,11 +544,7 @@ fn materialise_source(
                     None,
                 ));
             }
-            let profile_id = if source == SendSource::Profile {
-                profile.map(|profile| profile.id.clone())
-            } else {
-                None
-            };
+            let profile_id = None;
             Ok((
                 SendImage {
                     bytes,
@@ -570,23 +557,14 @@ fn materialise_source(
         }
         SendImageSource::Encode {
             source_path,
-            profile_id,
-            ..
+            format: _,
         } => {
-            let Some(profile) = profile else {
-                return Err(SendFailure::new(
-                    SendErrorCode::ProfileMissing,
-                    None,
-                    Some(SendSource::Profile),
-                    Some(profile_id),
-                ));
-            };
-            let encoded = encode_for_send(&source_path, profile).map_err(|error| {
+            let encoded = encode_for_send(&source_path, options).map_err(|error| {
                 SendFailure::new(
                     SendErrorCode::EncodeFailed,
                     Some(error.to_string()),
                     Some(SendSource::Profile),
-                    Some(profile.id.clone()),
+                    None,
                 )
             })?;
             let size = encoded.bytes.len() as u64;
@@ -595,7 +573,7 @@ fn materialise_source(
                     SendErrorCode::TooLarge,
                     Some(format!("{size} bytes")),
                     Some(SendSource::Profile),
-                    Some(profile.id.clone()),
+                    None,
                 ));
             }
             let format = SendImageFormat::from(&encoded.format);
@@ -606,15 +584,9 @@ fn materialise_source(
                     mime: mime_for_format(format).to_string(),
                 },
                 Some(SendSource::Profile),
-                Some(profile.id.clone()),
+                None,
             ))
         }
-        SendImageSource::MissingProfile => Err(SendFailure::new(
-            SendErrorCode::ProfileMissing,
-            None,
-            None,
-            None,
-        )),
         SendImageSource::MissingPhoto => Err(SendFailure::new(
             SendErrorCode::PhotoMissing,
             None,
@@ -1690,6 +1662,49 @@ mod tests {
     }
 
     #[test]
+    fn discord_send_encodes_with_the_discord_settings_and_writes_no_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let (db, photo) = discord_db(&dir);
+        with_db(&db, |db| {
+            let mut settings = AppSettings::load(db).unwrap();
+            settings.discord_enabled = true;
+            settings.discord_send_original = false;
+            settings.discord_compression.lossless = false;
+            settings.discord_compression.resize.resize_enabled = false;
+            settings.save(db).unwrap();
+            save_discord_webhook(db, "https://discord.com/api/webhooks/1/t").unwrap();
+            assert!(db.list_profiles().unwrap().is_empty());
+        });
+        let id = enqueue_photo(&db, photo);
+        let transport = FakeTransport::default();
+        transport.outcomes.lock().unwrap().push_back(sent_outcome());
+        let events = EventBus::default();
+
+        assert!(matches!(
+            process_next_send(&db, &transport, &events, 100).unwrap(),
+            ProcessOutcome::Sent
+        ));
+
+        let request = transport.requests.lock().unwrap().remove(0);
+        let image = request.image.expect("encoded attachment");
+        assert_eq!(image.mime, "image/webp");
+        assert!(!image.bytes.is_empty());
+        let entry = with_db(&db, |db| db.send_entry_by_id(id).unwrap().unwrap());
+        assert_eq!(entry.source, Some(SendSource::Profile));
+        assert_eq!(
+            std::fs::read_dir(dir.path().join("photos"))
+                .unwrap()
+                .count(),
+            1,
+            "the encoded upload must not leave a file in the photo folder"
+        );
+        assert!(with_db(&db, |db| db
+            .derivatives_for_photo(photo)
+            .unwrap()
+            .is_empty()));
+    }
+
+    #[test]
     fn recover_interrupted_sends_marks_processing_failed() {
         let dir = tempfile::tempdir().unwrap();
         let (db, photo) = discord_db(&dir);
@@ -1735,34 +1750,6 @@ mod tests {
         let entry = with_db(&db, |db| db.send_entry_by_id(id).unwrap().unwrap());
         assert_eq!(entry.status, SendStatus::Pending);
         assert_eq!(entry.attempts, 0);
-    }
-
-    #[test]
-    fn planning_errors_terminalise_the_claimed_row() {
-        let dir = tempfile::tempdir().unwrap();
-        let (db, photo) = discord_db(&dir);
-        enable_discord(&db, "https://discord.com/api/webhooks/1/t");
-        with_db(&db, |db| {
-            db.ensure_default_profiles().unwrap();
-            db.connection()
-                .execute("UPDATE compression_profiles SET json = '{'", [])
-                .unwrap();
-        });
-        let id = enqueue_photo(&db, photo);
-        let transport = FakeTransport::default();
-        let events = EventBus::default();
-        assert!(
-            process_next_send(&db, &transport, &events, 100).is_err(),
-            "the corrupt profile must surface as an error for logging"
-        );
-        let entry = with_db(&db, |db| db.send_entry_by_id(id).unwrap().unwrap());
-        assert_eq!(entry.status, SendStatus::Failed);
-        assert_eq!(entry.error_code.as_deref(), Some("unknown"));
-        assert_eq!(entry.error_detail.as_deref(), Some("internal error"));
-        assert!(
-            transport.requests.lock().unwrap().is_empty(),
-            "no HTTP request may be attempted when planning failed"
-        );
     }
 
     #[test]

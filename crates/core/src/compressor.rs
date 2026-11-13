@@ -6,7 +6,7 @@ use image::DynamicImage;
 
 use crate::error::{CoreError, Result};
 use crate::fs_safe::{self, PlaceOutcome};
-use crate::model::{CompressionFormat, CompressionProfile, ResizeMode, ResizeSettings};
+use crate::model::{CompressionFormat, CompressionOptions, CompressionProfile, ResizeMode, ResizeSettings};
 
 #[derive(Debug, Clone)]
 pub struct CompressionResult {
@@ -47,7 +47,8 @@ pub fn compress_decoded(
     profile: &CompressionProfile,
 ) -> Result<CompressionResult> {
     let (output_dir, base, extension) = output_layout(source, profile)?;
-    let (bytes, width, height) = encode_image_bytes(image, profile)?;
+    let options = profile.options();
+    let (bytes, width, height) = encode_image_bytes(image, &options)?;
     if bytes.is_empty() {
         return Err(CoreError::Invalid(
             "encoder produced an empty file".to_string(),
@@ -74,14 +75,15 @@ pub fn compress_decoded(
     })
 }
 
-/// Encodes one source image according to a profile without writing a file.
+/// Encodes one source image according to feature settings without writing a
+/// file.
 ///
 /// This shares the decode/resize/encode path of [`compress_image`] so a Discord
-/// attachment matches the configured compression profile byte for byte.
-pub fn encode_for_send(source: &Path, profile: &CompressionProfile) -> Result<EncodedImage> {
+/// attachment matches the configured settings byte for byte.
+pub fn encode_for_send(source: &Path, options: &CompressionOptions) -> Result<EncodedImage> {
     let image = crate::image_decode::decode_image(source)
         .ok_or_else(|| CoreError::Invalid(format!("cannot decode {}", source.display())))?;
-    let (bytes, width, height) = encode_image_bytes(&image, profile)?;
+    let (bytes, width, height) = encode_image_bytes(&image, options)?;
     if bytes.is_empty() {
         return Err(CoreError::Invalid(
             "encoder produced an empty payload".to_string(),
@@ -89,52 +91,25 @@ pub fn encode_for_send(source: &Path, profile: &CompressionProfile) -> Result<En
     }
     Ok(EncodedImage {
         bytes,
-        format: profile.format.clone(),
+        format: options.format.clone(),
         width,
         height,
     })
 }
 
-/// Applies the profile's resize and encoder, returning the bytes and the
+/// Applies the settings' resize and encoder, returning the bytes and the
 /// dimensions of the image that was actually encoded.
 fn encode_image_bytes(
     image: &DynamicImage,
-    profile: &CompressionProfile,
+    options: &CompressionOptions,
 ) -> Result<(Vec<u8>, u32, u32)> {
-    let image = resize_for_profile(image, profile);
+    let image = resize_for_settings(image, &options.resize);
     let width = image.width();
     let height = image.height();
-    let bytes = encode(&image, profile)?;
+    let bytes = encode(&image, options)?;
     Ok((bytes, width, height))
 }
 
-fn resize_for_profile<'a>(
-    image: &'a DynamicImage,
-    profile: &CompressionProfile,
-) -> Cow<'a, DynamicImage> {
-    if !profile.resize_enabled || profile.width == 0 || profile.height == 0 {
-        return Cow::Borrowed(image);
-    }
-    if profile.resize_mode == ResizeMode::DownscaleOnly
-        && image.width() <= profile.width
-        && image.height() <= profile.height
-    {
-        return Cow::Borrowed(image);
-    }
-    if profile.maintain_aspect {
-        Cow::Owned(image.resize(
-            profile.width,
-            profile.height,
-            image::imageops::FilterType::Lanczos3,
-        ))
-    } else {
-        Cow::Owned(image.resize_exact(
-            profile.width,
-            profile.height,
-            image::imageops::FilterType::Lanczos3,
-        ))
-    }
-}
 
 /// Renders the resize settings as PNG bytes for the system clipboard.
 ///
@@ -268,14 +243,14 @@ fn output_candidate(
     }
 }
 
-fn encode(image: &DynamicImage, profile: &CompressionProfile) -> Result<Vec<u8>> {
-    let quality = profile.quality.clamp(1, 100);
-    let speed = profile.encode_speed.clamp(1, 10);
-    match profile.format {
+fn encode(image: &DynamicImage, options: &CompressionOptions) -> Result<Vec<u8>> {
+    let quality = options.quality.clamp(1, 100);
+    let speed = options.encode_speed.clamp(1, 10);
+    match options.format {
         CompressionFormat::Jpeg => encode_jpeg(image, quality),
-        CompressionFormat::Webp => encode_webp(image, quality, profile.lossless),
-        CompressionFormat::Avif => encode_avif(image, quality, profile.lossless, speed),
-        CompressionFormat::JpegXl => encode_jxl(image, quality, profile.lossless, speed),
+        CompressionFormat::Webp => encode_webp(image, quality, options.lossless),
+        CompressionFormat::Avif => encode_avif(image, quality, options.lossless, speed),
+        CompressionFormat::JpegXl => encode_jxl(image, quality, options.lossless, speed),
     }
 }
 
@@ -416,13 +391,8 @@ mod tests {
         image::RgbaImage::from_pixel(32, 20, image::Rgba([10, 20, 30, 255]))
             .save(&source)
             .unwrap();
-        let profile = CompressionProfile {
-            format: CompressionFormat::Webp,
-            lossless: true,
-            resize_enabled: false,
-            ..CompressionProfile::default()
-        };
-        let encoded = encode_for_send(&source, &profile).unwrap();
+        let options = CompressionOptions::auto_default();
+        let encoded = encode_for_send(&source, &options).unwrap();
         assert_eq!(encoded.format, CompressionFormat::Webp);
         assert_eq!((encoded.width, encoded.height), (32, 20));
         assert!(!encoded.bytes.is_empty());
@@ -434,13 +404,14 @@ mod tests {
         let dir = tempdir().unwrap();
         let source = dir.path().join("photo.png");
         sample(&source);
-        let mut profile = profile(CompressionFormat::Webp);
-        profile.lossless = true;
-        profile.resize_enabled = true;
-        profile.width = 8;
-        profile.height = 8;
+        let mut options = CompressionOptions::auto_default();
+        options.lossless = true;
+        options.resize.resize_enabled = true;
+        options.resize.width = 8;
+        options.resize.height = 8;
+        let profile = options.to_profile("test", "Test", None, String::new());
 
-        let encoded = encode_for_send(&source, &profile).unwrap();
+        let encoded = encode_for_send(&source, &options).unwrap();
         let compressed = compress_image(&source, &profile).unwrap();
 
         assert_eq!(

@@ -3,9 +3,7 @@ use std::path::{Path, PathBuf};
 use serde_json::json;
 use thiserror::Error;
 
-use crate::model::{
-    CompressionFormat, CompressionProfile, Derivative, Photo, PhotoStatus, SendSource,
-};
+use crate::model::{CompressionFormat, CompressionOptions, Photo, PhotoStatus, SendSource};
 
 /// Discord's current documented upload limit (20 MiB).
 ///
@@ -176,10 +174,8 @@ pub enum SendImageSource {
     },
     Encode {
         source_path: PathBuf,
-        profile_id: String,
         format: SendImageFormat,
     },
-    MissingProfile,
     MissingPhoto,
     TooLarge {
         size: u64,
@@ -190,14 +186,13 @@ pub enum SendImageSource {
 ///
 /// Originals are preferred when they fit and `send_original` is set. Replaced
 /// photos (and photos whose original file vanished) fall back to the display
-/// derivative. Otherwise the selected profile's derivative is used, or the
-/// image is encoded in memory. A source over the Discord limit is rejected
-/// instead of being retried until Discord returns 413.
+/// derivative. Otherwise the image is encoded in memory with the Discord
+/// compression settings. A source over the Discord limit is rejected instead
+/// of being retried until Discord returns 413.
 pub fn choose_send_source(
     photo: &Photo,
     send_original: bool,
-    profile: Option<&CompressionProfile>,
-    derivatives: &[Derivative],
+    options: &CompressionOptions,
 ) -> SendImageSource {
     let original_path = PathBuf::from(&photo.abs_path);
 
@@ -217,11 +212,6 @@ pub fn choose_send_source(
                 format,
             };
         }
-        if let Some(profile) = profile
-            && let Some(derivative) = find_profile_derivative(photo.id, &profile.id, derivatives)
-        {
-            return file_from_derivative(derivative, profile);
-        }
         return SendImageSource::MissingPhoto;
     }
 
@@ -237,45 +227,11 @@ pub fn choose_send_source(
         }
     }
 
-    let Some(profile) = profile else {
-        return SendImageSource::MissingProfile;
-    };
-    if let Some(derivative) = find_profile_derivative(photo.id, &profile.id, derivatives) {
-        return file_from_derivative(derivative, profile);
-    }
     SendImageSource::Encode {
         source_path: PathBuf::from(photo.effective_path()),
-        profile_id: profile.id.clone(),
-        format: SendImageFormat::from(&profile.format),
+        format: SendImageFormat::from(&options.format),
     }
 }
-
-fn find_profile_derivative<'a>(
-    photo_id: i64,
-    profile_id: &str,
-    derivatives: &'a [Derivative],
-) -> Option<&'a Derivative> {
-    derivatives.iter().find(|derivative| {
-        derivative.photo_id == photo_id
-            && derivative.profile_id.as_deref() == Some(profile_id)
-            && Path::new(&derivative.path).is_file()
-    })
-}
-
-fn file_from_derivative(derivative: &Derivative, profile: &CompressionProfile) -> SendImageSource {
-    let path = PathBuf::from(&derivative.path);
-    let size = metadata_size(&path).unwrap_or(derivative.file_size);
-    if size > DISCORD_MAX_UPLOAD_BYTES {
-        return SendImageSource::TooLarge { size };
-    }
-    let format = format_from_path(&path).unwrap_or_else(|| SendImageFormat::from(&profile.format));
-    SendImageSource::File {
-        path,
-        source: SendSource::Profile,
-        format,
-    }
-}
-
 fn metadata_size(path: &Path) -> Option<u64> {
     std::fs::metadata(path).ok().map(|metadata| metadata.len())
 }
@@ -389,7 +345,7 @@ fn timestamp_rfc3339(timestamp: i64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{CompressionOrigin, CompressionProfile, Derivative, Photo, PhotoStatus};
+    use crate::model::{CompressionOptions, Photo, PhotoStatus};
     use std::path::Path;
 
     #[test]
@@ -464,34 +420,15 @@ mod tests {
         }
     }
 
-    fn sample_derivative(photo_id: i64, profile_id: &str, path: &Path) -> Derivative {
-        Derivative {
-            id: 1,
-            photo_id,
-            path: path.to_string_lossy().into_owned(),
-            format: "webp".into(),
-            width: 16,
-            height: 10,
-            file_size: std::fs::metadata(path).unwrap().len(),
-            profile_id: Some(profile_id.into()),
-            origin: CompressionOrigin::Manual,
-            policy: "keep".into(),
-            created_at: "2026-11-02T00:00:00Z".into(),
-        }
-    }
-
     #[test]
     fn send_source_prefers_original_when_it_fits() {
         let dir = tempfile::tempdir().unwrap();
         let original = dir.path().join("a.png");
         std::fs::write(&original, b"x").unwrap();
         let photo = sample_photo(1, &original, 1, PhotoStatus::Present, None, None);
-        let profile = CompressionProfile {
-            id: "discord".into(),
-            ..CompressionProfile::default()
-        };
+        let options = CompressionOptions::discord_default();
         assert!(matches!(
-            choose_send_source(&photo, true, Some(&profile), &[]),
+            choose_send_source(&photo, true, &options),
             SendImageSource::File {
                 source: SendSource::Original,
                 format: SendImageFormat::Png,
@@ -501,29 +438,19 @@ mod tests {
     }
 
     #[test]
-    fn send_source_falls_back_to_profile_then_encode() {
+    fn discord_send_uses_the_discord_options_without_a_profile() {
         let dir = tempfile::tempdir().unwrap();
         let original = dir.path().join("a.png");
-        let derivative = dir.path().join("a_discord.webp");
         std::fs::write(&original, b"x").unwrap();
-        std::fs::write(&derivative, b"y").unwrap();
         let photo = sample_photo(1, &original, 1, PhotoStatus::Present, None, None);
-        let profile = CompressionProfile {
-            id: "discord".into(),
-            ..CompressionProfile::default()
-        };
-        let derivatives = vec![sample_derivative(1, "discord", &derivative)];
+        let options = CompressionOptions::discord_default();
+
         assert!(matches!(
-            choose_send_source(&photo, false, Some(&profile), &derivatives),
-            SendImageSource::File {
-                source: SendSource::Profile,
+            choose_send_source(&photo, false, &options),
+            SendImageSource::Encode {
                 format: SendImageFormat::Webp,
                 ..
             }
-        ));
-        assert!(matches!(
-            choose_send_source(&photo, false, Some(&profile), &[]),
-            SendImageSource::Encode { profile_id, format: SendImageFormat::Webp, .. } if profile_id == "discord"
         ));
     }
 
@@ -542,7 +469,7 @@ mod tests {
             Some(&display),
         );
         assert!(matches!(
-            choose_send_source(&photo, true, None, &[]),
+            choose_send_source(&photo, true, &CompressionOptions::discord_default()),
             SendImageSource::File {
                 source: SendSource::Derivative,
                 format: SendImageFormat::Webp,
@@ -563,7 +490,7 @@ mod tests {
             None,
         );
         assert!(matches!(
-            choose_send_source(&photo, true, None, &[]),
+            choose_send_source(&photo, true, &CompressionOptions::discord_default()),
             SendImageSource::MissingPhoto
         ));
     }
@@ -572,18 +499,20 @@ mod tests {
     fn source_over_the_limit_is_rejected_even_after_fallback() {
         let dir = tempfile::tempdir().unwrap();
         let original = dir.path().join("a.png");
-        let derivative = dir.path().join("a_discord.webp");
+        let display = dir.path().join("display.webp");
         std::fs::write(&original, b"x").unwrap();
-        let file = std::fs::File::create(&derivative).unwrap();
+        let file = std::fs::File::create(&display).unwrap();
         file.set_len(DISCORD_MAX_UPLOAD_BYTES + 1).unwrap();
-        let photo = sample_photo(1, &original, 1, PhotoStatus::Present, None, None);
-        let profile = CompressionProfile {
-            id: "discord".into(),
-            ..CompressionProfile::default()
-        };
-        let derivatives = vec![sample_derivative(1, "discord", &derivative)];
+        let photo = sample_photo(
+            1,
+            &original,
+            1,
+            PhotoStatus::Replaced,
+            Some(7),
+            Some(&display),
+        );
         assert!(matches!(
-            choose_send_source(&photo, false, Some(&profile), &derivatives),
+            choose_send_source(&photo, false, &CompressionOptions::discord_default()),
             SendImageSource::TooLarge { .. }
         ));
     }
@@ -712,7 +641,7 @@ mod tests {
             .unwrap();
         let photo = sample_photo(1, &exactly, 1, PhotoStatus::Present, None, None);
         assert!(matches!(
-            choose_send_source(&photo, true, None, &[]),
+            choose_send_source(&photo, true, &CompressionOptions::discord_default()),
             SendImageSource::File {
                 source: SendSource::Original,
                 ..
@@ -724,39 +653,35 @@ mod tests {
             .unwrap()
             .set_len(DISCORD_MAX_UPLOAD_BYTES + 1)
             .unwrap();
-        let profile = CompressionProfile {
-            id: "discord".into(),
-            ..CompressionProfile::default()
-        };
         let photo = sample_photo(2, &over, 1, PhotoStatus::Present, None, None);
         assert!(matches!(
-            choose_send_source(&photo, true, Some(&profile), &[]),
-            SendImageSource::Encode { profile_id, .. } if profile_id == "discord"
+            choose_send_source(&photo, true, &CompressionOptions::discord_default()),
+            SendImageSource::Encode {
+                format: SendImageFormat::Webp,
+                ..
+            }
         ));
     }
 
     #[test]
-    fn missing_profile_and_oversized_original_are_reported() {
+    fn discord_over_limit_original_falls_back_to_the_configured_format() {
         let dir = tempfile::tempdir().unwrap();
-        let original = dir.path().join("a.png");
-        std::fs::write(&original, b"x").unwrap();
-        let photo = sample_photo(1, &original, 1, PhotoStatus::Present, None, None);
-        assert!(matches!(
-            choose_send_source(&photo, false, None, &[]),
-            SendImageSource::MissingProfile
-        ));
-
         let oversized = dir.path().join("big.png");
-        let file = std::fs::File::create(&oversized).unwrap();
-        file.set_len(DISCORD_MAX_UPLOAD_BYTES + 1).unwrap();
-        let photo = sample_photo(2, &oversized, 1, PhotoStatus::Present, None, None);
-        let profile = CompressionProfile {
-            id: "discord".into(),
-            ..CompressionProfile::default()
+        std::fs::File::create(&oversized)
+            .unwrap()
+            .set_len(DISCORD_MAX_UPLOAD_BYTES + 1)
+            .unwrap();
+        let photo = sample_photo(1, &oversized, 1, PhotoStatus::Present, None, None);
+        let options = CompressionOptions {
+            format: CompressionFormat::Avif,
+            ..CompressionOptions::discord_default()
         };
         assert!(matches!(
-            choose_send_source(&photo, true, Some(&profile), &[]),
-            SendImageSource::Encode { profile_id, .. } if profile_id == "discord"
+            choose_send_source(&photo, true, &options),
+            SendImageSource::Encode {
+                format: SendImageFormat::Avif,
+                ..
+            }
         ));
     }
 

@@ -1,5 +1,5 @@
 //! App-side Discord integration state: webhook editing, destination label,
-//! integration toggles, profile selection, automatic-send mode and consent,
+//! integration toggles, compression settings, automatic-send mode and consent,
 //! and send-history refresh.
 //!
 //! Rendering stays in `ui::discord`; these methods only touch App fields and
