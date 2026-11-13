@@ -10,7 +10,6 @@ use std::sync::OnceLock;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use assert_cmd::cargo::cargo_bin;
 use tempfile::TempDir;
 
 use vrc_photon_ai_host::AiHostError;
@@ -73,7 +72,24 @@ fn mock_sidecar() -> PathBuf {
             .status()
             .expect("build the mock sidecar");
         assert!(status.success(), "cargo build failed for the mock sidecar");
-        cargo_bin("mock-sidecar")
+        // `cargo_bin` only resolves binaries from the package under test, so
+        // find the workspace mock directly in the shared target directory.
+        let target_dir = std::env::var_os("CARGO_TARGET_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../..")
+                    .join("target")
+            });
+        let path = target_dir
+            .join("debug")
+            .join(format!("mock-sidecar{}", std::env::consts::EXE_SUFFIX));
+        assert!(
+            path.is_file(),
+            "mock sidecar was not built: {}",
+            path.display()
+        );
+        path
     })
     .clone()
 }
