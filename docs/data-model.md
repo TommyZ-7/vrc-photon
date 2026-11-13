@@ -30,10 +30,10 @@ PRAGMA busy_timeout = 5000;
 
 - `user_version` でスキーマバージョンを管理する。
 - 現在のバージョンは **20**。このビルドが理解できる最大値でもあり、
-  `user_version` が 20 以上の DB は `Db::open` / `Db::open_read_only` の
+  `user_version` が 21 以上の DB は `Db::open` / `Db::open_read_only` の
   どちらでも型付きエラーで拒否する（古いアプリで新スキーマを書き換えない）。
 - 新規 DB は `SCHEMA_LATEST` を 1 トランザクションで実行して v20 にする。
-- v1〜v18 の既存 DB は自動移行しない。`Db::open` は明示エラーを返し、
+- v1〜v19 の既存 DB は自動移行しない。`Db::open` は明示エラーを返し、
   ファイルを変更しない。バックアップして新しいライブラリを作成する。
 - 詳細は [`docs/database-initialization.md`](database-initialization.md) を参照。
 
