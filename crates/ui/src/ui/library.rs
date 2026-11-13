@@ -638,7 +638,7 @@ impl App {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         if !self.ai.installed() {
-            return div().into_any_element();
+            return div().hidden().into_any_element();
         }
         let p = self.palette;
         let language = self.settings.language.clone();
