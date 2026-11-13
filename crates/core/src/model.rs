@@ -217,7 +217,6 @@ impl CompressionOptions {
         CompressionProfile {
             id: id.to_string(),
             name: name.to_string(),
-            enabled: true,
             format: self.format.clone(),
             quality: self.quality,
             lossless: self.lossless,
@@ -260,7 +259,6 @@ pub const MAX_PROFILE_NAME_CHARS: usize = 100;
 pub struct CompressionProfile {
     pub id: String,
     pub name: String,
-    pub enabled: bool,
     pub format: CompressionFormat,
     pub quality: u8,
     pub lossless: bool,
@@ -281,7 +279,6 @@ impl Default for CompressionProfile {
         Self {
             id: uuid::Uuid::new_v4().to_string(),
             name: "WebP 高品質".to_string(),
-            enabled: true,
             format: CompressionFormat::Webp,
             quality: 82,
             lossless: false,

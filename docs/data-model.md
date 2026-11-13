@@ -29,10 +29,10 @@ PRAGMA busy_timeout = 5000;
 ```
 
 - `user_version` でスキーマバージョンを管理する。
-- 現在のバージョンは **19**。このビルドが理解できる最大値でもあり、
+- 現在のバージョンは **20**。このビルドが理解できる最大値でもあり、
   `user_version` が 20 以上の DB は `Db::open` / `Db::open_read_only` の
   どちらでも型付きエラーで拒否する（古いアプリで新スキーマを書き換えない）。
-- 新規 DB は `SCHEMA_LATEST` を 1 トランザクションで実行して v19 にする。
+- 新規 DB は `SCHEMA_LATEST` を 1 トランザクションで実行して v20 にする。
 - v1〜v18 の既存 DB は自動移行しない。`Db::open` は明示エラーを返し、
   ファイルを変更しない。バックアップして新しいライブラリを作成する。
 - 詳細は [`docs/database-initialization.md`](database-initialization.md) を参照。
@@ -421,7 +421,6 @@ CREATE UNIQUE INDEX idx_tagging_jobs_active
 |---|---|---|
 | id | TEXT PK | UUID |
 | name | TEXT | |
-| enabled | INTEGER | 手動圧縮での有効状態 |
 | json | TEXT | `CompressionProfile` のJSON |
 | sort_order | INTEGER | 並び順（0始まり） |
 
@@ -769,12 +768,12 @@ Discord 関連の既定値:
 ## 6. schema の初期化
 
 新規 DB は `crates/core/src/db/schema.rs` の `SCHEMA_LATEST` を 1 回の
-`IMMEDIATE` トランザクションで実行し、`user_version = 19` にする。
+`IMMEDIATE` トランザクションで実行し、`user_version = 20` にする。
 `schema_migrations` テーブルと `migrate_v*` は持たない。
 
-既存 DB は v19 のみ受け付ける。v1〜v18 は自動移行せず、`CoreError::Invalid`
+既存 DB は v20 のみ受け付ける。v1〜v19 は自動移行せず、`CoreError::Invalid`
 で「このビルドでは移行できない」と返す。このとき `user_version` もファイル内容も
-変更しない。v19 より新しい DB は、このビルドの最大値（19）を超えるため、
+変更しない。v20 より新しい DB は、このビルドの最大値（20）を超えるため、
 書き込みを始める前に `CoreError::Invalid` で拒否する。読み取り専用の
 `open_read_only` も同じ検査を行う。
 

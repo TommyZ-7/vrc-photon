@@ -280,7 +280,7 @@ crates/ui/src/
 
 1. UIまたはデーモンが `Db::open` でSQLiteを開く。
 2. `journal_mode=WAL`、`foreign_keys=ON`、`busy_timeout=5s` を設定。
-3. `PRAGMA user_version` を検査する。新規 DB は統合 schema を1トランザクションで初期化し、既存 DB は v19 のみ受け付ける。それ以外はファイルを変更せずエラーを返す。
+3. `PRAGMA user_version` を検査する。新規 DB は統合 schema を1トランザクションで初期化し、既存 DB は v20 のみ受け付ける。それ以外はファイルを変更せずエラーを返す。
 4. 設定（`app_settings` の `app_settings` キー）を読む。なければVRChatパスを自動検出。
 5. デーモンはIPCサーバーを起動する。UIはIPC購読を開始し、接続できなければハートビート/DB表示にフォールバックする。
 6. デーモンは `scan_photos` で写真ルートを走査し、ログの末尾から解析を開始する。走査中は `scan_started` / `scan_progress` / `scan_finished` を配信する。
