@@ -588,11 +588,7 @@ impl App {
                     "ribbon-compress-clipboard",
                     tr!("chrome.output.clipboard"),
                     IconName::Copy,
-                    if self.settings.clipboard_enabled {
-                        selection_look(has_selection)
-                    } else {
-                        RibbonLook::Disabled
-                    },
+                    selection_look(has_selection),
                     metrics,
                     self.ribbon_compress_clipboard_focus.clone(),
                     focusable,

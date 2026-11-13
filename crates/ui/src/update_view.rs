@@ -1298,7 +1298,7 @@ impl App {
 
         card = card.child(card_divider(&p)).child(self.setting_switch(
             tr!("update.auto_check"),
-            tr!("update.auto_check_hint"),
+            "",
             self.settings.auto_update_check,
             false,
             cx,
@@ -1326,21 +1326,11 @@ impl App {
         if should_show_package_command(&install, self.update.system_apply_available, has_asset) {
             if let Some(command) = package_command(&install) {
                 card = card.child(card_divider(&p)).child(
-                    v_flex()
-                        .gap(px(4.))
-                        .child(
-                            div()
-                                .text_size(px(10.))
-                                .text_color(rgb(p.muted))
-                                .child(tr!("update.package_manager")),
-                        )
-                        .child(
-                            div()
-                                .font_family("monospace")
-                                .text_size(px(10.))
-                                .text_color(rgb(p.text))
-                                .child(command),
-                        ),
+                    div()
+                        .font_family("monospace")
+                        .text_size(px(10.))
+                        .text_color(rgb(p.text))
+                        .child(command),
                 );
             } else {
                 card = card.child(card_divider(&p)).child(

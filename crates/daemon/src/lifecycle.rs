@@ -1281,7 +1281,6 @@ impl Daemon {
         self.settings.discord_compression = settings.discord_compression.clone();
         self.settings.ai_tagging_enabled = settings.ai_tagging_enabled;
         self.settings.ai_tagging_auto = settings.ai_tagging_auto;
-        self.settings.ai_tagging_backlog = settings.ai_tagging_backlog;
         self.settings.ai_tagging_idle_timeout_sec = settings.ai_tagging_idle_timeout_sec;
         let thumbnail_size_changed = self.settings.thumbnail_size != settings.thumbnail_size;
         self.settings.thumbnail_size = settings.thumbnail_size;

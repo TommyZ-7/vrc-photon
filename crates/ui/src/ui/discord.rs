@@ -29,10 +29,6 @@ use crate::app::daemon::{format_timestamp, open_path};
 use crate::ui::components::{card_divider, glass_panel, manual_option_row};
 use crate::ui::theme::*;
 
-/// Phase 2 adds the automatic-send section to this body, so the bound is
-/// generous enough that the newer content is not clipped by the animation.
-const DISCORD_BODY_MAX: f32 = 1200.0;
-
 /// The database read and the card both cap the history at the newest rows;
 /// the design keeps 500 terminal rows and shows the latest 100.
 const SEND_HISTORY_LIMIT: usize = 100;
@@ -158,10 +154,9 @@ fn stored_webhook_error(url: Option<&str>) -> Option<String> {
 }
 
 impl App {
-    pub(crate) fn discord_card(&mut self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
+    pub(crate) fn discord_card(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let p = self.palette;
         let enabled = self.settings.discord_enabled;
-        let motion = self.integrations_discord_motion;
         let webhook = self.discord_url.clone();
         let editing = self.discord_url_editing;
         let url_error = self.discord_url_error.clone();
@@ -181,20 +176,6 @@ impl App {
             .pt(px(12.))
             .gap(px(12.))
             .child(card_divider(&p))
-            .when(enabled, |this| {
-                this.child(
-                    div()
-                        .p(px(12.))
-                        .rounded(px(8.))
-                        .bg(rgb(p.red_soft))
-                        .border_1()
-                        .border_color(rgb(p.red_border))
-                        .text_size(px(10.))
-                        .text_color(rgb(p.red))
-                        .child(tr!("integrations.discord.warning")),
-                )
-                .child(card_divider(&p))
-            })
             .child(self.webhook_section(webhook.as_deref(), editing, url_error, cx))
             .when_some(stored_webhook_error, |this, error| {
                 this.child(card_divider(&p)).child(
@@ -303,14 +284,7 @@ impl App {
                             })),
                     ),
             )
-            .child(self.collapsible_body(
-                "integrations-discord-body",
-                motion,
-                DISCORD_BODY_MAX,
-                window,
-                cx,
-                body,
-            ))
+            .child(self.integration_settings_body(enabled, body))
             .into_any_element()
     }
 

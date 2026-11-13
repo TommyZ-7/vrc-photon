@@ -225,11 +225,6 @@ impl App {
     }
 
     pub(crate) fn compress_selection_to_clipboard(&mut self, cx: &mut Context<Self>) {
-        if !self.settings.clipboard_enabled {
-            self.toast_error(tr!("compression.clipboard_disabled"), cx);
-            cx.notify();
-            return;
-        }
         let ids = self.selected_action_ids();
         if ids.is_empty() {
             self.toast_error(tr!("compression.select_photos"), cx);

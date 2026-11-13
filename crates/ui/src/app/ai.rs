@@ -195,6 +195,12 @@ impl AiUiState {
             && self.probe.is_some()
     }
 
+    /// True when at least one package is installed, regardless of whether its
+    /// model is ready. The photo inspector only shows AI results in this case.
+    pub(crate) fn installed(&self) -> bool {
+        self.active.is_some() || !self.installations.is_empty()
+    }
+
     pub(crate) fn apply_snapshot(&mut self, snapshot: AiSnapshot) {
         self.apply_live_snapshot(snapshot.live);
         self.installations = snapshot.installations;
@@ -511,7 +517,7 @@ pub(crate) struct AiDashboardView {
 /// for a ready plugin that the user has not enabled; a not-ready plugin stays
 /// visible so the card can point at setup.
 pub(crate) fn ai_dashboard_view(ai: &AiUiState, enabled: bool) -> AiDashboardView {
-    let installed = ai.active.is_some() || !ai.installations.is_empty();
+    let installed = ai.installed();
     let ready = ai.ready();
     let visible = installed && (!ready || enabled);
     if !visible {
@@ -1633,23 +1639,6 @@ impl App {
             return;
         }
 
-        let backlog_started = !previous.ai_tagging_backlog && self.settings.ai_tagging_backlog;
-        if backlog_started {
-            match self.db.enqueue_tagging_backlog(AI_PLUGIN_ID) {
-                Ok(inserted) => {
-                    if inserted > 0 {
-                        self.toast_info(
-                            tr_args!("integrations.ai.backlog.started", count = inserted),
-                            cx,
-                        );
-                    }
-                }
-                Err(error) => {
-                    self.toast_error(tr_args!("integrations.ai.backlog.error", error = error), cx)
-                }
-            }
-            self.wake_daemon(IpcRequest::WakeTagging, cx);
-        }
         self.refresh_ai_state(cx);
         cx.notify();
     }
@@ -1699,20 +1688,43 @@ impl App {
         );
     }
 
-    /// Moves every waiting backlog job to the ready queue and wakes the
-    /// daemon's tagging worker.
+    /// Moves every waiting job to the ready queue and wakes the daemon's
+    /// tagging worker.
     pub(crate) fn start_ai_backlog(&mut self, cx: &mut Context<Self>) {
         match self.db.release_waiting_tagging_jobs(AI_PLUGIN_ID) {
-            Ok(0) => self.toast_info(tr!("integrations.ai.backlog.empty"), cx),
+            Ok(0) => self.toast_info(tr!("integrations.ai.waiting.empty"), cx),
             Ok(count) => {
                 self.toast_success(
-                    tr_args!("integrations.ai.backlog.started", count = count),
+                    tr_args!("integrations.ai.waiting.started", count = count),
                     cx,
                 );
                 self.wake_daemon(IpcRequest::WakeTagging, cx);
             }
             Err(error) => {
-                self.toast_error(tr_args!("integrations.ai.backlog.error", error = error), cx)
+                self.toast_error(tr_args!("integrations.ai.waiting.error", error = error), cx)
+            }
+        }
+        self.refresh_ai_state(cx);
+        cx.notify();
+    }
+
+    /// Queues every untagged photo and releases the waiting jobs to the
+    /// daemon's tagging worker in one action.
+    pub(crate) fn process_untagged_ai(&mut self, cx: &mut Context<Self>) {
+        match self.db.enqueue_tagging_backlog(AI_PLUGIN_ID) {
+            Ok(queued) => match self.db.release_waiting_tagging_jobs(AI_PLUGIN_ID) {
+                Ok(0) if queued == 0 => self.toast_info(tr!("integrations.ai.bulk.empty"), cx),
+                Ok(count) if count > 0 => {
+                    self.toast_success(tr_args!("integrations.ai.bulk.started", count = count), cx);
+                    self.wake_daemon(IpcRequest::WakeTagging, cx);
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    self.toast_error(tr_args!("integrations.ai.bulk.error", error = error), cx)
+                }
+            },
+            Err(error) => {
+                self.toast_error(tr_args!("integrations.ai.bulk.error", error = error), cx)
             }
         }
         self.refresh_ai_state(cx);
@@ -2232,6 +2244,16 @@ mod tests {
         assert!(ai.ready());
 
         ai.state = Some(sample_state(ModelState::Missing));
+        assert!(!ai.ready());
+    }
+
+    #[test]
+    fn ai_installed_tracks_any_package_not_readiness() {
+        let mut ai = AiUiState::default();
+        assert!(!ai.installed());
+
+        ai.installations.push(sample_install());
+        assert!(ai.installed());
         assert!(!ai.ready());
     }
 

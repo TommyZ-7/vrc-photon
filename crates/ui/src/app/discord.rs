@@ -17,8 +17,6 @@ use vrc_photon_core::settings::{
 use vrc_photon_i18n::{tr, tr_args};
 
 use crate::app::{App, Screen};
-use crate::state::motion::ToggleMotion;
-use crate::ui::theme::MOTION_FAST;
 
 /// Label used when the user leaves the destination field blank.
 const DEFAULT_DESTINATION: &str = "Discord";
@@ -192,15 +190,6 @@ impl App {
         );
         if let Err(error) = self.settings.save(&self.db) {
             tracing::warn!(%error, "cannot save Discord integration setting");
-        }
-        // Only the card header animates here. Turning the feature on does not
-        // change the automatic mode; that is a separate, consent-gated toggle.
-        let target = if enabled { 0.0 } else { 1.0 };
-        if cx.reduce_motion() {
-            self.integrations_discord_motion = ToggleMotion::settled(target);
-        } else {
-            self.integrations_discord_motion
-                .animate_to(target, MOTION_FAST);
         }
         cx.notify();
     }

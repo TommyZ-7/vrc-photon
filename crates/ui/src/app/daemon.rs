@@ -61,14 +61,6 @@ pub(crate) fn daemon_sync_label(age_secs: Option<i64>, supervisor: Option<&str>)
     })
 }
 
-pub(crate) fn autostart_description(daemon_active: bool, supervisor: Option<&str>) -> String {
-    if daemon_active && supervisor == Some("systemd") {
-        String::new()
-    } else {
-        tr!("daemon.autostart.login")
-    }
-}
-
 pub(crate) fn daemon_operation_label(operation: DaemonOperation) -> String {
     match operation {
         DaemonOperation::Scan => tr!("daemon.operation.scan"),
@@ -358,9 +350,8 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::{
-        autostart_description, daemon_liveness, daemon_operation_label, daemon_state_label,
-        daemon_sync_label, format_timestamp, ipc_status_label, should_use_systemd,
-        status_snapshot_is_newer,
+        daemon_liveness, daemon_operation_label, daemon_state_label, daemon_sync_label,
+        format_timestamp, ipc_status_label, should_use_systemd, status_snapshot_is_newer,
     };
     use vrc_photon_core::model::DaemonOperation;
 
@@ -446,18 +437,5 @@ mod tests {
     #[test]
     fn daemon_start_uses_spawn_for_app_supervisor() {
         assert!(!should_use_systemd(Some("app")));
-    }
-
-    #[test]
-    fn autostart_description_is_empty_for_systemd_and_uses_login_otherwise() {
-        assert_eq!(autostart_description(true, Some("systemd")), "");
-        assert_eq!(
-            autostart_description(false, Some("systemd")),
-            "OSログイン時にデーモンを起動"
-        );
-        assert_eq!(
-            autostart_description(true, Some("app")),
-            "OSログイン時にデーモンを起動"
-        );
     }
 }

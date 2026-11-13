@@ -820,48 +820,12 @@ impl App {
 
     fn apply_loaded_settings(&mut self, mut settings: AppSettings, cx: &mut Context<Self>) {
         let previous_language = self.settings.language.clone();
-        let previous_auto_compress = self.settings.auto_compress;
-        let previous_ai_tagging_enabled = self.settings.ai_tagging_enabled;
-        let previous_clipboard_enabled = self.settings.clipboard_enabled;
-        let previous_discord_enabled = self.settings.discord_enabled;
         let previous_thumbnail_spec = self.settings.thumbnail_spec();
         settings.language = vrc_photon_i18n::set_locale(&settings.language);
         let language_changed = settings.language != previous_language;
         self.settings = settings;
         if self.settings.thumbnail_spec() != previous_thumbnail_spec {
             self.thumbnails.borrow_mut().clear();
-        }
-        if self.settings.auto_compress != previous_auto_compress {
-            self.integrations_auto_motion =
-                crate::state::motion::ToggleMotion::settled(if self.settings.auto_compress {
-                    0.0
-                } else {
-                    1.0
-                });
-        }
-        if self.settings.ai_tagging_enabled != previous_ai_tagging_enabled {
-            self.integrations_ai_motion =
-                crate::state::motion::ToggleMotion::settled(if self.settings.ai_tagging_enabled {
-                    0.0
-                } else {
-                    1.0
-                });
-        }
-        if self.settings.clipboard_enabled != previous_clipboard_enabled {
-            self.integrations_clipboard_motion =
-                crate::state::motion::ToggleMotion::settled(if self.settings.clipboard_enabled {
-                    0.0
-                } else {
-                    1.0
-                });
-        }
-        if self.settings.discord_enabled != previous_discord_enabled {
-            self.integrations_discord_motion =
-                crate::state::motion::ToggleMotion::settled(if self.settings.discord_enabled {
-                    0.0
-                } else {
-                    1.0
-                });
         }
         if language_changed {
             self.library.borrow_mut().invalidate_labels();

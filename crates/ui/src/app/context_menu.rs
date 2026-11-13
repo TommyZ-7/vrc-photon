@@ -59,15 +59,9 @@ struct ContextMenuEnablement {
 }
 
 impl ContextMenuEnablement {
-    fn new(
-        selection_len: usize,
-        clipboard_enabled: bool,
-        discord_ready: bool,
-        ai_enabled: bool,
-        ai_ready: bool,
-    ) -> Self {
+    fn new(selection_len: usize, discord_ready: bool, ai_enabled: bool, ai_ready: bool) -> Self {
         Self {
-            compress_clipboard: selection_len == 1 && clipboard_enabled,
+            compress_clipboard: selection_len == 1,
             discord: selection_len == 1 && discord_ready,
             ai: ai_enabled && ai_ready,
         }
@@ -137,19 +131,15 @@ impl PhotoApp {
             return;
         }
         let selection_len = snapshot.selection.len();
-        let clipboard_enabled = self.settings.clipboard_enabled;
         let discord_ready = discord_send_guard(&self.settings, self.discord_url.as_deref()).is_ok();
         let enablement = ContextMenuEnablement::new(
             selection_len,
-            clipboard_enabled,
             discord_ready,
             self.settings.ai_tagging_enabled,
             self.ai.ready(),
         );
         let clipboard_label = if selection_len != 1 {
             tr!("photos.context_menu.compress_clipboard_single_only")
-        } else if !clipboard_enabled {
-            tr!("photos.context_menu.compress_clipboard_setting_off")
         } else {
             tr!("photos.context_menu.compress_clipboard")
         };
@@ -551,30 +541,26 @@ mod tests {
 
     #[test]
     fn context_menu_enablement_follows_the_issue_table() {
-        let single = ContextMenuEnablement::new(1, true, true, true, true);
+        let single = ContextMenuEnablement::new(1, true, true, true);
         assert!(single.compress_clipboard);
         assert!(single.discord);
         assert!(single.ai);
 
-        let multi = ContextMenuEnablement::new(3, true, true, true, true);
+        let multi = ContextMenuEnablement::new(3, true, true, true);
         assert!(!multi.compress_clipboard);
         assert!(!multi.discord);
         assert!(multi.ai);
 
         assert!(
-            !ContextMenuEnablement::new(1, false, true, true, true).compress_clipboard,
-            "the clipboard setting disables clipboard compression"
-        );
-        assert!(
-            !ContextMenuEnablement::new(1, true, false, true, true).discord,
+            !ContextMenuEnablement::new(1, false, true, true).discord,
             "the Discord guard disables sending"
         );
         assert!(
-            !ContextMenuEnablement::new(1, true, true, false, true).ai,
+            !ContextMenuEnablement::new(1, true, false, true).ai,
             "the AI setting disables tagging"
         );
         assert!(
-            !ContextMenuEnablement::new(1, true, true, true, false).ai,
+            !ContextMenuEnablement::new(1, true, true, false).ai,
             "an unready AI plugin disables tagging"
         );
     }

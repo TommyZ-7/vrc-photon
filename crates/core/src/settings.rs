@@ -123,9 +123,6 @@ pub struct AppSettings {
     #[serde(default = "default_thumbnail_size")]
     pub thumbnail_size: u32,
     pub compression_workers: usize,
-    /// Whether the clipboard compression action is available.
-    #[serde(default = "default_true")]
-    pub clipboard_enabled: bool,
     #[serde(default)]
     pub ui_sidebar_collapsed: bool,
     #[serde(default = "default_true")]
@@ -199,9 +196,6 @@ pub struct AppSettings {
     /// Whether newly imported photos are tagged automatically.
     #[serde(default)]
     pub ai_tagging_auto: bool,
-    /// Whether the existing photo backlog is tagged when AI tagging starts.
-    #[serde(default)]
-    pub ai_tagging_backlog: bool,
     /// Character presence threshold (0.0–1.0). `None` uses the sidecar default.
     #[serde(default)]
     pub ai_presence_threshold: Option<f32>,
@@ -358,7 +352,6 @@ impl Default for AppSettings {
             thumbnail_cache_mb: 8192,
             thumbnail_size: crate::thumbnail::THUMBNAIL_SIZE_DEFAULT,
             compression_workers: 1,
-            clipboard_enabled: true,
             ui_sidebar_collapsed: false,
             ui_inspector_collapsed: true,
             ui_reduce_motion: false,
@@ -386,7 +379,6 @@ impl Default for AppSettings {
             world_name_resolution_enabled: false,
             ai_tagging_enabled: false,
             ai_tagging_auto: false,
-            ai_tagging_backlog: false,
             ai_presence_threshold: None,
             ai_tagging_backend: default_ai_backend(),
             ai_tagging_idle_timeout_sec: default_ai_idle_timeout(),
@@ -1090,21 +1082,18 @@ mod tests {
         let settings: AppSettings = serde_json::from_str(json).unwrap();
         assert_eq!(settings.thumbnail_size, 384);
         assert_eq!(settings.thumbnail_cache_mb, 2048);
-        assert!(settings.clipboard_enabled);
     }
 
     #[test]
-    fn thumbnail_and_clipboard_settings_roundtrip() {
+    fn thumbnail_settings_roundtrip() {
         let db = Db::open_in_memory().unwrap();
         let settings = AppSettings {
             thumbnail_size: 512,
-            clipboard_enabled: false,
             ..Default::default()
         };
         settings.save(&db).unwrap();
         let loaded = AppSettings::load(&db).unwrap();
         assert_eq!(loaded.thumbnail_size, 512);
-        assert!(!loaded.clipboard_enabled);
     }
 
     #[test]
@@ -1302,7 +1291,6 @@ mod tests {
         let settings = AppSettings::default();
         assert!(!settings.ai_tagging_enabled);
         assert!(!settings.ai_tagging_auto);
-        assert!(!settings.ai_tagging_backlog);
         assert_eq!(settings.ai_tagging_backend, "auto");
         assert_eq!(settings.ai_tagging_idle_timeout_sec, 600);
         assert!(settings.ai_presence_threshold.is_none());
@@ -1311,7 +1299,6 @@ mod tests {
         let old: AppSettings = serde_json::from_str(r#"{"photo_roots":[],"log_dir":null,"managed_dir":null,"language":"ja","autostart":true,"tray":true,"auto_compress":true,"auto_compress_backlog":false,"estimated_link":true,"thumbnail_cache_mb":2048,"compression_workers":1}"#).unwrap();
         assert!(!old.ai_tagging_enabled);
         assert!(!old.ai_tagging_auto);
-        assert!(!old.ai_tagging_backlog);
         assert_eq!(old.ai_tagging_backend, "auto");
         assert_eq!(old.ai_tagging_idle_timeout_sec, 600);
         assert!(old.ai_presence_threshold.is_none());
@@ -1360,7 +1347,6 @@ mod tests {
         let settings = AppSettings {
             ai_tagging_enabled: true,
             ai_tagging_auto: true,
-            ai_tagging_backlog: true,
             ai_presence_threshold: Some(0.85),
             ai_tagging_backend: "vulkan".to_string(),
             ai_tagging_idle_timeout_sec: 120,
@@ -1371,7 +1357,6 @@ mod tests {
         let loaded = AppSettings::load(&db).unwrap();
         assert!(loaded.ai_tagging_enabled);
         assert!(loaded.ai_tagging_auto);
-        assert!(loaded.ai_tagging_backlog);
         assert_eq!(loaded.ai_presence_threshold, Some(0.85));
         assert_eq!(loaded.ai_tagging_backend, "vulkan");
         assert_eq!(loaded.ai_tagging_idle_timeout_sec, 120);

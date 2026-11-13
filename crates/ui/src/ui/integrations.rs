@@ -20,25 +20,10 @@ use crate::app::ai::{
     variant_backend_label,
 };
 use crate::app::compression::FeatureCompressionTarget;
-use crate::state::motion::ToggleMotion;
 use crate::ui::components::{
     card_divider, chip, compression_policy_warning, glass_panel, status_progress_bar,
 };
 use crate::ui::theme::*;
-
-/// Generous bounds for the collapsed-body height animation. The profile lists
-/// scroll above these sizes, so the body never exceeds its bound.
-const AUTO_BODY_MAX: f32 = 560.0;
-const CLIPBOARD_BODY_MAX: f32 = 400.0;
-const AI_BODY_MAX: f32 = 700.0;
-
-/// Which runtime setting a switch row writes.
-#[derive(Clone, Copy)]
-enum AiToggle {
-    Enabled,
-    Auto,
-    Backlog,
-}
 
 impl App {
     pub(crate) fn integrations_screen(
@@ -62,13 +47,13 @@ impl App {
             .gap(px(CARD_GAP));
         let detail_body = match selected {
             IntegrationsSection::Discord => detail_body
-                .child(self.discord_card(window, cx))
+                .child(self.discord_card(cx))
                 .child(self.send_history_card(window, cx)),
             IntegrationsSection::AutoCompression => {
-                detail_body.child(self.auto_compression_card(window, cx))
+                detail_body.child(self.auto_compression_card(cx))
             }
-            IntegrationsSection::AiTagging => detail_body.child(self.ai_tagging_card(window, cx)),
-            IntegrationsSection::Clipboard => detail_body.child(self.clipboard_card(window, cx)),
+            IntegrationsSection::AiTagging => detail_body.child(self.ai_tagging_card(cx)),
+            IntegrationsSection::Clipboard => detail_body.child(self.clipboard_card(cx)),
         };
         let detail = h_flex()
             .relative()
@@ -132,7 +117,7 @@ impl App {
                 IntegrationsSection::Clipboard,
                 "integrations-list-clipboard",
                 tr!("integrations.clipboard.title"),
-                self.settings.clipboard_enabled,
+                true,
             ),
         ];
 
@@ -190,10 +175,9 @@ impl App {
             .into_any_element()
     }
 
-    fn auto_compression_card(&mut self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
+    fn auto_compression_card(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let p = self.palette;
         let enabled = self.settings.auto_compress;
-        let motion = self.integrations_auto_motion;
         let options = self.settings.auto_compression.clone();
 
         let body = v_flex()
@@ -271,22 +255,14 @@ impl App {
                             })),
                     ),
             )
-            .child(self.collapsible_body(
-                "integrations-auto-body",
-                motion,
-                AUTO_BODY_MAX,
-                window,
-                cx,
-                body,
-            ))
+            .child(self.integration_settings_body(enabled, body))
             .into_any_element()
     }
 
-    fn ai_tagging_card(&mut self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
+    fn ai_tagging_card(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let p = self.palette;
         let ready = self.ai.ready();
         let enabled = self.settings.ai_tagging_enabled;
-        let motion = self.integrations_ai_motion;
 
         let card = glass_panel(&self.palette)
             .flex()
@@ -294,15 +270,27 @@ impl App {
             .p(px(14.))
             .rounded(px(17.))
             .child(
-                h_flex().items_center().gap(px(12.)).child(
-                    v_flex().flex_1().min_w_0().child(
-                        div()
-                            .text_size(px(13.))
-                            .font_semibold()
-                            .text_color(rgb(p.text))
-                            .child(tr!("integrations.ai.title")),
+                h_flex()
+                    .items_center()
+                    .gap(px(12.))
+                    .child(
+                        v_flex().flex_1().min_w_0().child(
+                            div()
+                                .text_size(px(13.))
+                                .font_semibold()
+                                .text_color(rgb(p.text))
+                                .child(tr!("integrations.ai.title")),
+                        ),
+                    )
+                    .child(
+                        Switch::new("integrations-ai-enabled")
+                            .checked(enabled)
+                            .on_click(cx.listener(|this, checked, _, cx| {
+                                this.save_ai_runtime_settings(cx, |settings| {
+                                    settings.ai_tagging_enabled = *checked;
+                                });
+                            })),
                     ),
-                ),
             );
 
         if !ready {
@@ -326,7 +314,6 @@ impl App {
         }
 
         let auto = self.settings.ai_tagging_auto;
-        let backlog = self.settings.ai_tagging_backlog;
         let counts = self.ai.job_counts;
         let language = vrc_photon_i18n::current_locale();
         let job_names = self.ai.active_job_names.clone();
@@ -456,20 +443,12 @@ impl App {
                 .when(counts.waiting > 0, |this| {
                     this.child(
                         v_flex()
-                            .gap(px(6.))
                             .p(px(10.))
                             .rounded(px(10.))
                             .bg(rgb(p.panel_2))
                             .child(
-                                div()
-                                    .text_size(px(11.))
-                                    .font_medium()
-                                    .text_color(rgb(p.text))
-                                    .child(tr!("integrations.ai.start_backlog")),
-                            )
-                            .child(
                                 Button::new("integrations-ai-start-backlog")
-                                    .label(tr!("integrations.ai.start_backlog"))
+                                    .label(tr!("integrations.ai.process_waiting"))
                                     .small()
                                     .primary()
                                     .on_click(cx.listener(|this, _, _, cx| {
@@ -493,29 +472,24 @@ impl App {
                 .pt(px(12.))
                 .gap(px(12.))
                 .child(card_divider(&p))
-                .child(self.ai_switch_row(
-                    tr!("integrations.ai.enabled"),
-                    enabled,
-                    true,
-                    AiToggle::Enabled,
-                    cx,
-                ))
-                .child(card_divider(&p))
-                .child(self.ai_switch_row(
+                .child(self.setting_switch(
                     tr!("integrations.ai.auto"),
+                    "",
                     auto,
-                    enabled,
-                    AiToggle::Auto,
+                    false,
                     cx,
+                    |settings, value| settings.ai_tagging_auto = value,
                 ))
                 .child(card_divider(&p))
-                .child(self.ai_switch_row(
-                    tr!("integrations.ai.backlog"),
-                    backlog,
-                    enabled,
-                    AiToggle::Backlog,
-                    cx,
-                ))
+                .child(
+                    Button::new("integrations-ai-process-untagged")
+                        .label(tr!("integrations.ai.process_untagged"))
+                        .small()
+                        .w_full()
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.process_untagged_ai(cx);
+                        })),
+                )
                 .child(card_divider(&p))
                 .child(
                     v_flex()
@@ -561,93 +535,16 @@ impl App {
                         )),
                 )
                 .child(card_divider(&p))
-                .child(self.collapsible_body(
-                    "integrations-ai-body",
-                    motion,
-                    AI_BODY_MAX,
-                    window,
-                    cx,
-                    details,
-                ))
-                .child(card_divider(&p))
-                .child(settings_row);
+                .child(details);
 
-        card.child(body).into_any_element()
+        card.child(self.integration_settings_body(enabled, body))
+            .child(card_divider(&p))
+            .child(settings_row)
+            .into_any_element()
     }
 
-    fn ai_switch_row(
-        &self,
-        label: String,
-        checked: bool,
-        enabled: bool,
-        toggle: AiToggle,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
+    fn clipboard_card(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let p = self.palette;
-        let id = match toggle {
-            AiToggle::Enabled => "integrations-ai-enabled",
-            AiToggle::Auto => "integrations-ai-auto",
-            AiToggle::Backlog => "integrations-ai-backlog",
-        };
-        h_flex()
-            .items_center()
-            .gap(px(12.))
-            .py(px(2.))
-            .child(
-                v_flex().flex_1().min_w_0().gap(px(2.)).child(
-                    div()
-                        .text_size(px(12.))
-                        .text_color(rgb(if enabled { p.text } else { p.muted_2 }))
-                        .child(label),
-                ),
-            )
-            .child(
-                Switch::new(id)
-                    .checked(checked)
-                    .disabled(!enabled)
-                    .on_click(cx.listener(move |this, value, _, cx| {
-                        if !enabled {
-                            return;
-                        }
-                        match toggle {
-                            AiToggle::Enabled => this.set_ai_tagging_enabled(*value, cx),
-                            AiToggle::Auto => this.save_ai_runtime_settings(cx, |settings| {
-                                settings.ai_tagging_auto = *value;
-                            }),
-                            AiToggle::Backlog => this.save_ai_runtime_settings(cx, |settings| {
-                                settings.ai_tagging_backlog = *value;
-                            }),
-                        }
-                    })),
-            )
-    }
-
-    fn set_ai_tagging_enabled(&mut self, enabled: bool, cx: &mut Context<Self>) {
-        if self.settings.ai_tagging_enabled == enabled {
-            return;
-        }
-        self.save_ai_runtime_settings(cx, move |settings| {
-            settings.ai_tagging_enabled = enabled;
-        });
-        // A failed save rolls the setting back; animate to the persisted
-        // value so the runtime section cannot claim a state it did not save.
-        let target = if self.settings.ai_tagging_enabled {
-            0.0
-        } else {
-            1.0
-        };
-        if cx.reduce_motion() {
-            self.integrations_ai_motion = ToggleMotion::settled(target);
-        } else {
-            self.integrations_ai_motion.animate_to(target, MOTION_FAST);
-        }
-        cx.notify();
-    }
-
-    fn clipboard_card(&mut self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
-        let p = self.palette;
-        let enabled = self.settings.clipboard_enabled;
-        let motion = self.integrations_clipboard_motion;
         let resize = self.settings.clipboard_compression;
 
         let body = v_flex()
@@ -663,60 +560,42 @@ impl App {
             .p(px(14.))
             .rounded(px(17.))
             .child(
-                h_flex()
-                    .items_center()
-                    .gap(px(12.))
-                    .child(
-                        v_flex().flex_1().min_w_0().gap(px(2.)).child(
-                            div()
-                                .text_size(px(13.))
-                                .font_semibold()
-                                .text_color(rgb(p.text))
-                                .child(tr!("integrations.clipboard.title")),
-                        ),
-                    )
-                    .child(
-                        Switch::new("integrations-clipboard-enabled")
-                            .checked(enabled)
-                            .on_click(cx.listener(|this, checked, _, cx| {
-                                this.set_clipboard_enabled(*checked, cx);
-                            })),
+                h_flex().items_center().gap(px(12.)).child(
+                    v_flex().flex_1().min_w_0().gap(px(2.)).child(
+                        div()
+                            .text_size(px(13.))
+                            .font_semibold()
+                            .text_color(rgb(p.text))
+                            .child(tr!("integrations.clipboard.title")),
                     ),
+                ),
             )
-            .child(self.collapsible_body(
-                "integrations-clipboard-body",
-                motion,
-                CLIPBOARD_BODY_MAX,
-                window,
-                cx,
-                body,
-            ))
+            .child(body)
             .into_any_element()
     }
 
-    pub(crate) fn collapsible_body(
+    /// Shows a card's settings even while its integration is disabled, muted
+    /// and inert instead of collapsing it out of view.
+    pub(crate) fn integration_settings_body(
         &self,
-        id: &'static str,
-        motion: ToggleMotion,
-        max_height: f32,
-        window: &Window,
-        cx: &Context<Self>,
+        enabled: bool,
         body: impl IntoElement + 'static,
     ) -> AnyElement {
         div()
-            .overflow_hidden()
-            .with_animation(
-                (id, motion.epoch()),
-                Animation::new(motion.driver_duration())
-                    .with_easing(ease_motion)
-                    .with_max_fps(self.motion_fps(window, cx)),
-                move |el, _| {
-                    let collapsed = motion.value();
-                    el.max_h(px((1.0 - collapsed) * max_height))
-                        .opacity(1.0 - collapsed)
-                },
-            )
+            .relative()
+            .opacity(if enabled { 1.0 } else { 0.5 })
             .child(body)
+            .when(!enabled, |this| {
+                this.child(
+                    div()
+                        .absolute()
+                        .top_0()
+                        .left_0()
+                        .right_0()
+                        .bottom_0()
+                        .block_mouse_except_scroll(),
+                )
+            })
             .into_any_element()
     }
 
@@ -727,31 +606,6 @@ impl App {
         self.settings.auto_compress = enabled;
         if let Err(error) = self.settings.save(&self.db) {
             tracing::warn!(%error, "cannot save automatic compression setting");
-        }
-        let target = if enabled { 0.0 } else { 1.0 };
-        if cx.reduce_motion() {
-            self.integrations_auto_motion = ToggleMotion::settled(target);
-        } else {
-            self.integrations_auto_motion
-                .animate_to(target, MOTION_FAST);
-        }
-        cx.notify();
-    }
-
-    fn set_clipboard_enabled(&mut self, enabled: bool, cx: &mut Context<Self>) {
-        if self.settings.clipboard_enabled == enabled {
-            return;
-        }
-        self.settings.clipboard_enabled = enabled;
-        if let Err(error) = self.settings.save(&self.db) {
-            tracing::warn!(%error, "cannot save clipboard setting");
-        }
-        let target = if enabled { 0.0 } else { 1.0 };
-        if cx.reduce_motion() {
-            self.integrations_clipboard_motion = ToggleMotion::settled(target);
-        } else {
-            self.integrations_clipboard_motion
-                .animate_to(target, MOTION_FAST);
         }
         cx.notify();
     }
