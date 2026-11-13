@@ -460,7 +460,10 @@ fn display_derivative_owner_matches_only_the_active_display_derivative() {
         db.display_derivative_owner("/photos/a_2.webp").unwrap(),
         Some((photo, "/photos".to_string()))
     );
-    assert_eq!(db.display_derivative_owner("/photos/a_1.webp").unwrap(), None);
+    assert_eq!(
+        db.display_derivative_owner("/photos/a_1.webp").unwrap(),
+        None
+    );
     assert_eq!(
         db.display_derivative_owner("/photos/missing.webp").unwrap(),
         None
