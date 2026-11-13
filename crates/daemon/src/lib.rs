@@ -111,6 +111,10 @@ const SESSION_STATUS_INTERVAL: Duration = Duration::from_secs(2);
 /// Photo and queue counts are full-table aggregates; refresh them rarely and
 /// immediately after a scan, command, or indexing event changes the library.
 const COUNTS_STATUS_INTERVAL: Duration = Duration::from_secs(30);
+/// Full display-derivative verification runs at startup, every six hours, and
+/// when the watcher reports lost events. Event handling covers deletions in
+/// between.
+const FULL_ASSET_CHECK_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
 /// Complete log lines one poll may return. The next poll continues from the
 /// last committed offset.
 const LOG_READ_MAX_LINES: usize = 5_000;

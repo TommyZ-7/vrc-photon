@@ -151,6 +151,9 @@ pub struct Daemon {
     pub(crate) last_published_status: Option<StatusSnapshot>,
     pub(crate) last_heartbeat: std::time::Instant,
     pub(crate) last_asset_check: Instant,
+    /// Set when notify reports that events were lost (`Flag::Rescan`). The
+    /// next loop iteration runs the full fallback instead of waiting six hours.
+    pub(crate) full_asset_check_due: bool,
     pub(crate) thumbnail_dir: PathBuf,
     pub(crate) thumbnail_cache_limit: Arc<AtomicU64>,
     /// Packed quality and long edge for the thumbnail worker.
@@ -393,7 +396,8 @@ impl Daemon {
             last_counts_status: Instant::now() - COUNTS_STATUS_INTERVAL,
             last_published_status: None,
             last_heartbeat: std::time::Instant::now() - Duration::from_secs(10),
-            last_asset_check: Instant::now() - Duration::from_secs(30),
+            last_asset_check: Instant::now(),
+            full_asset_check_due: false,
             thumbnail_dir,
             thumbnail_cache_limit,
             thumbnail_spec,
@@ -897,6 +901,7 @@ impl Daemon {
         self.ingest_logs()?;
         self.poll_vrchat_presence()?;
         self.link_unlinked()?;
+        self.run_full_asset_check();
         self.refresh_status()?;
         self.process_deletions()?;
         Ok(())
@@ -1002,6 +1007,7 @@ impl Daemon {
         }
         self.write_heartbeat();
         self.restart_watchers();
+        self.run_full_asset_check();
         self.apply_autostart(self.settings.autostart);
         self.ensure_tray();
 
@@ -1043,6 +1049,17 @@ impl Daemon {
     /// heavy work below; heartbeat, status, tray, log ingestion, watcher event
     /// collection, settings refreshes, and IPC keep running so a paused daemon
     /// stays observable and resumes without losing queued events.
+    /// Runs the full display-derivative verification and records the attempt
+    /// even when it fails, so an unavailable volume cannot make the loop retry
+    /// the whole library every iteration.
+    pub(crate) fn run_full_asset_check(&mut self) {
+        if let Err(error) = self.verify_replaced_assets() {
+            tracing::warn!(%error, "cannot verify replaced photo assets");
+        }
+        self.last_asset_check = Instant::now();
+        self.full_asset_check_due = false;
+    }
+
     pub(crate) fn run_loop_iteration(&mut self) {
         if let Err(error) = self.poll_commands() {
             tracing::error!(%error, "cannot handle daemon commands");
@@ -1090,11 +1107,10 @@ impl Daemon {
             self.last_counts_status = Instant::now();
             self.publish_status_if_changed();
         }
-        if !paused && self.last_asset_check.elapsed() >= Duration::from_secs(30) {
-            if let Err(error) = self.verify_replaced_assets() {
-                tracing::warn!(%error, "cannot verify replaced photo assets");
-            }
-            self.last_asset_check = Instant::now();
+        let asset_check_due = self.full_asset_check_due
+            || self.last_asset_check.elapsed() >= FULL_ASSET_CHECK_INTERVAL;
+        if !paused && asset_check_due {
+            self.run_full_asset_check();
         }
         if self.last_heartbeat.elapsed() >= Duration::from_secs(10) {
             self.write_heartbeat();
@@ -1113,9 +1129,11 @@ impl Daemon {
         // Asset verification is skipped while paused. Including an overdue
         // deadline would make the loop wake every 10 ms for no work.
         let asset_deadline = if self.is_paused() {
-            now + Duration::from_secs(30)
+            now + FULL_ASSET_CHECK_INTERVAL
+        } else if self.full_asset_check_due {
+            now
         } else {
-            self.last_asset_check + Duration::from_secs(30)
+            self.last_asset_check + FULL_ASSET_CHECK_INTERVAL
         };
         let waits = [
             self.last_log_poll + LOG_INTERVAL,
@@ -1395,6 +1413,9 @@ impl Daemon {
         while let Ok(result) = rx.try_recv() {
             match result {
                 Ok(event) => {
+                    if event.need_rescan() {
+                        self.full_asset_check_due = true;
+                    }
                     let removal = matches!(
                         &event.kind,
                         notify::EventKind::Remove(_)

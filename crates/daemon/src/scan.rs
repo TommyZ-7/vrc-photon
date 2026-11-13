@@ -554,7 +554,6 @@ impl Daemon {
                 }
             }
         }
-        self.verify_replaced_assets()?;
         self.report_scan_outcome(&report, full_scan)?;
         if report.modified > 0 {
             self.link_unlinked()?;
@@ -701,9 +700,10 @@ impl Daemon {
         }
     }
 
-    /// Marks replaced photos missing when their compressed display file was
-    /// deleted or moved away. The notify watcher intentionally ignores the
-    /// `compressed` directory, so the daemon checks these paths periodically.
+    /// Fallback that marks replaced photos missing when their compressed
+    /// display file was deleted or moved away. Event handling covers deletions
+    /// while the watcher is healthy; this runs at startup, every six hours, and
+    /// after notify reports lost events.
     pub(crate) fn verify_replaced_assets(&mut self) -> Result<()> {
         let rows = {
             let db = lock_db(&self.db);

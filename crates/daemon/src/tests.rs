@@ -4656,6 +4656,85 @@ fn tray_idle_wait_is_at_most_five_hundred_milliseconds() {
 }
 
 #[test]
+fn full_asset_check_does_not_run_before_six_hours() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    let photo_dir = dir.path().join("photos");
+    let compressed = photo_dir.join("compressed");
+    std::fs::create_dir_all(&compressed).unwrap();
+    let derivative = compressed.join("missing.webp");
+    let id = add_replaced_photo(&daemon, &photo_dir.join("VRChat_missing.png"), &derivative);
+    // Longer than the old 30-second interval, shorter than six hours.
+    daemon.last_asset_check = Instant::now() - Duration::from_secs(31);
+
+    daemon.run_loop_iteration();
+
+    let db = daemon.db.lock().unwrap();
+    let photo = db.photo_by_id(id).unwrap().unwrap();
+    assert_eq!(photo.status, vrc_photon_core::model::PhotoStatus::Replaced);
+}
+
+#[test]
+fn full_asset_check_runs_after_six_hours() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    let photo_dir = dir.path().join("photos");
+    let compressed = photo_dir.join("compressed");
+    std::fs::create_dir_all(&compressed).unwrap();
+    let derivative = compressed.join("missing.webp");
+    let id = add_replaced_photo(&daemon, &photo_dir.join("VRChat_missing.png"), &derivative);
+    daemon.last_asset_check = Instant::now() - FULL_ASSET_CHECK_INTERVAL - Duration::from_secs(1);
+
+    daemon.run_loop_iteration();
+
+    let db = daemon.db.lock().unwrap();
+    let photo = db.photo_by_id(id).unwrap().unwrap();
+    assert_eq!(photo.status, vrc_photon_core::model::PhotoStatus::Missing);
+}
+
+#[test]
+fn run_once_runs_the_full_asset_check() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    let photo_dir = dir.path().join("photos");
+    let compressed = photo_dir.join("compressed");
+    std::fs::create_dir_all(&compressed).unwrap();
+    let derivative = compressed.join("missing.webp");
+    let id = add_replaced_photo(&daemon, &photo_dir.join("VRChat_missing.png"), &derivative);
+
+    daemon.run_once().unwrap();
+
+    let db = daemon.db.lock().unwrap();
+    let photo = db.photo_by_id(id).unwrap().unwrap();
+    assert_eq!(photo.status, vrc_photon_core::model::PhotoStatus::Missing);
+    assert!(photo.display_derivative_id.is_none());
+}
+
+#[test]
+fn rescan_flag_forces_the_full_asset_check() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    let photo_dir = dir.path().join("photos");
+    let compressed = photo_dir.join("compressed");
+    std::fs::create_dir_all(&compressed).unwrap();
+    let derivative = compressed.join("missing.webp");
+    let id = add_replaced_photo(&daemon, &photo_dir.join("VRChat_missing.png"), &derivative);
+    daemon.last_asset_check = Instant::now();
+    let (tx, rx) = std::sync::mpsc::channel();
+    daemon.watcher_rx = Some(rx);
+    tx.send(Ok(
+        notify::Event::new(notify::EventKind::Other).set_flag(notify::event::Flag::Rescan)
+    ))
+    .unwrap();
+
+    daemon.run_loop_iteration();
+
+    let db = daemon.db.lock().unwrap();
+    let photo = db.photo_by_id(id).unwrap().unwrap();
+    assert_eq!(photo.status, vrc_photon_core::model::PhotoStatus::Missing);
+}
+
+#[test]
 fn paused_idle_wait_does_not_spin_on_an_overdue_asset_check() {
     let dir = tempfile::tempdir().unwrap();
     let mut daemon = test_daemon(&dir);
@@ -4668,7 +4747,7 @@ fn paused_idle_wait_does_not_spin_on_an_overdue_asset_check() {
     daemon.last_settings_check = now;
     daemon.last_autostart_check = now;
     daemon.last_heartbeat = now;
-    daemon.last_asset_check = now - Duration::from_secs(60);
+    daemon.last_asset_check = now - FULL_ASSET_CHECK_INTERVAL - Duration::from_secs(1);
     daemon.set_paused(true);
     assert!(daemon.next_loop_wait() >= Duration::from_millis(100));
 }
