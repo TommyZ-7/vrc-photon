@@ -31,11 +31,9 @@ impl App {
     ) {
         match owner {
             ResizeOwner::Clipboard => self.edit_clipboard_resize(edit, cx),
-            ResizeOwner::Feature(target) => self.edit_feature_compression(
-                target,
-                |options| edit(&mut options.resize),
-                cx,
-            ),
+            ResizeOwner::Feature(target) => {
+                self.edit_feature_compression(target, |options| edit(&mut options.resize), cx)
+            }
         }
     }
 
@@ -194,31 +192,29 @@ impl App {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let p = self.palette;
-        let mut body = v_flex()
-            .gap(px(6.))
-            .child(
-                h_flex()
-                    .items_center()
-                    .gap(px(8.))
-                    .child(
-                        div()
-                            .w(px(88.))
-                            .text_size(px(11.5))
-                            .text_color(rgb(p.muted))
-                            .child(tr!("compression.enable_resize")),
-                    )
-                    .child(
-                        Switch::new(SharedString::from(format!("{id_prefix}-resize")))
-                            .checked(resize.resize_enabled)
-                            .on_click(cx.listener(move |this, checked, _, cx| {
-                                this.apply_resize_edit(
-                                    owner,
-                                    |resize| resize.resize_enabled = *checked,
-                                    cx,
-                                );
-                            })),
-                    ),
-            );
+        let mut body = v_flex().gap(px(6.)).child(
+            h_flex()
+                .items_center()
+                .gap(px(8.))
+                .child(
+                    div()
+                        .w(px(88.))
+                        .text_size(px(11.5))
+                        .text_color(rgb(p.muted))
+                        .child(tr!("compression.enable_resize")),
+                )
+                .child(
+                    Switch::new(SharedString::from(format!("{id_prefix}-resize")))
+                        .checked(resize.resize_enabled)
+                        .on_click(cx.listener(move |this, checked, _, cx| {
+                            this.apply_resize_edit(
+                                owner,
+                                |resize| resize.resize_enabled = *checked,
+                                cx,
+                            );
+                        })),
+                ),
+        );
 
         if resize.resize_enabled {
             body = body
@@ -256,11 +252,7 @@ impl App {
                                     })
                                     .text_size(px(10.))
                                     .font_medium()
-                                    .text_color(if active {
-                                        rgb(p.accent)
-                                    } else {
-                                        rgb(p.muted)
-                                    })
+                                    .text_color(if active { rgb(p.accent) } else { rgb(p.muted) })
                                     .cursor_pointer()
                                     .on_click(cx.listener(move |this, _, _, cx| {
                                         this.apply_resize_edit(
@@ -319,11 +311,7 @@ impl App {
                                     })
                                     .text_size(px(10.))
                                     .font_medium()
-                                    .text_color(if active {
-                                        rgb(p.accent)
-                                    } else {
-                                        rgb(p.muted)
-                                    })
+                                    .text_color(if active { rgb(p.accent) } else { rgb(p.muted) })
                                     .cursor_pointer()
                                     .on_click(cx.listener(move |this, _, _, cx| {
                                         this.apply_resize_edit(

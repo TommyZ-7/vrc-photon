@@ -6,7 +6,9 @@ use image::DynamicImage;
 
 use crate::error::{CoreError, Result};
 use crate::fs_safe::{self, PlaceOutcome};
-use crate::model::{CompressionFormat, CompressionOptions, CompressionProfile, ResizeMode, ResizeSettings};
+use crate::model::{
+    CompressionFormat, CompressionOptions, CompressionProfile, ResizeMode, ResizeSettings,
+};
 
 #[derive(Debug, Clone)]
 pub struct CompressionResult {
@@ -109,7 +111,6 @@ fn encode_image_bytes(
     let bytes = encode(&image, options)?;
     Ok((bytes, width, height))
 }
-
 
 /// Renders the resize settings as PNG bytes for the system clipboard.
 ///

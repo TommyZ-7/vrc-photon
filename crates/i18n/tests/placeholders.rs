@@ -22,10 +22,7 @@ const CALL_SITES: &[(&str, &[&str])] = &[
     ("compression.clipboard_tool_wait", &["error", "program"]),
     ("compression.clipboard_windows_failed", &["error", "step"]),
     ("compression.enqueue.failed_note", &["count"]),
-    (
-        "compression.enqueue.success",
-        &["count", "failures"],
-    ),
+    ("compression.enqueue.success", &["count", "failures"]),
     ("compression.name.too_long", &["max"]),
     ("compression.name_hint", &["count", "max"]),
     ("compression.job.photo", &["id"]),

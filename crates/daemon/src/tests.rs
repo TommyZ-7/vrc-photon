@@ -1633,7 +1633,6 @@ fn save_daemon_settings(daemon: &Daemon, update: impl FnOnce(&mut AppSettings)) 
     settings.save(&db).unwrap();
 }
 
-
 fn write_photo(path: &Path) {
     image::RgbaImage::from_pixel(16, 10, image::Rgba([10, 20, 30, 255]))
         .save(path)
@@ -1715,7 +1714,17 @@ fn add_replaced_photo(daemon: &Daemon, photo: &Path, derivative: &Path) -> i64 {
         .unwrap();
     let derivative = derivative.to_string_lossy().to_string();
     let derivative_id = db
-        .add_derivative(id, &derivative, "webp", 16, 10, 1, Some("test"), CompressionOrigin::Manual, "replace")
+        .add_derivative(
+            id,
+            &derivative,
+            "webp",
+            16,
+            10,
+            1,
+            Some("test"),
+            CompressionOrigin::Manual,
+            "replace",
+        )
         .unwrap();
     assert!(db.set_replaced(id, derivative_id).unwrap());
     id
@@ -3323,22 +3332,21 @@ fn preferred_display_derivative_uses_only_auto_origin_then_newest_id() {
     let missing = dir.path().join("missing.webp");
     std::fs::write(&first, b"a").unwrap();
     std::fs::write(&second, b"b").unwrap();
-    let derivative =
-        |id: i64, origin: CompressionOrigin, profile: Option<&str>, path: &Path| {
-            vrc_photon_core::model::Derivative {
-                id,
-                photo_id: 1,
-                path: path.to_string_lossy().to_string(),
-                format: "webp".to_string(),
-                width: 16,
-                height: 10,
-                file_size: 1,
-                profile_id: profile.map(str::to_string),
-                origin,
-                policy: "replace".to_string(),
-                created_at: String::new(),
-            }
-        };
+    let derivative = |id: i64, origin: CompressionOrigin, profile: Option<&str>, path: &Path| {
+        vrc_photon_core::model::Derivative {
+            id,
+            photo_id: 1,
+            path: path.to_string_lossy().to_string(),
+            format: "webp".to_string(),
+            width: 16,
+            height: 10,
+            file_size: 1,
+            profile_id: profile.map(str::to_string),
+            origin,
+            policy: "replace".to_string(),
+            created_at: String::new(),
+        }
+    };
     let derivatives = vec![
         derivative(2, CompressionOrigin::Auto, None, &second),
         derivative(1, CompressionOrigin::Auto, None, &first),
@@ -3697,10 +3705,9 @@ fn auto_replace_is_worker_count_independent() {
 
         let display_id = photo.display_derivative_id.expect("display derivative");
         assert_eq!(display_id, derivatives[0].id);
-        let actual =
-            vrc_photon_core::image_decode::decode_image(Path::new(&derivatives[0].path))
-                .unwrap()
-                .to_rgba8();
+        let actual = vrc_photon_core::image_decode::decode_image(Path::new(&derivatives[0].path))
+            .unwrap()
+            .to_rgba8();
         assert_eq!(
             actual, expected,
             "workers={workers}: the job must read the original"
@@ -3882,8 +3889,14 @@ fn batch_continues_after_one_profile_fails() {
 
     let db = Db::open(dir.path().join("library.db")).unwrap();
     let jobs = db.list_jobs(10).unwrap();
-    let good = jobs.iter().find(|job| job.profile_id.as_deref() == Some("good")).unwrap();
-    let bad = jobs.iter().find(|job| job.profile_id.as_deref() == Some("bad")).unwrap();
+    let good = jobs
+        .iter()
+        .find(|job| job.profile_id.as_deref() == Some("good"))
+        .unwrap();
+    let bad = jobs
+        .iter()
+        .find(|job| job.profile_id.as_deref() == Some("bad"))
+        .unwrap();
     assert_eq!(good.status, QueueStatus::Completed);
     assert_eq!(bad.status, QueueStatus::Failed);
     assert_eq!(db.derivatives_for_photo(photo.id).unwrap().len(), 1);
@@ -4857,7 +4870,6 @@ fn auto_compression_enqueues_without_any_profiles() {
     assert_eq!(jobs[0].origin, CompressionOrigin::Auto);
     assert_eq!(jobs[0].profile_id, None);
 }
-
 
 #[test]
 fn auto_jobs_use_replace_policy_and_waiting_status() {

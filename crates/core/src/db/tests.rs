@@ -208,8 +208,18 @@ fn concurrent_open_of_a_fresh_database_succeeds() {
 fn deleting_photo_is_hidden_from_index_search_and_counts() {
     let db = Db::open_in_memory().unwrap();
     let id = seed_photo(&db);
-    db.add_derivative(id, "/photos/a.webp", "webp", 16, 10, 8, Some("p"), CompressionOrigin::Manual, "keep")
-        .unwrap();
+    db.add_derivative(
+        id,
+        "/photos/a.webp",
+        "webp",
+        16,
+        10,
+        8,
+        Some("p"),
+        CompressionOrigin::Manual,
+        "keep",
+    )
+    .unwrap();
     db.connection()
         .execute(
             "UPDATE photos SET status = 'deleting' WHERE id = ?1",
@@ -271,7 +281,17 @@ fn upsert_preserves_replaced_display_while_auto_deletion_is_active() {
     let db = Db::open_in_memory().unwrap();
     let id = seed_photo(&db);
     let derivative = db
-        .add_derivative(id, "/photos/a_webp.webp", "webp", 16, 10, 8, Some("p"), CompressionOrigin::Manual, "replace")
+        .add_derivative(
+            id,
+            "/photos/a_webp.webp",
+            "webp",
+            16,
+            10,
+            8,
+            Some("p"),
+            CompressionOrigin::Manual,
+            "replace",
+        )
         .unwrap();
     db.set_replaced(id, derivative).unwrap();
     insert_deletion_request(&db, id, "auto_replace", "pending");
@@ -287,7 +307,17 @@ fn set_replaced_does_not_unhide_a_deleting_photo() {
     let db = Db::open_in_memory().unwrap();
     let id = seed_photo(&db);
     let derivative = db
-        .add_derivative(id, "/photos/a_webp.webp", "webp", 16, 10, 8, Some("p"), CompressionOrigin::Manual, "replace")
+        .add_derivative(
+            id,
+            "/photos/a_webp.webp",
+            "webp",
+            16,
+            10,
+            8,
+            Some("p"),
+            CompressionOrigin::Manual,
+            "replace",
+        )
         .unwrap();
     insert_deletion_request(&db, id, "manual", "pending");
     db.connection()
@@ -308,7 +338,17 @@ fn complete_replacement_marks_replaced_and_requests_auto_deletion() {
     let db = Db::open_in_memory().unwrap();
     let id = seed_photo(&db);
     let derivative = db
-        .add_derivative(id, "/photos/a_webp.webp", "webp", 16, 10, 8, Some("p"), CompressionOrigin::Manual, "replace")
+        .add_derivative(
+            id,
+            "/photos/a_webp.webp",
+            "webp",
+            16,
+            10,
+            8,
+            Some("p"),
+            CompressionOrigin::Manual,
+            "replace",
+        )
         .unwrap();
 
     db.complete_replacement(id, derivative).unwrap();
@@ -365,7 +405,17 @@ fn photo_effective_path_prefers_the_display_derivative() {
     assert_eq!(db.photo_effective_path(999_999).unwrap(), None);
 
     let derivative = db
-        .add_derivative(id, "/photos/a_webp.webp", "webp", 16, 10, 8, Some("p"), CompressionOrigin::Manual, "replace")
+        .add_derivative(
+            id,
+            "/photos/a_webp.webp",
+            "webp",
+            16,
+            10,
+            8,
+            Some("p"),
+            CompressionOrigin::Manual,
+            "replace",
+        )
         .unwrap();
     db.set_replaced(id, derivative).unwrap();
 
@@ -6484,12 +6534,6 @@ fn duplicate_profile_caps_generated_names_at_the_ui_limit() {
     assert!(second.name.ends_with(" のコピー 2"));
 }
 
-
-
-
-
-
-
 #[test]
 fn delete_setting_removes_only_the_requested_key() {
     let db = Db::open_in_memory().unwrap();
@@ -6614,10 +6658,30 @@ fn add_derivative_rejects_a_path_owned_by_another_photo() {
     let path = "/photos/compressed/shared.webp";
 
     let id = db
-        .add_derivative(first, path, "webp", 10, 20, 30, Some("p"), CompressionOrigin::Manual, "keep")
+        .add_derivative(
+            first,
+            path,
+            "webp",
+            10,
+            20,
+            30,
+            Some("p"),
+            CompressionOrigin::Manual,
+            "keep",
+        )
         .unwrap();
     assert!(matches!(
-        db.add_derivative(second, path, "webp", 10, 20, 30, Some("p"), CompressionOrigin::Manual, "keep"),
+        db.add_derivative(
+            second,
+            path,
+            "webp",
+            10,
+            20,
+            30,
+            Some("p"),
+            CompressionOrigin::Manual,
+            "keep"
+        ),
         Err(CoreError::Invalid(_))
     ));
     let first_rows = db.derivatives_for_photo(first).unwrap();
@@ -7454,11 +7518,9 @@ fn compression_job_origin_roundtrips() {
 
     let jobs = db.list_jobs(10).unwrap();
     assert_eq!(jobs.len(), 2);
-    assert!(
-        jobs.iter()
-            .any(|job| job.origin == CompressionOrigin::Manual
-                && job.profile_id.as_deref() == Some("p"))
-    );
+    assert!(jobs.iter().any(
+        |job| job.origin == CompressionOrigin::Manual && job.profile_id.as_deref() == Some("p")
+    ));
     assert!(
         jobs.iter()
             .any(|job| job.origin == CompressionOrigin::Auto && job.profile_id.is_none())
@@ -7527,14 +7589,16 @@ fn derivative_origin_and_nullable_profile_roundtrip() {
     let derivatives = db.derivatives_for_photo(photo).unwrap();
     assert_eq!(derivatives.len(), 2);
     assert!(
-        derivatives.iter().any(|derivative| derivative.origin
-            == CompressionOrigin::Auto
-            && derivative.profile_id.is_none())
+        derivatives
+            .iter()
+            .any(|derivative| derivative.origin == CompressionOrigin::Auto
+                && derivative.profile_id.is_none())
     );
     assert!(
-        derivatives.iter().any(|derivative| derivative.origin
-            == CompressionOrigin::Manual
-            && derivative.profile_id.as_deref() == Some("p"))
+        derivatives
+            .iter()
+            .any(|derivative| derivative.origin == CompressionOrigin::Manual
+                && derivative.profile_id.as_deref() == Some("p"))
     );
 }
 

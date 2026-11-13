@@ -64,10 +64,7 @@ pub(crate) fn discord_summary(configured: bool, destination: &str) -> String {
 }
 
 /// One-line automatic compression state for the master list.
-pub(crate) fn auto_compression_summary(
-    enabled: bool,
-    options: &CompressionOptions,
-) -> String {
+pub(crate) fn auto_compression_summary(enabled: bool, options: &CompressionOptions) -> String {
     tr_args!(
         "integrations.summary.auto",
         state = on_off_label(enabled),
@@ -177,7 +174,10 @@ impl App {
                 IntegrationsSection::AutoCompression,
                 "integrations-list-auto",
                 tr!("integrations.auto.title"),
-                auto_compression_summary(self.settings.auto_compress, &self.settings.auto_compression),
+                auto_compression_summary(
+                    self.settings.auto_compress,
+                    &self.settings.auto_compression,
+                ),
                 self.settings.auto_compress,
             ),
             (
