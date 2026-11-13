@@ -116,16 +116,20 @@ impl Daemon {
         let mut new_ids = Vec::new();
         let mut thumbnail_ids = Vec::new();
         let mut missing_ids = Vec::new();
+        let mut removed_display_rows = Vec::new();
         let mut changed = false;
         for path in paths {
-            let Some(root) = roots.iter().find(|root| path.starts_with(root)) else {
-                continue;
-            };
-            let root_id = {
-                let db = lock_db(&self.db);
-                db.add_root(&root.to_string_lossy(), "reference")?
-            };
             if path.is_file() {
+                let Some(root) = roots.iter().find(|root| path.starts_with(root)) else {
+                    continue;
+                };
+                if is_compressed_path(&path) {
+                    continue;
+                }
+                let root_id = {
+                    let db = lock_db(&self.db);
+                    db.add_root(&root.to_string_lossy(), "reference")?
+                };
                 let Some(scanned) = scan_one(root, &path) else {
                     continue;
                 };
@@ -179,14 +183,20 @@ impl Daemon {
                     new_ids.push(id);
                     thumbnail_ids.push(id);
                 }
+                continue;
+            }
+
+            // Removed source photos are only handled for configured photo
+            // roots. Display derivatives can live under any library root
+            // (notably an import destination), so their lookup below is
+            // independent of `roots`.
+            let source_photo = if roots.iter().any(|root| path.starts_with(root)) {
+                let db = lock_db(&self.db);
+                db.photo_by_path(&path.to_string_lossy())?
             } else {
-                let photo = {
-                    let db = lock_db(&self.db);
-                    db.photo_by_path(&path.to_string_lossy())?
-                };
-                let Some(photo) = photo else {
-                    continue;
-                };
+                None
+            };
+            if let Some(photo) = source_photo {
                 if photo.status == PhotoStatus::Present {
                     let marked = {
                         let db = lock_db(&self.db);
@@ -197,13 +207,40 @@ impl Daemon {
                         changed = true;
                     }
                 }
+                continue;
+            }
+            let owner = {
+                let db = lock_db(&self.db);
+                db.display_derivative_owner(&path.to_string_lossy())?
+            };
+            if let Some((photo_id, root)) = owner {
+                removed_display_rows.push((
+                    photo_id,
+                    Some(path.to_string_lossy().into_owned()),
+                    root,
+                ));
             }
         }
+        let missing_display_ids = missing_display_derivatives(
+            removed_display_rows,
+            |path| path.is_dir(),
+            |path| path.is_file(),
+        );
         // A remove event and its matching create event can arrive in one
         // batch. Only after every addition has had a chance to rebind do we
         // promote a derivative for rows that are still missing.
         {
             let db = lock_db(&self.db);
+            if !missing_display_ids.is_empty() {
+                db.in_transaction(|db| {
+                    for photo_id in &missing_display_ids {
+                        db.mark_missing(*photo_id)?;
+                        db.clear_display_derivative(*photo_id)?;
+                    }
+                    Ok(())
+                })?;
+                changed = true;
+            }
             for photo_id in missing_ids {
                 if let Some(photo) = db.photo_by_id(photo_id)?
                     && photo.status == PhotoStatus::Missing
@@ -517,7 +554,6 @@ impl Daemon {
                 }
             }
         }
-        self.verify_replaced_assets()?;
         self.report_scan_outcome(&report, full_scan)?;
         if report.modified > 0 {
             self.link_unlinked()?;
@@ -664,9 +700,10 @@ impl Daemon {
         }
     }
 
-    /// Marks replaced photos missing when their compressed display file was
-    /// deleted or moved away. The notify watcher intentionally ignores the
-    /// `compressed` directory, so the daemon checks these paths periodically.
+    /// Fallback that marks replaced photos missing when their compressed
+    /// display file was deleted or moved away. Event handling covers deletions
+    /// while the watcher is healthy; this runs at startup, every six hours, and
+    /// after notify reports lost events.
     pub(crate) fn verify_replaced_assets(&mut self) -> Result<()> {
         let rows = {
             let db = lock_db(&self.db);
