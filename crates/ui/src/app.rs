@@ -403,8 +403,11 @@ pub struct App {
     pub(crate) last_import_progress_notify: Option<Instant>,
     /// A compression refresh timer is already scheduled.
     pub(crate) compression_refresh_scheduled: bool,
-    /// The pending compression refresh must also invalidate library pages.
+    /// The pending compression refresh must run the library-row pass.
     pub(crate) compression_library_refresh_pending: bool,
+    /// Photos whose display source changed in the pending compression refresh.
+    /// Their rows are patched into the page caches instead of clearing them.
+    pub(crate) compression_replaced_photos: HashSet<i64>,
     /// Coalescing gate for the background live refresh. The three-second
     /// poller and IPC-triggered refreshes share it.
     pub(crate) live_refresh: LiveRefreshGate,
@@ -1296,6 +1299,7 @@ impl App {
             last_import_progress_notify: None,
             compression_refresh_scheduled: false,
             compression_library_refresh_pending: false,
+            compression_replaced_photos: HashSet::new(),
             live_refresh: LiveRefreshGate::default(),
             library_reload: LiveRefreshGate::default(),
             pending_library_reload: None,

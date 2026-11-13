@@ -292,7 +292,10 @@ impl App {
                     // A `replace` job changed the displayed file. Only that
                     // terminal state can publish a new derivative; failed and
                     // cancelled jobs leave every cache entry valid. Check the
-                    // database because `keep` jobs also complete.
+                    // database because `keep` jobs also complete. The row and
+                    // thumbnail are refreshed together in the coalesced pass
+                    // so a render between them cannot decode the removed
+                    // original.
                     let replaced = self
                         .db
                         .photo_by_id(photo_id)
@@ -300,7 +303,7 @@ impl App {
                         .flatten()
                         .is_some_and(|photo| photo.status.is_replaced());
                     if replaced {
-                        self.invalidate_photo_media(photo_id, cx);
+                        self.compression_replaced_photos.insert(photo_id);
                     }
                 }
                 self.schedule_compression_refresh(library_changed, cx);
@@ -435,9 +438,11 @@ impl App {
     }
 
     /// Compression changes photo metadata (display derivative, replaced
-    /// status) but not the id set or order, so the index snapshot stays valid.
-    /// Invalidate the page cache and refresh the side panels instead of
-    /// re-querying the 100k-row index.
+    /// status) but not the id set or order, so the index snapshot and the
+    /// page cache stay valid. Patch the completed replacement rows in place
+    /// and refresh the side panels instead of re-querying the 100k-row index.
+    /// Clearing the pages here used to render every visible card as a
+    /// placeholder on each 250 ms burst, which made the whole grid flicker.
     fn refresh_after_compression(&mut self, cx: &mut Context<Self>) {
         // Claim the revision before the (background) metadata refresh so a
         // poll that lands mid-refresh does not start a full index reload.
@@ -446,8 +451,24 @@ impl App {
         }
         self.revision_debounce.reset();
         self.count_debounce.reset();
-        self.library.borrow_mut().invalidate_pages();
-        self.search_view.borrow_mut().invalidate_pages();
+        let replaced: Vec<i64> = self.compression_replaced_photos.drain().collect();
+        if !replaced.is_empty() {
+            match self.db.photos_by_ids(&replaced) {
+                Ok(photos) => {
+                    self.library.borrow_mut().update_photo_rows(&photos);
+                    self.search_view.borrow_mut().update_photo_rows(&photos);
+                    // Invalidate the media only after the cached row points at
+                    // the new display source, so a re-request cannot decode the
+                    // removed original.
+                    for photo in &photos {
+                        self.invalidate_photo_media(photo.id, cx);
+                    }
+                }
+                Err(error) => {
+                    tracing::warn!(%error, "cannot refresh compressed photo rows");
+                }
+            }
+        }
         if let Some(id) = self.selected {
             self.load_selected_meta(id);
             if let Some(photo) = self.selected_photo.clone() {
@@ -455,9 +476,6 @@ impl App {
                 // it again now that the display derivative is known.
                 self.request_thumbnail(&photo, cx);
             }
-        }
-        if self.screen != Screen::Photos {
-            self.mark_library_dirty();
         }
         // Stats, the compressed-id scan, and the job counters moved to the
         // background snapshot; this path used to run them on the UI thread
@@ -529,8 +547,8 @@ impl App {
         }
         let now = Instant::now();
         // A terminal compression refresh was already scheduled for this
-        // revision. Its light path invalidates pages and reloads the side
-        // panels without re-querying the 100k index; let it consume the
+        // revision. Its light path patches the affected rows and reloads the
+        // side panels without re-querying the 100k index; let it consume the
         // revision instead of racing it with a full reload.
         let compression_refresh_pending = self.compression_library_refresh_pending;
         if let Some(revision) = revision
