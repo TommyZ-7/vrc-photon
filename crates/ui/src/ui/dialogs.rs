@@ -100,35 +100,6 @@ impl App {
             cx.notify();
         }));
 
-        let keep_row = manual_option_row(
-            &self.palette,
-            "manual-keep-original",
-            tr!("dialog.keep_original"),
-            tr!("dialog.keep_original_hint"),
-            dialog.keep_original,
-            true,
-        )
-        .on_click(cx.listener(|this, _, _, cx| {
-            if let Some(dialog) = &mut this.manual_compress {
-                dialog.keep_original = true;
-            }
-            cx.notify();
-        }));
-        let trash_row = manual_option_row(
-            &self.palette,
-            "manual-trash-original",
-            tr!("dialog.trash_original"),
-            tr!("dialog.trash_original_hint"),
-            !dialog.keep_original,
-            true,
-        )
-        .on_click(cx.listener(|this, _, _, cx| {
-            if let Some(dialog) = &mut this.manual_compress {
-                dialog.keep_original = false;
-            }
-            cx.notify();
-        }));
-
         let folder_path = dialog
             .folder
             .clone()
@@ -206,8 +177,15 @@ impl App {
                     ))
                     .child(profile_row)
             })
-            .child(self.section_label(tr!("dialog.section.original")))
-            .child(v_flex().gap(px(6.)).child(keep_row).child(trash_row));
+            .child(
+                div()
+                    .p(px(10.))
+                    .rounded(px(8.))
+                    .bg(rgb(p.panel_2))
+                    .text_size(px(10.))
+                    .text_color(rgb(p.muted))
+                    .child(tr!("dialog.manual_keep_note")),
+            );
 
         let footer = h_flex()
             .flex_shrink_0()

@@ -24,7 +24,7 @@ const CALL_SITES: &[(&str, &[&str])] = &[
     ("compression.enqueue.failed_note", &["count"]),
     (
         "compression.enqueue.success",
-        &["count", "failures", "policy"],
+        &["count", "failures"],
     ),
     ("compression.name.too_long", &["max"]),
     ("compression.name_hint", &["count", "max"]),

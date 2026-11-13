@@ -5568,6 +5568,32 @@ fn missing_original_promotes_the_auto_derivative() {
 }
 
 #[test]
+fn manual_job_with_replace_policy_does_not_change_the_display() {
+    let mut ctx = DaemonAiTest::new();
+    let (photo_id, _path) = ctx.add_photo_and_scan();
+    {
+        let db = ctx.db.lock().unwrap();
+        db.save_profile(&CompressionProfile {
+            id: "manual".to_string(),
+            name: "Manual".to_string(),
+            ..CompressionProfile::default()
+        })
+        .unwrap();
+        db.enqueue_job(photo_id, "manual", "replace").unwrap();
+    }
+
+    ctx.daemon.compress_pending().unwrap();
+
+    let db = ctx.db.lock().unwrap();
+    let photo = db.photo_by_id(photo_id).unwrap().unwrap();
+    assert_eq!(photo.status, PhotoStatus::Present);
+    assert_eq!(photo.display_derivative_id, None);
+    let derivative = db.derivatives_for_photo(photo_id).unwrap().remove(0);
+    assert_eq!(derivative.origin, CompressionOrigin::Manual);
+    assert_eq!(derivative.policy, "keep");
+}
+
+#[test]
 fn auto_replace_compression_keeps_the_photo_visible() {
     let dir = tempfile::tempdir().unwrap();
     let mut daemon = replace_test_daemon(&dir);

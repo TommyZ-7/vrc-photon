@@ -34,6 +34,12 @@ pub(crate) enum ManualOutputTarget {
     Profile,
 }
 
+/// Manual compression never moves or replaces the original file. The output
+/// is only registered as a derivative.
+pub(crate) fn manual_compression_policy() -> &'static str {
+    "keep"
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ProfileNameError {
     Empty,
@@ -78,7 +84,6 @@ pub(crate) struct ManualCompressionDialog {
     pub(crate) profile_id: String,
     pub(crate) output: ManualOutputTarget,
     pub(crate) folder: Option<String>,
-    pub(crate) keep_original: bool,
     /// Header actions choose the output before opening the modal, so the
     /// modal must not show the output-destination menu again.
     pub(crate) hide_output: bool,
@@ -175,7 +180,6 @@ impl App {
             profile_id: profile.id.clone(),
             output: ManualOutputTarget::Profile,
             folder: None,
-            keep_original: true,
             hide_output: false,
         });
         cx.notify();
@@ -321,7 +325,6 @@ impl App {
             profile_id: profile.id.clone(),
             output,
             folder,
-            keep_original: true,
             hide_output: true,
         });
         cx.notify();
@@ -382,7 +385,7 @@ impl App {
         } else {
             None
         };
-        let policy = compression_policy(dialog.keep_original);
+        let policy = manual_compression_policy();
         let mut enqueued = 0usize;
         let mut failed = 0usize;
         for photo_id in &dialog.photo_ids {
@@ -402,11 +405,6 @@ impl App {
         }
         self.manual_compress = None;
         if enqueued > 0 {
-            let policy_note = if dialog.keep_original {
-                tr!("compression.policy.keep")
-            } else {
-                tr!("compression.policy.replace")
-            };
             let failure_note = if failed > 0 {
                 tr_args!("compression.enqueue.failed_note", count = failed)
             } else {
@@ -416,7 +414,6 @@ impl App {
                 tr_args!(
                     "compression.enqueue.success",
                     count = enqueued,
-                    policy = policy_note,
                     failures = failure_note
                 ),
                 cx,
@@ -727,8 +724,14 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::{
-        MAX_PROFILE_NAME_CHARS, ProfileNameError, normalize_profile_name, profile_name_update,
+        MAX_PROFILE_NAME_CHARS, ProfileNameError, manual_compression_policy,
+        normalize_profile_name, profile_name_update,
     };
+
+    #[test]
+    fn manual_compression_always_uses_keep() {
+        assert_eq!(manual_compression_policy(), "keep");
+    }
 
     #[test]
     fn profile_name_is_trimmed_before_saving() {
