@@ -6178,10 +6178,7 @@ fn ensure_default_profiles_is_idempotent() {
     assert_eq!(order, ["無劣化webp", "discord用webp", "高画質webp"]);
 
     let by_name = |name: &str| first.iter().find(|profile| profile.name == name).unwrap();
-    assert!(by_name("無劣化webp").auto_enabled);
     assert!(by_name("無劣化webp").lossless);
-    assert!(!by_name("discord用webp").auto_enabled);
-    assert!(by_name("discord用webp").clipboard);
     assert_eq!(by_name("discord用webp").width, 2560);
     assert_eq!(by_name("discord用webp").height, 1440);
     assert_eq!(
@@ -6198,6 +6195,20 @@ fn ensure_default_profiles_is_idempotent() {
     let second_ids: Vec<String> = second.iter().map(|profile| profile.id.clone()).collect();
     assert_eq!(first_ids, second_ids);
     assert_eq!(db.list_profiles().unwrap().len(), 3);
+}
+
+#[test]
+fn profile_json_ignores_removed_role_flags() {
+    let legacy = r#"{
+        "id":"p","name":"Legacy","enabled":true,
+        "auto_enabled":true,"clipboard":true,"discord":true,
+        "format":"webp","quality":82,"lossless":true,
+        "resize_enabled":false,"resize_mode":"downscale_only",
+        "width":3840,"height":2160,"maintain_aspect":true,
+        "output_dir":null,"suffix":"","encode_speed":6
+    }"#;
+    let profile: CompressionProfile = serde_json::from_str(legacy).unwrap();
+    assert_eq!(profile.name, "Legacy");
 }
 
 #[test]
@@ -6429,14 +6440,12 @@ fn duplicate_profile_inserts_named_copy_after_source() {
     let copy = db.duplicate_profile("b").unwrap();
     assert_ne!(copy.id, source.id);
     assert_eq!(copy.name, "B のコピー");
-    assert!(!copy.auto_enabled);
     assert_eq!(copy.format, source.format);
     assert_eq!(copy.quality, source.quality);
 
     let stored = db.list_profiles().unwrap();
     let ids: Vec<&str> = stored.iter().map(|profile| profile.id.as_str()).collect();
     assert_eq!(ids, vec!["a", "b", copy.id.as_str(), "c"]);
-    assert!(!stored[2].auto_enabled);
 
     let mut edited = copy.clone();
     edited.quality = 31;
@@ -6475,118 +6484,11 @@ fn duplicate_profile_caps_generated_names_at_the_ui_limit() {
     assert!(second.name.ends_with(" のコピー 2"));
 }
 
-#[test]
-fn failed_profile_save_restores_the_previous_clipboard_flag() {
-    let db = Db::open_in_memory().unwrap();
-    let mut first = profile("first", "First");
-    first.clipboard = true;
-    db.save_profile(&first).unwrap();
 
-    db.connection()
-        .execute_batch(
-            "CREATE TRIGGER fail_broken_profile BEFORE INSERT ON compression_profiles \
-                 WHEN NEW.id = 'broken' BEGIN SELECT RAISE(ABORT, 'simulated write failure'); END;",
-        )
-        .unwrap();
 
-    let mut broken = profile("broken", "Broken");
-    broken.clipboard = true;
-    assert!(db.save_profile(&broken).is_err());
 
-    let stored = db.list_profiles().unwrap();
-    assert_eq!(stored.len(), 1);
-    assert!(stored[0].clipboard);
-}
 
-#[test]
-fn saving_a_clipboard_profile_clears_the_previous_one() {
-    let db = Db::open_in_memory().unwrap();
-    let mut first = profile("first", "First");
-    first.clipboard = true;
-    db.save_profile(&first).unwrap();
-    let mut second = profile("second", "Second");
-    second.clipboard = true;
-    db.save_profile(&second).unwrap();
 
-    let stored = db.list_profiles().unwrap();
-    assert_eq!(stored.iter().filter(|profile| profile.clipboard).count(), 1);
-    assert!(
-        stored
-            .iter()
-            .find(|profile| profile.id == "second")
-            .unwrap()
-            .clipboard
-    );
-}
-
-#[test]
-fn duplicate_profile_clears_the_clipboard_flag_on_the_copy() {
-    let db = Db::open_in_memory().unwrap();
-    let mut source = profile("source", "Source");
-    source.clipboard = true;
-    db.save_profile(&source).unwrap();
-
-    let copy = db.duplicate_profile("source").unwrap();
-    assert!(!copy.clipboard);
-
-    let stored = db.list_profiles().unwrap();
-    assert!(
-        stored
-            .iter()
-            .find(|profile| profile.id == "source")
-            .unwrap()
-            .clipboard
-    );
-    assert!(
-        !stored
-            .iter()
-            .find(|profile| profile.id == copy.id)
-            .unwrap()
-            .clipboard
-    );
-    assert_eq!(stored.iter().filter(|profile| profile.clipboard).count(), 1);
-}
-
-#[test]
-fn saving_a_discord_profile_clears_the_previous_one() {
-    let db = Db::open_in_memory().unwrap();
-    let mut first = profile("a", "A");
-    first.discord = true;
-    db.save_profile(&first).unwrap();
-    let mut second = profile("b", "B");
-    second.discord = true;
-    db.save_profile(&second).unwrap();
-    let stored = db.list_profiles().unwrap();
-    assert_eq!(stored.iter().filter(|p| p.discord).count(), 1);
-    assert!(stored.iter().find(|p| p.id == "b").unwrap().discord);
-}
-
-#[test]
-fn duplicating_a_discord_profile_clears_the_copy_flag() {
-    let db = Db::open_in_memory().unwrap();
-    let mut source = profile("a", "A");
-    source.discord = true;
-    db.save_profile(&source).unwrap();
-    let copy = db.duplicate_profile("a").unwrap();
-    assert!(!copy.discord);
-    assert_eq!(
-        db.list_profiles()
-            .unwrap()
-            .iter()
-            .filter(|p| p.discord)
-            .count(),
-        1
-    );
-}
-
-#[test]
-fn the_default_discord_preset_is_selected() {
-    let db = Db::open_in_memory().unwrap();
-    let profiles = db.ensure_default_profiles().unwrap();
-    let discord = profiles.iter().find(|p| p.name == "discord用webp").unwrap();
-    assert!(discord.discord);
-    assert_eq!(profiles.iter().filter(|p| p.discord).count(), 1);
-}
 
 #[test]
 fn delete_setting_removes_only_the_requested_key() {

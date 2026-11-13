@@ -24,12 +24,6 @@ impl Db {
         profile: &CompressionProfile,
         sort_order: i64,
     ) -> Result<()> {
-        if profile.clipboard {
-            Self::clear_other_clipboard_profiles(conn, &profile.id)?;
-        }
-        if profile.discord {
-            Self::clear_other_discord_profiles(conn, &profile.id)?;
-        }
         let json = serde_json::to_string(profile)?;
         conn.execute(
             "INSERT INTO compression_profiles(id, name, enabled, json, sort_order) \
@@ -44,60 +38,6 @@ impl Db {
                 sort_order,
             ],
         )?;
-        Ok(())
-    }
-
-    /// Keeps the clipboard target unique even when a caller other than the
-    /// profile switch saves a flagged profile.
-    fn clear_other_clipboard_profiles(conn: &Connection, keep_id: &str) -> Result<()> {
-        let mut stmt =
-            conn.prepare_cached("SELECT id, json FROM compression_profiles WHERE id != ?1")?;
-        let rows = stmt.query_map(params![keep_id], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-        })?;
-        let mut updates = Vec::new();
-        for row in rows {
-            let (id, json) = row?;
-            let mut profile: CompressionProfile = serde_json::from_str(&json)?;
-            if profile.clipboard {
-                profile.clipboard = false;
-                updates.push((id, serde_json::to_string(&profile)?));
-            }
-        }
-        drop(stmt);
-        for (id, json) in updates {
-            conn.execute(
-                "UPDATE compression_profiles SET json = ?1 WHERE id = ?2",
-                params![json, id],
-            )?;
-        }
-        Ok(())
-    }
-
-    /// Keeps the Discord target unique even when a caller other than the
-    /// profile switch saves a flagged profile.
-    fn clear_other_discord_profiles(conn: &Connection, keep_id: &str) -> Result<()> {
-        let mut stmt =
-            conn.prepare_cached("SELECT id, json FROM compression_profiles WHERE id != ?1")?;
-        let rows = stmt.query_map(params![keep_id], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-        })?;
-        let mut updates = Vec::new();
-        for row in rows {
-            let (id, json) = row?;
-            let mut profile: CompressionProfile = serde_json::from_str(&json)?;
-            if profile.discord {
-                profile.discord = false;
-                updates.push((id, serde_json::to_string(&profile)?));
-            }
-        }
-        drop(stmt);
-        for (id, json) in updates {
-            conn.execute(
-                "UPDATE compression_profiles SET json = ?1 WHERE id = ?2",
-                params![json, id],
-            )?;
-        }
         Ok(())
     }
 
@@ -209,12 +149,6 @@ impl Db {
         let copy = CompressionProfile {
             id: uuid::Uuid::new_v4().to_string(),
             name,
-            auto_enabled: false,
-            // The clipboard target is unique system-wide (the UI switch clears
-            // every other profile). A duplicate must not bypass that invariant.
-            clipboard: false,
-            // The Discord target is unique for the same reason.
-            discord: false,
             ..ordered[source_index].1.clone()
         };
         Self::write_profile(&tx, &copy, source_index as i64 + 1)?;

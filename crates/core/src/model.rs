@@ -218,9 +218,6 @@ impl CompressionOptions {
             id: id.to_string(),
             name: name.to_string(),
             enabled: true,
-            auto_enabled: false,
-            clipboard: false,
-            discord: false,
             format: self.format.clone(),
             quality: self.quality,
             lossless: self.lossless,
@@ -264,15 +261,6 @@ pub struct CompressionProfile {
     pub id: String,
     pub name: String,
     pub enabled: bool,
-    pub auto_enabled: bool,
-    /// At most one profile system-wide may use this flag. The clipboard action
-    /// compresses with it immediately, without opening the manual modal.
-    #[serde(default)]
-    pub clipboard: bool,
-    /// At most one profile system-wide may use this flag. It is the profile
-    /// used when posting to Discord.
-    #[serde(default)]
-    pub discord: bool,
     pub format: CompressionFormat,
     pub quality: u8,
     pub lossless: bool,
@@ -294,9 +282,6 @@ impl Default for CompressionProfile {
             id: uuid::Uuid::new_v4().to_string(),
             name: "WebP 高品質".to_string(),
             enabled: true,
-            auto_enabled: true,
-            clipboard: false,
-            discord: false,
             format: CompressionFormat::Webp,
             quality: 82,
             lossless: false,
@@ -335,8 +320,6 @@ impl CompressionProfile {
         vec![
             Self {
                 name: "無劣化webp".to_string(),
-                auto_enabled: true,
-                clipboard: false,
                 format: CompressionFormat::Webp,
                 lossless: true,
                 resize_enabled: false,
@@ -346,9 +329,6 @@ impl CompressionProfile {
             },
             Self {
                 name: "discord用webp".to_string(),
-                auto_enabled: false,
-                clipboard: true,
-                discord: true,
                 format: CompressionFormat::Webp,
                 lossless: true,
                 resize_enabled: true,
@@ -362,8 +342,6 @@ impl CompressionProfile {
             },
             Self {
                 name: "高画質webp".to_string(),
-                auto_enabled: false,
-                clipboard: false,
                 format: CompressionFormat::Webp,
                 quality: 90,
                 lossless: false,

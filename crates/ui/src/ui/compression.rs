@@ -191,7 +191,6 @@ impl App {
                     .gap(px(8.))
                     .children(self.profiles.iter().enumerate().map(|(index, profile)| {
                         let active = index == self.profile_index;
-                        let auto = profile.auto_enabled;
                         let title = profile.name.clone();
                         let meta = profile_summary(profile);
                         glass_panel(&self.palette)
@@ -226,22 +225,6 @@ impl App {
                                             }))
                                             .child(title),
                                     )
-                                    .child(self.badge(
-                                        if auto {
-                                            tr!("compression.auto")
-                                        } else {
-                                            tr!("compression.manual")
-                                        },
-                                        if auto { p.green } else { p.muted },
-                                        if auto { p.green_soft } else { p.panel_2 },
-                                    ))
-                                    .when(profile.clipboard, |this| {
-                                        this.child(self.badge(
-                                            tr!("compression.clipboard"),
-                                            p.accent,
-                                            p.accent_soft,
-                                        ))
-                                    })
                                     .child(
                                         div()
                                             .id(SharedString::from(format!("profile-up-{index}")))
@@ -334,7 +317,6 @@ impl App {
                                 "compression.new_profile",
                                 index = this.profiles.len() + 1
                             ),
-                            auto_enabled: false,
                             ..CompressionProfile::default()
                         };
                         if let Err(error) = this.db.save_profile(&profile) {

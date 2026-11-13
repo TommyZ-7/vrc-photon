@@ -1633,18 +1633,6 @@ fn save_daemon_settings(daemon: &Daemon, update: impl FnOnce(&mut AppSettings)) 
     settings.save(&db).unwrap();
 }
 
-fn add_auto_profile(db_path: &Path) {
-    let db = Db::open(db_path).unwrap();
-    db.save_profile(&CompressionProfile {
-        name: "test webp".to_string(),
-        format: vrc_photon_core::model::CompressionFormat::Webp,
-        auto_enabled: true,
-        quality: 80,
-        suffix: "_test".to_string(),
-        ..CompressionProfile::default()
-    })
-    .unwrap();
-}
 
 fn write_photo(path: &Path) {
     image::RgbaImage::from_pixel(16, 10, image::Rgba([10, 20, 30, 255]))
@@ -2381,7 +2369,6 @@ fn replace_test_daemon(dir: &tempfile::TempDir) -> Daemon {
     std::fs::create_dir_all(&log_dir).unwrap();
     write_photo(&original_path(dir));
     let db_path = dir.path().join("library.db");
-    add_auto_profile(&db_path);
     let mut daemon = Daemon::open(&db_path, Some(photo_dir), Some(log_dir)).unwrap();
     daemon.set_ipc_endpoint(None);
     daemon.set_thumbnail_dir(dir.path().join("thumbnails"));
@@ -4086,7 +4073,6 @@ fn scan_root_command_enqueues_auto_jobs_without_backlog() {
     std::fs::create_dir_all(&log_dir).unwrap();
     write_photo(&root_b.join("VRChat_2026-10-21_21-24-00.000_4x3.png"));
     let db_path = dir.path().join("library.db");
-    add_auto_profile(&db_path);
     let mut daemon = Daemon::open(&db_path, Some(root_a), Some(log_dir)).unwrap();
     daemon.set_thumbnail_dir(dir.path().join("thumbnails"));
     save_daemon_settings(&daemon, |settings| {
@@ -4121,7 +4107,6 @@ fn startup_scan_enqueues_imported_photos_before_backlog() {
     write_photo(&imported_photo);
 
     let db_path = dir.path().join("library.db");
-    add_auto_profile(&db_path);
     let mut daemon = Daemon::open(&db_path, Some(backlog_root.clone()), Some(log_dir)).unwrap();
     daemon.set_thumbnail_dir(dir.path().join("thumbnails"));
     daemon.set_ipc_endpoint(None);
@@ -4178,7 +4163,6 @@ fn scan_root_finished_event_reports_auto_enqueued_jobs() {
     write_photo(&photo_dir.join("VRChat_2026-10-21_21-24-00.000_4x3.png"));
 
     let db_path = dir.path().join("library.db");
-    add_auto_profile(&db_path);
     let mut daemon = Daemon::open(&db_path, Some(photo_dir.clone()), Some(log_dir)).unwrap();
     daemon.set_thumbnail_dir(dir.path().join("thumbnails"));
     daemon.set_ipc_endpoint(None);
@@ -4886,7 +4870,6 @@ fn auto_jobs_use_replace_policy_and_waiting_status() {
     write_photo(&original);
 
     let db_path = dir.path().join("library.db");
-    add_auto_profile(&db_path);
     let mut daemon = Daemon::open(&db_path, Some(photo_dir), Some(log_dir)).unwrap();
     daemon.set_thumbnail_dir(dir.path().join("thumbnails"));
     daemon.run_once().unwrap();
@@ -5061,7 +5044,6 @@ fn refresh_compression_settings_applies_live_policy_and_waiting_mode() {
     write_photo(&first);
 
     let db_path = dir.path().join("library.db");
-    add_auto_profile(&db_path);
     let mut daemon = Daemon::open(&db_path, Some(photo_dir.clone()), Some(log_dir)).unwrap();
     daemon.set_thumbnail_dir(dir.path().join("thumbnails"));
     daemon.run_once().unwrap();
@@ -5098,7 +5080,6 @@ fn auto_compress_holds_waiting_jobs_until_released() {
     write_photo(&original);
 
     let db_path = dir.path().join("library.db");
-    add_auto_profile(&db_path);
     let mut daemon = Daemon::open(&db_path, Some(photo_dir), Some(log_dir)).unwrap();
     daemon.set_thumbnail_dir(dir.path().join("thumbnails"));
     save_daemon_settings(&daemon, |settings| {
@@ -5134,7 +5115,6 @@ fn auto_replace_failure_leaves_the_original_in_place() {
     std::fs::write(photo_dir.join("compressed"), b"not a directory").unwrap();
 
     let db_path = dir.path().join("library.db");
-    add_auto_profile(&db_path);
     let mut daemon = Daemon::open(&db_path, Some(photo_dir), Some(log_dir)).unwrap();
     daemon.set_thumbnail_dir(dir.path().join("thumbnails"));
     save_daemon_settings(&daemon, |settings| {
@@ -5166,7 +5146,6 @@ fn end_to_end_auto_compress() {
     write_photo(&photo_path);
 
     let db_path = dir.path().join("library.db");
-    add_auto_profile(&db_path);
     let mut daemon = Daemon::open(&db_path, Some(photo_dir), Some(log_dir)).unwrap();
     daemon.set_thumbnail_dir(dir.path().join("thumbnails"));
     save_daemon_settings(&daemon, |settings| {
@@ -5247,7 +5226,6 @@ fn initial_scan_skips_backlog_when_disabled() {
     write_photo(&photo_dir.join("VRChat_2026-10-21_21-24-00.000_4x3.png"));
 
     let db_path = dir.path().join("library.db");
-    add_auto_profile(&db_path);
     let mut daemon = Daemon::open(&db_path, Some(photo_dir.clone()), Some(log_dir)).unwrap();
     daemon.set_thumbnail_dir(dir.path().join("thumbnails"));
     daemon.run_once().unwrap();
@@ -5272,7 +5250,6 @@ fn initial_scan_enqueues_backlog_when_enabled() {
     write_photo(&photo_dir.join("VRChat_2026-10-21_21-24-00.000_4x3.png"));
 
     let db_path = dir.path().join("library.db");
-    add_auto_profile(&db_path);
     let mut daemon = Daemon::open(&db_path, Some(photo_dir), Some(log_dir)).unwrap();
     daemon.set_thumbnail_dir(dir.path().join("thumbnails"));
     save_daemon_settings(&daemon, |settings| {
