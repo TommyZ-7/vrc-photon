@@ -199,7 +199,7 @@ fn concurrent_open_of_a_fresh_database_succeeds() {
         }
         for handle in handles {
             let opened = handle.join().unwrap();
-            assert_eq!(opened.unwrap().unwrap(), 18);
+            assert_eq!(opened.unwrap().unwrap(), SCHEMA_VERSION);
         }
     }
 }
@@ -208,8 +208,18 @@ fn concurrent_open_of_a_fresh_database_succeeds() {
 fn deleting_photo_is_hidden_from_index_search_and_counts() {
     let db = Db::open_in_memory().unwrap();
     let id = seed_photo(&db);
-    db.add_derivative(id, "/photos/a.webp", "webp", 16, 10, 8, "p", "keep")
-        .unwrap();
+    db.add_derivative(
+        id,
+        "/photos/a.webp",
+        "webp",
+        16,
+        10,
+        8,
+        Some("p"),
+        CompressionOrigin::Manual,
+        "keep",
+    )
+    .unwrap();
     db.connection()
         .execute(
             "UPDATE photos SET status = 'deleting' WHERE id = ?1",
@@ -271,7 +281,17 @@ fn upsert_preserves_replaced_display_while_auto_deletion_is_active() {
     let db = Db::open_in_memory().unwrap();
     let id = seed_photo(&db);
     let derivative = db
-        .add_derivative(id, "/photos/a_webp.webp", "webp", 16, 10, 8, "p", "replace")
+        .add_derivative(
+            id,
+            "/photos/a_webp.webp",
+            "webp",
+            16,
+            10,
+            8,
+            Some("p"),
+            CompressionOrigin::Manual,
+            "replace",
+        )
         .unwrap();
     db.set_replaced(id, derivative).unwrap();
     insert_deletion_request(&db, id, "auto_replace", "pending");
@@ -287,7 +307,17 @@ fn set_replaced_does_not_unhide_a_deleting_photo() {
     let db = Db::open_in_memory().unwrap();
     let id = seed_photo(&db);
     let derivative = db
-        .add_derivative(id, "/photos/a_webp.webp", "webp", 16, 10, 8, "p", "replace")
+        .add_derivative(
+            id,
+            "/photos/a_webp.webp",
+            "webp",
+            16,
+            10,
+            8,
+            Some("p"),
+            CompressionOrigin::Manual,
+            "replace",
+        )
         .unwrap();
     insert_deletion_request(&db, id, "manual", "pending");
     db.connection()
@@ -308,7 +338,17 @@ fn complete_replacement_marks_replaced_and_requests_auto_deletion() {
     let db = Db::open_in_memory().unwrap();
     let id = seed_photo(&db);
     let derivative = db
-        .add_derivative(id, "/photos/a_webp.webp", "webp", 16, 10, 8, "p", "replace")
+        .add_derivative(
+            id,
+            "/photos/a_webp.webp",
+            "webp",
+            16,
+            10,
+            8,
+            Some("p"),
+            CompressionOrigin::Manual,
+            "replace",
+        )
         .unwrap();
 
     db.complete_replacement(id, derivative).unwrap();
@@ -365,7 +405,17 @@ fn photo_effective_path_prefers_the_display_derivative() {
     assert_eq!(db.photo_effective_path(999_999).unwrap(), None);
 
     let derivative = db
-        .add_derivative(id, "/photos/a_webp.webp", "webp", 16, 10, 8, "p", "replace")
+        .add_derivative(
+            id,
+            "/photos/a_webp.webp",
+            "webp",
+            16,
+            10,
+            8,
+            Some("p"),
+            CompressionOrigin::Manual,
+            "replace",
+        )
         .unwrap();
     db.set_replaced(id, derivative).unwrap();
 
@@ -2240,7 +2290,8 @@ fn photo_scan_states_reads_all_chunks_with_metadata() {
             4,
             3,
             10,
-            "p",
+            Some("p"),
+            CompressionOrigin::Manual,
             "replace",
         )
         .unwrap();
@@ -2885,28 +2936,17 @@ fn automatic_jobs_leave_the_output_directory_unset() {
 }
 
 #[test]
-fn auto_job_enqueue_skips_an_existing_photo_profile_job() {
+fn auto_job_enqueue_is_once_per_photo() {
     let db = Db::open_in_memory().unwrap();
     let id = seed_photo(&db);
-    db.save_profile(&profile("p", "P")).unwrap();
 
     assert!(
-            db.enqueue_auto_job_for_existing_profile_with_status(
-                id,
-                "p",
-                "keep",
-                QueueStatus::Pending,
-            )
+        db.enqueue_auto_job_with_status(id, "keep", QueueStatus::Pending)
             .unwrap()
-        );
+    );
     assert!(
-        !db.enqueue_auto_job_for_existing_profile_with_status(
-            id,
-            "p",
-            "keep",
-            QueueStatus::Waiting,
-        )
-        .unwrap()
+        !db.enqueue_auto_job_with_status(id, "keep", QueueStatus::Waiting)
+            .unwrap()
     );
     assert_eq!(db.list_jobs(10).unwrap().len(), 1);
 }
@@ -6188,10 +6228,7 @@ fn ensure_default_profiles_is_idempotent() {
     assert_eq!(order, ["無劣化webp", "discord用webp", "高画質webp"]);
 
     let by_name = |name: &str| first.iter().find(|profile| profile.name == name).unwrap();
-    assert!(by_name("無劣化webp").auto_enabled);
     assert!(by_name("無劣化webp").lossless);
-    assert!(!by_name("discord用webp").auto_enabled);
-    assert!(by_name("discord用webp").clipboard);
     assert_eq!(by_name("discord用webp").width, 2560);
     assert_eq!(by_name("discord用webp").height, 1440);
     assert_eq!(
@@ -6208,6 +6245,20 @@ fn ensure_default_profiles_is_idempotent() {
     let second_ids: Vec<String> = second.iter().map(|profile| profile.id.clone()).collect();
     assert_eq!(first_ids, second_ids);
     assert_eq!(db.list_profiles().unwrap().len(), 3);
+}
+
+#[test]
+fn profile_json_ignores_removed_role_flags() {
+    let legacy = r#"{
+        "id":"p","name":"Legacy","enabled":true,
+        "auto_enabled":true,"clipboard":true,"discord":true,
+        "format":"webp","quality":82,"lossless":true,
+        "resize_enabled":false,"resize_mode":"downscale_only",
+        "width":3840,"height":2160,"maintain_aspect":true,
+        "output_dir":null,"suffix":"","encode_speed":6
+    }"#;
+    let profile: CompressionProfile = serde_json::from_str(legacy).unwrap();
+    assert_eq!(profile.name, "Legacy");
 }
 
 #[test]
@@ -6245,8 +6296,8 @@ fn ensure_default_profiles_does_not_seed_on_read_error() {
     let db = Db::open_in_memory().unwrap();
     db.connection()
         .execute(
-            "INSERT INTO compression_profiles(id, name, enabled, auto_enabled, json, sort_order) \
-                 VALUES ('broken', 'broken', 1, 0, '{', 0)",
+            "INSERT INTO compression_profiles(id, name, enabled, json, sort_order) \
+                 VALUES ('broken', 'broken', 1, '{', 0)",
             [],
         )
         .unwrap();
@@ -6439,14 +6490,12 @@ fn duplicate_profile_inserts_named_copy_after_source() {
     let copy = db.duplicate_profile("b").unwrap();
     assert_ne!(copy.id, source.id);
     assert_eq!(copy.name, "B のコピー");
-    assert!(!copy.auto_enabled);
     assert_eq!(copy.format, source.format);
     assert_eq!(copy.quality, source.quality);
 
     let stored = db.list_profiles().unwrap();
     let ids: Vec<&str> = stored.iter().map(|profile| profile.id.as_str()).collect();
     assert_eq!(ids, vec!["a", "b", copy.id.as_str(), "c"]);
-    assert!(!stored[2].auto_enabled);
 
     let mut edited = copy.clone();
     edited.quality = 31;
@@ -6483,119 +6532,6 @@ fn duplicate_profile_caps_generated_names_at_the_ui_limit() {
     let second = db.duplicate_profile("long").unwrap();
     assert_eq!(second.name.chars().count(), MAX_PROFILE_NAME_CHARS);
     assert!(second.name.ends_with(" のコピー 2"));
-}
-
-#[test]
-fn failed_profile_save_restores_the_previous_clipboard_flag() {
-    let db = Db::open_in_memory().unwrap();
-    let mut first = profile("first", "First");
-    first.clipboard = true;
-    db.save_profile(&first).unwrap();
-
-    db.connection()
-        .execute_batch(
-            "CREATE TRIGGER fail_broken_profile BEFORE INSERT ON compression_profiles \
-                 WHEN NEW.id = 'broken' BEGIN SELECT RAISE(ABORT, 'simulated write failure'); END;",
-        )
-        .unwrap();
-
-    let mut broken = profile("broken", "Broken");
-    broken.clipboard = true;
-    assert!(db.save_profile(&broken).is_err());
-
-    let stored = db.list_profiles().unwrap();
-    assert_eq!(stored.len(), 1);
-    assert!(stored[0].clipboard);
-}
-
-#[test]
-fn saving_a_clipboard_profile_clears_the_previous_one() {
-    let db = Db::open_in_memory().unwrap();
-    let mut first = profile("first", "First");
-    first.clipboard = true;
-    db.save_profile(&first).unwrap();
-    let mut second = profile("second", "Second");
-    second.clipboard = true;
-    db.save_profile(&second).unwrap();
-
-    let stored = db.list_profiles().unwrap();
-    assert_eq!(stored.iter().filter(|profile| profile.clipboard).count(), 1);
-    assert!(
-        stored
-            .iter()
-            .find(|profile| profile.id == "second")
-            .unwrap()
-            .clipboard
-    );
-}
-
-#[test]
-fn duplicate_profile_clears_the_clipboard_flag_on_the_copy() {
-    let db = Db::open_in_memory().unwrap();
-    let mut source = profile("source", "Source");
-    source.clipboard = true;
-    db.save_profile(&source).unwrap();
-
-    let copy = db.duplicate_profile("source").unwrap();
-    assert!(!copy.clipboard);
-
-    let stored = db.list_profiles().unwrap();
-    assert!(
-        stored
-            .iter()
-            .find(|profile| profile.id == "source")
-            .unwrap()
-            .clipboard
-    );
-    assert!(
-        !stored
-            .iter()
-            .find(|profile| profile.id == copy.id)
-            .unwrap()
-            .clipboard
-    );
-    assert_eq!(stored.iter().filter(|profile| profile.clipboard).count(), 1);
-}
-
-#[test]
-fn saving_a_discord_profile_clears_the_previous_one() {
-    let db = Db::open_in_memory().unwrap();
-    let mut first = profile("a", "A");
-    first.discord = true;
-    db.save_profile(&first).unwrap();
-    let mut second = profile("b", "B");
-    second.discord = true;
-    db.save_profile(&second).unwrap();
-    let stored = db.list_profiles().unwrap();
-    assert_eq!(stored.iter().filter(|p| p.discord).count(), 1);
-    assert!(stored.iter().find(|p| p.id == "b").unwrap().discord);
-}
-
-#[test]
-fn duplicating_a_discord_profile_clears_the_copy_flag() {
-    let db = Db::open_in_memory().unwrap();
-    let mut source = profile("a", "A");
-    source.discord = true;
-    db.save_profile(&source).unwrap();
-    let copy = db.duplicate_profile("a").unwrap();
-    assert!(!copy.discord);
-    assert_eq!(
-        db.list_profiles()
-            .unwrap()
-            .iter()
-            .filter(|p| p.discord)
-            .count(),
-        1
-    );
-}
-
-#[test]
-fn the_default_discord_preset_is_selected() {
-    let db = Db::open_in_memory().unwrap();
-    let profiles = db.ensure_default_profiles().unwrap();
-    let discord = profiles.iter().find(|p| p.name == "discord用webp").unwrap();
-    assert!(discord.discord);
-    assert_eq!(profiles.iter().filter(|p| p.discord).count(), 1);
 }
 
 #[test]
@@ -6661,7 +6597,8 @@ fn delete_profile_blocks_active_jobs_and_keeps_history() {
         16,
         10,
         10,
-        "p",
+        Some("p"),
+        CompressionOrigin::Manual,
         "keep",
     )
     .unwrap();
@@ -6676,7 +6613,7 @@ fn delete_profile_blocks_active_jobs_and_keeps_history() {
     assert_eq!(db.list_jobs(10).unwrap().len(), 2);
     let derivatives = db.derivatives_for_photo(photo).unwrap();
     assert_eq!(derivatives.len(), 1);
-    assert_eq!(derivatives[0].profile_id, "p");
+    assert_eq!(derivatives[0].profile_id.as_deref(), Some("p"));
 
     assert!(matches!(db.delete_profile("q"), Err(CoreError::Invalid(_))));
     assert_eq!(db.list_profiles().unwrap().len(), 1);
@@ -6721,10 +6658,30 @@ fn add_derivative_rejects_a_path_owned_by_another_photo() {
     let path = "/photos/compressed/shared.webp";
 
     let id = db
-        .add_derivative(first, path, "webp", 10, 20, 30, "p", "keep")
+        .add_derivative(
+            first,
+            path,
+            "webp",
+            10,
+            20,
+            30,
+            Some("p"),
+            CompressionOrigin::Manual,
+            "keep",
+        )
         .unwrap();
     assert!(matches!(
-        db.add_derivative(second, path, "webp", 10, 20, 30, "p", "keep"),
+        db.add_derivative(
+            second,
+            path,
+            "webp",
+            10,
+            20,
+            30,
+            Some("p"),
+            CompressionOrigin::Manual,
+            "keep"
+        ),
         Err(CoreError::Invalid(_))
     ));
     let first_rows = db.derivatives_for_photo(first).unwrap();
@@ -6748,7 +6705,8 @@ fn replaced_photo_stays_visible_and_stats_use_derivative_size() {
             16,
             10,
             1_234,
-            "p",
+            Some("p"),
+            CompressionOrigin::Manual,
             "replace",
         )
         .unwrap();
@@ -6795,7 +6753,8 @@ fn upserting_a_restored_original_clears_the_display_derivative() {
             16,
             10,
             1_234,
-            "p",
+            Some("p"),
+            CompressionOrigin::Manual,
             "replace",
         )
         .unwrap();
@@ -7061,7 +7020,8 @@ fn unlinked_hash_and_derivative_limits_use_the_shared_policy() {
                 1280,
                 800,
                 1_000,
-                "profile",
+                Some("profile"),
+                CompressionOrigin::Manual,
                 "keep",
             )
             .unwrap();
@@ -7434,7 +7394,7 @@ fn bundled_sqlite_supports_strftime_in_stored_generated_columns() {
 }
 
 #[test]
-fn fresh_database_is_initialized_to_v18() {
+fn fresh_database_is_initialized_to_v19() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("library.db");
     let db = Db::open(&path).unwrap();
@@ -7443,7 +7403,7 @@ fn fresh_database_is_initialized_to_v18() {
         .connection()
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 18);
+    assert_eq!(version, 19);
 
     let tables: i64 = db
         .connection()
@@ -7480,7 +7440,7 @@ fn fresh_database_is_initialized_to_v18() {
 }
 
 #[test]
-fn existing_v18_database_opens_without_reinitializing() {
+fn existing_v19_database_opens_without_reinitializing() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("library.db");
     let db = Db::open(&path).unwrap();
@@ -7506,7 +7466,7 @@ fn existing_v18_database_opens_without_reinitializing() {
 }
 
 #[test]
-fn v17_database_is_rejected_without_modification() {
+fn v18_database_is_rejected_without_modification() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("library.db");
     {
@@ -7516,18 +7476,18 @@ fn v17_database_is_rejected_without_modification() {
              INSERT INTO legacy_marker(value) VALUES ('keep');",
         )
         .unwrap();
-        conn.pragma_update(None, "user_version", 17).unwrap();
+        conn.pragma_update(None, "user_version", 18).unwrap();
     }
     let before = std::fs::read(&path).unwrap();
 
     let error = match Db::open(&path) {
-        Ok(_) => panic!("expected the v17 database to be rejected"),
+        Ok(_) => panic!("expected the v18 database to be rejected"),
         Err(error) => error,
     };
     let CoreError::Invalid(message) = error else {
         panic!("expected an explicit schema error, got {error:?}");
     };
-    assert!(message.contains("17"), "{message}");
+    assert!(message.contains("18"), "{message}");
     assert!(message.contains("cannot be migrated"), "{message}");
 
     let after = std::fs::read(&path).unwrap();
@@ -7537,11 +7497,161 @@ fn v17_database_is_rejected_without_modification() {
     let version: i64 = conn
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 17);
+    assert_eq!(version, 18);
     let marker: String = conn
         .query_row("SELECT value FROM legacy_marker", [], |row| row.get(0))
         .unwrap();
     assert_eq!(marker, "keep");
+}
+
+#[test]
+fn compression_job_origin_roundtrips() {
+    let db = Db::open_in_memory().unwrap();
+    let root = db.add_root("/photos", "reference").unwrap();
+    let photo = db
+        .upsert_photo(&sample_photo(root, "/photos/a.png", 100))
+        .unwrap();
+
+    db.enqueue_job(photo, "p", "keep").unwrap();
+    db.enqueue_auto_job_with_status(photo, "keep", QueueStatus::Pending)
+        .unwrap();
+
+    let jobs = db.list_jobs(10).unwrap();
+    assert_eq!(jobs.len(), 2);
+    assert!(jobs.iter().any(
+        |job| job.origin == CompressionOrigin::Manual && job.profile_id.as_deref() == Some("p")
+    ));
+    assert!(
+        jobs.iter()
+            .any(|job| job.origin == CompressionOrigin::Auto && job.profile_id.is_none())
+    );
+}
+
+#[test]
+fn compression_job_profile_id_is_nullable_in_the_schema() {
+    let db = Db::open_in_memory().unwrap();
+    let root = db.add_root("/photos", "reference").unwrap();
+    let photo = db
+        .upsert_photo(&sample_photo(root, "/photos/a.png", 100))
+        .unwrap();
+
+    db.connection()
+        .execute(
+            "INSERT INTO compression_jobs(id, photo_id, profile_id, origin, status, progress, policy, created_at) \
+             VALUES ('auto-null', ?1, NULL, 'auto', 'pending', 0, 'keep', '2026-01-01T00:00:00Z')",
+            params![photo],
+        )
+        .unwrap();
+
+    let job = db
+        .list_jobs(1)
+        .unwrap()
+        .into_iter()
+        .find(|job| job.id == "auto-null")
+        .unwrap();
+    assert_eq!(job.origin, CompressionOrigin::Auto);
+    assert_eq!(job.profile_id, None);
+}
+
+#[test]
+fn derivative_origin_and_nullable_profile_roundtrip() {
+    let db = Db::open_in_memory().unwrap();
+    let root = db.add_root("/photos", "reference").unwrap();
+    let photo = db
+        .upsert_photo(&sample_photo(root, "/photos/a.png", 100))
+        .unwrap();
+
+    db.add_derivative(
+        photo,
+        "/photos/compressed/auto.webp",
+        "webp",
+        16,
+        10,
+        10,
+        None,
+        CompressionOrigin::Auto,
+        "replace",
+    )
+    .unwrap();
+    db.add_derivative(
+        photo,
+        "/photos/compressed/manual.webp",
+        "webp",
+        16,
+        10,
+        11,
+        Some("p"),
+        CompressionOrigin::Manual,
+        "keep",
+    )
+    .unwrap();
+
+    let derivatives = db.derivatives_for_photo(photo).unwrap();
+    assert_eq!(derivatives.len(), 2);
+    assert!(
+        derivatives
+            .iter()
+            .any(|derivative| derivative.origin == CompressionOrigin::Auto
+                && derivative.profile_id.is_none())
+    );
+    assert!(
+        derivatives
+            .iter()
+            .any(|derivative| derivative.origin == CompressionOrigin::Manual
+                && derivative.profile_id.as_deref() == Some("p"))
+    );
+}
+
+#[test]
+fn v18_wal_database_is_rejected_without_modification() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("source.db");
+    let source_wal = dir.path().join("source.db-wal");
+    let source_shm = dir.path().join("source.db-shm");
+    let writer = Connection::open(&source).unwrap();
+    writer
+        .execute_batch(
+            "PRAGMA journal_mode = WAL; \
+             PRAGMA wal_autocheckpoint = 0; \
+             CREATE TABLE legacy_marker(value TEXT); \
+             INSERT INTO legacy_marker(value) VALUES ('keep'); \
+             PRAGMA user_version = 18;",
+        )
+        .unwrap();
+    // A second write leaves frames in the WAL that a read-write open would
+    // recover/checkpoint before the version check.
+    writer
+        .execute(
+            "INSERT INTO legacy_marker(value) VALUES ('pending-wal')",
+            [],
+        )
+        .unwrap();
+    assert!(source_wal.is_file());
+    assert!(std::fs::metadata(&source_wal).unwrap().len() > 0);
+
+    // Copy while the writer still holds the WAL, then close it so the copy
+    // retains an uncheckpointed WAL like a crashed process would.
+    let path = dir.path().join("library.db");
+    let wal_path = dir.path().join("library.db-wal");
+    let shm_path = dir.path().join("library.db-shm");
+    std::fs::copy(&source, &path).unwrap();
+    std::fs::copy(&source_wal, &wal_path).unwrap();
+    std::fs::copy(&source_shm, &shm_path).unwrap();
+    drop(writer);
+
+    let main_before = std::fs::read(&path).unwrap();
+    let wal_before = std::fs::read(&wal_path).unwrap();
+
+    let error = Db::open(&path).err().expect("v18 DB must be rejected");
+    let CoreError::Invalid(message) = error else {
+        panic!("expected an explicit schema error");
+    };
+    assert!(message.contains("18"), "{message}");
+    assert!(Db::open_read_only(&path).is_err());
+
+    assert_eq!(std::fs::read(&path).unwrap(), main_before);
+    assert_eq!(std::fs::read(&wal_path).unwrap(), wal_before);
+    assert!(wal_path.is_file());
 }
 
 #[test]

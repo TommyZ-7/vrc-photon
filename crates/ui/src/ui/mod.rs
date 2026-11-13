@@ -4,6 +4,7 @@ pub(crate) mod ai_thresholds;
 pub(crate) mod chrome;
 pub(crate) mod components;
 pub(crate) mod compression;
+pub(crate) mod compression_settings;
 pub(crate) mod daemon_error;
 pub(crate) mod dashboard;
 pub(crate) mod dashboard_ai;

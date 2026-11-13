@@ -1,10 +1,10 @@
 /// Highest schema version this build understands.
-pub(crate) const SCHEMA_VERSION: i64 = 18;
+pub(crate) const SCHEMA_VERSION: i64 = 19;
 
-/// Integrated schema for a new v18 database.
+/// Integrated schema for a new v19 database.
 ///
 /// This is the schema produced by the previous migration chain. Existing
-/// v18 databases are opened as-is; older schemas are rejected without
+/// v19 databases are opened as-is; older schemas are rejected without
 /// modification instead of being migrated in place.
 pub(crate) const SCHEMA_LATEST: &str = r##"
 CREATE TABLE ai_tag_definitions (
@@ -34,7 +34,8 @@ CREATE TABLE app_settings (
 CREATE TABLE compression_jobs (
     id TEXT PRIMARY KEY,
     photo_id INTEGER NOT NULL REFERENCES photos(id) ON DELETE CASCADE,
-    profile_id TEXT NOT NULL,
+    profile_id TEXT,
+    origin TEXT NOT NULL CHECK (origin IN ('auto', 'manual')),
     status TEXT NOT NULL,
     progress REAL NOT NULL DEFAULT 0,
     error TEXT,
@@ -48,7 +49,6 @@ CREATE TABLE compression_profiles (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     enabled INTEGER NOT NULL,
-    auto_enabled INTEGER NOT NULL,
     json TEXT NOT NULL,
     sort_order INTEGER NOT NULL DEFAULT 0
 );
@@ -84,7 +84,8 @@ CREATE TABLE derivatives (
     width INTEGER NOT NULL,
     height INTEGER NOT NULL,
     file_size INTEGER NOT NULL,
-    profile_id TEXT NOT NULL,
+    profile_id TEXT,
+    origin TEXT NOT NULL CHECK (origin IN ('auto', 'manual')),
     policy TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
@@ -296,8 +297,11 @@ CREATE UNIQUE INDEX idx_deletion_requests_active
 CREATE INDEX idx_deletion_requests_status
     ON deletion_requests(status, requested_at);
 CREATE INDEX idx_derivatives_photo ON derivatives(photo_id);
+CREATE INDEX idx_derivatives_auto ON derivatives(photo_id) WHERE origin = 'auto';
 CREATE INDEX idx_jobs_claim ON compression_jobs(status, created_at);
 CREATE INDEX idx_jobs_created ON compression_jobs(created_at DESC);
+CREATE UNIQUE INDEX idx_jobs_auto_once
+    ON compression_jobs(photo_id) WHERE origin = 'auto';
 CREATE INDEX idx_jobs_photo_profile
     ON compression_jobs(photo_id, profile_id);
 CREATE INDEX idx_jobs_status ON compression_jobs(status);

@@ -6,14 +6,6 @@ pub(crate) fn enqueue_auto_jobs(
     keep_original: bool,
     immediate: bool,
 ) -> Result<usize> {
-    let profiles = db.list_profiles()?;
-    let auto_profiles: Vec<&CompressionProfile> = profiles
-        .iter()
-        .filter(|profile| profile.enabled && profile.auto_enabled)
-        .collect();
-    if auto_profiles.is_empty() {
-        return Ok(0);
-    }
     let policy = if keep_original { "keep" } else { "replace" };
     let status = if immediate {
         QueueStatus::Pending
@@ -22,20 +14,12 @@ pub(crate) fn enqueue_auto_jobs(
     };
     let mut enqueued = 0;
     for photo_id in new_ids {
-        for profile in &auto_profiles {
-            if db.enqueue_auto_job_for_existing_profile_with_status(
-                *photo_id,
-                &profile.id,
-                policy,
-                status,
-            )? {
-                enqueued += 1;
-            }
+        if db.enqueue_auto_job_with_status(*photo_id, policy, status)? {
+            enqueued += 1;
         }
     }
     tracing::info!(
         photos = new_ids.len(),
-        profiles = auto_profiles.len(),
         jobs = enqueued,
         "auto compression jobs enqueued"
     );
@@ -72,33 +56,22 @@ pub(crate) fn enqueue_auto_tagging(
 /// preference as replacement jobs.
 pub(crate) fn promote_display_derivative(db: &Db, photo: &Photo) -> Result<bool> {
     let derivatives = db.derivatives_for_photo(photo.id)?;
-    let profiles = db.list_profiles()?;
-    let Some(preferred) = preferred_display_derivative(&derivatives, &profiles) else {
+    let Some(preferred) = preferred_display_derivative(&derivatives) else {
         return Ok(false);
     };
     Ok(db.set_replaced(photo.id, preferred.id)?)
 }
 
-/// Picks the derivative to show for a photo. Profiles are ordered by
-/// `sort_order`, so the first profile in `list_profiles()` wins. Unknown
-/// profiles rank below known ones and fall back to the larger derivative id.
-/// Only files that still exist are candidates.
-pub(crate) fn preferred_display_derivative<'a>(
-    derivatives: &'a [Derivative],
-    profiles: &[CompressionProfile],
-) -> Option<&'a Derivative> {
+/// Picks the derivative to show for a photo. Only automatic compression
+/// produces display derivatives, and the newest existing automatic output
+/// wins. Manual profiles are deliberately not consulted, so editing,
+/// deleting, or reordering them cannot change what a photo displays.
+pub(crate) fn preferred_display_derivative(derivatives: &[Derivative]) -> Option<&Derivative> {
     derivatives
         .iter()
+        .filter(|derivative| derivative.origin == CompressionOrigin::Auto)
         .filter(|derivative| Path::new(&derivative.path).is_file())
-        .max_by_key(|derivative| {
-            (
-                profiles
-                    .iter()
-                    .position(|profile| profile.id == derivative.profile_id)
-                    .map(std::cmp::Reverse),
-                derivative.id,
-            )
-        })
+        .max_by_key(|derivative| derivative.id)
 }
 
 /// Tracks the cache size between scans. `known_bytes` is `None` while the
@@ -353,20 +326,37 @@ pub(crate) fn process_decoded_job(
     job: &CompressionJob,
     thumbnail_dir: Option<&Path>,
 ) -> Result<()> {
-    let mut profile = {
-        let db = lock_db(db);
-        db.list_profiles()?
-            .into_iter()
-            .find(|profile| profile.id == job.profile_id)
-            .context("compression profile no longer exists")?
+    let profile = match job.origin {
+        CompressionOrigin::Auto => {
+            let settings = {
+                let db = lock_db(db);
+                AppSettings::load(&db)?
+            };
+            settings.auto_compression.to_profile(
+                "auto",
+                "自動圧縮",
+                Some("compressed".to_string()),
+                String::new(),
+            )
+        }
+        CompressionOrigin::Manual => {
+            let mut profile = {
+                let db = lock_db(db);
+                db.list_profiles()?
+                    .into_iter()
+                    .find(|profile| Some(profile.id.as_str()) == job.profile_id.as_deref())
+                    .context("compression profile no longer exists")?
+            };
+            if let Some(output_dir) = job
+                .output_dir
+                .as_deref()
+                .filter(|dir| !dir.trim().is_empty())
+            {
+                profile.output_dir = Some(output_dir.to_string());
+            }
+            profile
+        }
     };
-    if let Some(output_dir) = job
-        .output_dir
-        .as_deref()
-        .filter(|dir| !dir.trim().is_empty())
-    {
-        profile.output_dir = Some(output_dir.to_string());
-    }
 
     let result = compressor::compress_decoded(image, source_path, &profile)?;
     if !result.output_path.is_file()
@@ -378,6 +368,11 @@ pub(crate) fn process_decoded_job(
     }
     let preferred_derivative = {
         let db = lock_db(db);
+        let derivative_policy = if job.origin == CompressionOrigin::Auto {
+            job.policy.as_str()
+        } else {
+            "keep"
+        };
         db.add_derivative(
             photo.id,
             &result.output_path.to_string_lossy(),
@@ -385,15 +380,18 @@ pub(crate) fn process_decoded_job(
             result.width,
             result.height,
             result.compressed_size,
-            &profile.id,
-            &job.policy,
+            job.profile_id.as_deref(),
+            job.origin,
+            derivative_policy,
         )?;
         let current_status = db.photo_by_id(photo.id)?.map(|row| row.status);
-        if job.policy == "replace" && current_status != Some(PhotoStatus::Deleting) {
+        if job.origin == CompressionOrigin::Auto
+            && job.policy == "replace"
+            && current_status != Some(PhotoStatus::Deleting)
+        {
             let derivatives = db.derivatives_for_photo(photo.id)?;
-            let profiles = db.list_profiles()?;
             Some(
-                preferred_display_derivative(&derivatives, &profiles)
+                preferred_display_derivative(&derivatives)
                     .context("no displayable derivative after compression")?
                     .id,
             )

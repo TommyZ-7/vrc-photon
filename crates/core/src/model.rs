@@ -82,6 +82,157 @@ impl std::fmt::Display for CompressionFormat {
     }
 }
 
+impl CompressionFormat {
+    /// JPEG has no lossless mode in this encoder chain; AVIF is approximated
+    /// with quality 100.
+    pub fn supports_lossless(&self) -> bool {
+        !matches!(self, Self::Jpeg)
+    }
+}
+
+/// Quality bounds shared by the settings normalizer and the UI sliders.
+pub const COMPRESSION_QUALITY_MIN: u8 = 1;
+pub const COMPRESSION_QUALITY_MAX: u8 = 100;
+/// Encoder speed bounds (1 = slowest/best, 10 = fastest).
+pub const COMPRESSION_SPEED_MIN: u8 = 1;
+pub const COMPRESSION_SPEED_MAX: u8 = 10;
+/// Resize bounds accepted from persisted settings.
+pub const COMPRESSION_DIMENSION_MIN: u32 = 1;
+pub const COMPRESSION_DIMENSION_MAX: u32 = 16_384;
+
+/// Resize parameters shared by profiles and feature-specific compression.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResizeSettings {
+    pub resize_enabled: bool,
+    #[serde(default)]
+    pub resize_mode: ResizeMode,
+    pub width: u32,
+    pub height: u32,
+    pub maintain_aspect: bool,
+}
+
+impl Default for ResizeSettings {
+    fn default() -> Self {
+        Self {
+            resize_enabled: false,
+            resize_mode: ResizeMode::DownscaleOnly,
+            width: 3840,
+            height: 2160,
+            maintain_aspect: true,
+        }
+    }
+}
+
+impl ResizeSettings {
+    /// Clipboard default: the former "discord用webp" resize bounds.
+    pub fn clipboard_default() -> Self {
+        Self {
+            resize_enabled: true,
+            resize_mode: ResizeMode::DownscaleOnly,
+            width: 2560,
+            height: 1440,
+            maintain_aspect: true,
+        }
+    }
+
+    pub fn normalize(&mut self) {
+        self.width = self
+            .width
+            .clamp(COMPRESSION_DIMENSION_MIN, COMPRESSION_DIMENSION_MAX);
+        self.height = self
+            .height
+            .clamp(COMPRESSION_DIMENSION_MIN, COMPRESSION_DIMENSION_MAX);
+    }
+}
+
+/// Compression parameters owned by one feature (automatic compression,
+/// Discord sending, or the manual profile editor).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CompressionOptions {
+    pub format: CompressionFormat,
+    pub quality: u8,
+    pub lossless: bool,
+    /// 1 = slowest/best, 10 = fastest
+    pub encode_speed: u8,
+    #[serde(flatten)]
+    pub resize: ResizeSettings,
+}
+
+impl Default for CompressionOptions {
+    fn default() -> Self {
+        Self {
+            format: CompressionFormat::Webp,
+            quality: 82,
+            lossless: false,
+            encode_speed: 6,
+            resize: ResizeSettings::default(),
+        }
+    }
+}
+
+impl CompressionOptions {
+    /// Default for automatic compression: the former "無劣化webp" profile.
+    pub fn auto_default() -> Self {
+        Self {
+            lossless: true,
+            ..Self::default()
+        }
+    }
+
+    /// Default for Discord sending: the former "discord用webp" profile.
+    pub fn discord_default() -> Self {
+        Self {
+            lossless: true,
+            resize: ResizeSettings::clipboard_default(),
+            ..Self::default()
+        }
+    }
+
+    pub fn normalize(&mut self) {
+        self.quality = self
+            .quality
+            .clamp(COMPRESSION_QUALITY_MIN, COMPRESSION_QUALITY_MAX);
+        self.encode_speed = self
+            .encode_speed
+            .clamp(COMPRESSION_SPEED_MIN, COMPRESSION_SPEED_MAX);
+        self.resize.normalize();
+    }
+
+    /// Switches the encoder format and drops lossless when the format cannot
+    /// represent it.
+    pub fn set_format(&mut self, format: CompressionFormat) {
+        if !format.supports_lossless() {
+            self.lossless = false;
+        }
+        self.format = format;
+    }
+
+    pub fn to_profile(
+        &self,
+        id: &str,
+        name: &str,
+        output_dir: Option<String>,
+        suffix: String,
+    ) -> CompressionProfile {
+        CompressionProfile {
+            id: id.to_string(),
+            name: name.to_string(),
+            enabled: true,
+            format: self.format.clone(),
+            quality: self.quality,
+            lossless: self.lossless,
+            resize_enabled: self.resize.resize_enabled,
+            resize_mode: self.resize.resize_mode,
+            width: self.resize.width,
+            height: self.resize.height,
+            maintain_aspect: self.resize.maintain_aspect,
+            output_dir,
+            suffix,
+            encode_speed: self.encode_speed,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ResizeMode {
@@ -110,15 +261,6 @@ pub struct CompressionProfile {
     pub id: String,
     pub name: String,
     pub enabled: bool,
-    pub auto_enabled: bool,
-    /// At most one profile system-wide may use this flag. The clipboard action
-    /// compresses with it immediately, without opening the manual modal.
-    #[serde(default)]
-    pub clipboard: bool,
-    /// At most one profile system-wide may use this flag. It is the profile
-    /// used when posting to Discord.
-    #[serde(default)]
-    pub discord: bool,
     pub format: CompressionFormat,
     pub quality: u8,
     pub lossless: bool,
@@ -140,9 +282,6 @@ impl Default for CompressionProfile {
             id: uuid::Uuid::new_v4().to_string(),
             name: "WebP 高品質".to_string(),
             enabled: true,
-            auto_enabled: true,
-            clipboard: false,
-            discord: false,
             format: CompressionFormat::Webp,
             quality: 82,
             lossless: false,
@@ -159,13 +298,28 @@ impl Default for CompressionProfile {
 }
 
 impl CompressionProfile {
+    /// Copies the compression parameters into the feature-level shape.
+    pub fn options(&self) -> CompressionOptions {
+        CompressionOptions {
+            format: self.format.clone(),
+            quality: self.quality,
+            lossless: self.lossless,
+            encode_speed: self.encode_speed,
+            resize: ResizeSettings {
+                resize_enabled: self.resize_enabled,
+                resize_mode: self.resize_mode,
+                width: self.width,
+                height: self.height,
+                maintain_aspect: self.maintain_aspect,
+            },
+        }
+    }
+
     /// Built-in presets seeded into an empty database.
     pub fn defaults() -> Vec<Self> {
         vec![
             Self {
                 name: "無劣化webp".to_string(),
-                auto_enabled: true,
-                clipboard: false,
                 format: CompressionFormat::Webp,
                 lossless: true,
                 resize_enabled: false,
@@ -175,9 +329,6 @@ impl CompressionProfile {
             },
             Self {
                 name: "discord用webp".to_string(),
-                auto_enabled: false,
-                clipboard: true,
-                discord: true,
                 format: CompressionFormat::Webp,
                 lossless: true,
                 resize_enabled: true,
@@ -191,8 +342,6 @@ impl CompressionProfile {
             },
             Self {
                 name: "高画質webp".to_string(),
-                auto_enabled: false,
-                clipboard: false,
                 format: CompressionFormat::Webp,
                 quality: 90,
                 lossless: false,
@@ -202,6 +351,33 @@ impl CompressionProfile {
                 ..Self::default()
             },
         ]
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CompressionOrigin {
+    /// Created by the automatic compression feature.
+    Auto,
+    /// Created by a manual compression job using a profile.
+    Manual,
+}
+
+impl CompressionOrigin {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Manual => "manual",
+        }
+    }
+
+    /// Unknown values are display-only; treat them as manual so a newer row
+    /// never becomes an automatic replacement.
+    pub fn parse(value: &str) -> Self {
+        match value {
+            "auto" => Self::Auto,
+            _ => Self::Manual,
+        }
     }
 }
 
@@ -375,7 +551,6 @@ pub enum SendErrorCode {
     Http5xx,
     TooLarge,
     PhotoMissing,
-    ProfileMissing,
     EncodeFailed,
     Interrupted,
     WebhookInvalid,
@@ -395,7 +570,6 @@ impl SendErrorCode {
             Self::Http5xx => "http_5xx",
             Self::TooLarge => "too_large",
             Self::PhotoMissing => "photo_missing",
-            Self::ProfileMissing => "profile_missing",
             Self::EncodeFailed => "encode_failed",
             Self::Interrupted => "interrupted",
             Self::WebhookInvalid => "webhook_invalid",
@@ -415,7 +589,6 @@ impl SendErrorCode {
             "http_5xx" => Self::Http5xx,
             "too_large" => Self::TooLarge,
             "photo_missing" => Self::PhotoMissing,
-            "profile_missing" => Self::ProfileMissing,
             "encode_failed" => Self::EncodeFailed,
             "interrupted" => Self::Interrupted,
             "webhook_invalid" => Self::WebhookInvalid,
@@ -579,7 +752,10 @@ pub struct Derivative {
     pub width: u32,
     pub height: u32,
     pub file_size: u64,
-    pub profile_id: String,
+    /// The manual profile that produced this file, or `None` for automatic
+    /// compression.
+    pub profile_id: Option<String>,
+    pub origin: CompressionOrigin,
     pub policy: String,
     pub created_at: String,
 }
@@ -631,7 +807,9 @@ pub const MAX_JOB_RETRIES: i64 = 3;
 pub struct CompressionJob {
     pub id: String,
     pub photo_id: i64,
-    pub profile_id: String,
+    /// The manual profile, or `None` for automatic compression.
+    pub profile_id: Option<String>,
+    pub origin: CompressionOrigin,
     pub status: QueueStatus,
     pub progress: f64,
     pub error: Option<String>,

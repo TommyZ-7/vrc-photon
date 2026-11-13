@@ -273,7 +273,7 @@ AVIF はエンコード時間が支配的なため、デコード削減（約40m
 3. `docs/data-model.md` のバージョン表と `docs/database-initialization.md` を更新する。
 4. `scripts/check-docs-drift.sh` が `SCHEMA_VERSION` を参照しているため、ドキュメント側の値を同じPRで更新する。
 
-このアプリは過去バージョン向けの `migrate_v*` を持たない。v1〜v17 の既存 DB は
+このアプリは過去バージョン向けの `migrate_v*` を持たない。v1〜v18 の既存 DB は
 自動移行せず、バックアップして新しいライブラリを作成する。破壊的変更（既存DBの
 列削除・意味変更）はしない。必要なら新テーブル＋コピーを検討する。
 

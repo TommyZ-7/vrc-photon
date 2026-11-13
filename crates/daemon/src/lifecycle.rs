@@ -1236,6 +1236,8 @@ impl Daemon {
         self.settings.auto_compress_backlog = settings.auto_compress_backlog;
         self.settings.auto_compress_immediate = settings.auto_compress_immediate;
         self.settings.auto_compress_keep_original = settings.auto_compress_keep_original;
+        self.settings.auto_compression = settings.auto_compression.clone();
+        self.settings.discord_compression = settings.discord_compression.clone();
         self.settings.ai_tagging_enabled = settings.ai_tagging_enabled;
         self.settings.ai_tagging_auto = settings.ai_tagging_auto;
         self.settings.ai_tagging_backlog = settings.ai_tagging_backlog;

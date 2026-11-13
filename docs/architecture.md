@@ -280,7 +280,7 @@ crates/ui/src/
 
 1. UIまたはデーモンが `Db::open` でSQLiteを開く。
 2. `journal_mode=WAL`、`foreign_keys=ON`、`busy_timeout=5s` を設定。
-3. `PRAGMA user_version` を検査する。新規 DB は統合 schema を1トランザクションで初期化し、既存 DB は v18 のみ受け付ける。それ以外はファイルを変更せずエラーを返す。
+3. `PRAGMA user_version` を検査する。新規 DB は統合 schema を1トランザクションで初期化し、既存 DB は v19 のみ受け付ける。それ以外はファイルを変更せずエラーを返す。
 4. 設定（`app_settings` の `app_settings` キー）を読む。なければVRChatパスを自動検出。
 5. デーモンはIPCサーバーを起動する。UIはIPC購読を開始し、接続できなければハートビート/DB表示にフォールバックする。
 6. デーモンは `scan_photos` で写真ルートを走査し、ログの末尾から解析を開始する。走査中は `scan_started` / `scan_progress` / `scan_finished` を配信する。
@@ -291,7 +291,7 @@ crates/ui/src/
 2. 変更パスを `dirty_paths` に積む（`compressed/` 配下は除外）。
 3. `scanner::scan_one` がファイル名から撮影時刻・解像度を解析する。
 4. `photos` にUPSERTする。既存パスなら更新、新規なら `new_ids` に追加。
-5. 新規写真はサムネイルキューに送る。自動圧縮がONならプロファイルごとにジョブを積む。
+5. 新規写真はサムネイルキューに送る。自動圧縮がONなら自動圧縮設定で1写真につき1件のジョブを積む。
 6. パスが消えていれば `photos.status='missing'` にする。
 
 起動時は `scan_root` で全件走査する。ファイル削除の検出もこの走査で行う。
@@ -311,14 +311,14 @@ crates/ui/src/
 
 ### 4.4 圧縮
 
-1. 自動圧縮は新規写真の索引時に `compression_jobs` へ `pending` で積む。
-2. 手動圧縮はUIがダイアログで選んだ `policy=keep` / `replace` と同じテーブルへ積む。指定フォルダ出力は `output_dir` でプロファイルの出力先を上書きする。
+1. 自動圧縮は新規写真の索引時に `compression_jobs` へ `origin='auto'`、`profile_id=NULL` で1件積む。出力先は元画像の隣の `compressed/` に固定する。
+2. 手動圧縮は `origin='manual'`、`policy='keep'` で積む。指定フォルダ出力は `output_dir` でプロファイルの出力先を上書きする。
 3. ワーカーは、最も古い pending ジョブの写真について pending ジョブを `BEGIN IMMEDIATE` トランザクションでまとめて `processing` にする。
-4. ワーカーはバッチ開始時に原画を1回だけデコードし、同じ写真のプロファイルを順次エンコードする。デコード済み画像はバッチ終了時に破棄する。
+4. ワーカーはバッチ開始時に原画を1回だけデコードし、同じ写真のジョブを順次エンコードする。自動圧縮は現在の `auto_compression`、手動圧縮は `profile_id` のプロファイルを使う。デコード済み画像はバッチ終了時に破棄する。
 5. 入力パスはバッチ開始時に固定する。先行ジョブの `replace` で表示用派生ファイルに切り替わっても、後続ジョブは元画像を読む。
 6. 圧縮結果を一時ファイルへ書き、サイズ検証後にリネームする。
 7. `derivatives` に生成物を記録し、ジョブを `completed` にする。開始・完了・失敗・キャンセルは `compression_progress` イベントでも配信する。
-8. `replace` の場合、検証後に `photos.status='replaced'` にし、元画像の削除要求を `deletion_requests` に積む。実際の移動は削除エグゼキュータが全ジョブ完了後に行う。
+8. 自動圧縮の `replace` の場合だけ、検証後に `photos.status='replaced'` にし、元画像の削除要求を `deletion_requests` に積む。手動圧縮は元画像を保持し、表示ファイルを切り替えない。実際の移動は削除エグゼキュータが全ジョブ完了後に行う。
 9. ジョブ単位の失敗はそのジョブだけ `failed` にし、同じ写真の他ジョブを続ける。写真不存在やデコード失敗などバッチ全体の失敗は、その時点で pending/processing のジョブだけを `failed` にする。
 10. 強制削除が入った場合、処理中の1件を完了させ、バッチ内の残りジョブを `cancelled` にして削除を待たせない。
 
@@ -407,17 +407,17 @@ crates/ui/src/
    `processing` にする。取得後に設定を再確認し、無効化されていれば `pending`
    に戻して送信しない。取得後の計画でエラーが出た行は `failed`（`unknown` /
    `internal error`）にし、`processing` のまま残さない。
-4. 写真・文脈・プレイヤー・derivative・選択プロファイルを短いDBロックで読み、
-   送信元を決める。ロックを解放してからファイルを読み、必要ならメモリ上で
-   エンコードする。ファイル読み込み・エンコード・HTTP中はDBロックを持たない。
+4. 写真・文脈・プレイヤー・表示用derivativeを短いDBロックで読み、
+   送信元を決める。ロックを解放してからファイルを読み、必要なら
+   `discord_compression` でメモリ上にエンコードする。ファイル読み込み・
+   エンコード・HTTP中はDBロックを持たない。プロファイルは参照しない。
 5. 送信元は原画優先。原画が存在し置換されていなければ、原画優先ONかつ
-   20 MiB（`20 * 1024 * 1024` バイト）以下なら原画を送る。それ以外は連携
-   プロファイルの既存derivative、なければ同じプロファイルでメモリ上エンコード
-   した結果を送る。原画が置換・消失している場合は表示用derivative、なければ
-   連携プロファイルのderivativeを使う。
+   20 MiB（`20 * 1024 * 1024` バイト）以下なら原画を送る。それ以外は
+   `discord_compression` でメモリ上にエンコードした結果を送る。原画が置換・
+   消失している場合は表示用derivativeを使う。
 6. 選択したファイル、またはエンコード結果が20 MiBを超える場合は送信せず
-   `too_large` で失敗する。プロファイル未選択・無効・消失は `profile_missing`、
-   原画も派生もない場合は `photo_missing`。
+   `too_large` で失敗する。原画も派生もない場合は `photo_missing`。
+   ファイルやderivativeは生成しない。
 7. `payload_json`（ワールド名、撮影日時、任意でプレイヤー名）と画像を multipart
    で `POST <webhook>?wait=true` する。HTTPSのみ、Discordのホスト許可リスト、
    リダイレクト追従なし、接続10秒・全体120秒、レスポンスは最大64 KiB。

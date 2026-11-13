@@ -19,7 +19,7 @@ use vrc_photon_core::linker;
 use vrc_photon_core::log_parser::LogIngestor;
 use vrc_photon_core::metadata::{self, XmpMetadata};
 use vrc_photon_core::model::{
-    CompressionJob, CompressionProfile, DaemonCommand, DaemonOperation, DeletionReason,
+    CompressionJob, CompressionOrigin, DaemonCommand, DaemonOperation, DeletionReason,
     DeletionRequest, Derivative, Photo, PhotoStatus, QueueStatus,
 };
 use vrc_photon_core::photo_filename::is_source_photo;

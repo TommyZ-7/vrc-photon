@@ -1,6 +1,6 @@
 # 圧縮設定を機能ごとに持たせ、プロファイルの役割フラグを廃止する Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 自動圧縮・クリップボード・Discord 送信が圧縮プロファイルを参照せず、それぞれ専用の圧縮設定だけで動作するようにする。プロファイルは手動圧縮専用にし、役割フラグを廃止する。
 
@@ -81,16 +81,16 @@
 **Interfaces:**
 - Produces: 承認済みの UI モック。Task 1 以降はこのモックに従う。
 
-- [ ] **Step 1: モックを開いて確認する**
+- [x] **Step 1: モックを開いて確認する**
 
 Run: `xdg-open docs/ui-622-feature-compression-mockup.html`
 Expected: 自動圧縮・クリップボード・Discord の各カードに圧縮設定があり、手動圧縮ダイアログから保持／置換とクリップボード出力が消えている。
 
-- [ ] **Step 2: ユーザーの承認を得る**
+- [x] **Step 2: ユーザーの承認を得る**
 
 承認前にコードを書き換えない。レイアウト・文言・項目の過不足を確認し、修正があればモックだけを更新する。
 
-- [ ] **Step 3: docs-only PR を出す**
+- [x] **Step 3: docs-only PR を出す**
 
 ```bash
 git add docs/ui-622-feature-compression-mockup.html docs/superpowers/plans/2026-11-13-issue-622-feature-compression-settings.md
@@ -123,7 +123,7 @@ Expected: CI（docs-only の fast-pass）が緑。ユーザーの承認を得た
   - `AppSettings.clipboard_compression: ResizeSettings`
   - `AppSettings.discord_compression: CompressionOptions`
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 `crates/core/src/settings.rs` のテストモジュールに追加する。
 
@@ -173,12 +173,12 @@ fn feature_compression_settings_normalize_out_of_range_values() {
 }
 ```
 
-- [ ] **Step 2: テストが失敗することを確認する**
+- [x] **Step 2: テストが失敗することを確認する**
 
 Run: `cargo test -p vrc-photon-core legacy_settings_without_feature_compression_use_defaults`
 Expected: `CompressionOptions` / `ResizeSettings` が未定義でコンパイル失敗。
 
-- [ ] **Step 3: 型と既定値を実装する**
+- [x] **Step 3: 型と既定値を実装する**
 
 `model.rs` に `ResizeSettings` と `CompressionOptions` を追加する。`CompressionOptions` の `resize` は `#[serde(flatten)]` で、プロファイル JSON と同じキー名になるようにする。
 
@@ -191,12 +191,12 @@ Expected: `CompressionOptions` / `ResizeSettings` が未定義でコンパイル
 
 `CompressionOptions::to_profile` は現行の `CompressionProfile` フィールドへ写す。役割フラグが残っている間は `auto_enabled: false, clipboard: false, discord: false` を設定する（Task 6 で削除）。
 
-- [ ] **Step 4: テストを通す**
+- [x] **Step 4: テストを通す**
 
 Run: `cargo test -p vrc-photon-core settings::tests`
 Expected: PASS。既存の設定テストもすべて通る。
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add crates/core/src/model.rs crates/core/src/settings.rs
@@ -209,6 +209,7 @@ git commit -m "feat: add per-feature compression options"
 
 **Files:**
 - Modify: `crates/core/src/model.rs`
+- Modify: `crates/core/src/discord.rs`
 - Modify: `crates/core/src/db/schema.rs`
 - Modify: `crates/core/src/db/compression.rs`
 - Modify: `crates/core/src/db/photos.rs`
@@ -227,7 +228,7 @@ git commit -m "feat: add per-feature compression options"
   - `Db::add_derivative(photo_id, path, format, width, height, file_size, profile_id: Option<&str>, origin: CompressionOrigin, policy: &str) -> Result<i64>`
   - schema v19: `compression_jobs.profile_id TEXT`, `compression_jobs.origin TEXT NOT NULL`, `derivatives.profile_id TEXT`, `derivatives.origin TEXT NOT NULL`, `compression_profiles` から `auto_enabled` 列を削除
 
-- [ ] **Step 1: 失敗する schema テストを書く**
+- [x] **Step 1: 失敗する schema テストを書く**
 
 `crates/core/src/db/tests.rs` を更新する。
 
@@ -257,12 +258,12 @@ fn derivative_origin_and_nullable_profile_roundtrip() {
 }
 ```
 
-- [ ] **Step 2: テストが失敗することを確認する**
+- [x] **Step 2: テストが失敗することを確認する**
 
 Run: `cargo test -p vrc-photon-core fresh_database_is_initialized_to_v19`
 Expected: FAIL（現在のバージョンは 18、列も未定義）。
 
-- [ ] **Step 3: schema v19 とモデルを実装する**
+- [x] **Step 3: schema v19 とモデルを実装する**
 
 `SCHEMA_VERSION` を `19` に上げ、`SCHEMA_LATEST` を更新する。
 
@@ -311,17 +312,17 @@ CREATE INDEX idx_derivatives_auto ON derivatives(photo_id) WHERE origin = 'auto'
 
 `compression_jobs` の既存 INSERT / RETURNING / SELECT と `JOB_COLUMNS` / `row_to_job` を新しい列順に更新する。手動ジョブは `origin='manual'`、自動ジョブは `origin='auto'` を書く。`add_derivative` の呼び出し元をすべて新しい引数へ更新する。`Db::write_profile` は `auto_enabled` 列を書かないようにする（モデルのフィールドは Task 6 まで残る）。
 
-- [ ] **Step 4: テストを通す**
+- [x] **Step 4: テストを通す**
 
 Run: `cargo test -p vrc-photon-core`
 Expected: PASS。`fresh_database_is_initialized_to_v19` と v18 拒否テストが通る。
 
-- [ ] **Step 5: ワークスペースのコンパイルを通す**
+- [x] **Step 5: ワークスペースのコンパイルを通す**
 
 Run: `cargo check --workspace`
 Expected: PASS。`CompressionJob` / `Derivative` の構築箇所をすべて更新する。
 
-- [ ] **Step 6: コミット**
+- [x] **Step 6: コミット**
 
 ```bash
 git add crates/core/src/model.rs crates/core/src/db crates/daemon crates/ui
@@ -358,7 +359,7 @@ git commit -m "feat: add schema v19 with compression origins"
   - `App::resize_settings_editor(id_prefix, resize, cx) -> AnyElement`
   - `auto_compression_summary(enabled: bool, options: &CompressionOptions) -> String`
 
-- [ ] **Step 1: 失敗する自動圧縮テストを書く**
+- [x] **Step 1: 失敗する自動圧縮テストを書く**
 
 `crates/daemon/src/tests.rs` に追加する。
 
@@ -397,12 +398,12 @@ fn auto_compression_summary_uses_the_auto_options() {
 }
 ```
 
-- [ ] **Step 2: テストが失敗することを確認する**
+- [x] **Step 2: テストが失敗することを確認する**
 
 Run: `cargo test -p vrc-photon-daemon auto_compression_enqueues_without_any_profiles`
 Expected: FAIL（現在は auto プロファイルが必要）。
 
-- [ ] **Step 3: 自動投入と処理を実装する**
+- [x] **Step 3: 自動投入と処理を実装する**
 
 - `enqueue_auto_jobs` から `db.list_profiles()` と `auto_profiles` を削除する。`auto_compress` は呼び出し側で判定済みなので、写真ごとに1件だけ `enqueue_auto_job_with_status` を呼ぶ。
 - `enqueue_auto_job_with_status` は `profile_id` を受け取らず、`NULL` と `origin='auto'` を書く。`WHERE NOT EXISTS (photo_id, origin='auto')` で再投入を防ぐ。
@@ -418,7 +419,7 @@ Expected: FAIL（現在は auto プロファイルが必要）。
 - 出力先の注記をカード内に追加する（`integrations.compression.output_note.auto`）。
 - キューの auto ジョブはプロファイル名ではなく `compression.queue.auto`（「自動圧縮」）を表示する。`profile_id=None` の manual ジョブは従来どおり `compression.unknown_profile`。
 
-- [ ] **Step 4: i18n を追加する**
+- [x] **Step 4: i18n を追加する**
 
 `ja.yml` / `en.yml` に以下を追加する。
 
@@ -430,14 +431,14 @@ compression.queue.auto: "自動圧縮"
 
 `integrations.auto.profiles*` と `integrations.summary.auto` の引数を新しいサマリに合わせて更新する。
 
-- [ ] **Step 5: テストを通す**
+- [x] **Step 5: テストを通す**
 
 Run: `cargo test -p vrc-photon-daemon auto_`
 Expected: PASS。
 Run: `cargo test -p vrc-photon-ui auto_compression_summary_uses_the_auto_options`
 Expected: PASS。
 
-- [ ] **Step 6: コミット**
+- [x] **Step 6: コミット**
 
 ```bash
 git add crates/core/src/compressor.rs crates/core/src/db crates/daemon crates/ui crates/i18n
@@ -464,7 +465,7 @@ git commit -m "feat: run automatic compression from its own settings"
   - `ManualOutputTarget` は `Folder` / `Profile` のみ（`Clipboard` を削除）
   - `ManualCompressionDialog` からクリップボード関連の分岐を削除
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 `crates/core/src/compressor.rs` のテストに追加する。
 
@@ -492,12 +493,12 @@ fn clipboard_summary_uses_the_resize_settings() {
 }
 ```
 
-- [ ] **Step 2: テストが失敗することを確認する**
+- [x] **Step 2: テストが失敗することを確認する**
 
 Run: `cargo test -p vrc-photon-core clipboard_png_applies_resize_settings_only`
 Expected: FAIL（現在は `CompressionProfile` を受ける）。
 
-- [ ] **Step 3: 実装する**
+- [x] **Step 3: 実装する**
 
 - `render_clipboard_png` の引数を `&ResizeSettings` に変え、`resize_for_profile` を `resize_for_settings` として共通化する。
 - `compress_selection_to_clipboard` は `self.settings.clipboard_compression` を直接使い、プロファイル検索・ダイアログ・`ManualOutputTarget::Clipboard` 分岐を削除する。写真1枚の検証と `clipboard_enabled` の検証は残す。
@@ -507,14 +508,14 @@ Expected: FAIL（現在は `CompressionProfile` を受ける）。
 - i18n から `integrations.clipboard.profiles_*`、`dialog.output.clipboard*`、`dialog.clipboard_note` を削除し、`integrations.clipboard.resize_note`（「クリップボードは PNG でコピーされます。設定はリサイズのみです。」）を追加する。
 - `crates/i18n/tests/placeholders.rs` の `CALL_SITES` を更新する。
 
-- [ ] **Step 4: テストを通す**
+- [x] **Step 4: テストを通す**
 
 Run: `cargo test -p vrc-photon-core clipboard_`
 Expected: PASS。
 Run: `cargo test -p vrc-photon-ui clipboard`
 Expected: PASS。
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add crates/core/src/compressor.rs crates/ui crates/i18n
@@ -545,7 +546,7 @@ git commit -m "feat: use resize-only settings for clipboard compression"
   - `discord_format_warning(options: &CompressionOptions) -> Option<String>`
   - `set_discord_profile` / `discord_profile_toggle` / `discord_profile_label` を削除
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 `crates/core/src/discord.rs` のテストを更新・追加する。
 
@@ -592,12 +593,12 @@ fn discord_format_warning_uses_the_discord_options() {
 }
 ```
 
-- [ ] **Step 2: テストが失敗することを確認する**
+- [x] **Step 2: テストが失敗することを確認する**
 
 Run: `cargo test -p vrc-photon-core discord_send_uses_the_discord_options_without_a_profile`
 Expected: FAIL（現在はプロファイルを受ける）。
 
-- [ ] **Step 3: 実装する**
+- [x] **Step 3: 実装する**
 
 - `choose_send_source` から `profile` / `derivatives` を削除し、`options` を受ける。置換・欠落時は `photo.effective_path()` を `SendSource::Derivative` として返す。原画が 20 MiB 以下で `send_original` なら `Original`。それ以外は `Encode { source_path, format: options.format.into() }`。
 - `encode_for_send` を `CompressionOptions` 受けに変更する。
@@ -608,7 +609,7 @@ Expected: FAIL（現在はプロファイルを受ける）。
 - `set_discord_profile`、`discord_profile_toggle`、`discord_profile_label` と関連テストを削除する。`discord_format_warning` は `CompressionOptions` を受ける形にする。
 - i18n の `integrations.discord.profile.*` を削除し、`integrations.discord.compression.hint` を追加する。`integrations.discord.source.prefer_original_hint` を更新する。
 
-- [ ] **Step 4: テストを通す**
+- [x] **Step 4: テストを通す**
 
 Run: `cargo test -p vrc-photon-core discord_`
 Expected: PASS。
@@ -617,7 +618,7 @@ Expected: PASS。
 Run: `cargo test -p vrc-photon-ui discord_`
 Expected: PASS。
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add crates/core/src/discord.rs crates/core/src/model.rs crates/daemon crates/ui crates/i18n
@@ -643,7 +644,7 @@ git commit -m "feat: use dedicated compression settings for Discord"
   - `CompressionProfile::defaults()` に役割フラグなし
   - `Db::save_profile` / `duplicate_profile` に clipboard / discord の一意性処理なし
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 `crates/core/src/db/tests.rs` の既存テストを更新する。
 
@@ -672,12 +673,12 @@ fn profile_json_ignores_removed_role_flags() {
 }
 ```
 
-- [ ] **Step 2: テストが失敗することを確認する**
+- [x] **Step 2: テストが失敗することを確認する**
 
 Run: `cargo test -p vrc-photon-core profile_json_ignores_removed_role_flags`
 Expected: FAIL（`auto_enabled` などのフィールドが残っている）。
 
-- [ ] **Step 3: 実装する**
+- [x] **Step 3: 実装する**
 
 - `CompressionProfile` から `auto_enabled` / `clipboard` / `discord` を削除する。
 - `CompressionProfile::default` と `defaults()` からフラグを削除する。`to_profile`（Task 1）のフラグ設定も削除する。
@@ -686,13 +687,13 @@ Expected: FAIL（`auto_enabled` などのフィールドが残っている）。
 - `integrations.rs` の一覧サマリから `auto_profiles` / `clipboard_profile` の集計を削除し、`auto_compression_summary(&settings.auto_compression)` / `clipboard_summary(&settings.clipboard_compression)` を使う。
 - 旧テスト `ensure_default_profiles_is_idempotent` のフラグ assertion、`duplicate_profile_*_clipboard_flag`、`failed_profile_save_restores_the_previous_clipboard_flag`、`saving_a_clipboard_profile_clears_the_previous_one` を削除または新しい期待値へ置き換える。
 
-- [ ] **Step 4: テストを通す**
+- [x] **Step 4: テストを通す**
 
 Run: `cargo test -p vrc-photon-core`
 Run: `cargo test -p vrc-photon-ui`
 Expected: PASS。
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add crates/core crates/ui crates/daemon
@@ -718,7 +719,7 @@ git commit -m "feat: remove compression profile role flags"
   - `ManualCompressionDialog` から `keep_original` を削除
   - `process_decoded_job` は `CompressionOrigin::Auto && policy == "replace"` のときだけ `complete_replacement` を呼ぶ
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 `crates/ui/src/app/compression.rs` に追加する。
 
@@ -740,12 +741,12 @@ fn manual_job_with_replace_policy_does_not_change_the_display() {
 }
 ```
 
-- [ ] **Step 2: テストが失敗することを確認する**
+- [x] **Step 2: テストが失敗することを確認する**
 
 Run: `cargo test -p vrc-photon-daemon manual_job_with_replace_policy_does_not_change_the_display`
 Expected: FAIL（現在は policy だけで置換する）。
 
-- [ ] **Step 3: 実装する**
+- [x] **Step 3: 実装する**
 
 - `confirm_manual_compression` は `manual_compression_policy()` を使い、`dialog.keep_original` を削除する。成功トーストから `policy` 引数を外す。
 - `ManualCompressionDialog` から `keep_original` を削除し、`open_manual_compression*` の初期化を更新する。
@@ -754,13 +755,13 @@ Expected: FAIL（現在は policy だけで置換する）。
 - i18n から `dialog.keep_original*`、`dialog.trash_original*`、`dialog.section.original`、`compression.policy.*` を削除し、`compression.enqueue.success` から `%{policy}` を外す。`crates/i18n/tests/placeholders.rs` の `CALL_SITES` を更新する。
 - `compression_policy` は自動圧縮の待機解放で使うため残す。名前はそのままでよい。
 
-- [ ] **Step 4: テストを通す**
+- [x] **Step 4: テストを通す**
 
 Run: `cargo test -p vrc-photon-daemon manual_`
 Run: `cargo test -p vrc-photon-ui manual_compression_always_uses_keep`
 Expected: PASS。
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add crates/ui crates/daemon crates/i18n
@@ -786,7 +787,7 @@ git commit -m "feat: keep originals for every manual compression"
 - Modify: `crates/i18n/locales/ja.yml`, `en.yml`
 - Modify: `crates/i18n/tests/placeholders.rs`
 
-- [ ] **Step 1: ADR を追加する**
+- [x] **Step 1: ADR を追加する**
 
 `docs/adr/0020-feature-compression-settings.md` を作成する。
 
@@ -821,7 +822,7 @@ git commit -m "feat: keep originals for every manual compression"
 
 `docs/adr/README.md` の一覧に 0020 を追加し、0014 の Status を「Superseded in part by ADR-0020」に更新する。`0014` の冒頭にも同じ注記を追加する。
 
-- [ ] **Step 2: 仕様ドキュメントを更新する**
+- [x] **Step 2: 仕様ドキュメントを更新する**
 
 - `docs/features.md` 3.2〜3.5: プロファイルは手動専用、自動圧縮は単一設定、出力固定、手動は常に保持、クリップボードはリサイズのみ、Discord は専用設定。
 - `docs/features.md` Discord 節: 連携用プロファイルの説明を Discord 圧縮設定に置き換える。送信元は原画 → 表示用派生 → Discord 設定でエンコードの順。
@@ -833,16 +834,16 @@ git commit -m "feat: keep originals for every manual compression"
 - `docs/development.md`: v1〜v17 を v1〜v18 に更新。
 - `README.md` / `README.ja.md`: 「プロファイルを自動圧縮・クリップボード・Discord で共用する」記述を、機能ごとの設定に更新。
 
-- [ ] **Step 3: i18n の未使用キーを整理する**
+- [x] **Step 3: i18n の未使用キーを整理する**
 
 `ja.yml` / `en.yml` から、削除した UI に対応するキー（`integrations.auto.profiles*`、`integrations.clipboard.profiles_*`、`integrations.discord.profile.*`、`send.error.profile_missing`、`dialog.output.clipboard*`、`dialog.keep_original*`、`dialog.trash_original*`、`dialog.section.original`、`dialog.clipboard_note`、`compression.policy.*`）を削除する。`crates/i18n/tests/placeholders.rs` の `CALL_SITES` を実際の呼び出しに合わせる。
 
-- [ ] **Step 4: ドキュメントドリフトを確認する**
+- [x] **Step 4: ドキュメントドリフトを確認する**
 
 Run: `scripts/check-docs-drift.sh`
 Expected: `docs drift check OK (PROTOCOL_VERSION=..., SCHEMA_VERSION=19, ...)`
 
-- [ ] **Step 5: 全体検証**
+- [x] **Step 5: 全体検証**
 
 Run:
 
@@ -854,7 +855,7 @@ cargo test --workspace
 
 Expected: すべて PASS。
 
-- [ ] **Step 6: コミット**
+- [x] **Step 6: コミット**
 
 ```bash
 git add docs README.md README.ja.md crates/i18n
@@ -865,11 +866,11 @@ git commit -m "docs: sync feature compression settings"
 
 ## 実行完了時の確認
 
-- [ ] 自動圧縮・クリップボード・Discord がプロファイルを参照していない。
-- [ ] プロファイルの編集・削除・並び替えが3機能に影響しない。
-- [ ] 自動圧縮の出力が常に `compressed/` にある。
-- [ ] 手動圧縮が表示ファイルを切り替えない。
-- [ ] Discord とクリップボードが写真フォルダにファイルを残さない。
-- [ ] schema v19 の新規 DB が作成でき、v18 DB が変更されず拒否される。
-- [ ] `cargo fmt` / `cargo clippy` / `cargo test --workspace` / `scripts/check-docs-drift.sh` が通る。
-- [ ] `docs/superpowers/plans/2026-11-13-issue-622-feature-compression-settings.md` のチェックボックスを `- [x]` に更新する。
+- [x] 自動圧縮・クリップボード・Discord がプロファイルを参照していない。
+- [x] プロファイルの編集・削除・並び替えが3機能に影響しない。
+- [x] 自動圧縮の出力が常に `compressed/` にある。
+- [x] 手動圧縮が表示ファイルを切り替えない。
+- [x] Discord とクリップボードが写真フォルダにファイルを残さない。
+- [x] schema v19 の新規 DB が作成でき、v18 DB が変更されず拒否される。
+- [x] `cargo fmt` / `cargo clippy` / `cargo test --workspace` / `scripts/check-docs-drift.sh` が通る。
+- [x] `docs/superpowers/plans/2026-11-13-issue-622-feature-compression-settings.md` のチェックボックスを `- [x]` に更新する。

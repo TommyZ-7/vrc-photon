@@ -33,9 +33,10 @@
 | [0011](0011-daemon-ipc.md) | UIとデーモンはローカルIPCで即時コマンドとイベントを補完する | Accepted |
 | [0012](0012-auto-update.md) | 自動アップデートは署名付きマニフェストと専用ヘルパーで行う | Accepted（deb/pacmanの扱いはADR-0016で一部置き換え） |
 | [0013](0013-auto-compression-policy.md) | 圧縮ポリシーを全体設定にし、自動圧縮にも適用する | Superseded in part by ADR-0014（ADR-0004を置き換え） |
-| [0014](0014-manual-compression-policy.md) | 手動圧縮は実行時ポリシー、自動圧縮は設定ポリシー | Accepted |
+| [0014](0014-manual-compression-policy.md) | 手動圧縮は実行時ポリシー、自動圧縮は設定ポリシー | Superseded in part by ADR-0020 |
 | [0015](0015-deferred-deletion-queue.md) | 削除は依存ジョブのドレイン後に実行する | Accepted |
 | [0016](0016-system-package-update.md) | pacman / deb も polkit 経由でアプリ内更新する | Accepted |
 | [0017](0017-discord-webhook.md) | Discord 連携は単一 Webhook と耐久 outbox で行う | Accepted |
 | [0018](0018-vrchat-world-name-resolution.md) | VRChat API のワールド名解決は未認証・既定OFFの専用ワーカーで行う | Accepted |
 | [0019](0019-ai-tagging-plugin.md) | AI 自動タグ付けは署名済み sidecar プラグインとして分離する | Accepted |
+| [0020](0020-feature-compression-settings.md) | 圧縮設定を機能ごとに分離し、プロファイルを手動圧縮専用にする | Accepted |

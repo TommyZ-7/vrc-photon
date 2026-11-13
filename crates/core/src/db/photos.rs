@@ -962,18 +962,19 @@ impl Db {
         width: u32,
         height: u32,
         file_size: u64,
-        profile_id: &str,
+        profile_id: Option<&str>,
+        origin: CompressionOrigin,
         policy: &str,
     ) -> Result<i64> {
         let id = self
             .conn
             .query_row(
-                "INSERT INTO derivatives(photo_id, path, format, width, height, file_size, profile_id, policy, created_at) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) \
+                "INSERT INTO derivatives(photo_id, path, format, width, height, file_size, profile_id, origin, policy, created_at) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10) \
                  ON CONFLICT(path) DO UPDATE SET photo_id = excluded.photo_id, \
                     format = excluded.format, width = excluded.width, height = excluded.height, \
                     file_size = excluded.file_size, profile_id = excluded.profile_id, \
-                    policy = excluded.policy, created_at = excluded.created_at \
+                    origin = excluded.origin, policy = excluded.policy, created_at = excluded.created_at \
                  WHERE derivatives.photo_id = excluded.photo_id RETURNING id",
                 params![
                     photo_id,
@@ -983,6 +984,7 @@ impl Db {
                     height as i64,
                     file_size as i64,
                     profile_id,
+                    origin.as_str(),
                     policy,
                     now_string(),
                 ],
@@ -1008,7 +1010,7 @@ impl Db {
 
     pub fn derivatives_for_photo(&self, photo_id: i64) -> Result<Vec<Derivative>> {
         let mut stmt = self.conn.prepare_cached(
-            "SELECT id, photo_id, path, format, width, height, file_size, profile_id, policy, created_at \
+            "SELECT id, photo_id, path, format, width, height, file_size, profile_id, origin, policy, created_at \
              FROM derivatives WHERE photo_id = ?1 ORDER BY created_at DESC",
         )?;
         let rows = stmt.query_map(params![photo_id], |row| {
@@ -1021,8 +1023,9 @@ impl Db {
                 height: row.get(5)?,
                 file_size: row.get::<_, i64>(6)? as u64,
                 profile_id: row.get(7)?,
-                policy: row.get(8)?,
-                created_at: row.get(9)?,
+                origin: CompressionOrigin::parse(&row.get::<_, String>(8)?),
+                policy: row.get(9)?,
+                created_at: row.get(10)?,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)

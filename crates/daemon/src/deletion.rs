@@ -104,8 +104,7 @@ pub(crate) fn execute_deletion(db: &Arc<Mutex<Db>>, request: &DeletionRequest) -
         };
         let derivatives = db.derivatives_for_photo(photo.id)?;
         if request.reason == DeletionReason::AutoReplace && !request.force {
-            let profiles = db.list_profiles()?;
-            let Some(valid) = preferred_display_derivative(&derivatives, &profiles) else {
+            let Some(valid) = preferred_display_derivative(&derivatives) else {
                 db.block_deletion(request.id, "missing_asset", None)?;
                 return Err(anyhow::anyhow!(
                     "replacement derivative is missing; refusing to delete the original"

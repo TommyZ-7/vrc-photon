@@ -1,6 +1,6 @@
 //! Discord integration cards: webhook editing, destination label, test send,
-//! the single-select compression profile used for uploads, and the send
-//! history with its retry/cancel actions.
+//! the compression settings used for uploads, and the send history with its
+//! retry/cancel actions.
 //!
 //! The full webhook URL never reaches the screen: a stored URL is rendered
 //! through [`mask_webhook_url`] and only the edit field shows what the user is
@@ -17,13 +17,14 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use vrc_photon_core::discord::{mask_webhook_url, validate_webhook_url};
 use vrc_photon_core::model::{
-    CompressionFormat, CompressionProfile, SendErrorCode, SendHistoryEntry, SendKind, SendSource,
+    CompressionFormat, CompressionOptions, SendErrorCode, SendHistoryEntry, SendKind, SendSource,
     SendStatus,
 };
 use vrc_photon_core::settings::DiscordAutoMode;
 use vrc_photon_i18n::{tr, tr_args};
 
 use crate::app::App;
+use crate::app::compression::FeatureCompressionTarget;
 use crate::app::daemon::{format_timestamp, open_path};
 use crate::ui::components::{card_divider, glass_panel, manual_option_row};
 use crate::ui::theme::*;
@@ -80,7 +81,6 @@ pub(crate) fn send_error_label(code: Option<&str>) -> String {
         SendErrorCode::Http5xx => tr!("send.error.http_5xx"),
         SendErrorCode::TooLarge => tr!("send.error.too_large"),
         SendErrorCode::PhotoMissing => tr!("send.error.photo_missing"),
-        SendErrorCode::ProfileMissing => tr!("send.error.profile_missing"),
         SendErrorCode::EncodeFailed => tr!("send.error.encode_failed"),
         SendErrorCode::Interrupted => tr!("send.error.interrupted"),
         SendErrorCode::WebhookInvalid => tr!("send.error.webhook_invalid"),
@@ -136,26 +136,15 @@ pub(crate) fn webhook_state_label(url: Option<&str>) -> String {
     }
 }
 
-/// Name of the selected Discord profile, or the prompt to pick one.
-pub(crate) fn discord_profile_label(name: Option<&str>) -> String {
-    match name {
-        Some(name) => name.to_string(),
-        None => tr!("integrations.discord.profile.none"),
-    }
-}
-
-/// Warning shown when the selected profile encodes a format Discord embeds do
-/// not render. Selection is not blocked: the upload still works and Discord
-/// may show a download link instead of an inline preview.
-pub(crate) fn discord_profile_format_warning(
-    profile: Option<&CompressionProfile>,
-) -> Option<String> {
-    let profile = profile?;
+/// Warning shown when the Discord compression settings use a format Discord
+/// embeds do not render. Sending is not blocked: the upload still works and
+/// Discord may show a download link instead of an inline preview.
+pub(crate) fn discord_format_warning(options: &CompressionOptions) -> Option<String> {
     matches!(
-        profile.format,
+        options.format,
         CompressionFormat::Avif | CompressionFormat::JpegXl
     )
-    .then(|| tr!("integrations.discord.profile.format_warning"))
+    .then(|| tr!("integrations.discord.compression.format_warning"))
 }
 
 /// Localized "retry at" line for a pending row carrying `next_attempt_at`.
@@ -194,10 +183,8 @@ impl App {
         let stored_webhook_error = stored_webhook_error(webhook.as_deref());
         let send_original = self.settings.discord_send_original;
         let include_players = self.settings.discord_include_players;
-        let profiles = self.profiles.clone();
-        let selected_discord_profile = profiles.iter().find(|profile| profile.discord);
-        let selected_profile = selected_discord_profile.map(|profile| profile.name.clone());
-        let format_warning = discord_profile_format_warning(selected_discord_profile);
+        let options = self.settings.discord_compression.clone();
+        let format_warning = discord_format_warning(&options);
 
         let body = v_flex()
             .pt(px(12.))
@@ -280,73 +267,29 @@ impl App {
                 App::set_discord_include_players,
             ))
             .child(card_divider(&p))
+            .child(self.section_label(tr!("integrations.compression.section")))
+            .child(self.compression_options_editor(
+                "discord-compression",
+                &options,
+                FeatureCompressionTarget::Discord,
+                cx,
+            ))
+            .when_some(format_warning, |this, warning| {
+                this.child(
+                    div()
+                        .p(px(8.))
+                        .rounded(px(8.))
+                        .bg(rgb(p.amber_soft))
+                        .text_size(px(10.))
+                        .text_color(rgb(p.amber))
+                        .child(warning),
+                )
+            })
             .child(
-                v_flex()
-                    .gap(px(6.))
-                    .child(
-                        div()
-                            .text_size(px(12.))
-                            .text_color(rgb(p.text))
-                            .child(tr!("integrations.discord.profile.label")),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(10.))
-                            .text_color(rgb(p.muted_2))
-                            .child(tr!("integrations.discord.profile.hint")),
-                    )
-                    .when(!profiles.is_empty(), |this| {
-                        this.child(
-                            div()
-                                .text_size(px(10.))
-                                .text_color(rgb(p.muted_2))
-                                .child(discord_profile_label(selected_profile.as_deref())),
-                        )
-                    })
-                    .when_some(format_warning, |this, warning| {
-                        this.child(
-                            div()
-                                .p(px(8.))
-                                .rounded(px(8.))
-                                .bg(rgb(p.amber_soft))
-                                .text_size(px(10.))
-                                .text_color(rgb(p.amber))
-                                .child(warning),
-                        )
-                    })
-                    .child(if profiles.is_empty() {
-                        div()
-                            .text_size(px(10.))
-                            .text_color(rgb(p.muted_2))
-                            .child(tr!("integrations.auto.profiles_empty"))
-                            .into_any_element()
-                    } else {
-                        v_flex()
-                            .id("integrations-discord-profiles")
-                            .max_h(px(160.))
-                            .overflow_y_scrollbar()
-                            .gap(px(4.))
-                            .children(profiles.into_iter().map(|profile| {
-                                let id = profile.id.clone();
-                                let selected = profile.discord;
-                                let selectable = profile.enabled;
-                                manual_option_row(
-                                    &p,
-                                    SharedString::from(format!("discord-profile-{}", profile.id)),
-                                    profile.name.clone(),
-                                    profile_summary(&profile),
-                                    selected,
-                                    selectable,
-                                )
-                                .when(selectable, |this| {
-                                    this.on_click(cx.listener(move |this, _, _, cx| {
-                                        this.set_discord_profile(&id, !selected, cx);
-                                    }))
-                                })
-                                .into_any_element()
-                            }))
-                            .into_any_element()
-                    }),
+                div()
+                    .text_size(px(10.))
+                    .text_color(rgb(p.muted_2))
+                    .child(tr!("integrations.compression.output_note.discord")),
             )
             .child(card_divider(&p))
             .child(self.discord_auto_section(cx));
@@ -882,11 +825,10 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::{
-        discord_message_url, discord_profile_format_warning, discord_profile_label, retry_at_label,
-        send_error_label, send_source_label, send_status_label, stored_webhook_error,
-        webhook_state_label,
+        discord_format_warning, discord_message_url, retry_at_label, send_error_label,
+        send_source_label, send_status_label, stored_webhook_error, webhook_state_label,
     };
-    use vrc_photon_core::model::{CompressionFormat, CompressionProfile, SendSource, SendStatus};
+    use vrc_photon_core::model::{CompressionFormat, CompressionOptions, SendSource, SendStatus};
     use vrc_photon_i18n::{tr, tr_args};
 
     #[test]
@@ -928,35 +870,19 @@ mod tests {
     }
 
     #[test]
-    fn discord_profile_label_requires_a_choice_when_missing() {
-        assert_eq!(
-            discord_profile_label(None),
-            tr!("integrations.discord.profile.none")
-        );
-        assert_eq!(
-            discord_profile_label(Some("discord用webp")),
-            "discord用webp"
-        );
-    }
-
-    #[test]
-    fn avif_and_jxl_profiles_warn_that_embeds_may_not_render() {
-        let avif = CompressionProfile {
+    fn discord_format_warning_uses_the_discord_options() {
+        let avif = CompressionOptions {
             format: CompressionFormat::Avif,
-            ..CompressionProfile::default()
+            ..CompressionOptions::discord_default()
         };
-        assert!(discord_profile_format_warning(Some(&avif)).is_some());
-        let jxl = CompressionProfile {
+        assert!(discord_format_warning(&avif).is_some());
+        let jxl = CompressionOptions {
             format: CompressionFormat::JpegXl,
-            ..CompressionProfile::default()
+            ..CompressionOptions::discord_default()
         };
-        assert!(discord_profile_format_warning(Some(&jxl)).is_some());
-        let webp = CompressionProfile {
-            format: CompressionFormat::Webp,
-            ..CompressionProfile::default()
-        };
-        assert!(discord_profile_format_warning(Some(&webp)).is_none());
-        assert!(discord_profile_format_warning(None).is_none());
+        assert!(discord_format_warning(&jxl).is_some());
+        let webp = CompressionOptions::discord_default();
+        assert!(discord_format_warning(&webp).is_none());
     }
 
     #[test]

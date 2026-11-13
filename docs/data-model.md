@@ -29,11 +29,11 @@ PRAGMA busy_timeout = 5000;
 ```
 
 - `user_version` でスキーマバージョンを管理する。
-- 現在のバージョンは **18**。このビルドが理解できる最大値でもあり、
-  `user_version` が 19 以上の DB は `Db::open` / `Db::open_read_only` の
+- 現在のバージョンは **19**。このビルドが理解できる最大値でもあり、
+  `user_version` が 20 以上の DB は `Db::open` / `Db::open_read_only` の
   どちらでも型付きエラーで拒否する（古いアプリで新スキーマを書き換えない）。
-- 新規 DB は `SCHEMA_LATEST` を 1 トランザクションで実行して v18 にする。
-- v1〜v17 の既存 DB は自動移行しない。`Db::open` は明示エラーを返し、
+- 新規 DB は `SCHEMA_LATEST` を 1 トランザクションで実行して v19 にする。
+- v1〜v18 の既存 DB は自動移行しない。`Db::open` は明示エラーを返し、
   ファイルを変更しない。バックアップして新しいライブラリを作成する。
 - 詳細は [`docs/database-initialization.md`](database-initialization.md) を参照。
 
@@ -421,25 +421,21 @@ CREATE UNIQUE INDEX idx_tagging_jobs_active
 |---|---|---|
 | id | TEXT PK | UUID |
 | name | TEXT | |
-| enabled | INTEGER | 手動/自動の有効状態 |
-| auto_enabled | INTEGER | 新規写真へ自動適用 |
+| enabled | INTEGER | 手動圧縮での有効状態 |
 | json | TEXT | `CompressionProfile` のJSON |
 | sort_order | INTEGER | 並び順（0始まり） |
 
 `sort_order` は挿入時に末尾へ割り当て、編集では変わらない。並び替え・複製時に全行を `0..n-1` へ正規化する。削除後の欠番は許容する。
 
-`CompressionProfile.discord`（JSON 内、`#[serde(default)]`）は Discord 送信に使う
-プロファイルの単一選択フラグ。`Db::save_profile` は `clipboard` と同様に、
-`discord == true` の行を保存するとき他のプロファイルの `discord` を false にする。
-複製したプロファイルは `discord = false` で作る。新規 DB では次の3件をシードする。
+プロファイルは手動圧縮専用で、自動圧縮・クリップボード・Discord の設定は
+`AppSettings` 側に持つ。役割フラグ `auto_enabled` / `clipboard` / `discord` は
+モデル・JSON・DB から廃止した。新規 DB では次の3件をシードする。
 
-| 名前 | 形式 | 自動 | クリップボード | Discord | 備考 |
-|---|---|---|---|---|---|
-| `無劣化webp` | WebP ロスレス | ON | OFF | OFF | 出力 `compressed/` |
-| `discord用webp` | WebP ロスレス | OFF | ON | ON | 2560×1440、`discord/`、`_discord` |
-| `高画質webp` | WebP Q90 | OFF | OFF | OFF | 出力 `webp/` |
-
-既存 DB は利用者が連携・自動タブで選ぶ。
+| 名前 | 形式 | 備考 |
+|---|---|---|
+| `無劣化webp` | WebP ロスレス | 出力 `compressed/` |
+| `discord用webp` | WebP ロスレス | 2560×1440、`discord/`、`_discord` |
+| `高画質webp` | WebP Q90 | 出力 `webp/` |
 
 ### `derivatives`
 
@@ -453,19 +449,21 @@ CREATE UNIQUE INDEX idx_tagging_jobs_active
 | format | TEXT | `jpeg` / `webp` / `avif` / `jxl` |
 | width / height | INTEGER | |
 | file_size | INTEGER | |
-| profile_id | TEXT | |
-| policy | TEXT | `keep` / `replace` |
+| profile_id | TEXT | 手動圧縮のプロファイル。自動圧縮は `NULL` |
+| origin | TEXT | `auto` / `manual` |
+| policy | TEXT | `keep` / `replace`（手動は常に `keep`） |
 | created_at | TEXT | |
 
 ### `compression_jobs`
 
-永続キュー。デーモン再起動後も `pending` を再開できる。キューは全プロファイル共有で、UIはダッシュボードに表示する。
+永続キュー。デーモン再起動後も `pending` を再開できる。キューは自動圧縮と手動圧縮で共有し、UIはダッシュボードに表示する。
 
 | 列 | 型 | 説明 |
 |---|---|---|
 | id | TEXT PK | UUID |
 | photo_id | INTEGER FK | |
-| profile_id | TEXT | |
+| profile_id | TEXT | 手動圧縮のプロファイル。自動圧縮は `NULL` |
+| origin | TEXT | `auto` / `manual` |
 | status | TEXT | `waiting` / `pending` / `processing` / `completed` / `failed` / `cancelled`。未知の値は読み込み時に `unknown` として扱う |
 | progress | REAL | 0.0〜1.0 |
 | error | TEXT | |
@@ -480,18 +478,19 @@ CREATE UNIQUE INDEX idx_tagging_jobs_active
 ```sql
 idx_jobs_claim(status, created_at)
 idx_jobs_created(created_at DESC)
+idx_jobs_auto_once(photo_id) WHERE origin = 'auto'
 ```
 
 `idx_jobs_claim` は `pending` の取得（`status` 等値 + `created_at` 順）、
-`idx_jobs_created` は新しい順の一覧に使う。既存の `idx_jobs_status` と
-`idx_jobs_photo_profile` は残す。
+`idx_jobs_created` は新しい順の一覧に使う。`idx_jobs_auto_once` は1写真につき
+自動圧縮ジョブを1件に制限する。`idx_jobs_status` と `idx_jobs_photo_profile` も残す。
 
 未知の status は `pending` に丸めない。取得対象にも含めず、削除警告では
 `unknown` 件数として未完了扱いに数える。
 
-`retry_count` は自動リトライの回数ではない。再試行は `status='failed'` かつ `retry_count < 3` の行だけを対象に、進捗・エラー・開始/終了時刻をリセットし、`retry_count` を1増やして `pending` に戻す。上限到達後は更新しない。写真・プロファイル・方針は変えない。
+`retry_count` は自動リトライの回数ではない。再試行は `status='failed'` かつ `retry_count < 3` の行だけを対象に、進捗・エラー・開始/終了時刻をリセットし、`retry_count` を1増やして `pending` に戻す。上限到達後は更新しない。写真・プロファイル（手動の場合）・方針は変えない。
 
-`waiting` は自動圧縮の即時実行がOFFのときに積まれる未実行状態。ワーカーは取得しない。ダッシュボードの「待機をすべて圧縮」が、全プロファイルの `waiting` を `pending` に一括変更する。手動圧縮のジョブは `output_dir` でプロファイルの出力先を上書きでき、デーモンはこの値をプロファイルより優先する。クリップボード出力はジョブを作らない。
+`waiting` は自動圧縮の即時実行がOFFのときに積まれる未実行状態。ワーカーは取得しない。ダッシュボードの「待機をすべて圧縮」が、自動圧縮の `waiting` を `pending` に一括変更する。手動圧縮のジョブは `output_dir` でプロファイルの出力先を上書きでき、デーモンはこの値をプロファイルより優先する。クリップボード出力はジョブを作らない。
 
 取得は単一SQLで原子的に行う。
 
@@ -681,6 +680,7 @@ photo_roots, log_dir, managed_dir, language,
 import_preserve_folder_structure, import_include_root_folder,
 autostart, tray, auto_compress, auto_compress_backlog,
 auto_compress_immediate, auto_compress_keep_original,
+auto_compression, clipboard_compression, discord_compression,
 estimated_link, thumbnail_cache_mb, thumbnail_size,
 compression_workers, clipboard_enabled,
 ui_sidebar_collapsed, ui_inspector_collapsed, ui_reduce_motion, ui_max_fps,
@@ -705,6 +705,7 @@ ai_model_license_consent_at
 - `ui_max_fps` は 30 / 60 / 120 / 144 / 240 / 0（無制限、既定 60）。
 - `import_preserve_folder_structure` / `import_include_root_folder` は既定 false。`include_root` は `preserve` が true のときだけ効果を持つ。
 - `estimated_link` は既定 true、`auto_compress_keep_original` は既定 true、`auto_compress_immediate` は既定 true、`auto_compress_backlog` は既定 false。
+- `auto_compression` は WebP ロスレス・リサイズなし、`discord_compression` は WebP ロスレス・2560×1440 の縮小のみ、`clipboard_compression` は 2560×1440 の縮小のみを既定とする。
 - `thumbnail_cache_mb` / `compression_workers` / `estimated_link` は保存値のみで、設定画面には表示しない。
 
 ワールド名解決の既定値:
@@ -768,17 +769,17 @@ Discord 関連の既定値:
 ## 6. schema の初期化
 
 新規 DB は `crates/core/src/db/schema.rs` の `SCHEMA_LATEST` を 1 回の
-`IMMEDIATE` トランザクションで実行し、`user_version = 18` にする。
+`IMMEDIATE` トランザクションで実行し、`user_version = 19` にする。
 `schema_migrations` テーブルと `migrate_v*` は持たない。
 
-既存 DB は v18 のみ受け付ける。v1〜v17 は自動移行せず、`CoreError::Invalid`
+既存 DB は v19 のみ受け付ける。v1〜v18 は自動移行せず、`CoreError::Invalid`
 で「このビルドでは移行できない」と返す。このとき `user_version` もファイル内容も
-変更しない。v18 より新しい DB は、このビルドの最大値（18）を超えるため、
+変更しない。v19 より新しい DB は、このビルドの最大値（19）を超えるため、
 書き込みを始める前に `CoreError::Invalid` で拒否する。読み取り専用の
 `open_read_only` も同じ検査を行う。
 
 schema を変更するときは `SCHEMA_LATEST` と `SCHEMA_VERSION` を同時に更新し、
-新規 DB の初期化テストと v18 既存 DB の起動テストを追加する。過去バージョン向けの
+新規 DB の初期化テストと v18 既存 DB の拒否テストを追加する。過去バージョン向けの
 移行コードは追加しない。
 
 ## 7. クエリと性能
