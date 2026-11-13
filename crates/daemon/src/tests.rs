@@ -1794,6 +1794,16 @@ fn add_replaced_photo(daemon: &Daemon, photo: &Path, derivative: &Path) -> i64 {
     id
 }
 
+/// Sends one notify event through the daemon's watcher queue and applies the
+/// resulting dirty paths, as the main loop would.
+fn apply_watcher_event(daemon: &mut Daemon, event: notify::Event) {
+    let (tx, rx) = std::sync::mpsc::channel();
+    daemon.watcher_rx = Some(rx);
+    tx.send(Ok(event)).unwrap();
+    daemon.poll_watchers();
+    daemon.index_dirty_paths().unwrap();
+}
+
 #[test]
 fn daemon_ai_plugin_service_uses_injected_configuration() {
     let dir = tempfile::tempdir().unwrap();
@@ -5765,6 +5775,191 @@ fn auto_replace_compression_keeps_the_photo_visible() {
     assert_eq!(photo.status, vrc_photon_core::model::PhotoStatus::Missing);
     assert!(photo.display_derivative_id.is_none());
     assert_eq!(db.count_photos().unwrap(), 0);
+}
+
+#[test]
+fn removed_display_derivative_marks_photo_missing_and_clears_display() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    let photo_dir = dir.path().join("photos");
+    let compressed = photo_dir.join("compressed");
+    std::fs::create_dir_all(&compressed).unwrap();
+    let derivative = compressed.join("live.webp");
+    std::fs::write(&derivative, b"live").unwrap();
+    let id = add_replaced_photo(&daemon, &photo_dir.join("VRChat_live.png"), &derivative);
+    let revision = daemon.db.lock().unwrap().library_revision().unwrap();
+    daemon.restart_watchers();
+    let (tx, rx) = std::sync::mpsc::channel();
+    daemon.watcher_rx = Some(rx);
+
+    std::fs::remove_file(&derivative).unwrap();
+    tx.send(Ok(notify::Event::new(notify::EventKind::Remove(
+        notify::event::RemoveKind::File,
+    ))
+    .add_path(derivative)))
+        .unwrap();
+    daemon.poll_watchers();
+    daemon.index_dirty_paths().unwrap();
+
+    let db = daemon.db.lock().unwrap();
+    let photo = db.photo_by_id(id).unwrap().unwrap();
+    assert_eq!(photo.status, vrc_photon_core::model::PhotoStatus::Missing);
+    assert!(photo.display_derivative_id.is_none());
+    assert!(photo.display_path.is_none());
+    assert_eq!(db.library_revision().unwrap(), revision + 1);
+    assert_eq!(db.count_photos().unwrap(), 0);
+}
+
+#[test]
+fn renamed_display_derivative_marks_photo_missing() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    let photo_dir = dir.path().join("photos");
+    let compressed = photo_dir.join("compressed");
+    std::fs::create_dir_all(&compressed).unwrap();
+    let derivative = compressed.join("live.webp");
+    std::fs::write(&derivative, b"live").unwrap();
+    let id = add_replaced_photo(&daemon, &photo_dir.join("VRChat_live.png"), &derivative);
+    let moved = compressed.join("moved.webp");
+    std::fs::rename(&derivative, &moved).unwrap();
+
+    apply_watcher_event(
+        &mut daemon,
+        notify::Event::new(notify::EventKind::Modify(notify::event::ModifyKind::Name(
+            notify::event::RenameMode::Both,
+        )))
+        .add_path(derivative)
+        .add_path(moved),
+    );
+
+    let db = daemon.db.lock().unwrap();
+    let photo = db.photo_by_id(id).unwrap().unwrap();
+    assert_eq!(photo.status, vrc_photon_core::model::PhotoStatus::Missing);
+    assert!(photo.display_derivative_id.is_none());
+}
+
+#[test]
+fn removed_display_derivative_with_a_live_file_keeps_the_photo() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    let photo_dir = dir.path().join("photos");
+    let compressed = photo_dir.join("compressed");
+    std::fs::create_dir_all(&compressed).unwrap();
+    let derivative = compressed.join("live.webp");
+    std::fs::write(&derivative, b"live").unwrap();
+    let id = add_replaced_photo(&daemon, &photo_dir.join("VRChat_live.png"), &derivative);
+    let (revision, derivative_id) = {
+        let db = daemon.db.lock().unwrap();
+        (
+            db.library_revision().unwrap(),
+            db.photo_by_id(id).unwrap().unwrap().display_derivative_id,
+        )
+    };
+
+    apply_watcher_event(
+        &mut daemon,
+        notify::Event::new(notify::EventKind::Remove(notify::event::RemoveKind::File))
+            .add_path(derivative),
+    );
+
+    let db = daemon.db.lock().unwrap();
+    let photo = db.photo_by_id(id).unwrap().unwrap();
+    assert_eq!(photo.status, vrc_photon_core::model::PhotoStatus::Replaced);
+    assert_eq!(photo.display_derivative_id, derivative_id);
+    assert_eq!(db.library_revision().unwrap(), revision);
+}
+
+#[test]
+fn removed_display_derivative_skips_an_offline_root() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    let offline = dir.path().join("offline-drive");
+    let id = add_replaced_photo(
+        &daemon,
+        &offline.join("VRChat_offline.png"),
+        &offline.join("compressed/offline.webp"),
+    );
+    let (revision, derivative_id) = {
+        let db = daemon.db.lock().unwrap();
+        (
+            db.library_revision().unwrap(),
+            db.photo_by_id(id).unwrap().unwrap().display_derivative_id,
+        )
+    };
+
+    apply_watcher_event(
+        &mut daemon,
+        notify::Event::new(notify::EventKind::Remove(notify::event::RemoveKind::File))
+            .add_path(offline.join("compressed/offline.webp")),
+    );
+
+    let db = daemon.db.lock().unwrap();
+    let photo = db.photo_by_id(id).unwrap().unwrap();
+    assert_eq!(photo.status, vrc_photon_core::model::PhotoStatus::Replaced);
+    assert_eq!(photo.display_derivative_id, derivative_id);
+    assert_eq!(db.library_revision().unwrap(), revision);
+}
+
+#[test]
+fn removed_display_derivative_outside_settings_roots_is_handled() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    let imported = dir.path().join("imported");
+    let compressed = imported.join("compressed");
+    std::fs::create_dir_all(&compressed).unwrap();
+    let derivative = compressed.join("live.webp");
+    std::fs::write(&derivative, b"live").unwrap();
+    let id = add_replaced_photo(&daemon, &imported.join("VRChat_imported.png"), &derivative);
+
+    std::fs::remove_file(&derivative).unwrap();
+    apply_watcher_event(
+        &mut daemon,
+        notify::Event::new(notify::EventKind::Remove(notify::event::RemoveKind::File))
+            .add_path(derivative),
+    );
+
+    let db = daemon.db.lock().unwrap();
+    let photo = db.photo_by_id(id).unwrap().unwrap();
+    assert_eq!(photo.status, vrc_photon_core::model::PhotoStatus::Missing);
+    assert!(photo.display_derivative_id.is_none());
+}
+
+#[test]
+fn compressed_derivative_file_is_not_indexed_as_a_source_photo() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    let compressed = dir.path().join("photos/compressed");
+    std::fs::create_dir_all(&compressed).unwrap();
+    let path = compressed.join("generated.jpg");
+    std::fs::write(&path, b"generated").unwrap();
+
+    daemon.dirty_paths.push(path.clone());
+    daemon.index_dirty_paths().unwrap();
+
+    let db = daemon.db.lock().unwrap();
+    assert!(db.photo_by_path(path.to_str().unwrap()).unwrap().is_none());
+    assert_eq!(db.count_photos().unwrap(), 0);
+}
+
+#[test]
+fn removed_unknown_path_does_not_bump_library_revision() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    let path = dir.path().join("photos/unknown.webp");
+    std::fs::write(&path, b"unknown").unwrap();
+    std::fs::remove_file(&path).unwrap();
+    let revision = daemon.db.lock().unwrap().library_revision().unwrap();
+
+    apply_watcher_event(
+        &mut daemon,
+        notify::Event::new(notify::EventKind::Remove(notify::event::RemoveKind::File))
+            .add_path(path),
+    );
+
+    assert_eq!(
+        daemon.db.lock().unwrap().library_revision().unwrap(),
+        revision
+    );
 }
 
 #[test]
