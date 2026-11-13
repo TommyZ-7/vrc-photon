@@ -230,6 +230,10 @@ pub(crate) struct PhotoPageCache {
     /// in place until the reload succeeds so the panel does not blink back to
     /// placeholders and no automatic reload loop can pick them up.
     retrying: HashSet<usize>,
+    /// Rows that changed while their page was still loading. Applied when the
+    /// page lands so a query that started before the change cannot resurrect
+    /// the old row.
+    overrides: HashMap<i64, Arc<Photo>>,
 }
 
 impl PhotoPageCache {
@@ -243,6 +247,7 @@ impl PhotoPageCache {
         self.pending.clear();
         self.failed.clear();
         self.retrying.clear();
+        self.overrides.clear();
     }
 
     pub(crate) fn get_page(&mut self, page: usize) -> Option<Arc<Vec<Arc<Photo>>>> {
@@ -255,7 +260,16 @@ impl PhotoPageCache {
         self.pending.remove(&page);
         self.failed.remove(&page);
         self.retrying.remove(&page);
-        let page_photos = photos.into_iter().map(Arc::new).collect::<Vec<_>>();
+        // A page query may have started before a row changed. Keep the newer
+        // row that arrived while the query was in flight.
+        let page_photos = photos
+            .into_iter()
+            .map(|photo| {
+                self.overrides
+                    .remove(&photo.id)
+                    .unwrap_or_else(|| Arc::new(photo))
+            })
+            .collect::<Vec<_>>();
         self.pages.insert(page, Arc::new(page_photos));
         self.touch(page);
         while self.pages.len() > MAX_PAGES {
@@ -263,6 +277,43 @@ impl PhotoPageCache {
                 break;
             };
             self.pages.remove(&oldest);
+        }
+    }
+
+    /// Replaces the cached rows for `photos` in place. Loaded pages keep their
+    /// contents and order, so the grid never falls back to placeholders.
+    /// Rows whose page has not loaded yet are held until it does.
+    fn update_photo_rows(&mut self, photos: &[Photo]) {
+        if photos.is_empty() {
+            return;
+        }
+        let by_id: HashMap<i64, Arc<Photo>> = photos
+            .iter()
+            .map(|photo| (photo.id, Arc::new(photo.clone())))
+            .collect();
+        let mut applied = HashSet::with_capacity(by_id.len());
+        for rows in self.pages.values_mut() {
+            if !rows.iter().any(|row| by_id.contains_key(&row.id)) {
+                continue;
+            }
+            let mut updated = Vec::with_capacity(rows.len());
+            for row in rows.iter() {
+                match by_id.get(&row.id) {
+                    Some(photo) => {
+                        updated.push(photo.clone());
+                        applied.insert(row.id);
+                    }
+                    None => updated.push(row.clone()),
+                }
+            }
+            *rows = Arc::new(updated);
+        }
+        for (id, photo) in by_id {
+            if applied.contains(&id) {
+                self.overrides.remove(&id);
+            } else {
+                self.overrides.insert(id, photo);
+            }
         }
     }
 
@@ -849,9 +900,45 @@ impl PhotoBrowser {
         self.labels = None;
     }
 
+    /// Applies updated photo rows without dropping the page cache or bumping
+    /// the index generation. Used by compression replacement, where only the
+    /// completed photo's display source changes.
+    pub(crate) fn update_photo_rows(&mut self, photos: &[Photo]) {
+        if photos.is_empty() {
+            return;
+        }
+        // Loaded pages are patched; pending pages hold the row until they
+        // land. Pages that are neither load fresh rows from the database, so
+        // keeping an override for them would only retain stale memory.
+        let cached: Vec<Photo> = photos
+            .iter()
+            .filter(|photo| {
+                self.index.row_of_id(photo.id).is_some_and(|row| {
+                    let page = row / PAGE_SIZE;
+                    self.pages.pages.contains_key(&page) || self.pages.pending.contains(&page)
+                })
+            })
+            .cloned()
+            .collect();
+        self.pages.update_photo_rows(&cached);
+        let by_id: HashMap<i64, &Photo> = photos.iter().map(|photo| (photo.id, photo)).collect();
+        for summary in self.session_summaries.values_mut() {
+            let cover_id = summary.cover_photo.as_ref().map(|photo| photo.id);
+            if !cover_id.is_some_and(|id| by_id.contains_key(&id)) {
+                continue;
+            }
+            let summary = Arc::make_mut(summary);
+            if let Some(cover) = summary.cover_photo.as_mut() {
+                *cover = (*by_id[&cover.id]).clone();
+            }
+        }
+    }
+
     /// Invalidates the decoded page cache without replacing the index. Used
-    /// when photo rows changed (compression replacement, rebinds) but the set
-    /// and order of ids did not.
+    /// when many photo rows changed at once (promoted display derivatives)
+    /// but the set and order of ids did not. A single changed row should go
+    /// through [`Self::update_photo_rows`] so visible cards never fall back to
+    /// placeholders.
     pub(crate) fn invalidate_pages(&mut self) {
         self.generation = self.generation.wrapping_add(1);
         self.pages.clear();
@@ -1078,7 +1165,7 @@ mod tests {
     use crate::ui::year_rail::YearRailLabels;
     use gpui_kit::{ScrollStrategy, UniformListScrollHandle, point, px};
     use vrc_photon_core::error::CoreError;
-    use vrc_photon_core::model::{Session, SessionSummary};
+    use vrc_photon_core::model::{PhotoStatus, Session, SessionSummary};
     use vrc_photon_core::settings::CardSize;
 
     fn summary(id: i64) -> SessionSummary {
@@ -1134,6 +1221,81 @@ mod tests {
         assert!(cache.get_page(0).is_some());
         assert!(cache.get_page(1).is_none());
         assert!(cache.get_page(MAX_PAGES).is_some());
+    }
+
+    #[test]
+    fn row_updates_replace_loaded_pages_without_dropping_the_cache() {
+        let mut cache = PhotoPageCache::new();
+        cache.insert_page(0, vec![test_photo(1), test_photo(2)]);
+        cache.insert_page(1, vec![test_photo(300)]);
+
+        let mut updated = test_photo(2);
+        updated.status = PhotoStatus::Replaced;
+        updated.display_path = Some("/p/2.webp".to_string());
+        cache.update_photo_rows(&[updated]);
+
+        let page = cache.get_page(0).expect("page 0 stays resident");
+        assert_eq!(page.len(), 2, "the page is patched in place, not dropped");
+        let row = page.iter().find(|photo| photo.id == 2).unwrap();
+        assert_eq!(row.status, PhotoStatus::Replaced);
+        assert_eq!(row.effective_path(), "/p/2.webp");
+        assert_eq!(
+            page.iter().find(|photo| photo.id == 1).unwrap().file_name,
+            "1.png"
+        );
+        assert_eq!(
+            cache.get_page(1).expect("unrelated page stays resident")[0].id,
+            300
+        );
+    }
+
+    #[test]
+    fn row_updates_for_an_unloaded_page_replace_stale_rows_when_it_lands() {
+        let mut cache = PhotoPageCache::new();
+        let mut updated = test_photo(5);
+        updated.file_name = "fresh.png".to_string();
+        cache.update_photo_rows(&[updated]);
+
+        // Simulate a page query that started before the update and returns the
+        // old row after it.
+        cache.insert_page(0, vec![test_photo(5)]);
+
+        let page = cache.get_page(0).expect("page");
+        assert_eq!(page[0].file_name, "fresh.png");
+    }
+
+    #[test]
+    fn row_updates_keep_the_index_generation_and_refresh_session_covers() {
+        let mut browser = PhotoBrowser::new(
+            Arc::new(PhotoIndex::new(vec![index_entry(1, 202601)])),
+            TEST_ROW_HEIGHT,
+        );
+        let generation = browser.generation;
+        browser.insert_page(0, vec![test_photo(1)], generation);
+        let mut summary = summary(10);
+        summary.cover_photo = Some(test_photo(1));
+        browser.session_summaries.insert(10, Arc::new(summary));
+
+        let mut updated = test_photo(1);
+        updated.display_path = Some("/p/1.webp".to_string());
+        browser.update_photo_rows(&[updated]);
+
+        assert_eq!(
+            browser.generation, generation,
+            "a row update must not invalidate the index generation"
+        );
+        assert_eq!(
+            browser.photo_at(0).expect("card row").effective_path(),
+            "/p/1.webp"
+        );
+        assert_eq!(
+            browser.session_summaries[&10]
+                .cover_photo
+                .as_ref()
+                .expect("cover")
+                .effective_path(),
+            "/p/1.webp"
+        );
     }
 
     #[test]
