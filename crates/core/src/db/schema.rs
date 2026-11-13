@@ -300,6 +300,8 @@ CREATE INDEX idx_derivatives_photo ON derivatives(photo_id);
 CREATE INDEX idx_derivatives_auto ON derivatives(photo_id) WHERE origin = 'auto';
 CREATE INDEX idx_jobs_claim ON compression_jobs(status, created_at);
 CREATE INDEX idx_jobs_created ON compression_jobs(created_at DESC);
+CREATE UNIQUE INDEX idx_jobs_auto_once
+    ON compression_jobs(photo_id) WHERE origin = 'auto';
 CREATE INDEX idx_jobs_photo_profile
     ON compression_jobs(photo_id, profile_id);
 CREATE INDEX idx_jobs_status ON compression_jobs(status);

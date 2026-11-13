@@ -16,8 +16,8 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use gpui_kit::{Size as VirtualRowSize, size as virtual_row_size};
 use vrc_photon_core::model::{
-    CompressionFormat, CompressionJob, CompressionProfile, MAX_JOB_RETRIES, MAX_PROFILE_NAME_CHARS,
-    QueueStatus, ResizeMode,
+    CompressionFormat, CompressionJob, CompressionOrigin, CompressionProfile, MAX_JOB_RETRIES,
+    MAX_PROFILE_NAME_CHARS, QueueStatus, ResizeMode,
 };
 use vrc_photon_i18n::{tr, tr_args};
 
@@ -1136,6 +1136,19 @@ impl App {
     }
 }
 
+/// Label for the profile column: automatic jobs identify the feature, manual
+/// jobs keep showing their profile name.
+fn job_profile_label(app: &App, job: &CompressionJob) -> String {
+    if job.origin == CompressionOrigin::Auto {
+        return tr!("compression.queue.auto");
+    }
+    app.profiles
+        .iter()
+        .find(|profile| Some(profile.id.as_str()) == job.profile_id.as_deref())
+        .map(|profile| profile.name.clone())
+        .unwrap_or_else(|| tr!("compression.unknown_profile"))
+}
+
 /// Renders one virtual queue row. The virtual list calls this only for the
 /// rows intersecting its viewport, so a 120+ job queue builds a bounded
 /// number of widgets per frame.
@@ -1155,12 +1168,7 @@ fn render_queue_row(app: &mut App, row: QueueRow, cx: &mut Context<App>) -> AnyE
                 return div().into_any_element();
             };
             let status = queue_status_badge(&job.status, &p);
-            let profile_name = app
-                .profiles
-                .iter()
-                .find(|profile| Some(profile.id.as_str()) == job.profile_id.as_deref())
-                .map(|profile| profile.name.clone())
-                .unwrap_or_else(|| tr!("compression.unknown_profile"));
+            let profile_name = job_profile_label(app, job);
             h_flex()
                 .w_full()
                 .h(px(QUEUE_WAITING_ROW_HEIGHT))
@@ -1205,11 +1213,7 @@ fn render_queue_row(app: &mut App, row: QueueRow, cx: &mut Context<App>) -> AnyE
                 .get(&job.photo_id)
                 .cloned()
                 .unwrap_or_else(|| tr_args!("compression.job.photo", id = job.photo_id));
-            let profile_name = app
-                .profiles
-                .iter()
-                .find(|profile| Some(profile.id.as_str()) == job.profile_id.as_deref())
-                .map(|profile| profile.name.clone());
+            let profile_name = Some(job_profile_label(app, job));
             let error = job_error_label(job);
             let retryable = job_retry_available(job);
             let id = job.id.clone();

@@ -2886,28 +2886,17 @@ fn automatic_jobs_leave_the_output_directory_unset() {
 }
 
 #[test]
-fn auto_job_enqueue_skips_an_existing_photo_profile_job() {
+fn auto_job_enqueue_is_once_per_photo() {
     let db = Db::open_in_memory().unwrap();
     let id = seed_photo(&db);
-    db.save_profile(&profile("p", "P")).unwrap();
 
     assert!(
-            db.enqueue_auto_job_for_existing_profile_with_status(
-                id,
-                "p",
-                "keep",
-                QueueStatus::Pending,
-            )
+        db.enqueue_auto_job_with_status(id, "keep", QueueStatus::Pending)
             .unwrap()
-        );
+    );
     assert!(
-        !db.enqueue_auto_job_for_existing_profile_with_status(
-            id,
-            "p",
-            "keep",
-            QueueStatus::Waiting,
-        )
-        .unwrap()
+        !db.enqueue_auto_job_with_status(id, "keep", QueueStatus::Waiting)
+            .unwrap()
     );
     assert_eq!(db.list_jobs(10).unwrap().len(), 1);
 }
@@ -7557,19 +7546,9 @@ fn compression_job_origin_roundtrips() {
         .upsert_photo(&sample_photo(root, "/photos/a.png", 100))
         .unwrap();
 
-    db.save_profile(&CompressionProfile {
-        id: "auto-profile".to_string(),
-        ..CompressionProfile::default()
-    })
-    .unwrap();
     db.enqueue_job(photo, "p", "keep").unwrap();
-    db.enqueue_auto_job_for_existing_profile_with_status(
-        photo,
-        "auto-profile",
-        "keep",
-        QueueStatus::Pending,
-    )
-    .unwrap();
+    db.enqueue_auto_job_with_status(photo, "keep", QueueStatus::Pending)
+        .unwrap();
 
     let jobs = db.list_jobs(10).unwrap();
     assert_eq!(jobs.len(), 2);
@@ -7580,8 +7559,7 @@ fn compression_job_origin_roundtrips() {
     );
     assert!(
         jobs.iter()
-            .any(|job| job.origin == CompressionOrigin::Auto
-                && job.profile_id.as_deref() == Some("auto-profile"))
+            .any(|job| job.origin == CompressionOrigin::Auto && job.profile_id.is_none())
     );
 }
 

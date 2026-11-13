@@ -11,7 +11,9 @@ use gpui_kit::component::WindowExt;
 use gpui_kit::component::button::ButtonVariant;
 use gpui_kit::*;
 use vrc_photon_core::compressor;
-use vrc_photon_core::model::{CompressionProfile, MAX_JOB_RETRIES, MAX_PROFILE_NAME_CHARS};
+use vrc_photon_core::model::{
+    CompressionOptions, CompressionProfile, MAX_JOB_RETRIES, MAX_PROFILE_NAME_CHARS, ResizeSettings,
+};
 use vrc_photon_i18n::{tr, tr_args};
 
 use crate::app::App;
@@ -19,6 +21,12 @@ use crate::app::file_picker::{self, DialogOptions};
 use crate::ui::components::release_confirmation;
 use crate::ui::compression::job_retry_available;
 use crate::ui::theme::{compression_policy, moved_profile_order, step_index};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FeatureCompressionTarget {
+    Auto,
+    Discord,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ManualOutputTarget {
@@ -99,6 +107,39 @@ pub(crate) struct ManualCompressionDialog {
 }
 
 impl App {
+    /// Applies an edit to one feature's compression parameters and persists
+    /// the whole settings row. Invalid values are clamped before saving.
+    pub(crate) fn edit_feature_compression(
+        &mut self,
+        target: FeatureCompressionTarget,
+        edit: impl FnOnce(&mut CompressionOptions),
+        cx: &mut Context<Self>,
+    ) {
+        let options = match target {
+            FeatureCompressionTarget::Auto => &mut self.settings.auto_compression,
+            FeatureCompressionTarget::Discord => &mut self.settings.discord_compression,
+        };
+        edit(options);
+        options.normalize();
+        if let Err(error) = self.settings.save(&self.db) {
+            tracing::warn!(%error, ?target, "cannot save feature compression settings");
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn edit_clipboard_resize(
+        &mut self,
+        edit: impl FnOnce(&mut ResizeSettings),
+        cx: &mut Context<Self>,
+    ) {
+        edit(&mut self.settings.clipboard_compression);
+        self.settings.clipboard_compression.normalize();
+        if let Err(error) = self.settings.save(&self.db) {
+            tracing::warn!(%error, "cannot save clipboard compression settings");
+        }
+        cx.notify();
+    }
+
     pub(crate) fn set_clipboard_profile(
         &mut self,
         profile_id: &str,

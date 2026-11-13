@@ -385,34 +385,26 @@ impl Db {
         )
     }
 
-    /// Enqueues an automatic job unless the photo already has any job for the
-    /// profile. Auto compression runs once per photo/profile; re-indexing must
-    /// not recreate completed, failed, or cancelled work.
-    pub fn enqueue_auto_job_for_existing_profile_with_status(
+    /// Enqueues one automatic job per photo. Auto compression is a single
+    /// feature setting now, so the old photo/profile uniqueness no longer
+    /// applies; re-indexing must not recreate completed, failed, or cancelled
+    /// work.
+    pub fn enqueue_auto_job_with_status(
         &self,
         photo_id: i64,
-        profile_id: &str,
         policy: &str,
         status: QueueStatus,
     ) -> Result<bool> {
         let id = uuid::Uuid::new_v4().to_string();
         let inserted = self.conn.execute(
             "INSERT INTO compression_jobs(id, photo_id, profile_id, origin, status, progress, policy, output_dir, created_at) \
-             SELECT ?1, ?2, ?3, 'auto', ?4, 0, ?5, NULL, ?6 \
-             WHERE EXISTS (SELECT 1 FROM compression_profiles WHERE id = ?3) \
-               AND EXISTS (SELECT 1 FROM photos WHERE id = ?2 AND status <> 'deleting') \
+             SELECT ?1, ?2, NULL, 'auto', ?3, 0, ?4, NULL, ?5 \
+             WHERE EXISTS (SELECT 1 FROM photos WHERE id = ?2 AND status <> 'deleting') \
                AND NOT EXISTS (SELECT 1 FROM deletion_requests \
                    WHERE photo_id = ?2 AND status IN ('pending', 'blocked', 'running')) \
                AND NOT EXISTS (SELECT 1 FROM compression_jobs \
-                   WHERE photo_id = ?2 AND profile_id = ?3)",
-            params![
-                id,
-                photo_id,
-                profile_id,
-                status.as_str(),
-                policy,
-                now_string()
-            ],
+                   WHERE photo_id = ?2 AND origin = 'auto')",
+            params![id, photo_id, status.as_str(), policy, now_string()],
         )?;
         Ok(inserted == 1)
     }

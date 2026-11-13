@@ -7,7 +7,9 @@ use std::time::{Duration, Instant};
 
 use gpui_kit::component::window_paddings;
 use gpui_kit::{Bounds, Edges, Pixels, Size, Window, point, px, size};
-use vrc_photon_core::model::{CompressionFormat, CompressionProfile};
+use vrc_photon_core::model::{
+    CompressionFormat, CompressionOptions, CompressionProfile, ResizeMode, ResizeSettings,
+};
 use vrc_photon_core::settings::{CardSize, UI_GRID_GAP_DEFAULT};
 use vrc_photon_i18n::tr;
 
@@ -603,6 +605,34 @@ pub(crate) fn lossless_hint(format: &CompressionFormat) -> String {
         CompressionFormat::Avif => tr!("theme.lossless.avif"),
         CompressionFormat::Webp => tr!("theme.lossless.webp"),
         CompressionFormat::JpegXl => tr!("theme.lossless.jpegxl"),
+    }
+}
+
+pub(crate) fn options_summary(options: &CompressionOptions) -> String {
+    if options.lossless {
+        format!("{} · Lossless", format_label(&options.format))
+    } else {
+        format!(
+            "{} · Q{} · Lossy",
+            format_label(&options.format),
+            options.quality
+        )
+    }
+}
+
+pub(crate) fn resize_summary(resize: &ResizeSettings) -> String {
+    if !resize.resize_enabled {
+        tr!("compression.resize.off")
+    } else {
+        format!(
+            "{}×{}（{}）",
+            resize.width,
+            resize.height,
+            match resize.resize_mode {
+                ResizeMode::DownscaleOnly => tr!("compression.resize.shrink"),
+                ResizeMode::Always => tr!("compression.resize.always"),
+            }
+        )
     }
 }
 

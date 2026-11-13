@@ -3,13 +3,13 @@
 //! in the detail pane (#142, #448).
 
 use gpui_kit::component::button::{Button, ButtonVariants};
-use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::switch::Switch;
 use gpui_kit::component::*;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use vrc_photon_ai_protocol::{TaggingJobStatus, TaggingStage};
+use vrc_photon_core::model::{CompressionOptions, ResizeSettings};
 use vrc_photon_i18n::{tr, tr_args};
 
 use crate::app::App;
@@ -20,6 +20,7 @@ use crate::app::ai::{
     backend_selection_is_disabled_when_not_ready, download_progress_bar_ratio,
     variant_backend_label,
 };
+use crate::app::compression::FeatureCompressionTarget;
 use crate::state::motion::ToggleMotion;
 use crate::ui::components::{
     card_divider, chip, compression_policy_warning, glass_panel, manual_option_row,
@@ -64,11 +65,14 @@ pub(crate) fn discord_summary(configured: bool, destination: &str) -> String {
 }
 
 /// One-line automatic compression state for the master list.
-pub(crate) fn auto_compression_summary(enabled: bool, profile_count: usize) -> String {
+pub(crate) fn auto_compression_summary(
+    enabled: bool,
+    options: &CompressionOptions,
+) -> String {
     tr_args!(
         "integrations.summary.auto",
         state = on_off_label(enabled),
-        count = profile_count
+        compression = options_summary(options)
     )
 }
 
@@ -83,12 +87,12 @@ pub(crate) fn ai_tagging_summary(enabled: bool, running: i64, waiting: i64) -> S
 }
 
 /// One-line clipboard state for the master list.
-pub(crate) fn clipboard_summary(enabled: bool, profile: Option<&str>) -> String {
-    let state = on_off_label(enabled);
-    match profile {
-        Some(name) => tr_args!("integrations.summary.clipboard", state = state, name = name),
-        None => tr_args!("integrations.summary.clipboard_empty", state = state),
-    }
+pub(crate) fn clipboard_summary(enabled: bool, resize: &ResizeSettings) -> String {
+    tr_args!(
+        "integrations.summary.clipboard",
+        state = on_off_label(enabled),
+        resize = resize_summary(resize)
+    )
 }
 
 impl App {
@@ -159,16 +163,6 @@ impl App {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let p = self.palette;
-        let auto_profiles = self
-            .profiles
-            .iter()
-            .filter(|profile| profile.enabled && profile.auto_enabled)
-            .count();
-        let clipboard_profile = self
-            .profiles
-            .iter()
-            .find(|profile| profile.clipboard && profile.enabled)
-            .map(|profile| profile.name.as_str());
         let running = self.ai.job_counts.pending + self.ai.job_counts.processing;
         let configured = self.discord_url.is_some();
 
@@ -184,7 +178,7 @@ impl App {
                 IntegrationsSection::AutoCompression,
                 "integrations-list-auto",
                 tr!("integrations.auto.title"),
-                auto_compression_summary(self.settings.auto_compress, auto_profiles),
+                auto_compression_summary(self.settings.auto_compress, &self.settings.auto_compression),
                 self.settings.auto_compress,
             ),
             (
@@ -202,7 +196,10 @@ impl App {
                 IntegrationsSection::Clipboard,
                 "integrations-list-clipboard",
                 tr!("integrations.clipboard.title"),
-                clipboard_summary(self.settings.clipboard_enabled, clipboard_profile),
+                clipboard_summary(
+                    self.settings.clipboard_enabled,
+                    &self.settings.clipboard_compression,
+                ),
                 self.settings.clipboard_enabled,
             ),
         ];
@@ -274,7 +271,7 @@ impl App {
         let p = self.palette;
         let enabled = self.settings.auto_compress;
         let motion = self.integrations_auto_motion;
-        let profiles = self.profiles.clone();
+        let options = self.settings.auto_compression.clone();
 
         let body = v_flex()
             .pt(px(12.))
@@ -317,53 +314,18 @@ impl App {
                 },
             )
             .child(card_divider(&p))
+            .child(self.section_label(tr!("integrations.compression.section")))
+            .child(self.compression_options_editor(
+                "auto-compression",
+                &options,
+                FeatureCompressionTarget::Auto,
+                cx,
+            ))
             .child(
-                v_flex()
-                    .gap(px(6.))
-                    .child(
-                        div()
-                            .text_size(px(12.))
-                            .text_color(rgb(p.text))
-                            .child(tr!("integrations.auto.profiles")),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(10.))
-                            .text_color(rgb(p.muted_2))
-                            .child(tr!("integrations.auto.profiles_hint")),
-                    )
-                    .child(if profiles.is_empty() {
-                        div()
-                            .text_size(px(10.))
-                            .text_color(rgb(p.muted_2))
-                            .child(tr!("integrations.auto.profiles_empty"))
-                            .into_any_element()
-                    } else {
-                        v_flex()
-                            .id("integrations-auto-profiles")
-                            .max_h(px(160.))
-                            .overflow_y_scrollbar()
-                            .gap(px(4.))
-                            .children(profiles.into_iter().map(|profile| {
-                                let id = profile.id.clone();
-                                Checkbox::new(SharedString::from(format!(
-                                    "auto-profile-{}",
-                                    profile.id
-                                )))
-                                .checked(profile.auto_enabled)
-                                .label(profile.name.clone())
-                                .small()
-                                .on_click(cx.listener(move |this, checked, _, cx| {
-                                    this.edit_profile_by_id(
-                                        &id,
-                                        |profile| profile.auto_enabled = *checked,
-                                        cx,
-                                    );
-                                }))
-                                .into_any_element()
-                            }))
-                            .into_any_element()
-                    }),
+                div()
+                    .text_size(px(10.))
+                    .text_color(rgb(p.muted_2))
+                    .child(tr!("integrations.compression.output_note.auto")),
             );
 
         glass_panel(&self.palette)
@@ -988,6 +950,7 @@ mod tests {
         discord_summary,
     };
     use vrc_photon_ai_protocol::TaggingStage;
+    use vrc_photon_core::model::{CompressionOptions, ResizeSettings};
 
     #[test]
     fn section_summaries_follow_the_existing_card_values() {
@@ -1000,22 +963,31 @@ mod tests {
             "未設定 ・ 送信先：Discord"
         );
         assert_eq!(
-            auto_compression_summary(true, 2),
-            "有効 ・ 対象プロファイル 2 件"
+            auto_compression_summary(true, &CompressionOptions::auto_default()),
+            "有効 ・ WebP · Lossless"
         );
         assert_eq!(
-            auto_compression_summary(false, 0),
-            "無効 ・ 対象プロファイル 0 件"
+            auto_compression_summary(false, &CompressionOptions::discord_default()),
+            "無効 ・ WebP · Lossless"
         );
         assert_eq!(
             ai_tagging_summary(true, 1, 12),
             "有効 ・ 実行中 1 件 / 待機 12 件"
         );
         assert_eq!(
-            clipboard_summary(true, Some("標準")),
-            "有効 ・ プロファイル：標準"
+            clipboard_summary(true, &ResizeSettings::clipboard_default()),
+            "有効 ・ 2560×1440（大きい場合のみ）"
         );
-        assert_eq!(clipboard_summary(false, None), "無効 ・ プロファイル未選択");
+        assert_eq!(
+            clipboard_summary(false, &ResizeSettings::default()),
+            "無効 ・ リサイズなし"
+        );
+    }
+
+    #[test]
+    fn auto_compression_summary_uses_the_auto_options() {
+        let options = CompressionOptions::discord_default();
+        assert!(auto_compression_summary(true, &options).contains("WebP"));
     }
 
     #[test]

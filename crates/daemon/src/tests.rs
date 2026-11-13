@@ -11,8 +11,8 @@ use vrc_photon_ai_host::test_support::sample_manifest;
 use vrc_photon_ai_protocol::Probe;
 use vrc_photon_core::ai::PluginInstallation;
 use vrc_photon_core::model::{
-    CompressionOrigin, DeletionStatus, JobStatusCounts, NewPhoto, PhotoContext, SendOrigin,
-    SendStatus,
+    CompressionOrigin, CompressionProfile, DeletionStatus, JobStatusCounts, NewPhoto, PhotoContext,
+    SendOrigin, SendStatus,
 };
 use vrc_photon_core::settings::{DiscordAutoMode, save_discord_webhook};
 
@@ -1770,6 +1770,10 @@ impl DaemonAiTest {
         daemon.set_ipc_endpoint(None);
         daemon.set_thumbnail_dir(dir.path().join("thumbnails"));
         daemon.set_ai_data_dir(dir.path().join("ai"));
+        // These tests focus on tagging and deletion; automatic compression is
+        // covered separately and would otherwise leave pending jobs that hold
+        // deletion requests open.
+        save_daemon_settings(&daemon, |settings| settings.auto_compress = false);
         let db = daemon.db.clone();
         Self {
             _dir: dir,
@@ -2436,34 +2440,6 @@ fn save_batch_profile(
         resize_enabled: resize.is_some(),
         width: resize.map(|(w, _)| w).unwrap_or(3840),
         height: resize.map(|(_, h)| h).unwrap_or(2160),
-        ..CompressionProfile::default()
-    })
-    .unwrap();
-}
-
-fn add_replace_profiles(db: &Db) {
-    db.save_profile(&CompressionProfile {
-        id: "lossy".to_string(),
-        name: "lossy".to_string(),
-        auto_enabled: true,
-        format: vrc_photon_core::model::CompressionFormat::Webp,
-        quality: 10,
-        lossless: false,
-        resize_enabled: false,
-        output_dir: Some("lossy".to_string()),
-        suffix: "_lossy".to_string(),
-        ..CompressionProfile::default()
-    })
-    .unwrap();
-    db.save_profile(&CompressionProfile {
-        id: "lossless".to_string(),
-        name: "lossless".to_string(),
-        auto_enabled: true,
-        format: vrc_photon_core::model::CompressionFormat::Webp,
-        lossless: true,
-        resize_enabled: false,
-        output_dir: Some("lossless".to_string()),
-        suffix: "_lossless".to_string(),
         ..CompressionProfile::default()
     })
     .unwrap();
@@ -3353,53 +3329,51 @@ fn auto_replace_without_a_derivative_keeps_the_original() {
 }
 
 #[test]
-fn preferred_display_derivative_uses_profile_order_then_id() {
+fn preferred_display_derivative_uses_only_auto_origin_then_newest_id() {
     let dir = tempfile::tempdir().unwrap();
     let first = dir.path().join("first.webp");
     let second = dir.path().join("second.webp");
+    let missing = dir.path().join("missing.webp");
     std::fs::write(&first, b"a").unwrap();
     std::fs::write(&second, b"b").unwrap();
-    let derivative = |id: i64, profile: &str, path: &Path| vrc_photon_core::model::Derivative {
-        id,
-        photo_id: 1,
-        path: path.to_string_lossy().to_string(),
-        format: "webp".to_string(),
-        width: 16,
-        height: 10,
-        file_size: 1,
-        profile_id: Some(profile.to_string()),
-        origin: CompressionOrigin::Manual,
-        policy: "replace".to_string(),
-        created_at: String::new(),
-    };
+    let derivative =
+        |id: i64, origin: CompressionOrigin, profile: Option<&str>, path: &Path| {
+            vrc_photon_core::model::Derivative {
+                id,
+                photo_id: 1,
+                path: path.to_string_lossy().to_string(),
+                format: "webp".to_string(),
+                width: 16,
+                height: 10,
+                file_size: 1,
+                profile_id: profile.map(str::to_string),
+                origin,
+                policy: "replace".to_string(),
+                created_at: String::new(),
+            }
+        };
     let derivatives = vec![
-        derivative(2, "second", &second),
-        derivative(1, "first", &first),
-        // Unknown profiles rank below known ones even with a larger id.
-        derivative(3, "gone", &first),
-    ];
-    let profiles = vec![
-        CompressionProfile {
-            id: "first".to_string(),
-            ..CompressionProfile::default()
-        },
-        CompressionProfile {
-            id: "second".to_string(),
-            ..CompressionProfile::default()
-        },
+        derivative(2, CompressionOrigin::Auto, None, &second),
+        derivative(1, CompressionOrigin::Auto, None, &first),
+        // Manual derivatives never become the display file.
+        derivative(9, CompressionOrigin::Manual, Some("profile"), &first),
     ];
 
-    let picked = preferred_display_derivative(&derivatives, &profiles).unwrap();
-    assert_eq!(picked.id, 1);
+    let picked = preferred_display_derivative(&derivatives).unwrap();
+    assert_eq!(picked.id, 2);
 
-    // Unknown profiles rank below known ones; among themselves the larger id wins.
-    let unknown = vec![
-        derivative(5, "gone", &first),
-        derivative(7, "gone", &second),
-        derivative(9, "gone", &first),
-    ];
-    let picked = preferred_display_derivative(&unknown, &profiles).unwrap();
-    assert_eq!(picked.id, 9);
+    // Missing files are not candidates.
+    let absent = vec![derivative(5, CompressionOrigin::Auto, None, &missing)];
+    assert!(preferred_display_derivative(&absent).is_none());
+
+    // Manual-only output is not a display derivative.
+    let manual = vec![derivative(
+        7,
+        CompressionOrigin::Manual,
+        Some("profile"),
+        &first,
+    )];
+    assert!(preferred_display_derivative(&manual).is_none());
 }
 
 #[test]
@@ -3634,31 +3608,34 @@ fn unknown_reason_upgraded_to_manual_is_executed_not_blocked() {
 }
 
 #[test]
-fn auto_replace_keeps_the_preferred_display_derivative() {
+fn auto_replace_keeps_the_auto_derivative_as_the_display_file() {
     let dir = tempfile::tempdir().unwrap();
-    let mut daemon = multi_profile_test_daemon(&dir);
+    let mut daemon = replace_test_daemon(&dir);
     let db_path = dir.path().join("library.db");
     let original = original_path(&dir);
-    write_photo(&original);
-    {
-        let db = Db::open(&db_path).unwrap();
-        add_replace_profiles(&db);
-    }
     daemon.run_once().unwrap();
+    daemon.compress_pending().unwrap();
 
     let db = Db::open(&db_path).unwrap();
     let photo = db
         .photo_by_path(original.to_str().unwrap())
         .unwrap()
         .unwrap();
-    let lossless_path = dir.path().join("lossless.webp");
-    let lossy_path = dir.path().join("lossy.webp");
-    std::fs::write(&lossless_path, b"lossless").unwrap();
-    std::fs::write(&lossy_path, b"lossy").unwrap();
-    let lossy = db
+    let auto = db
+        .derivatives_for_photo(photo.id)
+        .unwrap()
+        .into_iter()
+        .find(|derivative| derivative.origin == CompressionOrigin::Auto)
+        .expect("auto derivative");
+    assert_eq!(photo.status, PhotoStatus::Replaced);
+    assert_eq!(photo.display_derivative_id, Some(auto.id));
+
+    let manual_path = dir.path().join("manual.webp");
+    std::fs::write(&manual_path, b"manual").unwrap();
+    let manual = db
         .add_derivative(
             photo.id,
-            lossy_path.to_str().unwrap(),
+            manual_path.to_str().unwrap(),
             "webp",
             16,
             10,
@@ -3668,42 +3645,25 @@ fn auto_replace_keeps_the_preferred_display_derivative() {
             "replace",
         )
         .unwrap();
-    // Larger derivative id, but second in the profile list.
-    let lossless = db
-        .add_derivative(
-            photo.id,
-            lossless_path.to_str().unwrap(),
-            "webp",
-            16,
-            10,
-            8,
-            Some("lossless"),
-            CompressionOrigin::Manual,
-            "replace",
-        )
-        .unwrap();
-    db.set_replaced(photo.id, lossless).unwrap();
+    assert_ne!(manual, auto.id);
+    db.set_replaced(photo.id, manual).unwrap();
     db.request_deletion(&[photo.id], DeletionReason::AutoReplace, false)
         .unwrap();
 
     daemon.process_deletions().unwrap();
 
     let photo = db.photo_by_id(photo.id).unwrap().unwrap();
-    assert_eq!(photo.display_derivative_id, Some(lossy));
-    assert_ne!(photo.display_derivative_id, Some(lossless));
-    assert!(lossy_path.is_file());
+    assert_eq!(photo.display_derivative_id, Some(auto.id));
+    assert_ne!(photo.display_derivative_id, Some(manual));
+    assert!(manual_path.is_file());
 }
 
 #[test]
-fn multi_profile_replace_is_worker_count_independent() {
+fn auto_replace_is_worker_count_independent() {
     for workers in 1usize..=4 {
         let dir = tempfile::tempdir().unwrap();
         let mut daemon = multi_profile_test_daemon(&dir);
         let db_path = dir.path().join("library.db");
-        {
-            let db = Db::open(&db_path).unwrap();
-            add_replace_profiles(&db);
-        }
         save_daemon_settings(&daemon, |settings| {
             settings.auto_compress_backlog = true;
             settings.auto_compress_keep_original = false;
@@ -3727,11 +3687,16 @@ fn multi_profile_replace_is_worker_count_independent() {
             .unwrap()
             .unwrap();
         let derivatives = db.derivatives_for_photo(photo.id).unwrap();
-        assert_eq!(derivatives.len(), 2, "workers={workers}");
-        assert!(derivatives.iter().all(|d| Path::new(&d.path).is_file()));
+        assert_eq!(derivatives.len(), 1, "workers={workers}");
+        assert_eq!(
+            derivatives[0].origin,
+            CompressionOrigin::Auto,
+            "workers={workers}"
+        );
+        assert!(Path::new(&derivatives[0].path).is_file());
         assert!(!original.exists(), "workers={workers}");
         assert_eq!(photo.status, PhotoStatus::Replaced);
-        assert_eq!(db.count_jobs(QueueStatus::Completed).unwrap(), 2);
+        assert_eq!(db.count_jobs(QueueStatus::Completed).unwrap(), 1);
         assert_eq!(db.count_jobs(QueueStatus::Failed).unwrap(), 0);
         let completed: i64 = db
             .connection()
@@ -3744,71 +3709,16 @@ fn multi_profile_replace_is_worker_count_independent() {
         assert_eq!(completed, 1, "workers={workers}");
 
         let display_id = photo.display_derivative_id.expect("display derivative");
-        let display = derivatives
-            .iter()
-            .find(|derivative| derivative.id == display_id)
-            .expect("display derivative row");
-        assert_eq!(display.profile_id.as_deref(), Some("lossy"), "workers={workers}");
-        assert!(Path::new(&display.path).is_file(), "workers={workers}");
-
-        let lossless = derivatives
-            .iter()
-            .find(|d| d.profile_id.as_deref() == Some("lossless"))
-            .unwrap();
-        let actual = vrc_photon_core::image_decode::decode_image(Path::new(&lossless.path))
-            .unwrap()
-            .to_rgba8();
+        assert_eq!(display_id, derivatives[0].id);
+        let actual =
+            vrc_photon_core::image_decode::decode_image(Path::new(&derivatives[0].path))
+                .unwrap()
+                .to_rgba8();
         assert_eq!(
             actual, expected,
-            "workers={workers}: second job read a derivative"
+            "workers={workers}: the job must read the original"
         );
     }
-}
-
-#[test]
-fn failed_job_blocks_deletion_until_retry_succeeds() {
-    let dir = tempfile::tempdir().unwrap();
-    let mut daemon = multi_profile_test_daemon(&dir);
-    let db_path = dir.path().join("library.db");
-    {
-        let db = Db::open(&db_path).unwrap();
-        add_replace_profiles(&db);
-        std::fs::write(dir.path().join("photos/lossy"), b"not a directory").unwrap();
-    }
-    save_daemon_settings(&daemon, |settings| {
-        settings.auto_compress_backlog = true;
-        settings.auto_compress_keep_original = false;
-        settings.auto_compress_immediate = true;
-    });
-    let original = original_path(&dir);
-    write_gradient_photo(&original);
-    daemon.run_once().unwrap();
-    daemon.compress_pending().unwrap();
-    daemon.process_deletions().unwrap();
-
-    let db = Db::open(&db_path).unwrap();
-    let photo = db
-        .photo_by_path(original.to_str().unwrap())
-        .unwrap()
-        .unwrap();
-    assert!(original.exists(), "a failed job must keep the original");
-    assert_eq!(photo.status, PhotoStatus::Replaced);
-    let request = db.active_deletion_request(photo.id).unwrap().unwrap();
-    assert_eq!(request.status, DeletionStatus::Blocked);
-    assert_eq!(request.blocked_reason.as_deref(), Some("job_failed"));
-
-    std::fs::remove_file(dir.path().join("photos/lossy")).unwrap();
-    let failed = db.list_jobs_by_status(QueueStatus::Failed, 10).unwrap();
-    assert_eq!(failed.len(), 1);
-    db.retry_job(&failed[0].id).unwrap();
-    drop(db);
-    daemon.compress_pending().unwrap();
-    daemon.process_deletions().unwrap();
-
-    let db = Db::open(&db_path).unwrap();
-    assert!(!original.exists());
-    assert!(db.active_deletion_request(photo.id).unwrap().is_none());
-    assert_eq!(db.count_jobs(QueueStatus::Failed).unwrap(), 0);
 }
 
 #[test]
@@ -4292,35 +4202,6 @@ fn scan_root_finished_event_reports_auto_enqueued_jobs() {
         }
         _ => panic!("scan did not finish"),
     }
-}
-
-#[test]
-fn enqueue_auto_jobs_skips_profiles_that_are_not_auto_enabled() {
-    let dir = tempfile::tempdir().unwrap();
-    let mut daemon = test_daemon(&dir);
-    let photo = dir
-        .path()
-        .join("photos/VRChat_2026-10-21_21-24-00.000_4x3.png");
-    write_photo(&photo);
-    daemon.run_once().unwrap();
-
-    let db = daemon.db.lock().unwrap();
-    let photo_id = db
-        .photo_by_path(photo.to_str().unwrap())
-        .unwrap()
-        .unwrap()
-        .id;
-    db.save_profile(&CompressionProfile {
-        id: "manual-only".to_string(),
-        name: "Manual only".to_string(),
-        enabled: true,
-        auto_enabled: false,
-        ..CompressionProfile::default()
-    })
-    .unwrap();
-
-    assert_eq!(enqueue_auto_jobs(&db, &[photo_id], true, true).unwrap(), 0);
-    assert!(db.list_jobs(10).unwrap().is_empty());
 }
 
 #[test]
@@ -4924,7 +4805,7 @@ fn start_ipc_serves_the_daemon_status() {
 }
 
 #[test]
-fn auto_jobs_follow_profile_sort_order() {
+fn reordering_profiles_does_not_change_the_auto_job() {
     let dir = tempfile::tempdir().unwrap();
     let db = Db::open(dir.path().join("library.db")).unwrap();
     let root = db.add_root("/photos", "reference").unwrap();
@@ -4948,7 +4829,6 @@ fn auto_jobs_follow_profile_sort_order() {
     let make = |id: &str, name: &str| CompressionProfile {
         id: id.to_string(),
         name: name.to_string(),
-        auto_enabled: true,
         ..CompressionProfile::default()
     };
     let a = make("a", "A");
@@ -4960,22 +4840,40 @@ fn auto_jobs_follow_profile_sort_order() {
     db.reorder_profiles(&[c.id.clone(), a.id.clone(), b.id.clone()])
         .unwrap();
 
-    // One photo: its auto profiles are enqueued in the saved order.
     enqueue_auto_jobs(&db, &[photo_id], true, true).unwrap();
-    // Force the tie the rowid tie-break exists for.
-    db.connection()
-        .execute(
-            "UPDATE compression_jobs SET created_at = '2026-01-01T00:00:00+00:00'",
-            [],
-        )
-        .unwrap();
 
-    let mut order = Vec::new();
-    while let Some(job) = db.next_pending_job().unwrap() {
-        order.push(job.profile_id);
-    }
-    assert_eq!(order, vec![Some(c.id), Some(a.id), Some(b.id)]);
+    let jobs = db.list_jobs(10).unwrap();
+    assert_eq!(jobs.len(), 1);
+    assert_eq!(jobs[0].origin, CompressionOrigin::Auto);
+    assert_eq!(jobs[0].profile_id, None);
+    assert_eq!(enqueue_auto_jobs(&db, &[photo_id], true, true).unwrap(), 0);
 }
+
+#[test]
+fn auto_compression_enqueues_without_any_profiles() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    let photo = dir
+        .path()
+        .join("photos/VRChat_2026-10-21_21-24-00.000_4x3.png");
+    write_photo(&photo);
+    daemon.run_once().unwrap();
+
+    let db = daemon.db.lock().unwrap();
+    let photo_id = db
+        .photo_by_path(photo.to_str().unwrap())
+        .unwrap()
+        .unwrap()
+        .id;
+    assert!(db.list_profiles().unwrap().is_empty());
+
+    assert_eq!(enqueue_auto_jobs(&db, &[photo_id], true, true).unwrap(), 1);
+    let jobs = db.list_jobs(10).unwrap();
+    assert_eq!(jobs.len(), 1);
+    assert_eq!(jobs[0].origin, CompressionOrigin::Auto);
+    assert_eq!(jobs[0].profile_id, None);
+}
+
 
 #[test]
 fn auto_jobs_use_replace_policy_and_waiting_status() {
@@ -5289,6 +5187,57 @@ fn end_to_end_auto_compress() {
 }
 
 #[test]
+fn auto_compression_always_writes_to_the_compressed_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    let photo_dir = dir.path().join("photos");
+    let log_dir = dir.path().join("logs");
+    std::fs::create_dir_all(&photo_dir).unwrap();
+    std::fs::create_dir_all(&log_dir).unwrap();
+    let photo_path = photo_dir.join("VRChat_2026-10-21_21-24-00.000_4x3.png");
+    write_photo(&photo_path);
+
+    let db_path = dir.path().join("library.db");
+    {
+        let db = Db::open(&db_path).unwrap();
+        db.save_profile(&CompressionProfile {
+            id: "custom-output".to_string(),
+            name: "Custom output".to_string(),
+            output_dir: Some("custom".to_string()),
+            suffix: "_custom".to_string(),
+            ..CompressionProfile::default()
+        })
+        .unwrap();
+    }
+    let mut daemon = Daemon::open(&db_path, Some(photo_dir.clone()), Some(log_dir)).unwrap();
+    daemon.set_thumbnail_dir(dir.path().join("thumbnails"));
+    save_daemon_settings(&daemon, |settings| {
+        settings.auto_compress_backlog = true;
+    });
+    daemon.run_once().unwrap();
+    daemon.compress_pending().unwrap();
+
+    let db = Db::open(&db_path).unwrap();
+    let photo = db
+        .photo_by_path(photo_path.to_str().unwrap())
+        .unwrap()
+        .expect("photo");
+    let derivative = db
+        .derivatives_for_photo(photo.id)
+        .unwrap()
+        .into_iter()
+        .find(|derivative| derivative.origin == CompressionOrigin::Auto)
+        .expect("auto derivative");
+    let path = Path::new(&derivative.path);
+    assert_eq!(
+        path.parent().and_then(Path::file_name),
+        Some(std::ffi::OsStr::new("compressed"))
+    );
+    assert!(path.is_file());
+    assert!(!photo_dir.join("custom").exists());
+    assert_eq!(derivative.profile_id, None);
+}
+
+#[test]
 fn initial_scan_skips_backlog_when_disabled() {
     let dir = tempfile::tempdir().unwrap();
     let photo_dir = dir.path().join("photos");
@@ -5528,7 +5477,7 @@ fn a_move_between_configured_roots_keeps_the_same_row() {
 }
 
 #[test]
-fn deleting_the_original_promotes_an_existing_derivative() {
+fn deleting_the_original_promotes_an_existing_auto_derivative() {
     let dir = tempfile::tempdir().unwrap();
     let photo_dir = dir.path().join("photos");
     let log_dir = dir.path().join("logs");
@@ -5559,8 +5508,8 @@ fn deleting_the_original_promotes_an_existing_derivative() {
             16,
             10,
             std::fs::metadata(&compressed).unwrap().len(),
-            Some("p"),
-            CompressionOrigin::Manual,
+            None,
+            CompressionOrigin::Auto,
             "keep",
         )
         .unwrap();
@@ -5577,7 +5526,7 @@ fn deleting_the_original_promotes_an_existing_derivative() {
 }
 
 #[test]
-fn missing_original_promotes_the_preferred_profile() {
+fn missing_original_promotes_the_auto_derivative() {
     let dir = tempfile::tempdir().unwrap();
     let photo_dir = dir.path().join("photos");
     let log_dir = dir.path().join("logs");
@@ -5593,78 +5542,68 @@ fn missing_original_promotes_the_preferred_profile() {
     daemon.index_dirty_paths().unwrap();
 
     let db = Db::open(&db_path).unwrap();
-    add_replace_profiles(&db);
     let photo = db
         .photo_by_path(original.to_str().unwrap())
         .unwrap()
         .expect("indexed");
-    let lossless_path = dir.path().join("derivatives/lossless.webp");
-    let lossy_path = dir.path().join("derivatives/lossy.webp");
-    std::fs::create_dir_all(lossless_path.parent().unwrap()).unwrap();
-    std::fs::write(&lossless_path, b"lossless").unwrap();
-    std::fs::write(&lossy_path, b"lossy").unwrap();
-    let lossy = db
+    let auto_path = dir.path().join("derivatives/auto.webp");
+    let manual_path = dir.path().join("derivatives/manual.webp");
+    std::fs::create_dir_all(auto_path.parent().unwrap()).unwrap();
+    std::fs::write(&auto_path, b"auto").unwrap();
+    std::fs::write(&manual_path, b"manual").unwrap();
+    let auto = db
         .add_derivative(
             photo.id,
-            lossy_path.to_str().unwrap(),
+            auto_path.to_str().unwrap(),
             "webp",
             16,
             10,
             5,
-            Some("lossy"),
-            CompressionOrigin::Manual,
+            None,
+            CompressionOrigin::Auto,
             "keep",
         )
         .unwrap();
-    // Larger derivative id, but second in the profile list.
-    let lossless = db
+    // A larger manual derivative id must not win.
+    let manual = db
         .add_derivative(
             photo.id,
-            lossless_path.to_str().unwrap(),
+            manual_path.to_str().unwrap(),
             "webp",
             16,
             10,
             8,
-            Some("lossless"),
+            Some("manual"),
             CompressionOrigin::Manual,
             "keep",
         )
         .unwrap();
+    assert_ne!(auto, manual);
 
     std::fs::remove_file(&original).unwrap();
     daemon.dirty_paths.push(original.clone());
     daemon.index_dirty_paths().unwrap();
 
     let photo = db.photo_by_id(photo.id).unwrap().unwrap();
-    assert_eq!(photo.display_derivative_id, Some(lossy));
-    assert_ne!(photo.display_derivative_id, Some(lossless));
-    assert!(lossy_path.is_file());
+    assert_eq!(photo.display_derivative_id, Some(auto));
+    assert_ne!(photo.display_derivative_id, Some(manual));
+    assert!(auto_path.is_file());
 }
 
 #[test]
-fn replace_compression_keeps_the_photo_visible() {
+fn auto_replace_compression_keeps_the_photo_visible() {
     let dir = tempfile::tempdir().unwrap();
-    let photo_dir = dir.path().join("photos");
-    let log_dir = dir.path().join("logs");
-    std::fs::create_dir_all(&photo_dir).unwrap();
-    std::fs::create_dir_all(&log_dir).unwrap();
-    let original = photo_dir.join("VRChat_2026-10-21_21-24-00.000_4x3.png");
-    write_photo(&original);
-
+    let mut daemon = replace_test_daemon(&dir);
     let db_path = dir.path().join("library.db");
-    add_auto_profile(&db_path);
-    let mut daemon = Daemon::open(&db_path, Some(photo_dir.clone()), Some(log_dir)).unwrap();
-    daemon.set_thumbnail_dir(dir.path().join("thumbnails"));
+    let original = original_path(&dir);
     daemon.run_once().unwrap();
+    daemon.compress_pending().unwrap();
 
     let db = Db::open(&db_path).unwrap();
     let photo = db
         .photo_by_path(original.to_str().unwrap())
         .unwrap()
         .expect("indexed");
-    let profile = db.list_profiles().unwrap()[0].id.clone();
-    db.enqueue_job(photo.id, &profile, "replace").unwrap();
-    daemon.compress_pending().unwrap();
 
     let photo = db.photo_by_id(photo.id).unwrap().unwrap();
     assert_eq!(photo.status, vrc_photon_core::model::PhotoStatus::Replaced);
