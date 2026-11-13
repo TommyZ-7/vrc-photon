@@ -52,8 +52,8 @@ pub(crate) fn enqueue_auto_tagging(
 }
 
 /// Keeps a photo visible when its original file was deleted manually but a
-/// completed compression output remains. Uses the same deterministic profile
-/// preference as replacement jobs.
+/// completed compression output remains. Picks the display derivative with
+/// the same rule as replacement jobs: only automatic output qualifies.
 pub(crate) fn promote_display_derivative(db: &Db, photo: &Photo) -> Result<bool> {
     let derivatives = db.derivatives_for_photo(photo.id)?;
     let Some(preferred) = preferred_display_derivative(&derivatives) else {
@@ -246,7 +246,8 @@ pub(crate) fn process_photo_batch_inner(
     }
 
     // Hold the shared reservation for the whole batch: the decoded image is
-    // reused by every profile while resized copies and encoder output are
+    // reused by every job in the batch while resized copies and encoder
+    // output are
     // created one after another.
     let _memory_permit = budget.reserve(compression_peak_estimate(&source_path));
     let Some(image) = vrc_photon_core::image_decode::decode_image(&source_path) else {
