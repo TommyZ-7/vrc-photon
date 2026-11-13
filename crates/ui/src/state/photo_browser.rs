@@ -23,6 +23,10 @@ use crate::ui::year_rail::YearRailLabels;
 
 pub(crate) const PAGE_SIZE: usize = 256;
 pub(crate) const MAX_PAGES: usize = 24;
+/// Maximum number of photo rows retained across index replacements. The
+/// fallback is a page-cache-sized window, so a search refresh can keep the
+/// visible cards mounted without retaining the whole library.
+const MAX_ROWS: usize = MAX_PAGES * PAGE_SIZE;
 
 /// Scroll distance from the top of a uniform list, in pixels.
 pub(crate) fn list_scroll_top(handle: &UniformListScrollHandle) -> f32 {
@@ -234,6 +238,11 @@ pub(crate) struct PhotoPageCache {
     /// page lands so a query that started before the change cannot resurrect
     /// the old row.
     overrides: HashMap<i64, Arc<Photo>>,
+    /// Loaded rows keyed by id. Positional pages are dropped when an index is
+    /// replaced, but these rows stay available so the visible cards do not
+    /// fall back to placeholders while the new pages load.
+    rows: HashMap<i64, Arc<Photo>>,
+    row_order: VecDeque<i64>,
 }
 
 impl PhotoPageCache {
@@ -242,6 +251,14 @@ impl PhotoPageCache {
     }
 
     fn clear(&mut self) {
+        self.clear_pages();
+        self.rows.clear();
+        self.row_order.clear();
+    }
+
+    /// Drops positional pages but keeps the id-keyed rows used as a render
+    /// fallback after an index replacement.
+    fn clear_pages(&mut self) {
         self.pages.clear();
         self.order.clear();
         self.pending.clear();
@@ -270,6 +287,9 @@ impl PhotoPageCache {
                     .unwrap_or_else(|| Arc::new(photo))
             })
             .collect::<Vec<_>>();
+        for photo in &page_photos {
+            self.cache_row(photo.clone());
+        }
         self.pages.insert(page, Arc::new(page_photos));
         self.touch(page);
         while self.pages.len() > MAX_PAGES {
@@ -308,6 +328,14 @@ impl PhotoPageCache {
             }
             *rows = Arc::new(updated);
         }
+        // Replacement rows must also follow the id-keyed fallback. Otherwise
+        // an index swap after a compression/search refresh could resurrect the
+        // old display path until the page is loaded again.
+        for (id, photo) in &by_id {
+            if self.rows.contains_key(id) {
+                self.rows.insert(*id, photo.clone());
+            }
+        }
         for (id, photo) in by_id {
             if applied.contains(&id) {
                 self.overrides.remove(&id);
@@ -315,6 +343,27 @@ impl PhotoPageCache {
                 self.overrides.insert(id, photo);
             }
         }
+    }
+
+    fn cache_row(&mut self, photo: Arc<Photo>) {
+        let id = photo.id;
+        if self.rows.insert(id, photo).is_none() {
+            self.row_order.push_back(id);
+            while self.rows.len() > MAX_ROWS {
+                let Some(oldest) = self.row_order.pop_front() else {
+                    break;
+                };
+                self.rows.remove(&oldest);
+            }
+        }
+    }
+
+    fn row(&self, id: i64) -> Option<Arc<Photo>> {
+        self.rows.get(&id).cloned()
+    }
+
+    fn has_row(&self, id: i64) -> bool {
+        self.rows.contains_key(&id)
     }
 
     fn touch(&mut self, page: usize) {
@@ -507,6 +556,19 @@ impl PhotoBrowser {
         }
     }
 
+    /// Replaces the index only when the entry list or truncation changed.
+    ///
+    /// Search refreshes run after every AI revision. A result that is identical
+    /// to the mounted one must not invalidate the page cache or restart the
+    /// grid layout.
+    pub(crate) fn replace_index_if_changed(&mut self, index: Arc<PhotoIndex>) -> bool {
+        if self.index.entries == index.entries && self.index.truncated == index.truncated {
+            return false;
+        }
+        self.replace_index(index);
+        true
+    }
+
     pub(crate) fn replace_index(&mut self, index: Arc<PhotoIndex>) {
         self.index = index;
         let surviving_sessions: HashSet<i64> = self
@@ -518,7 +580,7 @@ impl PhotoBrowser {
         self.collapsed_sessions
             .retain(|session_id| surviving_sessions.contains(session_id));
         self.generation = self.generation.wrapping_add(1);
-        self.pages.clear();
+        self.pages.clear_pages();
         self.labels = None;
         self.pending_anchor = None;
         self.rail_drag.set(false);
@@ -915,7 +977,9 @@ impl PhotoBrowser {
             .filter(|photo| {
                 self.index.row_of_id(photo.id).is_some_and(|row| {
                     let page = row / PAGE_SIZE;
-                    self.pages.pages.contains_key(&page) || self.pages.pending.contains(&page)
+                    self.pages.pages.contains_key(&page)
+                        || self.pages.pending.contains(&page)
+                        || self.pages.has_row(photo.id)
                 })
             })
             .cloned()
@@ -997,7 +1061,16 @@ impl PhotoBrowser {
     pub(crate) fn photo_at(&mut self, photo_index: usize) -> Option<Arc<Photo>> {
         let page = photo_index / PAGE_SIZE;
         let offset = photo_index % PAGE_SIZE;
-        self.pages.get_page(page)?.get(offset).cloned()
+        if let Some(page_photos) = self.pages.get_page(page)
+            && let Some(photo) = page_photos.get(offset)
+        {
+            return Some(photo.clone());
+        }
+        // A search refresh replaces the index and clears its positional pages.
+        // Keep rendering rows that were already loaded so the visible cards do
+        // not blink through placeholders while the new pages land.
+        let id = self.index.entries.get(photo_index)?.id;
+        self.pages.row(id)
     }
 
     pub(crate) fn plan_pages(&mut self, start: usize, end: usize, limit: usize) -> Vec<usize> {
@@ -1295,6 +1368,77 @@ mod tests {
                 .expect("cover")
                 .effective_path(),
             "/p/1.webp"
+        );
+    }
+
+    #[test]
+    fn identical_search_results_keep_the_page_cache() {
+        let entries = vec![index_entry(1, 202601), index_entry(2, 202601)];
+        let mut browser =
+            PhotoBrowser::new(Arc::new(PhotoIndex::new(entries.clone())), TEST_ROW_HEIGHT);
+        let generation = browser.generation;
+        browser.insert_page(0, vec![test_photo(1), test_photo(2)], generation);
+
+        let replaced = browser.replace_index_if_changed(Arc::new(PhotoIndex::new(entries)));
+
+        assert!(!replaced, "the result set did not change");
+        assert_eq!(browser.generation, generation);
+        assert!(browser.pages.get_page(0).is_some());
+        assert_eq!(browser.photo_at(0).map(|photo| photo.id), Some(1));
+    }
+
+    #[test]
+    fn replacing_the_search_index_keeps_cached_cards_visible() {
+        let entries = vec![index_entry(1, 202601), index_entry(2, 202601)];
+        let mut browser = PhotoBrowser::new(Arc::new(PhotoIndex::new(entries)), TEST_ROW_HEIGHT);
+        let generation = browser.generation;
+        browser.insert_page(0, vec![test_photo(1), test_photo(2)], generation);
+
+        let next = vec![
+            index_entry(3, 202601),
+            index_entry(1, 202601),
+            index_entry(2, 202601),
+        ];
+        let replaced = browser.replace_index_if_changed(Arc::new(PhotoIndex::new(next)));
+
+        assert!(replaced);
+        assert_ne!(browser.generation, generation);
+        assert!(
+            browser.pages.get_page(0).is_none(),
+            "the page cache still rebuilds for the new positions"
+        );
+        assert!(
+            browser.photo_at(0).is_none(),
+            "a photo that was never loaded still renders as a placeholder"
+        );
+        assert_eq!(browser.photo_at(1).map(|photo| photo.id), Some(1));
+        assert_eq!(browser.photo_at(2).map(|photo| photo.id), Some(2));
+
+        browser.invalidate_pages();
+        assert!(
+            browser.photo_at(1).is_none(),
+            "full page invalidation must drop the replacement rows too"
+        );
+    }
+
+    #[test]
+    fn replacing_the_index_uses_rows_updated_before_the_swap() {
+        let entries = vec![index_entry(1, 202601), index_entry(2, 202601)];
+        let mut browser =
+            PhotoBrowser::new(Arc::new(PhotoIndex::new(entries.clone())), TEST_ROW_HEIGHT);
+        let generation = browser.generation;
+        browser.insert_page(0, vec![test_photo(1), test_photo(2)], generation);
+
+        let mut updated = test_photo(1);
+        updated.display_path = Some("/p/1.webp".to_string());
+        browser.update_photo_rows(&[updated]);
+
+        browser.replace_index(Arc::new(PhotoIndex::new(entries)));
+
+        assert_eq!(
+            browser.photo_at(0).expect("cached row").effective_path(),
+            "/p/1.webp",
+            "the replacement row must not resurrect the old path"
         );
     }
 
