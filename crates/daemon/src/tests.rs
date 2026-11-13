@@ -5018,15 +5018,40 @@ fn reordering_profiles_does_not_change_the_auto_job() {
     for profile in [&a, &b, &c] {
         db.save_profile(profile).unwrap();
     }
+
+    enqueue_auto_jobs(&db, &[photo_id], true, true).unwrap();
+    let jobs_before = db.list_jobs(10).unwrap();
+    assert_eq!(jobs_before.len(), 1);
+    assert_eq!(jobs_before[0].origin, CompressionOrigin::Auto);
+    assert_eq!(jobs_before[0].profile_id, None);
+
+    // A display derivative exists so the display pick is observable too.
+    let derivative_path = dir.path().join("display.webp");
+    std::fs::write(&derivative_path, b"x").unwrap();
+    db.add_derivative(
+        photo_id,
+        &derivative_path.to_string_lossy(),
+        "webp",
+        16,
+        10,
+        1,
+        None,
+        CompressionOrigin::Auto,
+        "keep",
+    )
+    .unwrap();
+    let pick_before = preferred_display_derivative(&db.derivatives_for_photo(photo_id).unwrap())
+        .map(|derivative| derivative.id);
+    assert!(pick_before.is_some());
+
     db.reorder_profiles(&[c.id.clone(), a.id.clone(), b.id.clone()])
         .unwrap();
 
-    enqueue_auto_jobs(&db, &[photo_id], true, true).unwrap();
-
-    let jobs = db.list_jobs(10).unwrap();
-    assert_eq!(jobs.len(), 1);
-    assert_eq!(jobs[0].origin, CompressionOrigin::Auto);
-    assert_eq!(jobs[0].profile_id, None);
+    let jobs_after = db.list_jobs(10).unwrap();
+    assert_eq!(jobs_before, jobs_after);
+    let pick_after = preferred_display_derivative(&db.derivatives_for_photo(photo_id).unwrap())
+        .map(|derivative| derivative.id);
+    assert_eq!(pick_before, pick_after);
     assert_eq!(enqueue_auto_jobs(&db, &[photo_id], true, true).unwrap(), 0);
 }
 
@@ -5038,17 +5063,20 @@ fn auto_compression_enqueues_without_any_profiles() {
         .path()
         .join("photos/VRChat_2026-10-21_21-24-00.000_4x3.png");
     write_photo(&photo);
+    save_daemon_settings(&daemon, |settings| {
+        settings.auto_compress = true;
+        settings.auto_compress_backlog = true;
+        settings.auto_compress_immediate = true;
+    });
+    daemon.settings.auto_compress = true;
+    daemon.settings.auto_compress_backlog = true;
+    daemon.settings.auto_compress_immediate = true;
+
+    // The scan itself must enqueue the job: no direct enqueue call here.
     daemon.run_once().unwrap();
 
     let db = daemon.db.lock().unwrap();
-    let photo_id = db
-        .photo_by_path(photo.to_str().unwrap())
-        .unwrap()
-        .unwrap()
-        .id;
     assert!(db.list_profiles().unwrap().is_empty());
-
-    assert_eq!(enqueue_auto_jobs(&db, &[photo_id], true, true).unwrap(), 1);
     let jobs = db.list_jobs(10).unwrap();
     assert_eq!(jobs.len(), 1);
     assert_eq!(jobs[0].origin, CompressionOrigin::Auto);

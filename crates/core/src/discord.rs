@@ -100,7 +100,8 @@ fn webhook_path_parts(url: &url::Url) -> Option<(&str, &str)> {
 /// Image format of the bytes uploaded to Discord.
 ///
 /// VRChat originals are PNG or JPEG, so `CompressionFormat` cannot represent
-/// every source. Profile-derived images are converted from `CompressionFormat`.
+/// every source. Images encoded for Discord are converted from the Discord
+/// compression settings' `CompressionFormat`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SendImageFormat {
     Png,
@@ -492,6 +493,29 @@ mod tests {
         assert!(matches!(
             choose_send_source(&photo, true, &CompressionOptions::discord_default()),
             SendImageSource::MissingPhoto
+        ));
+    }
+
+    #[test]
+    fn missing_original_falls_back_to_the_display_derivative() {
+        let dir = tempfile::tempdir().unwrap();
+        let display = dir.path().join("display.webp");
+        std::fs::write(&display, b"y").unwrap();
+        let photo = sample_photo(
+            1,
+            &dir.path().join("gone.png"),
+            1,
+            PhotoStatus::Present,
+            Some(7),
+            Some(&display),
+        );
+        assert!(matches!(
+            choose_send_source(&photo, true, &CompressionOptions::discord_default()),
+            SendImageSource::File {
+                source: SendSource::Derivative,
+                format: SendImageFormat::Webp,
+                ..
+            }
         ));
     }
 

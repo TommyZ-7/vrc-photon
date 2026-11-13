@@ -372,9 +372,10 @@ pub(crate) fn initialize(conn: &Connection) -> Result<()> {
         |row| row.get(0),
     )?;
     if tables > 0 {
-        return Err(crate::error::CoreError::Invalid(
-            "database has tables but is not schema version 18; refusing to modify it".to_string(),
-        ));
+        return Err(crate::error::CoreError::Invalid(format!(
+            "database has tables but is not schema version {SCHEMA_VERSION}; \
+                 refusing to modify it"
+        )));
     }
     tx.execute_batch(SCHEMA_LATEST)?;
     tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;

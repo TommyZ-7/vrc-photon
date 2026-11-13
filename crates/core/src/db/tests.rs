@@ -3007,8 +3007,13 @@ fn automatic_jobs_leave_the_output_directory_unset() {
     let photo = db
         .upsert_photo(&sample_photo(root, "/photos/a.png", 100))
         .unwrap();
-    db.enqueue_job(photo, "profile", "keep").unwrap();
+    assert!(
+        db.enqueue_auto_job_with_status(photo, "keep", QueueStatus::Pending)
+            .unwrap()
+    );
     let job = db.next_pending_job().unwrap().unwrap();
+    assert_eq!(job.origin, CompressionOrigin::Auto);
+    assert!(job.profile_id.is_none());
     assert!(job.output_dir.is_none());
 }
 
@@ -7579,6 +7584,27 @@ fn v18_database_is_rejected_without_modification() {
         .query_row("SELECT value FROM legacy_marker", [], |row| row.get(0))
         .unwrap();
     assert_eq!(marker, "keep");
+}
+
+#[test]
+fn v18_database_is_rejected_by_open_read_only_without_modification() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("library.db");
+    {
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE legacy_marker(value TEXT); \
+             INSERT INTO legacy_marker(value) VALUES ('keep');",
+        )
+        .unwrap();
+        conn.pragma_update(None, "user_version", 18).unwrap();
+    }
+    let before = std::fs::read(&path).unwrap();
+
+    assert!(Db::open_read_only(&path).is_err());
+
+    let after = std::fs::read(&path).unwrap();
+    assert_eq!(before, after, "the rejected database must not be modified");
 }
 
 #[test]

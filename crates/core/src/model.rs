@@ -619,7 +619,8 @@ pub struct SendOutboxEntry {
 /// The Discord identity produced by a successful send.
 ///
 /// `source` stays optional because test sends have no image source, and
-/// `profile_id` is only set when a compression profile produced the upload.
+/// `profile_id` is always unset: Discord sending uses its own compression
+/// settings instead of a profile.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SendCompletion {
     pub source: Option<SendSource>,
@@ -812,8 +813,9 @@ pub struct CompressionJob {
     pub error: Option<String>,
     pub output_path: Option<String>,
     pub policy: String,
-    /// Per-job output directory override. `None` uses the compression
-    /// profile's configured directory (automatic jobs always do this).
+    /// Per-job output directory override for manual jobs. `None` uses the
+    /// manual profile's configured directory. Automatic jobs ignore this
+    /// field and always write to `compressed/` next to the original.
     pub output_dir: Option<String>,
     /// Number of user retries already performed for this job.
     pub retry_count: i64,
