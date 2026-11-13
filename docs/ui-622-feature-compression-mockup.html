@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Issue #622 圧縮設定の機能別化モック</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background:#07090d; color:#dbe4ee; font-family:"Noto Sans CJK JP","Hiragino Sans",system-ui,sans-serif; padding:20px 12px 48px; }
+  .pagehead { max-width:1180px; margin:0 auto 14px; }
+  .pagehead h1 { font-size:18px; font-weight:700; }
+  .pagehead p { font-size:12.5px; color:#8fa1b5; margin-top:5px; line-height:1.7; }
+  .legend { max-width:1180px; margin:0 auto 14px; display:flex; gap:8px; flex-wrap:wrap; }
+  .tag { font-size:11px; padding:3px 10px; border-radius:999px; border:1px solid #263242; color:#aebdd0; background:#101722; }
+  .tag.new { color:#7cc4ea; border-color:rgba(41,155,213,.45); background:rgba(41,155,213,.12); }
+  .tag.del { color:#e89696; border-color:rgba(220,90,90,.4); background:rgba(220,90,90,.08); }
+  .win { max-width:1180px; margin:0 auto 18px; background:#0b0f16; border:1px solid #223046; border-radius:14px; overflow:hidden; box-shadow:0 18px 50px rgba(0,0,0,.55); }
+  .titlebar { height:42px; display:flex; align-items:center; gap:10px; padding:0 14px; background:#0e141f; border-bottom:1px solid #1c2839; }
+  .glyph { color:#299bd5; font-size:18px; font-weight:700; }
+  .titlebar .app { font-size:13px; font-weight:700; }
+  .titlebar .sp { flex:1; }
+  .titlebar .st { font-size:11px; color:#8fa1b5; }
+  .dot { width:8px; height:8px; border-radius:50%; background:#43c465; display:inline-block; margin-right:5px; vertical-align:1px; }
+  .body { display:flex; min-height:0; }
+  .side { width:190px; flex:none; background:#0d1219; border-right:1px solid #1c2839; padding:14px 10px; }
+  .nav { display:flex; align-items:center; gap:9px; padding:8px 10px; border-radius:8px; font-size:13px; color:#aebdd0; margin-bottom:2px; }
+  .nav .ic { width:16px; text-align:center; }
+  .nav.active { background:rgba(41,155,213,.16); color:#eaf4fb; font-weight:700; }
+  .nav.active .ic { color:#299bd5; }
+  .main { flex:1; min-width:0; padding:18px 20px; }
+  .mainhead { display:flex; align-items:baseline; gap:10px; margin-bottom:4px; }
+  .h1 { font-size:16px; font-weight:700; }
+  .hsub { font-size:11.5px; color:#8fa1b5; margin-bottom:14px; }
+  .md { display:flex; gap:0; }
+  .md-list { width:248px; flex:none; border-right:1px solid #1c2839; padding:4px 12px 4px 0; margin-right:16px; }
+  .md-item { padding:10px 11px; border-radius:9px; margin-bottom:4px; border:1px solid transparent; }
+  .md-item.sel { background:rgba(41,155,213,.12); border-color:rgba(41,155,213,.4); }
+  .md-item .nm { font-size:13px; font-weight:700; display:flex; align-items:center; gap:8px; }
+  .md-item .sm { font-size:11px; color:#8fa1b5; margin-top:3px; line-height:1.55; }
+  .sdot { width:8px; height:8px; border-radius:50%; background:#43c465; flex:none; }
+  .sdot.off { background:#5f7288; }
+  .md-detail { flex:1; min-width:0; }
+  .card { background:rgba(255,255,255,.035); border:1px solid #223046; border-radius:12px; padding:14px 16px; }
+  .card + .card { margin-top:14px; }
+  .chead { display:flex; align-items:center; gap:9px; margin-bottom:4px; }
+  .chead .t { font-size:14px; font-weight:700; }
+  .chead .sp { flex:1; }
+  .hint { font-size:11.5px; color:#8fa1b5; line-height:1.65; }
+  .warn { font-size:11.5px; color:#e8c96a; background:rgba(224,175,55,.08); border:1px solid rgba(224,175,55,.3); border-radius:8px; padding:7px 10px; line-height:1.6; margin-top:8px; }
+  .note { font-size:11px; color:#7cc4ea; background:rgba(41,155,213,.08); border:1px solid rgba(41,155,213,.28); border-radius:8px; padding:7px 10px; line-height:1.6; margin-top:8px; }
+  .row { display:flex; align-items:center; gap:10px; padding:8px 0; border-top:1px solid rgba(255,255,255,.05); }
+  .row:first-of-type { border-top:none; }
+  .row .lab { font-size:12.5px; }
+  .row .lab small { display:block; color:#8fa1b5; font-size:11px; margin-top:1px; }
+  .row .sp { flex:1; }
+  .sw { width:36px; height:20px; border-radius:999px; background:#2a3a4f; position:relative; flex:none; }
+  .sw::after { content:""; position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%; background:#93a7bd; }
+  .sw.on { background:#299bd5; }
+  .sw.on::after { left:18px; background:#fff; }
+  .btn { font-size:12px; padding:5px 12px; border-radius:7px; border:1px solid #2c4258; background:#16202f; color:#dbe4ee; white-space:nowrap; font-family:inherit; }
+  .btn.pri { background:#299bd5; border-color:#299bd5; color:#fff; font-weight:700; }
+  .btn.danger { color:#e88; border-color:rgba(220,90,90,.4); }
+  .input { background:#0a0e14; border:1px solid #2c4258; border-radius:7px; padding:6px 10px; font-size:12px; color:#aebdd0; min-width:0; }
+  .section { margin-top:12px; padding-top:10px; border-top:1px solid rgba(255,255,255,.06); }
+  .sec-label { font-size:10px; font-weight:700; letter-spacing:.04em; color:#8fa1b5; margin-bottom:7px; }
+  .chips { display:flex; gap:4px; flex-wrap:wrap; }
+  .chip { font-size:11px; padding:4px 9px; border-radius:8px; color:#aebdd0; border:1px solid #263242; }
+  .chip.on { color:#7cc4ea; background:rgba(41,155,213,.12); border-color:rgba(41,155,213,.45); font-weight:700; }
+  .ctl { display:flex; align-items:center; gap:8px; padding:5px 0; }
+  .ctl .lab { width:92px; flex:none; font-size:11.5px; color:#8fa1b5; }
+  .ctl .val { font-size:12px; font-weight:700; min-width:28px; text-align:center; }
+  .mini { font-size:10.5px; color:#8fa1b5; }
+  .pill { font-size:10.5px; padding:2px 9px; border-radius:999px; border:1px solid #2c4258; color:#aebdd0; white-space:nowrap; }
+  .pill.on { background:rgba(67,196,101,.14); border-color:rgba(67,196,101,.45); color:#7ed491; }
+  .profile { display:flex; align-items:center; gap:8px; padding:8px 10px; border:1px solid #223046; border-radius:8px; margin-top:6px; background:rgba(255,255,255,.025); }
+  .profile.sel { border-color:#299bd5; background:rgba(41,155,213,.1); }
+  .profile .nm { font-size:12.5px; font-weight:700; }
+  .profile .meta { font-size:10.5px; color:#8fa1b5; }
+  .profile .sp { flex:1; }
+  .dialog-wrap { max-width:1180px; margin:0 auto; }
+  .dialog-title { font-size:14px; font-weight:700; margin-bottom:4px; }
+  .dialog-sub { font-size:11.5px; color:#8fa1b5; margin-bottom:12px; }
+  .dialog { background:#0b0f16; border:1px solid #223046; border-radius:14px; padding:18px 20px; max-width:560px; }
+  .dialog .head { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
+  .dialog .head .t { font-size:19px; font-weight:700; }
+  .dialog .head .sp { flex:1; }
+  .dialog .head .cnt { font-size:11px; color:#8fa1b5; }
+  .opt { display:flex; align-items:flex-start; gap:9px; padding:9px 10px; border:1px solid #223046; border-radius:9px; margin-top:6px; background:rgba(255,255,255,.025); }
+  .opt.sel { border-color:#299bd5; background:rgba(41,155,213,.1); }
+  .radio { width:15px; height:15px; border-radius:50%; border:1px solid #2c4258; flex:none; margin-top:1px; position:relative; }
+  .opt.sel .radio { border-color:#299bd5; }
+  .opt.sel .radio::after { content:""; position:absolute; inset:3px; border-radius:50%; background:#299bd5; }
+  .opt .lab { font-size:12.5px; }
+  .opt .lab small { display:block; color:#8fa1b5; font-size:10.5px; margin-top:2px; }
+  .dialog .foot { display:flex; gap:8px; justify-content:flex-end; margin-top:16px; }
+  .strike { text-decoration:line-through; opacity:.55; }
+  .cap { max-width:1180px; margin:8px auto 0; font-size:11.5px; color:#6f8298; line-height:1.7; }
+  .badge-old { font-size:10px; padding:2px 7px; border-radius:999px; color:#8fa1b5; background:#17202c; border:1px solid #263242; }
+  .badge-new { font-size:10px; padding:2px 7px; border-radius:999px; color:#7cc4ea; background:rgba(41,155,213,.12); border:1px solid rgba(41,155,213,.4); }
+</style>
+</head>
+<body>
+<div class="pagehead">
+  <h1>Issue #622 圧縮設定の機能別化モック</h1>
+  <p>自動圧縮・クリップボード・Discord がそれぞれ圧縮設定を持ち、プロファイルは手動圧縮専用になります。数値と文言は実画面に合わせたサンプルです。</p>
+</div>
+<div class="legend">
+  <span class="tag new">追加: 機能ごとの圧縮設定</span>
+  <span class="tag del">削除: 自動/クリップボード/Discord のプロファイル選択</span>
+  <span class="tag del">削除: 手動圧縮の保持/置換とクリップボード出力</span>
+  <span class="tag">自動圧縮の出力先は compressed/ 固定</span>
+</div>
+
+<section class="win">
+  <div class="titlebar"><span class="glyph">✳</span><span class="app">VRC PhotoN</span><span class="sp"></span><span class="st"><span class="dot"></span>デーモン接続中 ・ 写真 3,757枚</span></div>
+  <div class="body">
+    <aside class="side">
+      <div class="nav"><span class="ic">▦</span>写真</div>
+      <div class="nav"><span class="ic">⇊</span>圧縮</div>
+      <div class="nav"><span class="ic">⌕</span>検索</div>
+      <div class="nav"><span class="ic">▤</span>ダッシュボード</div>
+      <div class="nav active"><span class="ic">⇄</span>連携・自動</div>
+      <div class="nav"><span class="ic">⚙</span>設定</div>
+    </aside>
+    <div class="main">
+      <div class="mainhead"><span class="h1">連携・自動</span><span class="hint">外部連携と自動処理の設定</span></div>
+      <div class="hsub">左の一覧で項目を選び、右のカードで設定します。</div>
+      <div class="md">
+        <div class="md-list">
+          <div class="md-item"><div class="nm"><span class="sdot"></span>Discord 連携</div><div class="sm">設定済み ・ 送信先：VRChat写真部</div></div>
+          <div class="md-item sel"><div class="nm"><span class="sdot"></span>自動圧縮</div><div class="sm">有効 ・ WebP ロスレス</div></div>
+          <div class="md-item"><div class="nm"><span class="sdot off"></span>AI タグ付け</div><div class="sm">無効 ・ 実行中 0 件</div></div>
+          <div class="md-item"><div class="nm"><span class="sdot"></span>クリップボード</div><div class="sm">有効 ・ PNG ・ 2560×1440</div></div>
+        </div>
+        <div class="md-detail">
+
+          <div class="card">
+            <div class="chead"><span class="t">自動圧縮</span><span class="sp"></span><span class="pill on">有効</span><span class="sw on"></span></div>
+            <div class="hint">新しい写真を自動で圧縮します</div>
+            <div class="row"><span class="lab">新規写真をすぐに圧縮<small>オフにすると待機キューへ積みます</small></span><span class="sp"></span><span class="sw on"></span></div>
+            <div class="row"><span class="lab">自動圧縮後に元画像を保持<small>オフにすると成功後にOSゴミ箱へ移動します</small></span><span class="sp"></span><span class="sw on"></span></div>
+            <div class="section">
+              <div class="sec-label">圧縮設定</div>
+              <div class="chips"><span class="chip on">WebP</span><span class="chip">JPEG</span><span class="chip">AVIF</span><span class="chip">JPEG XL</span></div>
+              <div class="ctl"><span class="lab">ロスレス</span><span class="sw on"></span><span class="mini">WebP はロスレス圧縮</span></div>
+              <div class="ctl"><span class="lab">品質</span><button class="btn">−</button><span class="val">82</span><button class="btn">＋</button><span class="mini">ロスレス中は無効</span></div>
+              <div class="ctl"><span class="lab">リサイズ</span><span class="sw"></span><span class="mini">原寸のまま</span></div>
+              <div class="note">出力先は元画像の隣の <b>compressed/</b> に固定されます。</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="chead"><span class="t">クリップボード</span><span class="sp"></span><span class="pill on">有効</span><span class="sw on"></span></div>
+            <div class="hint">選択した1枚を PNG でコピーします</div>
+            <div class="section">
+              <div class="sec-label">リサイズ</div>
+              <div class="ctl"><span class="lab">リサイズ</span><span class="sw on"></span><span class="mini">大きい画像だけ縮小</span></div>
+              <div class="chips"><span class="chip">HD</span><span class="chip">FHD</span><span class="chip on">2K</span><span class="chip">4K</span></div>
+              <div class="ctl"><span class="lab">解像度</span><span class="val">2560 × 1440</span></div>
+              <div class="ctl"><span class="lab">方法</span><span class="chip on">大きい場合のみ</span><span class="chip">毎回</span><span class="chip on">縦横比を維持</span></div>
+              <div class="note">クリップボードは <b>PNG</b> でコピーされます。形式・画質の設定はありません。</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="chead"><span class="t">Discord 連携</span><span class="sp"></span><span class="pill on">設定済み</span><span class="sw on"></span></div>
+            <div class="hint">写真を Discord の Webhook へ送信します</div>
+            <div class="warn">非公開インスタンスで撮影した写真も送信対象になります。Webhook の投稿先を確認してください。</div>
+            <div class="row"><span class="lab">Webhook URL<small>送信先名：VRChat写真部</small></span><span class="sp"></span><span class="input" style="width:220px">https://discord.com/api/webhooks/••••••</span><button class="btn">変更</button><button class="btn">テスト送信</button></div>
+            <div class="row"><span class="lab">原画を優先<small>20 MiB を超える原画は Discord の圧縮設定で送信します</small></span><span class="sp"></span><span class="sw on"></span></div>
+            <div class="row"><span class="lab">プレイヤー名を含める<small>埋め込みに参加プレイヤー名を追加します</small></span><span class="sp"></span><span class="sw"></span></div>
+            <div class="section">
+              <div class="sec-label">圧縮設定</div>
+              <div class="chips"><span class="chip on">WebP</span><span class="chip">JPEG</span><span class="chip">AVIF</span><span class="chip">JPEG XL</span></div>
+              <div class="ctl"><span class="lab">ロスレス</span><span class="sw on"></span><span class="mini">WebP はロスレス圧縮</span></div>
+              <div class="ctl"><span class="lab">品質</span><button class="btn">−</button><span class="val">82</span><button class="btn">＋</button><span class="mini">ロスレス中は無効</span></div>
+              <div class="ctl"><span class="lab">リサイズ</span><span class="sw on"></span><span class="mini">大きい画像だけ縮小</span></div>
+              <div class="chips"><span class="chip">HD</span><span class="chip">FHD</span><span class="chip on">2K</span><span class="chip">4K</span><span class="chip on">縦横比を維持</span></div>
+              <div class="note">圧縮結果は送信にだけ使い、ファイルとして保存しません。派生ファイルにも登録しません。</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+<div class="cap">ポイント: 「対象プロファイル」「連携用プロファイル」「クリップボード用プロファイル」の一覧が消え、各カード内の圧縮設定に置き換わります。自動圧縮の出力先は表示のみで編集できません。</div>
+
+<div class="pagehead" style="margin-top:34px">
+  <h1>手動圧縮ダイアログ（変更後）</h1>
+  <p>プロファイル選択と出力先は残し、元画像の保持／置換とクリップボード出力を削除します。出力は常に派生ファイルとして登録され、表示ファイルは切り替わりません。</p>
+</div>
+
+<div class="dialog-wrap">
+  <div class="dialog">
+    <div class="head"><span class="t">手動圧縮</span><span class="sp"></span><span class="cnt">3 枚を対象</span></div>
+    <div class="sec-label">プロファイル</div>
+    <div class="opt sel"><span class="radio"></span><span class="lab">高画質webp<small>WebP ・ Q90 ・ Lossy</small></span></div>
+    <div class="opt"><span class="radio"></span><span class="lab">無劣化webp<small>WebP ・ Lossless</small></span></div>
+    <div class="opt"><span class="radio"></span><span class="lab">discord用webp<small>WebP ・ Lossless ・ 2560×1440</small></span></div>
+    <div class="section">
+      <div class="sec-label">出力先</div>
+      <div class="opt"><span class="radio"></span><span class="lab">指定したフォルダに出力<small>フォルダを選択</small></span></div>
+      <div class="opt sel"><span class="radio"></span><span class="lab">プロファイル指定のフォルダに出力<small>元画像の隣の compressed/</small></span></div>
+    </div>
+    <div class="note">元画像は常に保持されます。圧縮版は派生ファイルとして登録され、表示ファイルは切り替わりません。</div>
+    <div class="foot"><button class="btn">キャンセル</button><button class="btn pri">3 件を圧縮</button></div>
+  </div>
+</div>
+
+<div class="pagehead" style="margin-top:34px">
+  <h1>圧縮プロファイル画面（変更後）</h1>
+  <p>プロファイルは手動圧縮専用になります。一覧の「自動」「クリップボード」バッジを削除します。</p>
+</div>
+
+<section class="win" style="max-width:760px">
+  <div class="titlebar"><span class="glyph">✳</span><span class="app">VRC PhotoN</span><span class="sp"></span><span class="st"><span class="dot"></span>デーモン接続中</span></div>
+  <div class="body">
+    <aside class="side" style="width:170px">
+      <div class="nav"><span class="ic">▦</span>写真</div>
+      <div class="nav active"><span class="ic">⇊</span>圧縮</div>
+      <div class="nav"><span class="ic">⌕</span>検索</div>
+      <div class="nav"><span class="ic">▤</span>ダッシュボード</div>
+      <div class="nav"><span class="ic">⇄</span>連携・自動</div>
+      <div class="nav"><span class="ic">⚙</span>設定</div>
+    </aside>
+    <div class="main">
+      <div class="h1" style="margin-bottom:10px">圧縮</div>
+      <div style="display:flex; gap:14px; align-items:flex-start">
+        <div style="width:250px; flex:none">
+          <div class="chead"><span class="t" style="font-size:12px">プロファイル</span><span class="sp"></span><button class="btn">＋ 追加</button></div>
+          <div class="profile sel"><span class="nm">無劣化webp</span><span class="sp"></span><span class="badge-new">WebP</span></div>
+          <div class="profile"><span class="nm">discord用webp</span><span class="sp"></span><span class="badge-old">WebP</span></div>
+          <div class="profile"><span class="nm">高画質webp</span><span class="sp"></span><span class="badge-old">WebP</span></div>
+          <div class="cap" style="margin-top:8px">自動／クリップボードのバッジは表示しない</div>
+        </div>
+        <div class="card" style="flex:1">
+          <div class="chead"><span class="t" style="font-size:13px">無劣化webp</span><span class="sp"></span><button class="btn">複製</button><button class="btn danger">削除</button></div>
+          <div class="hint">形式と画質・リサイズ・出力先を編集します。</div>
+          <div class="section">
+            <div class="sec-label">形式と画質</div>
+            <div class="chips"><span class="chip on">WebP</span><span class="chip">JPEG</span><span class="chip">AVIF</span><span class="chip">JPEG XL</span></div>
+            <div class="ctl"><span class="lab">ロスレス</span><span class="sw on"></span></div>
+            <div class="ctl"><span class="lab">品質</span><button class="btn">−</button><span class="val">82</span><button class="btn">＋</button></div>
+          </div>
+          <div class="section">
+            <div class="sec-label">出力</div>
+            <div class="ctl"><span class="lab">出力先</span><span class="input" style="flex:1">compressed</span><button class="btn">フォルダを選択</button></div>
+            <div class="ctl"><span class="lab">サフィックス</span><span class="input" style="flex:1">（空欄）</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+<div class="cap">手動圧縮の出力先（プロファイルの output_dir）は現行仕様のままです。</div>
+</body>
+</html>
