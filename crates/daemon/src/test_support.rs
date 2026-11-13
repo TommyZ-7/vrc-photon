@@ -5,10 +5,8 @@
 //! `cargo build` at the same time while another test was already executing the
 //! binary, which fails with `ETXTBSY` ("Text file busy") on Linux.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
-
-use assert_cmd::cargo::cargo_bin;
 
 static MOCK_SIDECAR_BUILD: Mutex<()> = Mutex::new(());
 static MOCK_SIDECAR: OnceLock<PathBuf> = OnceLock::new();
@@ -44,7 +42,25 @@ pub(crate) fn mock_sidecar() -> PathBuf {
             .status()
             .expect("build the mock sidecar");
         assert!(status.success(), "cargo build failed for the mock sidecar");
-        cargo_bin("mock-sidecar")
+        // `cargo_bin` only resolves binaries from the package under test.
+        // The daemon unit tests run in this package, so locate the workspace
+        // mock in the shared target directory instead.
+        let target_dir = std::env::var_os("CARGO_TARGET_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../..")
+                    .join("target")
+            });
+        let path = target_dir
+            .join("debug")
+            .join(format!("mock-sidecar{}", std::env::consts::EXE_SUFFIX));
+        assert!(
+            path.is_file(),
+            "mock sidecar was not built: {}",
+            path.display()
+        );
+        path
     })
 }
 
