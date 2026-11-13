@@ -505,6 +505,20 @@ fn watcher_roots_include_library_roots_outside_settings_roots() {
 }
 
 #[test]
+fn setup_watchers_keeps_healthy_roots_when_one_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    let healthy = dir.path().join("photos");
+    let missing = dir.path().join("missing-root");
+
+    daemon
+        .setup_watchers(vec![healthy.clone(), missing])
+        .unwrap();
+
+    assert_eq!(daemon.watcher_roots, vec![healthy]);
+}
+
+#[test]
 fn poll_watchers_queues_removals_and_ignores_derivative_creates() {
     let dir = tempfile::tempdir().unwrap();
     let mut daemon = test_daemon(&dir);
@@ -4690,6 +4704,23 @@ fn full_asset_check_runs_after_six_hours() {
     let db = daemon.db.lock().unwrap();
     let photo = db.photo_by_id(id).unwrap().unwrap();
     assert_eq!(photo.status, vrc_photon_core::model::PhotoStatus::Missing);
+}
+
+#[test]
+fn a_completed_scan_does_not_run_the_full_asset_check() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    let photo_dir = dir.path().join("photos");
+    let compressed = photo_dir.join("compressed");
+    std::fs::create_dir_all(&compressed).unwrap();
+    let derivative = compressed.join("missing.webp");
+    let id = add_replaced_photo(&daemon, &photo_dir.join("VRChat_missing.png"), &derivative);
+
+    daemon.scan_photos().unwrap();
+
+    let db = daemon.db.lock().unwrap();
+    let photo = db.photo_by_id(id).unwrap().unwrap();
+    assert_eq!(photo.status, vrc_photon_core::model::PhotoStatus::Replaced);
 }
 
 #[test]

@@ -1045,10 +1045,6 @@ impl Daemon {
         Ok(())
     }
 
-    /// One supervised iteration of the background loop. Pause gates only the
-    /// heavy work below; heartbeat, status, tray, log ingestion, watcher event
-    /// collection, settings refreshes, and IPC keep running so a paused daemon
-    /// stays observable and resumes without losing queued events.
     /// Runs the full display-derivative verification and records the attempt
     /// even when it fails, so an unavailable volume cannot make the loop retry
     /// the whole library every iteration.
@@ -1060,6 +1056,10 @@ impl Daemon {
         self.full_asset_check_due = false;
     }
 
+    /// One supervised iteration of the background loop. Pause gates only the
+    /// heavy work below; heartbeat, status, tray, log ingestion, watcher event
+    /// collection, settings refreshes, and IPC keep running so a paused daemon
+    /// stays observable and resumes without losing queued events.
     pub(crate) fn run_loop_iteration(&mut self) {
         if let Err(error) = self.poll_commands() {
             tracing::error!(%error, "cannot handle daemon commands");
@@ -1386,23 +1386,42 @@ impl Daemon {
             return Ok(());
         }
         let (tx, rx) = mpsc::channel();
-        for root in &roots {
+        let mut watched = Vec::new();
+        let mut failures = Vec::new();
+        for root in roots {
             let tx = tx.clone();
             let wake = self.wake.clone();
-            let mut watcher = notify::recommended_watcher(move |event| {
+            let mut watcher = match notify::recommended_watcher(move |event| {
                 if let Err(error) = tx.send(event) {
                     tracing::debug!(%error, "photo watcher receiver closed; dropping event");
                 }
                 wake.notify();
-            })
-            .context("cannot create photo watcher")?;
-            watcher
-                .watch(root, RecursiveMode::Recursive)
-                .with_context(|| format!("cannot watch {}", root.display()))?;
+            }) {
+                Ok(watcher) => watcher,
+                Err(error) => {
+                    failures.push(format!("{}: {error}", root.display()));
+                    continue;
+                }
+            };
+            if let Err(error) = watcher.watch(&root, RecursiveMode::Recursive) {
+                failures.push(format!("{}: {error}", root.display()));
+                continue;
+            }
             self.watchers.push(watcher);
+            watched.push(root);
+        }
+        // One unavailable library root must not disable the healthy roots.
+        // Only the successfully watched set is recorded, so a later rebuild
+        // retries the failed ones without dropping buffered events from the
+        // roots that do work.
+        if watched.is_empty() && !failures.is_empty() {
+            anyhow::bail!("cannot watch any photo root: {}", failures.join("; "));
+        }
+        for failure in &failures {
+            tracing::warn!(root = %failure, "cannot watch photo root; continuing with the remaining roots");
         }
         self.watcher_rx = Some(rx);
-        self.watcher_roots = roots;
+        self.watcher_roots = watched;
         Ok(())
     }
 

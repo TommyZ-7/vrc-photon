@@ -477,6 +477,32 @@ fn display_derivative_owner_matches_only_the_active_display_derivative() {
 }
 
 #[test]
+fn display_derivative_owner_searches_by_derivative_path() {
+    let db = Db::open_in_memory().unwrap();
+    let mut stmt = db
+        .connection()
+        .prepare(&format!(
+            "EXPLAIN QUERY PLAN {}",
+            Db::DISPLAY_DERIVATIVE_OWNER_SQL
+        ))
+        .unwrap();
+    let plan: Vec<String> = stmt
+        .query_map(params!["/photos/a.webp"], |row| row.get(3))
+        .unwrap()
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .unwrap();
+    assert!(
+        plan.iter().any(|line| line.contains("SEARCH d")),
+        "derivative path must be searched: {plan:?}"
+    );
+    assert!(
+        plan.iter()
+            .any(|line| line.contains("SEARCH p USING INTEGER PRIMARY KEY")),
+        "photo lookup must use the primary key: {plan:?}"
+    );
+}
+
+#[test]
 fn auto_replace_request_keeps_the_photo_visible() {
     let db = Db::open_in_memory().unwrap();
     let id = seed_photo(&db);
