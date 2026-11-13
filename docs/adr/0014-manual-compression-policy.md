@@ -1,8 +1,11 @@
 # ADR-0014: 手動圧縮は実行時ポリシー、自動圧縮は設定ポリシー
 
-- Status: Accepted
+- Status: Superseded in part by [ADR-0020](0020-feature-compression-settings.md)
 - Date: 2026-10-25
 - Supersedes in part: [ADR-0013](0013-auto-compression-policy.md)
+
+> ADR-0020 で、手動圧縮の保持／置換の選択・クリップボード出力・プロファイルの
+> 役割フラグは廃止された。自動圧縮の設定・`waiting` キューは引き続き有効。
 
 > ADR-0013 のうち、自動圧縮の元画像ポリシー・`auto_compress_immediate`・
 > `waiting` キューは引き続き有効。手動圧縮まで共通設定にした部分だけを

@@ -39,8 +39,9 @@ VRChat screenshots tell you nothing from their file names alone. VRC PhotoN watc
 **Compress**
 
 - Convert to JPEG / WebP / AVIF / JPEG XL, with resizing and lossless output where the format supports it.
-- Create profiles once, then use them for automatic compression on indexing, one-off or batch compression, clipboard output, and Discord uploads.
-- For each run, choose whether to keep the originals or replace them after verification (the original goes to the OS trash).
+- Profiles are for manual compression. Automatic compression, the clipboard, and Discord uploads each have their own compression settings.
+- Automatic compression writes to `compressed/` next to the original. The clipboard copies a PNG with resize settings only, and Discord compresses only for the upload.
+- Manual compression always keeps the original and registers the compressed file as a derivative.
 
 **Connect**
 
