@@ -274,6 +274,12 @@ pub(crate) fn current_tagged_bounds(
         .map(|(_, bounds)| bounds)
 }
 
+/// Whether a navigation crossfade timer still owns the previous image. A later
+/// navigation or a close bumps the epoch and leaves the old timer stale.
+pub(crate) fn previous_image_release_due(epoch: u64, current_epoch: u64) -> bool {
+    epoch == current_epoch
+}
+
 pub(crate) fn preferred_bounds(
     prefer_card: bool,
     card: Option<Bounds<Pixels>>,
@@ -554,6 +560,12 @@ mod tests {
         assert_eq!(current_tagged_bounds(Some((7, bounds)), 7), Some(bounds));
         assert_eq!(current_tagged_bounds(Some((7, bounds)), 8), None);
         assert_eq!(current_tagged_bounds(None, 7), None);
+    }
+
+    #[test]
+    fn previous_image_release_only_matches_the_current_epoch() {
+        assert!(previous_image_release_due(7, 7));
+        assert!(!previous_image_release_due(7, 8));
     }
 
     #[test]

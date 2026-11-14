@@ -12,7 +12,7 @@ use crate::app::{App, Screen};
 use crate::state::display_image::display_key;
 use crate::state::viewer::{
     ViewerBoxState, ViewerMorph, ViewerOpenSource, ViewerPanelState, ViewerStill, ViewerZoom,
-    ViewerZoomDrag, current_tagged_bounds, preferred_bounds,
+    ViewerZoomDrag, current_tagged_bounds, preferred_bounds, previous_image_release_due,
 };
 use crate::ui::theme::{
     MOTION_BASE, MOTION_MORPH, MOTION_SLOW, VIEWER_DETAILS_WIDTH, centered_viewer_rect,
@@ -473,6 +473,7 @@ impl App {
         self.zoom_drag = None;
         // The closing morph owns its image clone; the crossfade frame must
         // not keep a decoded image alive after the viewer is gone.
+        self.previous_image_release_task = None;
         if let Some(image) = self.previous_image.take() {
             self.drop_viewer_still(image);
         }
@@ -512,6 +513,7 @@ impl App {
         self.selection_anchor = None;
         self.quick_look_photo_ids.clear();
         self.quick_look_index = 0;
+        self.previous_image_release_task = None;
         self.reset_image_state();
         self.schedule_allocator_collect(cx);
         let focus = self
@@ -621,6 +623,26 @@ impl App {
         let now = Instant::now();
         self.viewer_nav_epoch = self.viewer_nav_epoch.wrapping_add(1);
         self.viewer_nav_direction = if delta > 0 { 1.0 } else { -1.0 };
+        // The outgoing image is only needed until the crossfade ends. Release
+        // it after the fade (immediately under reduced motion); a later step
+        // bumps the epoch and leaves this timer stale.
+        let epoch = self.viewer_nav_epoch;
+        let delay = if cx.reduce_motion() {
+            Duration::ZERO
+        } else {
+            MOTION_BASE + Duration::from_millis(20)
+        };
+        self.previous_image_release_task = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(delay).await;
+            this.update(cx, |this, _cx| {
+                if previous_image_release_due(epoch, this.viewer_nav_epoch)
+                    && let Some(image) = this.previous_image.take()
+                {
+                    this.drop_viewer_still(image);
+                }
+            })
+            .ok();
+        }));
         self.viewer_box = ViewerBoxState {
             epoch: self.viewer_box.epoch.wrapping_add(1),
             started_at: now,

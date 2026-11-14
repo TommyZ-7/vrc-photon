@@ -505,6 +505,7 @@ impl App {
         self.reset_full_image();
         self.zoom = Default::default();
         self.zoom_drag = None;
+        self.previous_image_release_task = None;
         if let Some(image) = self.previous_image.take() {
             self.drop_viewer_still(image);
         }

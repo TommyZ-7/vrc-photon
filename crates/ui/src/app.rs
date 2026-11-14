@@ -304,6 +304,9 @@ pub struct App {
     /// Cancellation token for the decode in flight, if any.
     pub(crate) full_image_cancel: Option<Arc<AtomicBool>>,
     pub(crate) previous_image: Option<ViewerStill>,
+    /// Releases `previous_image` once the navigation crossfade has finished.
+    /// Replacing or dropping the task cancels the pending release.
+    pub(crate) previous_image_release_task: Option<Task<()>>,
     /// Images removed from the thumbnail cache or viewer whose atlas tiles
     /// still need to be dropped. Shared with the next-frame callback so a
     /// retry can requeue an image without borrowing the App entity.
@@ -1216,6 +1219,7 @@ impl App {
             pending_full_image: None,
             full_image_cancel: None,
             previous_image: None,
+            previous_image_release_task: None,
             thumbnail_array_error: None,
             pending_atlas_drops: Rc::new(RefCell::new(Vec::new())),
             profiles: Vec::new(),
