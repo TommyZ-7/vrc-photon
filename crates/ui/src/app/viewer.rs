@@ -11,8 +11,9 @@ use gpui_kit::*;
 use crate::app::{App, Screen};
 use crate::state::display_image::display_key;
 use crate::state::viewer::{
-    ViewerBoxState, ViewerMorph, ViewerOpenSource, ViewerPanelState, ViewerStill, ViewerZoom,
-    ViewerZoomDrag, current_tagged_bounds, preferred_bounds,
+    ViewerBoxState, ViewerMorph, ViewerNavKeys, ViewerOpenSource, ViewerPanelState, ViewerStill,
+    ViewerZoom, ViewerZoomDrag, current_tagged_bounds, preferred_bounds,
+    previous_image_release_delay, previous_image_release_due, should_request_full_image,
 };
 use crate::ui::theme::{
     MOTION_BASE, MOTION_MORPH, MOTION_SLOW, VIEWER_DETAILS_WIDTH, centered_viewer_rect,
@@ -23,7 +24,9 @@ use crate::ui::theme::{
 impl App {
     pub(crate) fn drop_viewer_still(&mut self, still: ViewerStill) {
         match still {
-            ViewerStill::Full(image) => self.queue_atlas_drop(image),
+            // The texture is released when the last viewer frame or morph
+            // clone of the `Arc` goes away; nothing is cached per photo.
+            ViewerStill::Full(_) => {}
             ViewerStill::Thumbnail { id, .. } => {
                 if Some(id) != self.selected {
                     self.thumbnails.borrow_mut().unpin(id);
@@ -222,6 +225,32 @@ impl App {
         self.zoom_drag = None;
     }
 
+    /// Marks a navigation key as held before the step so the debounce timer
+    /// cannot start a decode during the OS initial repeat delay.
+    pub(crate) fn begin_viewer_nav_key(&mut self, left: bool) {
+        // A decode queued before the press must not start from its own
+        // completion callback while the key is held.
+        self.full_image_queue.cancel_wanted();
+        if left {
+            self.viewer_nav_keys.left = true;
+        } else {
+            self.viewer_nav_keys.right = true;
+        }
+    }
+
+    /// Clears the released key and, once no navigation key is held, schedules
+    /// exactly one full-image request for the final selection.
+    pub(crate) fn handle_viewer_nav_key_up(&mut self, event: &KeyUpEvent, cx: &mut Context<Self>) {
+        let was_held = match event.keystroke.key.as_str() {
+            "left" => std::mem::take(&mut self.viewer_nav_keys.left),
+            "right" => std::mem::take(&mut self.viewer_nav_keys.right),
+            _ => return,
+        };
+        if was_held && should_request_full_image(self.quick_look_open, self.viewer_nav_keys) {
+            self.schedule_full_image_request(cx);
+        }
+    }
+
     pub(crate) fn open_quick_look(
         &mut self,
         window: &mut Window,
@@ -354,7 +383,9 @@ impl App {
         self.quick_look_open = true;
         self.zoom = ViewerZoom::default();
         self.zoom_drag = None;
-        self.request_full_image(cx);
+        self.viewer_nav_keys = ViewerNavKeys::default();
+        self.full_image_request_task = None;
+        self.request_full_image_now(cx);
         self.quick_look_epoch = self.quick_look_epoch.wrapping_add(1);
         self.quick_look_focus_index = 0;
         // Remember the last details state for the session, but render it
@@ -467,10 +498,13 @@ impl App {
         }
         self.viewer_return_source = None;
         self.reset_full_image();
+        self.viewer_nav_keys = ViewerNavKeys::default();
+        self.full_image_request_task = None;
         self.zoom = ViewerZoom::default();
         self.zoom_drag = None;
         // The closing morph owns its image clone; the crossfade frame must
         // not keep a decoded image alive after the viewer is gone.
+        self.previous_image_release_task = None;
         if let Some(image) = self.previous_image.take() {
             self.drop_viewer_still(image);
         }
@@ -510,6 +544,9 @@ impl App {
         self.selection_anchor = None;
         self.quick_look_photo_ids.clear();
         self.quick_look_index = 0;
+        self.previous_image_release_task = None;
+        self.viewer_nav_keys = ViewerNavKeys::default();
+        self.full_image_request_task = None;
         self.reset_image_state();
         self.schedule_allocator_collect(cx);
         let focus = self
@@ -619,6 +656,22 @@ impl App {
         let now = Instant::now();
         self.viewer_nav_epoch = self.viewer_nav_epoch.wrapping_add(1);
         self.viewer_nav_direction = if delta > 0 { 1.0 } else { -1.0 };
+        // The outgoing image is only needed until the crossfade ends. Release
+        // it after the fade (immediately under reduced motion); a later step
+        // bumps the epoch and leaves this timer stale.
+        let epoch = self.viewer_nav_epoch;
+        let delay = previous_image_release_delay(cx.reduce_motion());
+        self.previous_image_release_task = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(delay).await;
+            this.update(cx, |this, _cx| {
+                if previous_image_release_due(epoch, this.viewer_nav_epoch)
+                    && let Some(image) = this.previous_image.take()
+                {
+                    this.drop_viewer_still(image);
+                }
+            })
+            .ok();
+        }));
         self.viewer_box = ViewerBoxState {
             epoch: self.viewer_box.epoch.wrapping_add(1),
             started_at: now,

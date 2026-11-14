@@ -22,6 +22,7 @@
 
 use std::fs;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use image::metadata::Orientation;
 use image::{
@@ -41,6 +42,8 @@ pub const MAX_DECODE_ALLOC_BYTES: u64 = 512 * 1024 * 1024;
 pub const MAX_COMPRESSED_FILE_BYTES: u64 = 256 * 1024 * 1024;
 /// Longest edge kept for the memory-only Quick Look image.
 pub const FULL_IMAGE_MAX: u32 = 8192;
+/// Pixels processed between cooperative cancellation checks during expansion.
+const CANCEL_CHECK_PIXELS: usize = 1 << 20;
 
 /// Decodes a source or derivative image in any format the library can produce.
 ///
@@ -58,17 +61,66 @@ pub fn decode_image(path: &Path) -> Option<DynamicImage> {
     }
 }
 
+/// Outcome of a cancellable full-image decode.
+///
+/// `Cancelled` is kept distinct from `Failed` so callers can drop stale work
+/// without reporting a decode error.
+#[derive(Debug)]
+#[must_use]
+pub enum FullImageDecodeResult {
+    Decoded(RgbaImage),
+    Cancelled,
+    Failed,
+}
+
 /// Decodes the display file for Quick Look without the thumbnail cap.
 ///
 /// Images under [`FULL_IMAGE_MAX`] keep their original pixels; larger ones are
 /// downscaled once so the memory ceiling is bounded. Formats decoded by the
 /// `image` crate are expanded into one pre-sized RGBA allocation, so a full RGB
 /// source and a full RGBA conversion never exist at the same time.
+///
+/// This is the non-cancellable wrapper around
+/// [`decode_full_image_cancellable`].
 pub fn decode_full_image(source: &Path) -> Option<RgbaImage> {
-    match normalized_extension(source).as_deref() {
-        Some("avif" | "jxl") => decode_full_fallback(source),
-        _ => decode_standard_rgba(source).or_else(|| decode_full_fallback(source)),
+    let cancel = AtomicBool::new(false);
+    match decode_full_image_cancellable(source, &cancel) {
+        FullImageDecodeResult::Decoded(image) => Some(image),
+        FullImageDecodeResult::Cancelled | FullImageDecodeResult::Failed => None,
     }
+}
+
+/// Decodes the display file for Quick Look and stops at cooperative
+/// cancellation checkpoints.
+///
+/// The token is checked before opening the source, after the header and pixel
+/// decode stages, before the RGBA expansion, and around the EXIF rotation and
+/// downscale. Codec-internal pixel decoding (`image`'s `read_image`,
+/// `jpeg_decoder`'s `decode`, AVIF/JXL decoding) cannot be interrupted; once it
+/// finishes, the next checkpoint reports
+/// [`FullImageDecodeResult::Cancelled`].
+///
+/// A decode that fails without the token being set is reported as
+/// [`FullImageDecodeResult::Failed`].
+pub fn decode_full_image_cancellable(source: &Path, cancel: &AtomicBool) -> FullImageDecodeResult {
+    if cancelled(Some(cancel)) {
+        return FullImageDecodeResult::Cancelled;
+    }
+    let decoded = match normalized_extension(source).as_deref() {
+        Some("avif" | "jxl") => decode_full_fallback(source, Some(cancel)),
+        _ => decode_standard_rgba(source, Some(cancel))
+            .or_else(|| decode_full_fallback(source, Some(cancel))),
+    };
+    match decoded {
+        Some(image) => FullImageDecodeResult::Decoded(image),
+        None if cancelled(Some(cancel)) => FullImageDecodeResult::Cancelled,
+        None => FullImageDecodeResult::Failed,
+    }
+}
+
+/// Returns true when the optional cancellation token has been set.
+fn cancelled(cancel: Option<&AtomicBool>) -> bool {
+    cancel.is_some_and(|cancel| cancel.load(Ordering::Relaxed))
 }
 
 fn normalized_extension(path: &Path) -> Option<String> {
@@ -77,16 +129,32 @@ fn normalized_extension(path: &Path) -> Option<String> {
         .map(|extension| extension.to_ascii_lowercase())
 }
 
-fn decode_full_fallback(source: &Path) -> Option<RgbaImage> {
+fn decode_full_fallback(source: &Path, cancel: Option<&AtomicBool>) -> Option<RgbaImage> {
+    if cancelled(cancel) {
+        return None;
+    }
+    // The codec decodes all pixels before `decode_image` returns, so the
+    // remaining checkpoints only skip the RGBA expansion and downscale.
     let image = decode_image(source)?;
+    if cancelled(cancel) {
+        return None;
+    }
     let (width, height) = image.dimensions();
-    if width.max(height) <= FULL_IMAGE_MAX {
-        Some(image.into_rgba8())
+    let image = if width.max(height) <= FULL_IMAGE_MAX {
+        image
     } else {
         let scaled = image.thumbnail(FULL_IMAGE_MAX, FULL_IMAGE_MAX);
         drop(image);
-        Some(scaled.into_rgba8())
+        scaled
+    };
+    if cancelled(cancel) {
+        return None;
     }
+    let rgba = image.into_rgba8();
+    if cancelled(cancel) {
+        return None;
+    }
+    Some(rgba)
 }
 
 /// Decodes a thumbnail-sized image without expanding the full source.
@@ -98,7 +166,7 @@ pub(crate) fn decode_thumbnail_image(source: &Path, max_size: u32) -> Option<Rgb
     if matches!(
         normalized_extension(source).as_deref(),
         Some("jpg" | "jpeg")
-    ) && let Some(image) = decode_jpeg_scaled(source, max_size)
+    ) && let Some(image) = decode_jpeg_scaled(source, max_size, None)
     {
         let orientation = jpeg_orientation(source);
         return Some(finish_thumbnail_image(image, orientation, max_size));
@@ -141,7 +209,14 @@ pub(crate) fn decode_thumbnail_canvas(
 /// EXIF orientation before the final resize. CMYK and 16-bit JPEGs fall back
 /// to the full decoder because their pixel format needs a color conversion
 /// this path does not implement.
-fn decode_jpeg_scaled(source: &Path, max_size: u32) -> Option<RgbaImage> {
+fn decode_jpeg_scaled(
+    source: &Path,
+    max_size: u32,
+    cancel: Option<&AtomicBool>,
+) -> Option<RgbaImage> {
+    if cancelled(cancel) {
+        return None;
+    }
     let file = fs::File::open(source).ok()?;
     let mut decoder = jpeg_decoder::Decoder::new(std::io::BufReader::new(file));
     decoder.set_max_decoding_buffer_size(MAX_DECODE_ALLOC_BYTES as usize);
@@ -149,12 +224,19 @@ fn decode_jpeg_scaled(source: &Path, max_size: u32) -> Option<RgbaImage> {
     let info = decoder.info()?;
     let width = u32::from(info.width);
     let height = u32::from(info.height);
+    if cancelled(cancel) {
+        return None;
+    }
     if !within_pixel_limit(width, height) {
         return reject_too_many_pixels(source, width, height);
     }
     let requested = max_size.min(u32::from(u16::MAX)) as u16;
     decoder.scale(requested, requested).ok()?;
     let pixels = decoder.decode().ok()?;
+    // The codec pixel decode cannot be interrupted; stop before expansion.
+    if cancelled(cancel) {
+        return None;
+    }
     let info = decoder.info()?;
     let width = u32::from(info.width);
     let height = u32::from(info.height);
@@ -216,7 +298,10 @@ fn finish_thumbnail_image(image: RgbaImage, orientation: Orientation, max_size: 
 /// buffer is expanded in place from the last pixel backwards, so the source
 /// and the converted pixels share one full-size allocation. Sixteen-bit and
 /// float formats keep the image-crate conversion path.
-fn decode_standard_rgba(source: &Path) -> Option<RgbaImage> {
+fn decode_standard_rgba(source: &Path, cancel: Option<&AtomicBool>) -> Option<RgbaImage> {
+    if cancelled(cancel) {
+        return None;
+    }
     let mut reader = ImageReader::open(source).ok()?.with_guessed_format().ok()?;
     reader.limits(decode_limits());
     let mut decoder = reader.into_decoder().ok()?;
@@ -240,20 +325,32 @@ fn decode_standard_rgba(source: &Path) -> Option<RgbaImage> {
         return None;
     }
     let orientation = decoder.orientation().unwrap_or(Orientation::NoTransforms);
+    // Header (dimensions, color type and EXIF orientation) is fully read.
+    if cancelled(cancel) {
+        return None;
+    }
     let mut buffer = Vec::with_capacity(rgba_len);
     buffer.resize(decoded_len, 0);
     decoder.read_image(&mut buffer).ok()?;
-    expand_decoded_buffer(&mut buffer, color, pixels, rgba_len)?;
+    // Codec pixel decoding cannot be interrupted; stop before the RGBA
+    // expansion and the EXIF rotation/downscale once it finishes.
+    if cancelled(cancel) {
+        return None;
+    }
+    expand_decoded_buffer(&mut buffer, color, pixels, rgba_len, cancel)?;
     let image = RgbaImage::from_raw(width, height, buffer)?;
-    Some(finish_full_image(image, orientation))
+    finish_full_image(image, orientation, cancel)
 }
 
 /// Expands an 8-bit decoded buffer to RGBA in place.
+///
+/// The pixel loop checks `cancel` every [`CANCEL_CHECK_PIXELS`] pixels.
 fn expand_decoded_buffer(
     buffer: &mut Vec<u8>,
     color: ColorType,
     pixels: usize,
     rgba_len: usize,
+    cancel: Option<&AtomicBool>,
 ) -> Option<()> {
     debug_assert!(
         buffer.capacity() >= rgba_len,
@@ -272,6 +369,9 @@ fn expand_decoded_buffer(
             }
             buffer.resize(rgba_len, 0);
             for index in (0..pixels).rev() {
+                if index % CANCEL_CHECK_PIXELS == 0 && cancelled(cancel) {
+                    return None;
+                }
                 let src = index * 3;
                 let dst = index * 4;
                 let pixel = [buffer[src], buffer[src + 1], buffer[src + 2]];
@@ -285,6 +385,9 @@ fn expand_decoded_buffer(
             }
             buffer.resize(rgba_len, 0);
             for index in (0..pixels).rev() {
+                if index % CANCEL_CHECK_PIXELS == 0 && cancelled(cancel) {
+                    return None;
+                }
                 let value = buffer[index];
                 let dst = index * 4;
                 buffer[dst..dst + 4].copy_from_slice(&[value, value, value, 255]);
@@ -297,6 +400,9 @@ fn expand_decoded_buffer(
             }
             buffer.resize(rgba_len, 0);
             for index in (0..pixels).rev() {
+                if index % CANCEL_CHECK_PIXELS == 0 && cancelled(cancel) {
+                    return None;
+                }
                 let src = index * 2;
                 let value = buffer[src];
                 let alpha = buffer[src + 1];
@@ -311,17 +417,30 @@ fn expand_decoded_buffer(
 
 /// Applies EXIF orientation before the one downscale, matching the order used
 /// by the image-crate path.
-fn finish_full_image(image: RgbaImage, orientation: Orientation) -> RgbaImage {
+///
+/// Returns `None` when `cancel` is set before or after the rotation/downscale.
+fn finish_full_image(
+    image: RgbaImage,
+    orientation: Orientation,
+    cancel: Option<&AtomicBool>,
+) -> Option<RgbaImage> {
+    if cancelled(cancel) {
+        return None;
+    }
     let mut image = DynamicImage::ImageRgba8(image);
     image.apply_orientation(orientation);
     let rgba = image.into_rgba8();
-    if rgba.width().max(rgba.height()) <= FULL_IMAGE_MAX {
+    let finished = if rgba.width().max(rgba.height()) <= FULL_IMAGE_MAX {
         rgba
     } else {
         DynamicImage::ImageRgba8(rgba)
             .thumbnail(FULL_IMAGE_MAX, FULL_IMAGE_MAX)
             .into_rgba8()
+    };
+    if cancelled(cancel) {
+        return None;
     }
+    Some(finished)
 }
 
 /// Displayed dimensions and the EXIF orientation read from the file header.
@@ -792,6 +911,40 @@ mod tests {
     }
 
     #[test]
+    fn cancelled_full_image_returns_cancelled_before_decoding() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("missing.png");
+        let cancel = std::sync::atomic::AtomicBool::new(true);
+        assert!(matches!(
+            decode_full_image_cancellable(&path, &cancel),
+            FullImageDecodeResult::Cancelled
+        ));
+    }
+
+    #[test]
+    fn missing_full_image_returns_failed() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("missing.png");
+        let cancel = std::sync::atomic::AtomicBool::new(false);
+        assert!(matches!(
+            decode_full_image_cancellable(&path, &cancel),
+            FullImageDecodeResult::Failed
+        ));
+    }
+
+    #[test]
+    fn full_image_without_cancellation_returns_decoded() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("source.png");
+        write_rgb_png(&path, 37, 21);
+        let cancel = std::sync::atomic::AtomicBool::new(false);
+        assert!(matches!(
+            decode_full_image_cancellable(&path, &cancel),
+            FullImageDecodeResult::Decoded(_)
+        ));
+    }
+
+    #[test]
     fn decodes_avif() {
         let dir = tempdir().unwrap();
         let source = write_source(dir.path());
@@ -847,7 +1000,7 @@ mod tests {
         let path = dir.path().join("large.jpg");
         test_support::write_jpeg_with_orientation(&path, &source, 1);
 
-        let scaled = decode_jpeg_scaled(&path, 256).expect("scaled JPEG");
+        let scaled = decode_jpeg_scaled(&path, 256, None).expect("scaled JPEG");
         assert_eq!(
             scaled.dimensions(),
             (256, 128),

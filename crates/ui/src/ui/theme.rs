@@ -82,6 +82,10 @@ pub(crate) const SESSION_TOGGLE_SIZE: f32 = 36.0;
 pub(crate) const SESSION_HEADER_CONTROL_INSET: f32 = 50.0;
 pub(crate) const MOTION_FAST: Duration = Duration::from_millis(160);
 pub(crate) const MOTION_BASE: Duration = Duration::from_millis(220);
+/// Delay before a full-image decode starts once navigation stops. Longer than
+/// the usual key-repeat interval (about 30–50 ms) and within MOTION_BASE
+/// (220 ms), so the thumbnail keeps up during the stroke.
+pub(crate) const FULL_IMAGE_NAV_DEBOUNCE: Duration = Duration::from_millis(100);
 pub(crate) const MOTION_SLOW: Duration = Duration::from_millis(300);
 pub(crate) const MOTION_SIDEBAR: Duration = Duration::from_millis(440);
 pub(crate) const MOTION_MORPH: Duration = Duration::from_millis(340);

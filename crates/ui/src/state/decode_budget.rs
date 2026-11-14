@@ -1,7 +1,9 @@
 //! Process-wide reservation budget for decoded image memory in the UI.
 
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Condvar, LazyLock, Mutex};
+use std::time::Duration;
 
 use image::metadata::Orientation;
 use vrc_photon_core::image_decode::{FULL_IMAGE_MAX, image_info};
@@ -11,9 +13,22 @@ pub(crate) const DECODE_BUDGET_BYTES: usize = 256 * 1024 * 1024;
 
 static BUDGET: LazyLock<DecodeBudget> = LazyLock::new(|| DecodeBudget::new(DECODE_BUDGET_BYTES));
 
+/// How often a cancellable reservation re-checks its cancellation token while
+/// it waits for headroom.
+const CANCEL_POLL_INTERVAL: Duration = Duration::from_millis(25);
+
 /// Reserves decoded-image memory for one decode, waiting for headroom if needed.
 pub(crate) fn reserve(bytes: usize) -> DecodePermit<'static> {
     BUDGET.reserve(bytes)
+}
+
+/// Reserves decoded-image memory for one decode, giving up with `None` when
+/// `cancel` is set while waiting for headroom.
+pub(crate) fn reserve_cancellable(
+    bytes: usize,
+    cancel: &AtomicBool,
+) -> Option<DecodePermit<'static>> {
+    BUDGET.reserve_cancellable(bytes, cancel)
 }
 
 /// Estimates the RGBA bytes needed to decode an image of `width` x `height`.
@@ -125,6 +140,36 @@ impl DecodeBudget {
         }
     }
 
+    /// Like [`DecodeBudget::reserve`], but returns `None` as soon as `cancel`
+    /// is set: a viewer that moved on must not keep blocking its decode queue
+    /// on headroom it no longer needs.
+    pub(crate) fn reserve_cancellable(
+        &self,
+        bytes: usize,
+        cancel: &AtomicBool,
+    ) -> Option<DecodePermit<'_>> {
+        let charge = bytes.min(self.cap);
+        let mut reserved = self.lock_reserved();
+        while reserved.saturating_add(charge) > self.cap {
+            if cancel.load(Ordering::Relaxed) {
+                return None;
+            }
+            reserved = self
+                .available
+                .wait_timeout(reserved, CANCEL_POLL_INTERVAL)
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .0;
+        }
+        if cancel.load(Ordering::Relaxed) {
+            return None;
+        }
+        *reserved += charge;
+        Some(DecodePermit {
+            budget: self,
+            bytes: charge,
+        })
+    }
+
     fn release(&self, bytes: usize) {
         let mut reserved = self.lock_reserved();
         *reserved = reserved.saturating_sub(bytes);
@@ -210,6 +255,36 @@ mod tests {
         rx.recv_timeout(Duration::from_secs(2))
             .expect("second reservation runs after the first releases");
         waiting.join().expect("waiter thread");
+        assert_eq!(budget.reserved(), 0);
+    }
+
+    #[test]
+    fn cancelled_reserve_returns_none_immediately() {
+        let budget = DecodeBudget::new(100);
+        let cancel = std::sync::atomic::AtomicBool::new(true);
+        assert!(budget.reserve_cancellable(10, &cancel).is_none());
+    }
+
+    #[test]
+    fn cancelled_waiter_returns_none_without_taking_budget() {
+        let budget = Arc::new(DecodeBudget::new(100));
+        let first = budget.reserve(60);
+        let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (tx, rx) = mpsc::channel();
+        let waiter_budget = Arc::clone(&budget);
+        let waiter_cancel = Arc::clone(&cancel);
+        let waiter = thread::spawn(move || {
+            let result = waiter_budget.reserve_cancellable(60, &waiter_cancel);
+            tx.send(result.is_none()).expect("send result");
+        });
+        thread::sleep(Duration::from_millis(50));
+        cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+        assert!(
+            rx.recv_timeout(Duration::from_secs(2))
+                .expect("waiter result")
+        );
+        drop(first);
+        waiter.join().expect("waiter thread");
         assert_eq!(budget.reserved(), 0);
     }
 

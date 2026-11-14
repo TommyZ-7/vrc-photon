@@ -1,5 +1,6 @@
 pub(crate) mod decode_budget;
 pub(crate) mod display_image;
+pub(crate) mod full_image;
 pub(crate) mod motion;
 pub(crate) mod photo_browser;
 pub(crate) mod selection;

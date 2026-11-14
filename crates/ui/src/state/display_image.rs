@@ -75,6 +75,18 @@ pub(crate) fn should_apply_image(selected: Option<DisplayKey>, key: DisplayKey) 
     selected == Some(key)
 }
 
+/// Whether a decoded full image should be parked for upload.
+///
+/// Closing Quick Look or moving the selection while a decode runs makes the
+/// result stale; it must be dropped instead of uploaded.
+pub(crate) fn should_apply_pending_full_image(
+    open: bool,
+    selected: Option<DisplayKey>,
+    key: DisplayKey,
+) -> bool {
+    open && should_apply_image(selected, key)
+}
+
 pub(crate) fn thumbnail_placeholder_label(pending: bool) -> String {
     if pending {
         vrc_photon_i18n::tr!("thumbnail.loading")
@@ -105,6 +117,35 @@ mod tests {
         assert_eq!(queue.begin(), None);
         queue.finish(key(1));
         assert_eq!(queue.begin(), Some(key(2)));
+    }
+
+    #[test]
+    fn the_in_flight_key_stays_pending_until_the_upload_finishes() {
+        let mut queue = DecodeQueue::default();
+        assert!(queue.want(key(1)));
+        assert_eq!(queue.begin(), Some(key(1)));
+        // A decode that finished but has not been uploaded yet must not let
+        // another decode start for the same queue.
+        assert_eq!(queue.begin(), None);
+        assert!(queue.pending_for(1));
+        queue.finish(key(1));
+        assert!(!queue.pending_for(1));
+        assert_eq!(queue.begin(), None);
+    }
+
+    #[test]
+    fn reset_finishes_a_parked_upload_and_drops_the_queued_request() {
+        let mut queue = DecodeQueue::default();
+        assert!(queue.want(key(1)));
+        assert_eq!(queue.begin(), Some(key(1)));
+        // The selection moved on while the decoded image waited for upload.
+        assert!(!queue.want(key(2)));
+        // A reset drops the parked upload and the queued request together.
+        queue.finish(key(1));
+        queue.cancel_wanted();
+        assert_eq!(queue.begin(), None);
+        assert!(!queue.pending_for(1));
+        assert!(!queue.pending_for(2));
     }
 
     #[test]
@@ -209,6 +250,27 @@ mod tests {
         assert!(should_apply_image(Some(key), key));
         assert!(!should_apply_image(Some(other), key));
         assert!(!should_apply_image(None, key));
+    }
+
+    #[test]
+    fn pending_full_image_only_applies_to_the_current_selection() {
+        let selected = key(1);
+        assert!(should_apply_pending_full_image(
+            true,
+            Some(selected),
+            selected
+        ));
+        assert!(!should_apply_pending_full_image(
+            false,
+            Some(selected),
+            selected
+        ));
+        assert!(!should_apply_pending_full_image(
+            true,
+            Some(key(2)),
+            selected
+        ));
+        assert!(!should_apply_pending_full_image(true, None, selected));
     }
 
     #[test]

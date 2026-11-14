@@ -2,6 +2,7 @@
 //! labelled rows used by more than one screen.
 
 use std::rc::Rc;
+use std::sync::Arc;
 
 use gpui_kit::component::input::Input;
 use gpui_kit::component::switch::Switch;
@@ -13,6 +14,7 @@ use vrc_photon_core::settings::AppSettings;
 use vrc_photon_i18n::{tr, tr_args};
 
 use crate::app::App;
+use crate::state::full_image::FullImageTexture;
 use crate::ui::theme::*;
 
 pub(crate) type ViewerActivate = Rc<dyn Fn(&mut App, &mut Window, &mut Context<App>)>;
@@ -572,46 +574,114 @@ pub(crate) fn thumbnail_layer(
     fit: ObjectFit,
     radius: f32,
 ) -> impl IntoElement {
-    let image_size = size(
-        DevicePixels(dimensions.0.max(1) as i32),
-        DevicePixels(dimensions.1.max(1) as i32),
-    );
-    let uv = if handle.rotated {
+    texture_layer(
+        handle.array,
+        handle.layer,
+        handle.rotated,
+        dimensions,
+        fit,
+        radius,
+    )
+}
+
+/// Paints one layer of a `TextureArray` into the element's bounds.
+///
+/// `dimensions` are the decoded pixel size, used only to compute the fitted
+/// bounds. `rotated` restores a layer that was uploaded rotated 90 degrees.
+pub(crate) fn texture_layer(
+    array: TextureArray,
+    layer: u32,
+    rotated: bool,
+    dimensions: (u32, u32),
+    fit: ObjectFit,
+    radius: f32,
+) -> impl IntoElement {
+    let uv = if rotated {
         TextureArrayUv::Rotate90
     } else {
         TextureArrayUv::Normal
     };
-    let corners = Corners {
-        top_left: px(radius),
-        top_right: px(radius),
-        bottom_right: px(radius),
-        bottom_left: px(radius),
-    };
+    let corners = Corners::all(px(radius));
     canvas(
         |_, _, _| (),
         move |bounds, _, window, _| {
-            let image_bounds = fit.get_bounds(bounds, image_size);
-            if let Err(error) = window.paint_texture_array_layer(
-                bounds,
-                image_bounds,
-                handle.array,
-                handle.layer,
-                uv,
-                corners,
-            ) {
-                tracing::warn!(%error, "cannot paint thumbnail layer");
+            let image_bounds = image_bounds_for(bounds, dimensions, fit);
+            if let Err(error) =
+                window.paint_texture_array_layer(bounds, image_bounds, array, layer, uv, corners)
+            {
+                tracing::warn!(%error, "cannot paint texture array layer");
             }
         },
     )
     .size_full()
 }
 
+/// Paints a decoded full image from its one-layer texture array.
+///
+/// The `Arc` is moved into the paint closure so the GPU array outlives any
+/// frame that still references this element. Rounded corners come from the
+/// parent's `overflow_hidden`, so the layer itself is painted square.
+pub(crate) fn full_image_layer(
+    texture: Arc<FullImageTexture>,
+    fit: ObjectFit,
+    radius: f32,
+) -> impl IntoElement {
+    let dimensions = texture.dimensions();
+    let corners = Corners::all(px(radius));
+    canvas(
+        |_, _, _| (),
+        move |bounds, _, window, _| {
+            let image_bounds = image_bounds_for(bounds, dimensions, fit);
+            if let Err(error) = window.paint_texture_array_layer(
+                bounds,
+                image_bounds,
+                texture.array(),
+                0,
+                TextureArrayUv::Normal,
+                corners,
+            ) {
+                tracing::warn!(%error, "cannot paint full image layer");
+            }
+        },
+    )
+    .size_full()
+}
+
+/// Fits an image of `dimensions` into `bounds` without touching the GPU.
+pub(crate) fn image_bounds_for(
+    bounds: Bounds<Pixels>,
+    dimensions: (u32, u32),
+    fit: ObjectFit,
+) -> Bounds<Pixels> {
+    fit.get_bounds(
+        bounds,
+        size(
+            DevicePixels(dimensions.0.max(1) as i32),
+            DevicePixels(dimensions.1.max(1) as i32),
+        ),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        compression_policy_warning, photo_scene_key, photo_world_label, release_confirmation,
+        compression_policy_warning, image_bounds_for, photo_scene_key, photo_world_label,
+        release_confirmation,
     };
+    use gpui_kit::{Bounds, ObjectFit, point, px, size};
     use vrc_photon_i18n::tr;
+
+    #[test]
+    fn image_bounds_use_the_decoded_dimensions() {
+        let bounds = Bounds::new(point(px(0.), px(0.)), size(px(800.), px(600.)));
+        let landscape = image_bounds_for(bounds, (4000, 3000), ObjectFit::Contain);
+        assert_eq!(landscape.size, size(px(800.), px(600.)));
+        let portrait = image_bounds_for(bounds, (3000, 4000), ObjectFit::Contain);
+        // `ObjectFit::get_bounds` rounds through f32, so 3000 * (600 / 4000)
+        // lands on 450.00003 px. The aspect is the decoded 3:4, not the frame's.
+        assert!((f32::from(portrait.size.width) - 450.0).abs() < 0.01);
+        assert_eq!(portrait.size.height, px(600.));
+    }
 
     #[test]
     fn photo_scene_key_prefers_name_then_id_and_ignores_blank_values() {

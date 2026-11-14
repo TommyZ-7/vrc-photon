@@ -27,6 +27,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::time::{Duration, Instant};
 
 use gpui_kit::base::VirtualListScrollHandle;
@@ -59,7 +60,9 @@ use crate::app::demo::{DemoAssets, open_database};
 use crate::app::import::{ImportDialogState, ImportReportView};
 use crate::app::lifecycle::ScanProgressView;
 use crate::app::live::LiveRefreshGate;
+use crate::app::photos::PendingFullImage;
 use crate::state::display_image::{DecodeQueue, DisplayKey};
+use crate::state::full_image::FullImageTexture;
 use crate::state::motion::ToggleMotion;
 use crate::state::photo_browser::{
     CountDebounce, PhotoBrowser, PhotoIndex, should_notify_truncation,
@@ -67,8 +70,8 @@ use crate::state::photo_browser::{
 use crate::state::selection::PhotoSelection;
 use crate::state::thumbnail::{ThumbnailCache, ThumbnailNoticeBatch};
 use crate::state::viewer::{
-    ViewerBoxState, ViewerMorph, ViewerOpenSource, ViewerPanelState, ViewerStill, ViewerZoom,
-    ViewerZoomDrag, ZOOM_STEP,
+    ViewerBoxState, ViewerMorph, ViewerNavKeys, ViewerOpenSource, ViewerPanelState, ViewerStill,
+    ViewerZoom, ViewerZoomDrag, ZOOM_STEP,
 };
 use crate::ui::actions::{
     CloseNotifications, CloseQuickLook, FocusSearch, GridAbovePhoto, GridBelowPhoto, GridNextPhoto,
@@ -293,14 +296,23 @@ pub struct App {
     pub(crate) quick_look_note_save_focus: FocusHandle,
     pub(crate) quick_look_note_cancel_focus: FocusHandle,
     /// Full-resolution Quick Look image. Memory only: never cached on disk.
-    pub(crate) full_image: Option<Arc<RenderImage>>,
+    pub(crate) full_image: Option<Arc<FullImageTexture>>,
     pub(crate) full_image_key: Option<DisplayKey>,
     pub(crate) full_image_queue: DecodeQueue,
+    /// Decoded pixels waiting for the next render to upload their texture.
+    pub(crate) pending_full_image: Option<PendingFullImage>,
+    /// Cancellation token for the decode in flight, if any.
+    pub(crate) full_image_cancel: Option<Arc<AtomicBool>>,
+    /// Debounces the next full-image request until navigation settles.
+    /// Replacing or dropping the task cancels the pending timer.
+    pub(crate) full_image_request_task: Option<Task<()>>,
+    /// Navigation keys currently held in the viewer. Key repeat is invisible
+    /// to actions, so key-up is the stop signal.
+    pub(crate) viewer_nav_keys: ViewerNavKeys,
     pub(crate) previous_image: Option<ViewerStill>,
-    /// Images removed from the thumbnail cache or viewer whose atlas tiles
-    /// still need to be dropped. Shared with the next-frame callback so a
-    /// retry can requeue an image without borrowing the App entity.
-    pub(crate) pending_atlas_drops: Rc<RefCell<Vec<Arc<RenderImage>>>>,
+    /// Releases `previous_image` once the navigation crossfade has finished.
+    /// Replacing or dropping the task cancels the pending release.
+    pub(crate) previous_image_release_task: Option<Task<()>>,
     pub(crate) profiles: Vec<CompressionProfile>,
     pub(crate) profile_index: usize,
     pub(crate) profile_name_input: Entity<InputState>,
@@ -1046,6 +1058,15 @@ impl App {
         let context_menu_activation = cx.observe_window_activation(window, |this, window, cx| {
             if !window.is_window_active() {
                 this.close_photo_context_menu_for_lifecycle(window, cx);
+                // GPUI does not synthesize key-up on focus loss, so a held
+                // navigation key would otherwise suppress every full-image
+                // request until the same key is released.
+                if this.viewer_nav_keys.any() {
+                    this.viewer_nav_keys = ViewerNavKeys::default();
+                    if this.quick_look_open {
+                        this.schedule_full_image_request(cx);
+                    }
+                }
             }
         });
         let context_menu_bounds = cx.observe_window_bounds(window, |this, window, cx| {
@@ -1206,9 +1227,13 @@ impl App {
             full_image: None,
             full_image_key: None,
             full_image_queue: DecodeQueue::default(),
+            pending_full_image: None,
+            full_image_cancel: None,
+            full_image_request_task: None,
+            viewer_nav_keys: ViewerNavKeys::default(),
             previous_image: None,
+            previous_image_release_task: None,
             thumbnail_array_error: None,
-            pending_atlas_drops: Rc::new(RefCell::new(Vec::new())),
             profiles: Vec::new(),
             profile_index: 0,
             profile_name_input,
@@ -1418,49 +1443,7 @@ impl App {
     }
 }
 
-const MAX_ATLAS_DROP_RETRIES: u8 = 60;
-
-/// Drops image atlas entries after the frame that may still reference them.
-/// `Arc::strong_count == 1` means only this queue holds the image; other
-/// holders (a viewer morph or the previous frame's element tree) delay the
-/// drop to a later frame. After the retry cap the image goes back to the
-/// pending queue instead of being dropped under a live holder, so a re-upload
-/// cannot leave an untracked tile behind.
-fn schedule_atlas_drops(
-    window: &Window,
-    images: Vec<Arc<RenderImage>>,
-    attempt: u8,
-    pending: Rc<RefCell<Vec<Arc<RenderImage>>>>,
-) {
-    if images.is_empty() {
-        return;
-    }
-    window.on_next_frame(move |window, cx| {
-        let mut retry = Vec::new();
-        let exhausted = attempt >= MAX_ATLAS_DROP_RETRIES;
-        for image in images {
-            if Arc::strong_count(&image) == 1 {
-                cx.drop_image(image, Some(&mut *window));
-            } else if exhausted {
-                pending.borrow_mut().push(image);
-            } else {
-                retry.push(image);
-            }
-        }
-        schedule_atlas_drops(window, retry, attempt.saturating_add(1), pending);
-    });
-}
-
 impl App {
-    /// Queues one image for a delayed atlas drop. The id check avoids dropping
-    /// the same tile twice when a full image is also the previous image.
-    pub(crate) fn queue_atlas_drop(&mut self, image: Arc<RenderImage>) {
-        let mut pending = self.pending_atlas_drops.borrow_mut();
-        if !pending.iter().any(|queued| queued.id == image.id) {
-            pending.push(image);
-        }
-    }
-
     fn ensure_thumbnail_array(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.thumbnails.borrow().array().is_some() || self.thumbnail_array_error.is_some() {
             return;
@@ -1574,11 +1557,7 @@ impl Render for App {
         }
         self.ensure_thumbnail_array(window, cx);
         self.drain_thumbnail_uploads(window, cx);
-        let pending = self.pending_atlas_drops.clone();
-        let images = std::mem::take(&mut *pending.borrow_mut());
-        if !images.is_empty() {
-            schedule_atlas_drops(window, images, 0, pending);
-        }
+        self.drain_full_image_upload(window, cx);
         if toast_flush_needed(self.pending_toasts.len(), self.toast_flush_scheduled) {
             self.toast_flush_scheduled = true;
             cx.defer_in(window, |this, window, cx| {
@@ -1625,9 +1604,11 @@ impl Render for App {
                 this.handle_viewer_escape(window, cx)
             }))
             .on_action(cx.listener(|this, _: &ViewerPreviousPhoto, window, cx| {
+                this.begin_viewer_nav_key(true);
                 this.step_viewer_photo(-1, window, cx)
             }))
             .on_action(cx.listener(|this, _: &ViewerNextPhoto, window, cx| {
+                this.begin_viewer_nav_key(false);
                 this.step_viewer_photo(1, window, cx)
             }))
             .on_action(cx.listener(|this, _: &ViewerZoomIn, window, cx| {
