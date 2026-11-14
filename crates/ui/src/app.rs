@@ -70,8 +70,8 @@ use crate::state::photo_browser::{
 use crate::state::selection::PhotoSelection;
 use crate::state::thumbnail::{ThumbnailCache, ThumbnailNoticeBatch};
 use crate::state::viewer::{
-    ViewerBoxState, ViewerMorph, ViewerOpenSource, ViewerPanelState, ViewerStill, ViewerZoom,
-    ViewerZoomDrag, ZOOM_STEP,
+    ViewerBoxState, ViewerMorph, ViewerNavKeys, ViewerOpenSource, ViewerPanelState, ViewerStill,
+    ViewerZoom, ViewerZoomDrag, ZOOM_STEP,
 };
 use crate::ui::actions::{
     CloseNotifications, CloseQuickLook, FocusSearch, GridAbovePhoto, GridBelowPhoto, GridNextPhoto,
@@ -303,6 +303,12 @@ pub struct App {
     pub(crate) pending_full_image: Option<PendingFullImage>,
     /// Cancellation token for the decode in flight, if any.
     pub(crate) full_image_cancel: Option<Arc<AtomicBool>>,
+    /// Debounces the next full-image request until navigation settles.
+    /// Replacing or dropping the task cancels the pending timer.
+    pub(crate) full_image_request_task: Option<Task<()>>,
+    /// Navigation keys currently held in the viewer. Key repeat is invisible
+    /// to actions, so key-up is the stop signal.
+    pub(crate) viewer_nav_keys: ViewerNavKeys,
     pub(crate) previous_image: Option<ViewerStill>,
     /// Releases `previous_image` once the navigation crossfade has finished.
     /// Replacing or dropping the task cancels the pending release.
@@ -1218,6 +1224,8 @@ impl App {
             full_image_queue: DecodeQueue::default(),
             pending_full_image: None,
             full_image_cancel: None,
+            full_image_request_task: None,
+            viewer_nav_keys: ViewerNavKeys::default(),
             previous_image: None,
             previous_image_release_task: None,
             thumbnail_array_error: None,
@@ -1639,9 +1647,11 @@ impl Render for App {
                 this.handle_viewer_escape(window, cx)
             }))
             .on_action(cx.listener(|this, _: &ViewerPreviousPhoto, window, cx| {
+                this.begin_viewer_nav_key(true);
                 this.step_viewer_photo(-1, window, cx)
             }))
             .on_action(cx.listener(|this, _: &ViewerNextPhoto, window, cx| {
+                this.begin_viewer_nav_key(false);
                 this.step_viewer_photo(1, window, cx)
             }))
             .on_action(cx.listener(|this, _: &ViewerZoomIn, window, cx| {

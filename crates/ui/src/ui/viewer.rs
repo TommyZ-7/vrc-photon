@@ -440,6 +440,9 @@ impl App {
                     this.handle_viewer_mouse_up(event, cx)
                 }),
             )
+            .on_key_up(cx.listener(|this, event: &KeyUpEvent, _window, cx| {
+                this.handle_viewer_nav_key_up(event, cx)
+            }))
             .child(div().absolute().size_full().bg(rgba((color << 8) | 0x22)))
             .child(top_bar)
             .child(content)

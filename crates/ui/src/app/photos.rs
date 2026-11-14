@@ -30,7 +30,9 @@ use crate::state::display_image::{DisplayKey, display_key, should_apply_pending_
 use crate::state::full_image::FullImageTexture;
 use crate::state::photo_browser::{PhotoBrowser, plan_page_retry};
 use crate::state::thumbnail::{PendingUpload, decode_thumbnail};
+use crate::state::viewer::should_request_full_image;
 use crate::ui::components::photo_scene_key;
+use crate::ui::theme::FULL_IMAGE_NAV_DEBOUNCE;
 
 /// Delay before a partial thumbnail notice batch is reported. Keeps a quiet
 /// gallery's generated files visible to the daemon without one request each.
@@ -299,7 +301,7 @@ impl App {
             self.zoom_drag = None;
             self.load_selected_meta(id);
             if self.quick_look_open {
-                self.request_full_image(cx);
+                self.schedule_full_image_request(cx);
             }
         }
         if changed {
@@ -319,8 +321,8 @@ impl App {
 
     /// Requests the original display file for Quick Look. The queue holds one
     /// decode at a time so a large image never delays the next photo.
-    pub(crate) fn request_full_image(&mut self, cx: &mut Context<Self>) {
-        if !self.quick_look_open {
+    pub(crate) fn request_full_image_now(&mut self, cx: &mut Context<Self>) {
+        if !self.quick_look_open || self.viewer_nav_keys.any() {
             self.full_image_queue.cancel_wanted();
             return;
         }
@@ -335,6 +337,28 @@ impl App {
         if self.full_image_queue.want(key) {
             self.pump_full_image(cx);
         }
+    }
+
+    /// Schedules one full-image request after navigation input stops. Each
+    /// call replaces the pending timer, so a burst decodes only the final
+    /// selection.
+    pub(crate) fn schedule_full_image_request(&mut self, cx: &mut Context<Self>) {
+        if !self.quick_look_open {
+            self.full_image_request_task = None;
+            return;
+        }
+        let task = cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(FULL_IMAGE_NAV_DEBOUNCE)
+                .await;
+            this.update(cx, |this, cx| {
+                if should_request_full_image(this.quick_look_open, this.viewer_nav_keys) {
+                    this.request_full_image_now(cx);
+                }
+            })
+            .ok();
+        });
+        self.full_image_request_task = Some(task);
     }
 
     fn pump_full_image(&mut self, cx: &mut Context<Self>) {
@@ -418,7 +442,7 @@ impl App {
                                 // A reset that cancelled this decode also
                                 // cleared the queued request. The viewer is
                                 // back on this photo, so start it again.
-                                this.request_full_image(cx);
+                                this.request_full_image_now(cx);
                             }
                         }
                         FullImageDecodeAttempt::Failed => {
@@ -497,6 +521,7 @@ impl App {
         self.full_image = None;
         self.full_image_key = None;
         self.full_image_queue.cancel_wanted();
+        self.full_image_request_task = None;
     }
 
     /// Resets the full image, zoom, and crossfade state. Selection clears,
