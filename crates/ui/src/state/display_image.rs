@@ -75,6 +75,18 @@ pub(crate) fn should_apply_image(selected: Option<DisplayKey>, key: DisplayKey) 
     selected == Some(key)
 }
 
+/// Whether a decoded full image should be parked for upload.
+///
+/// Closing Quick Look or moving the selection while a decode runs makes the
+/// result stale; it must be dropped instead of uploaded.
+pub(crate) fn should_apply_pending_full_image(
+    open: bool,
+    selected: Option<DisplayKey>,
+    key: DisplayKey,
+) -> bool {
+    open && should_apply_image(selected, key)
+}
+
 pub(crate) fn thumbnail_placeholder_label(pending: bool) -> String {
     if pending {
         vrc_photon_i18n::tr!("thumbnail.loading")
@@ -209,6 +221,27 @@ mod tests {
         assert!(should_apply_image(Some(key), key));
         assert!(!should_apply_image(Some(other), key));
         assert!(!should_apply_image(None, key));
+    }
+
+    #[test]
+    fn pending_full_image_only_applies_to_the_current_selection() {
+        let selected = key(1);
+        assert!(should_apply_pending_full_image(
+            true,
+            Some(selected),
+            selected
+        ));
+        assert!(!should_apply_pending_full_image(
+            false,
+            Some(selected),
+            selected
+        ));
+        assert!(!should_apply_pending_full_image(
+            true,
+            Some(key(2)),
+            selected
+        ));
+        assert!(!should_apply_pending_full_image(true, None, selected));
     }
 
     #[test]

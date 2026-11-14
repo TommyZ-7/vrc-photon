@@ -14,7 +14,6 @@ pub(crate) struct FullImageTexture {
     dimensions: (u32, u32),
 }
 
-#[allow(dead_code)] // Consumed by the full-image pipeline (task 8).
 impl FullImageTexture {
     /// Creates a one-layer RGBA8 array and uploads `rgba` into it.
     ///

@@ -23,7 +23,9 @@ use crate::ui::theme::{
 impl App {
     pub(crate) fn drop_viewer_still(&mut self, still: ViewerStill) {
         match still {
-            ViewerStill::Full(image) => self.queue_atlas_drop(image),
+            // The texture is released when the last viewer frame or morph
+            // clone of the `Arc` goes away; nothing is cached per photo.
+            ViewerStill::Full(_) => {}
             ViewerStill::Thumbnail { id, .. } => {
                 if Some(id) != self.selected {
                     self.thumbnails.borrow_mut().unpin(id);

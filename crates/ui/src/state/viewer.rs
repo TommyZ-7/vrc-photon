@@ -6,8 +6,9 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use gpui_kit::{Bounds, Pixels, Point, RenderImage, Size, point};
+use gpui_kit::{Bounds, Pixels, Point, Size, point};
 
+use crate::state::full_image::FullImageTexture;
 use crate::state::thumbnail::ThumbnailHandle;
 
 use crate::ui::theme::{
@@ -169,7 +170,7 @@ fn zoom_limits(ratio: f32) -> (f32, f32) {
 /// or a thumbnail layer borrowed from the texture array.
 #[derive(Clone)]
 pub(crate) enum ViewerStill {
-    Full(Arc<RenderImage>),
+    Full(Arc<FullImageTexture>),
     Thumbnail {
         id: i64,
         handle: ThumbnailHandle,

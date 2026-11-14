@@ -7,6 +7,8 @@
 use std::cell::{Ref, RefMut};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use gpui_kit::component::WindowExt;
@@ -24,9 +26,10 @@ use crate::app::demo::demo_thumb_path;
 use crate::app::live::{SelectedMetaSnapshot, collect_selected_meta_snapshot};
 use crate::app::{App, Screen};
 use crate::state::decode_budget;
-use crate::state::display_image::{display_key, should_apply_image};
+use crate::state::display_image::{DisplayKey, display_key, should_apply_pending_full_image};
+use crate::state::full_image::FullImageTexture;
 use crate::state::photo_browser::{PhotoBrowser, plan_page_retry};
-use crate::state::thumbnail::{PendingUpload, decode_thumbnail, make_render_image, rgba_to_bgra};
+use crate::state::thumbnail::{PendingUpload, decode_thumbnail};
 use crate::ui::components::photo_scene_key;
 
 /// Delay before a partial thumbnail notice batch is reported. Keeps a quiet
@@ -42,6 +45,26 @@ enum TrashOutcome {
     Promoted,
     Skipped,
     Failed(String),
+}
+
+/// A decoded full image waiting for the UI thread to upload its texture.
+///
+/// The permit keeps the decoded bytes inside the process-wide budget until the
+/// upload finishes; the pixels are dropped right after `FullImageTexture::new`.
+pub(crate) struct PendingFullImage {
+    pub(crate) key: DisplayKey,
+    pub(crate) rgba: image::RgbaImage,
+    pub(crate) permit: decode_budget::DecodePermit<'static>,
+}
+
+/// The background half of one full-image decode.
+pub(crate) enum FullImageDecodeAttempt {
+    Decoded {
+        rgba: image::RgbaImage,
+        permit: decode_budget::DecodePermit<'static>,
+    },
+    Cancelled,
+    Failed,
 }
 
 impl App {
@@ -333,31 +356,78 @@ impl App {
             }
             let source = PathBuf::from(photo.effective_path());
             let fallback_dimensions = photo.effective_dimensions();
+            let cancel = Arc::new(AtomicBool::new(false));
+            self.full_image_cancel = Some(Arc::clone(&cancel));
             cx.spawn(async move |this, cx| {
-                let decoded = cx
+                let decode_cancel = Arc::clone(&cancel);
+                let attempt = cx
                     .background_executor()
                     .spawn(async move {
                         let start = Instant::now();
                         let estimate =
                             decode_budget::full_image_estimate(&source, fallback_dimensions);
-                        let _permit = decode_budget::reserve(estimate);
-                        let decoded = image_decode::decode_full_image(&source);
+                        let Some(permit) =
+                            decode_budget::reserve_cancellable(estimate, &decode_cancel)
+                        else {
+                            return FullImageDecodeAttempt::Cancelled;
+                        };
+                        let decoded =
+                            image_decode::decode_full_image_cancellable(&source, &decode_cancel);
                         log_timing("full image decode", start);
-                        decoded.map(rgba_to_bgra)
+                        match decoded {
+                            image_decode::FullImageDecodeResult::Decoded(rgba) => {
+                                FullImageDecodeAttempt::Decoded { rgba, permit }
+                            }
+                            image_decode::FullImageDecodeResult::Cancelled => {
+                                FullImageDecodeAttempt::Cancelled
+                            }
+                            image_decode::FullImageDecodeResult::Failed => {
+                                FullImageDecodeAttempt::Failed
+                            }
+                        }
                     })
                     .await;
                 this.update(cx, |this, cx| {
-                    this.full_image_queue.finish(key);
-                    let selected = this.selected_photo.as_ref().map(display_key);
-                    if this.quick_look_open
-                        && should_apply_image(selected, key)
-                        && let Some(rgba) = decoded
+                    // Only the token this decode installed may be cleared;
+                    // a newer request owns the field otherwise.
+                    if this
+                        .full_image_cancel
+                        .as_ref()
+                        .is_some_and(|current| Arc::ptr_eq(current, &cancel))
                     {
-                        if let Some(previous) = this.full_image.replace(make_render_image(rgba)) {
-                            this.queue_atlas_drop(previous);
-                        }
-                        this.full_image_key = Some(key);
+                        this.full_image_cancel = None;
                     }
+                    let selected = this.selected_photo.as_ref().map(display_key);
+                    let applies =
+                        should_apply_pending_full_image(this.quick_look_open, selected, key);
+                    match attempt {
+                        FullImageDecodeAttempt::Decoded { rgba, permit } => {
+                            if applies {
+                                if let Some(previous) = this.pending_full_image.take() {
+                                    this.full_image_queue.finish(previous.key);
+                                }
+                                this.pending_full_image =
+                                    Some(PendingFullImage { key, rgba, permit });
+                            } else {
+                                this.full_image_queue.finish(key);
+                            }
+                        }
+                        FullImageDecodeAttempt::Cancelled => {
+                            this.full_image_queue.finish(key);
+                            if applies {
+                                // A reset that cancelled this decode also
+                                // cleared the queued request. The viewer is
+                                // back on this photo, so start it again.
+                                this.request_full_image(cx);
+                            }
+                        }
+                        FullImageDecodeAttempt::Failed => {
+                            tracing::warn!(photo_id = key.photo_id, "cannot decode the full image");
+                            this.full_image_queue.finish(key);
+                        }
+                    }
+                    // A decoded image stays in flight until its upload lands;
+                    // the upload drain calls `pump` when it finishes.
                     this.pump_full_image(cx);
                     cx.notify();
                 })
@@ -368,10 +438,63 @@ impl App {
         }
     }
 
-    pub(crate) fn reset_full_image(&mut self) {
-        if let Some(image) = self.full_image.take() {
-            self.queue_atlas_drop(image);
+    /// Uploads the pending decoded full image on the UI thread.
+    ///
+    /// Called from `App::render` after the thumbnail drain so a texture is
+    /// created at most once per frame and only for the current selection.
+    pub(crate) fn drain_full_image_upload(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(pending) = self.pending_full_image.take() else {
+            return;
+        };
+        let selected = self.selected_photo.as_ref().map(display_key);
+        if !should_apply_pending_full_image(self.quick_look_open, selected, pending.key) {
+            self.full_image_queue.finish(pending.key);
+            self.pump_full_image(cx);
+            return;
         }
+        let PendingFullImage { key, rgba, permit } = pending;
+        let (width, height) = rgba.dimensions();
+        let texture = FullImageTexture::new(window, &rgba);
+        drop(rgba);
+        match texture {
+            Ok(texture) => {
+                self.full_image = Some(texture);
+                self.full_image_key = Some(key);
+                self.full_image_queue.finish(key);
+                drop(permit);
+                self.schedule_allocator_collect(cx);
+            }
+            Err(error) => {
+                tracing::warn!(
+                    %error,
+                    photo_id = key.photo_id,
+                    width,
+                    height,
+                    "cannot upload the full image texture"
+                );
+                // Keep the thumbnail visible: no `full_image_key` is set, so
+                // the viewer falls back to the texture array.
+                self.full_image_queue.finish(key);
+                drop(permit);
+            }
+        }
+        self.pump_full_image(cx);
+        cx.notify();
+    }
+
+    /// Stops the background decode, if any, at its next cancellation point.
+    pub(crate) fn cancel_full_image_decode(&mut self) {
+        if let Some(cancel) = self.full_image_cancel.take() {
+            cancel.store(true, Ordering::Relaxed);
+        }
+    }
+
+    pub(crate) fn reset_full_image(&mut self) {
+        if let Some(pending) = self.pending_full_image.take() {
+            self.full_image_queue.finish(pending.key);
+        }
+        self.cancel_full_image_decode();
+        self.full_image = None;
         self.full_image_key = None;
         self.full_image_queue.cancel_wanted();
     }

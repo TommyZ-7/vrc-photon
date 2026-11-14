@@ -12,7 +12,7 @@ use vrc_photon_i18n::tr;
 use crate::app::{App, effective_motion_fps};
 use crate::state::display_image::{display_key, thumbnail_placeholder_label};
 use crate::state::viewer::{ViewerMorph, ViewerStill, minimap_size, morph_radius_plan};
-use crate::ui::components::{ButtonState, ButtonTone, thumbnail_layer};
+use crate::ui::components::{ButtonState, ButtonTone, full_image_layer, thumbnail_layer};
 use crate::ui::theme::*;
 
 /// Opacity and horizontal offset for the outgoing and incoming photos during a
@@ -481,15 +481,14 @@ impl ViewerMorphView {
     }
 }
 
-/// Paints a viewer still: full images use the ordinary image element, while
-/// thumbnails come from the texture array and are stretched into the frame's
-/// photo-shaped bounds.
+/// Paints a viewer still: full images come from their dedicated RGBA8 texture,
+/// while thumbnails come from the texture array and are stretched into the
+/// frame's photo-shaped bounds.
 fn viewer_still_element(still: &ViewerStill, thumbnail_fit: ObjectFit) -> AnyElement {
     match still {
-        ViewerStill::Full(image) => gpui_kit::img(image.clone())
-            .object_fit(ObjectFit::Contain)
-            .size_full()
-            .into_any_element(),
+        ViewerStill::Full(texture) => {
+            full_image_layer(texture.clone(), ObjectFit::Contain, 0.0).into_any_element()
+        }
         ViewerStill::Thumbnail {
             handle, dimensions, ..
         } => thumbnail_layer(*handle, *dimensions, thumbnail_fit, 0.0).into_any_element(),

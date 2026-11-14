@@ -27,6 +27,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::time::{Duration, Instant};
 
 use gpui_kit::base::VirtualListScrollHandle;
@@ -59,7 +60,9 @@ use crate::app::demo::{DemoAssets, open_database};
 use crate::app::import::{ImportDialogState, ImportReportView};
 use crate::app::lifecycle::ScanProgressView;
 use crate::app::live::LiveRefreshGate;
+use crate::app::photos::PendingFullImage;
 use crate::state::display_image::{DecodeQueue, DisplayKey};
+use crate::state::full_image::FullImageTexture;
 use crate::state::motion::ToggleMotion;
 use crate::state::photo_browser::{
     CountDebounce, PhotoBrowser, PhotoIndex, should_notify_truncation,
@@ -293,9 +296,13 @@ pub struct App {
     pub(crate) quick_look_note_save_focus: FocusHandle,
     pub(crate) quick_look_note_cancel_focus: FocusHandle,
     /// Full-resolution Quick Look image. Memory only: never cached on disk.
-    pub(crate) full_image: Option<Arc<RenderImage>>,
+    pub(crate) full_image: Option<Arc<FullImageTexture>>,
     pub(crate) full_image_key: Option<DisplayKey>,
     pub(crate) full_image_queue: DecodeQueue,
+    /// Decoded pixels waiting for the next render to upload their texture.
+    pub(crate) pending_full_image: Option<PendingFullImage>,
+    /// Cancellation token for the decode in flight, if any.
+    pub(crate) full_image_cancel: Option<Arc<AtomicBool>>,
     pub(crate) previous_image: Option<ViewerStill>,
     /// Images removed from the thumbnail cache or viewer whose atlas tiles
     /// still need to be dropped. Shared with the next-frame callback so a
@@ -1206,6 +1213,8 @@ impl App {
             full_image: None,
             full_image_key: None,
             full_image_queue: DecodeQueue::default(),
+            pending_full_image: None,
+            full_image_cancel: None,
             previous_image: None,
             thumbnail_array_error: None,
             pending_atlas_drops: Rc::new(RefCell::new(Vec::new())),
@@ -1574,6 +1583,7 @@ impl Render for App {
         }
         self.ensure_thumbnail_array(window, cx);
         self.drain_thumbnail_uploads(window, cx);
+        self.drain_full_image_upload(window, cx);
         let pending = self.pending_atlas_drops.clone();
         let images = std::mem::take(&mut *pending.borrow_mut());
         if !images.is_empty() {

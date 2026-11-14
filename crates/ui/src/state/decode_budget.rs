@@ -24,7 +24,6 @@ pub(crate) fn reserve(bytes: usize) -> DecodePermit<'static> {
 
 /// Reserves decoded-image memory for one decode, giving up with `None` when
 /// `cancel` is set while waiting for headroom.
-#[allow(dead_code)] // Consumed by the full-image decode queue (tasks 7–8).
 pub(crate) fn reserve_cancellable(
     bytes: usize,
     cancel: &AtomicBool,
