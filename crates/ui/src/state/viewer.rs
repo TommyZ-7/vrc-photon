@@ -296,11 +296,29 @@ pub(crate) fn previous_image_release_delay(reduce_motion: bool) -> Duration {
 /// actions, so the key-up events are the stop signal.
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct ViewerNavKeys {
-    pub(crate) left: bool,
-    pub(crate) right: bool,
+    left: bool,
+    right: bool,
 }
 
 impl ViewerNavKeys {
+    /// Marks one key as held.
+    pub(crate) fn press(&mut self, left: bool) {
+        if left {
+            self.left = true;
+        } else {
+            self.right = true;
+        }
+    }
+
+    /// Clears one key (`"left"` / `"right"`). Returns whether it was held.
+    pub(crate) fn release(&mut self, key: &str) -> bool {
+        match key {
+            "left" => std::mem::take(&mut self.left),
+            "right" => std::mem::take(&mut self.right),
+            _ => false,
+        }
+    }
+
     pub(crate) fn any(self) -> bool {
         self.left || self.right
     }
@@ -644,28 +662,34 @@ mod tests {
 
     #[test]
     fn nav_keys_gate_full_image_requests() {
+        let mut left = ViewerNavKeys::default();
+        left.press(true);
+        let mut right = ViewerNavKeys::default();
+        right.press(false);
+        let mut both = left;
+        both.press(false);
+
         assert!(should_request_full_image(true, ViewerNavKeys::default()));
         assert!(!should_request_full_image(false, ViewerNavKeys::default()));
-        assert!(!should_request_full_image(
-            true,
-            ViewerNavKeys {
-                left: true,
-                right: false,
-            }
-        ));
-        assert!(!should_request_full_image(
-            true,
-            ViewerNavKeys {
-                left: false,
-                right: true,
-            }
-        ));
-        assert!(!should_request_full_image(
-            true,
-            ViewerNavKeys {
-                left: true,
-                right: true,
-            }
-        ));
+        assert!(!should_request_full_image(true, left));
+        assert!(!should_request_full_image(true, right));
+        assert!(!should_request_full_image(true, both));
+    }
+
+    #[test]
+    fn releasing_one_nav_key_keeps_the_other_held() {
+        let mut keys = ViewerNavKeys::default();
+        keys.press(true);
+        keys.press(false);
+
+        assert!(keys.release("left"));
+        assert!(keys.any(), "the other key is still down");
+        assert!(keys.release("right"));
+        assert!(!keys.any());
+        assert!(
+            !keys.release("right"),
+            "an unheld key is not released twice"
+        );
+        assert!(!keys.release("escape"), "unrelated keys are ignored");
     }
 }

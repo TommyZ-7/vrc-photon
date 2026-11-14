@@ -16,9 +16,9 @@ use crate::state::viewer::{
     previous_image_release_delay, previous_image_release_due, should_request_full_image,
 };
 use crate::ui::theme::{
-    MOTION_BASE, MOTION_MORPH, MOTION_SLOW, VIEWER_DETAILS_WIDTH, centered_viewer_rect,
-    content_bounds, content_insets, content_viewport, eased_progress, next_focus_index, step_index,
-    viewer_image_rect,
+    MOTION_BASE, MOTION_MORPH, MOTION_SLOW, VIEWER_DETAILS_WIDTH, VIEWER_NAV_KEY_TIMEOUT,
+    centered_viewer_rect, content_bounds, content_insets, content_viewport, eased_progress,
+    next_focus_index, step_index, viewer_image_rect,
 };
 
 impl App {
@@ -227,28 +227,53 @@ impl App {
 
     /// Marks a navigation key as held before the step so the debounce timer
     /// cannot start a decode during the OS initial repeat delay.
-    pub(crate) fn begin_viewer_nav_key(&mut self, left: bool) {
+    pub(crate) fn begin_viewer_nav_key(&mut self, left: bool, cx: &mut Context<Self>) {
         // A decode queued before the press must not start from its own
         // completion callback while the key is held.
         self.full_image_queue.cancel_wanted();
-        if left {
-            self.viewer_nav_keys.left = true;
-        } else {
-            self.viewer_nav_keys.right = true;
-        }
+        self.viewer_nav_keys.press(left);
+        self.arm_viewer_nav_key_watchdog(cx);
     }
 
     /// Clears the released key and, once no navigation key is held, schedules
     /// exactly one full-image request for the final selection.
     pub(crate) fn handle_viewer_nav_key_up(&mut self, event: &KeyUpEvent, cx: &mut Context<Self>) {
-        let was_held = match event.keystroke.key.as_str() {
-            "left" => std::mem::take(&mut self.viewer_nav_keys.left),
-            "right" => std::mem::take(&mut self.viewer_nav_keys.right),
-            _ => return,
-        };
-        if was_held && should_request_full_image(self.quick_look_open, self.viewer_nav_keys) {
+        if !self.viewer_nav_keys.release(event.keystroke.key.as_str()) {
+            return;
+        }
+        if !self.viewer_nav_keys.any() {
+            self.nav_key_watchdog = None;
+        }
+        if should_request_full_image(self.quick_look_open, self.viewer_nav_keys) {
             self.schedule_full_image_request(cx);
         }
+    }
+
+    /// Releases a press whose key-up never arrived.
+    ///
+    /// Every key-down replaces this timer, so it only fires once the OS key
+    /// repeat stops. Without it, a key-up missed by the viewer (focus moved
+    /// into a dialog, the window lost focus without an activation event)
+    /// would suppress full-image loading until the viewer is reopened.
+    fn arm_viewer_nav_key_watchdog(&mut self, cx: &mut Context<Self>) {
+        let task = cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(VIEWER_NAV_KEY_TIMEOUT).await;
+            this.update(cx, |this, cx| {
+                // Every key-down replaces this timer, so reaching here means
+                // no repeat has arrived for the whole timeout: the key-up was
+                // lost.
+                if !this.viewer_nav_keys.any() {
+                    return;
+                }
+                tracing::debug!("clearing a viewer navigation key whose key-up was lost");
+                this.viewer_nav_keys = ViewerNavKeys::default();
+                if this.quick_look_open {
+                    this.schedule_full_image_request(cx);
+                }
+            })
+            .ok();
+        });
+        self.nav_key_watchdog = Some(task);
     }
 
     pub(crate) fn open_quick_look(
@@ -384,6 +409,7 @@ impl App {
         self.zoom = ViewerZoom::default();
         self.zoom_drag = None;
         self.viewer_nav_keys = ViewerNavKeys::default();
+        self.nav_key_watchdog = None;
         self.full_image_request_task = None;
         self.request_full_image_now(cx);
         self.quick_look_epoch = self.quick_look_epoch.wrapping_add(1);
@@ -499,6 +525,7 @@ impl App {
         self.viewer_return_source = None;
         self.reset_full_image();
         self.viewer_nav_keys = ViewerNavKeys::default();
+        self.nav_key_watchdog = None;
         self.full_image_request_task = None;
         self.zoom = ViewerZoom::default();
         self.zoom_drag = None;
@@ -546,6 +573,7 @@ impl App {
         self.quick_look_index = 0;
         self.previous_image_release_task = None;
         self.viewer_nav_keys = ViewerNavKeys::default();
+        self.nav_key_watchdog = None;
         self.full_image_request_task = None;
         self.reset_image_state();
         self.schedule_allocator_collect(cx);
