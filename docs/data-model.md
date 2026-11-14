@@ -382,7 +382,7 @@ AI タグ付けの耐久キュー。デーモン再起動後も `pending` を再
 
 | status | 意味 | claim 対象 |
 |---|---|---|
-| `waiting` | バックログ専用。利用者が「バックログを開始」するまで実行しない | いいえ |
+| `waiting` | バックログ専用。利用者が「待機中のものを処理」するまで実行しない | いいえ |
 | `pending` | 実行可能。ワーカーが取得する | はい |
 | `processing` | 実行中 | いいえ |
 | `completed` | 正常終了 | いいえ |
@@ -681,7 +681,7 @@ autostart, tray, auto_compress, auto_compress_backlog,
 auto_compress_immediate, auto_compress_keep_original,
 auto_compression, clipboard_compression, discord_compression,
 estimated_link, thumbnail_cache_mb, thumbnail_size,
-compression_workers, clipboard_enabled,
+compression_workers,
 ui_sidebar_collapsed, ui_inspector_collapsed, ui_reduce_motion, ui_max_fps,
 ui_ribbon_collapsed, ui_card_show_status, ui_card_show_world,
 ui_card_show_date, ui_card_show_size, ui_card_size, ui_grid_gap,
@@ -691,13 +691,13 @@ world_name_resolution_enabled,
 discord_enabled, discord_destination, discord_include_players,
 discord_send_original, discord_auto_mode, discord_auto_since,
 discord_consent_at,
-ai_tagging_enabled, ai_tagging_auto, ai_tagging_backlog,
+ai_tagging_enabled, ai_tagging_auto,
 ai_presence_threshold, ai_tagging_backend, ai_tagging_idle_timeout_sec,
 ai_model_license_consent_at
 ```
 
 - `thumbnail_size` は 256 / 384 / 512 のいずれか（既定 384）。`thumbnail_cache_mb` は既定 8192、0 は無制限。
-- `compression_workers` は 1〜4（既定 1）。`clipboard_enabled` は既定 true。
+- `compression_workers` は 1〜4（既定 1）。
 - `ui_grid_gap` は 0〜32（既定 14）、`ui_card_radius` は 0〜24（既定 13）。
 - `ui_card_size` は `small` / `medium` / `large` / `extra_large`（既定 `medium`）。
 - `ui_photos_view_mode` は `timeline` / `sessions`（既定 `timeline`）。
@@ -715,7 +715,6 @@ AI タグ付けの既定値:
 
 - `ai_tagging_enabled = false`
 - `ai_tagging_auto = false`
-- `ai_tagging_backlog = false`
 - `ai_presence_threshold = None`（sidecar の hello が返す既定値を使う。0.0〜1.0 に clamp）
 - `ai_tagging_backend = "auto"`（`auto` / `vulkan` / `cuda` / `roc` / `cpu`。不明値は `auto`）
 - `ai_tagging_idle_timeout_sec = 600`（30〜3600 に clamp）
