@@ -86,6 +86,13 @@ pub(crate) const MOTION_BASE: Duration = Duration::from_millis(220);
 /// the usual key-repeat interval (about 30–50 ms) and within MOTION_BASE
 /// (220 ms), so the thumbnail keeps up during the stroke.
 pub(crate) const FULL_IMAGE_NAV_DEBOUNCE: Duration = Duration::from_millis(100);
+/// How long a viewer navigation key counts as held after its last key-down.
+/// Every OS key repeat refreshes it, so a timer that fires after this long
+/// means the key-up was lost (focus moved into a dialog, the window lost focus
+/// without an activation event) and the press must be released. Longer than
+/// the slowest common initial repeat delay (about 2 s) so a slow repeat setting
+/// cannot release a key the user is still holding.
+pub(crate) const VIEWER_NAV_KEY_TIMEOUT: Duration = Duration::from_millis(2500);
 pub(crate) const MOTION_SLOW: Duration = Duration::from_millis(300);
 pub(crate) const MOTION_SIDEBAR: Duration = Duration::from_millis(440);
 pub(crate) const MOTION_MORPH: Duration = Duration::from_millis(340);

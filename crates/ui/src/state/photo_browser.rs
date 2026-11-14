@@ -1066,6 +1066,12 @@ impl PhotoBrowser {
         {
             return Some(photo.clone());
         }
+        // A failed page must surface its retry panel. Falling back to the
+        // cached row would hide the failure behind a card that the user
+        // cannot refresh.
+        if self.pages.is_failed(page) {
+            return None;
+        }
         // A search refresh replaces the index and clears its positional pages.
         // Keep rendering rows that were already loaded so the visible cards do
         // not blink through placeholders while the new pages land.
@@ -1439,6 +1445,25 @@ mod tests {
             browser.photo_at(0).expect("cached row").effective_path(),
             "/p/1.webp",
             "the replacement row must not resurrect the old path"
+        );
+    }
+
+    #[test]
+    fn a_failed_page_shows_its_error_panel_instead_of_cached_rows() {
+        let entries = vec![index_entry(1, 202601)];
+        let mut browser =
+            PhotoBrowser::new(Arc::new(PhotoIndex::new(entries.clone())), TEST_ROW_HEIGHT);
+        let generation = browser.generation;
+        browser.insert_page(0, vec![test_photo(1)], generation);
+
+        // An index replacement keeps the id-keyed rows as a render fallback.
+        browser.replace_index(Arc::new(PhotoIndex::new(entries)));
+        let generation = browser.generation;
+        browser.fail_page(0, PageFailure::ReadError, generation);
+
+        assert!(
+            browser.photo_at(0).is_none(),
+            "a failed page must surface its retry panel instead of stale rows"
         );
     }
 
