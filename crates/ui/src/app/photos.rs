@@ -441,8 +441,9 @@ impl App {
                             if applies {
                                 // A reset that cancelled this decode also
                                 // cleared the queued request. The viewer is
-                                // back on this photo, so start it again.
-                                this.request_full_image_now(cx);
+                                // back on this photo, but the request still
+                                // waits for the navigation stop signal.
+                                this.schedule_full_image_request(cx);
                             }
                         }
                         FullImageDecodeAttempt::Failed => {

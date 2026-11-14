@@ -228,6 +228,9 @@ impl App {
     /// Marks a navigation key as held before the step so the debounce timer
     /// cannot start a decode during the OS initial repeat delay.
     pub(crate) fn begin_viewer_nav_key(&mut self, left: bool) {
+        // A decode queued before the press must not start from its own
+        // completion callback while the key is held.
+        self.full_image_queue.cancel_wanted();
         if left {
             self.viewer_nav_keys.left = true;
         } else {

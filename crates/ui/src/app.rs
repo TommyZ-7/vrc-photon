@@ -1062,6 +1062,15 @@ impl App {
         let context_menu_activation = cx.observe_window_activation(window, |this, window, cx| {
             if !window.is_window_active() {
                 this.close_photo_context_menu_for_lifecycle(window, cx);
+                // GPUI does not synthesize key-up on focus loss, so a held
+                // navigation key would otherwise suppress every full-image
+                // request until the same key is released.
+                if this.viewer_nav_keys.any() {
+                    this.viewer_nav_keys = ViewerNavKeys::default();
+                    if this.quick_look_open {
+                        this.schedule_full_image_request(cx);
+                    }
+                }
             }
         });
         let context_menu_bounds = cx.observe_window_bounds(window, |this, window, cx| {
