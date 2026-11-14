@@ -8,11 +8,9 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::path::Path;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use gpui_kit::{RenderImage, TextureArray};
-use smallvec::SmallVec;
+use gpui_kit::TextureArray;
 use vrc_photon_core::thumbnail::ThumbnailSpec;
 use vrc_photon_core::{image_decode, thumbnail};
 
@@ -464,23 +462,6 @@ pub(crate) fn decode_thumbnail(
     })
 }
 
-/// Builds a GPUI image from a decoded full-image buffer. Must run on the UI
-/// thread. Thumbnails use the texture array instead.
-pub(crate) fn make_render_image(rgba: image::RgbaImage) -> Arc<RenderImage> {
-    let frame = image::Frame::new(rgba);
-    Arc::new(RenderImage::new(SmallVec::from_buf([frame])))
-}
-
-/// Swaps RGBA to the BGRA order GPUI's `RenderImage` expects. Call this on the
-/// background executor so a full image does not spend its pixel loop on the
-/// UI thread.
-pub(crate) fn rgba_to_bgra(mut rgba: image::RgbaImage) -> image::RgbaImage {
-    for pixel in rgba.pixels_mut() {
-        pixel.0.swap(0, 2);
-    }
-    rgba
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -673,14 +654,6 @@ mod tests {
         fill(&mut cache, THUMB_LAYERS + 1);
         assert!(cache.get(0).is_none());
         assert!(cache.color(0).is_some());
-    }
-
-    #[test]
-    fn make_render_image_moves_the_buffer_without_changing_its_bytes() {
-        let rgba = image::RgbaImage::from_pixel(1, 1, image::Rgba([30, 20, 10, 40]));
-        let image = make_render_image(rgba);
-        assert_eq!(image.frame_count(), 1);
-        assert_eq!(image.as_bytes(0), Some([30, 20, 10, 40].as_slice()));
     }
 
     #[test]
