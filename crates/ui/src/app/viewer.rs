@@ -13,7 +13,7 @@ use crate::state::display_image::display_key;
 use crate::state::viewer::{
     ViewerBoxState, ViewerMorph, ViewerNavKeys, ViewerOpenSource, ViewerPanelState, ViewerStill,
     ViewerZoom, ViewerZoomDrag, current_tagged_bounds, preferred_bounds,
-    previous_image_release_due, should_request_full_image,
+    previous_image_release_delay, previous_image_release_due, should_request_full_image,
 };
 use crate::ui::theme::{
     MOTION_BASE, MOTION_MORPH, MOTION_SLOW, VIEWER_DETAILS_WIDTH, centered_viewer_rect,
@@ -660,11 +660,7 @@ impl App {
         // it after the fade (immediately under reduced motion); a later step
         // bumps the epoch and leaves this timer stale.
         let epoch = self.viewer_nav_epoch;
-        let delay = if cx.reduce_motion() {
-            Duration::ZERO
-        } else {
-            MOTION_BASE + Duration::from_millis(20)
-        };
+        let delay = previous_image_release_delay(cx.reduce_motion());
         self.previous_image_release_task = Some(cx.spawn(async move |this, cx| {
             cx.background_executor().timer(delay).await;
             this.update(cx, |this, _cx| {

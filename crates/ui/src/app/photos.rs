@@ -390,9 +390,17 @@ impl App {
                         let start = Instant::now();
                         let estimate =
                             decode_budget::full_image_estimate(&source, fallback_dimensions);
-                        let Some(permit) =
-                            decode_budget::reserve_cancellable(estimate, &decode_cancel)
-                        else {
+                        let wait_start = Instant::now();
+                        let permit = decode_budget::reserve_cancellable(estimate, &decode_cancel);
+                        tracing::debug!(
+                            waited_ms = wait_start.elapsed().as_secs_f64() * 1000.0,
+                            "full image decode budget wait"
+                        );
+                        let Some(permit) = permit else {
+                            tracing::debug!(
+                                cancelled_after_ms = start.elapsed().as_secs_f64() * 1000.0,
+                                "stale full image decode cancelled while waiting for the budget"
+                            );
                             return FullImageDecodeAttempt::Cancelled;
                         };
                         let decoded =
@@ -403,9 +411,18 @@ impl App {
                                 FullImageDecodeAttempt::Decoded { rgba, permit }
                             }
                             image_decode::FullImageDecodeResult::Cancelled => {
+                                tracing::debug!(
+                                    cancelled_after_ms = start.elapsed().as_secs_f64() * 1000.0,
+                                    "stale full image decode cancelled"
+                                );
                                 FullImageDecodeAttempt::Cancelled
                             }
                             image_decode::FullImageDecodeResult::Failed => {
+                                tracing::warn!(
+                                    photo_id = key.photo_id,
+                                    path = %source.display(),
+                                    "cannot decode the full image"
+                                );
                                 FullImageDecodeAttempt::Failed
                             }
                         }
@@ -447,7 +464,6 @@ impl App {
                             }
                         }
                         FullImageDecodeAttempt::Failed => {
-                            tracing::warn!(photo_id = key.photo_id, "cannot decode the full image");
                             this.full_image_queue.finish(key);
                         }
                     }
@@ -473,16 +489,40 @@ impl App {
         };
         let selected = self.selected_photo.as_ref().map(display_key);
         if !should_apply_pending_full_image(self.quick_look_open, selected, pending.key) {
-            self.full_image_queue.finish(pending.key);
+            let PendingFullImage { key, rgba, permit } = pending;
+            let (width, height) = rgba.dimensions();
+            tracing::debug!(
+                photo_id = key.photo_id,
+                width,
+                height,
+                bytes = decode_budget::rgba_bytes(width, height),
+                "dropping a stale decoded full image"
+            );
+            self.full_image_queue.finish(key);
+            // Release the pixels and their budget before the next decode, so
+            // `pump` cannot wait on memory this stale upload still holds.
+            drop(rgba);
+            drop(permit);
             self.pump_full_image(cx);
+            self.schedule_allocator_collect(cx);
+            cx.notify();
             return;
         }
         let PendingFullImage { key, rgba, permit } = pending;
         let (width, height) = rgba.dimensions();
+        let upload_start = Instant::now();
         let texture = FullImageTexture::new(window, &rgba);
+        log_timing("full image upload", upload_start);
         drop(rgba);
         match texture {
             Ok(texture) => {
+                tracing::debug!(
+                    photo_id = key.photo_id,
+                    width,
+                    height,
+                    bytes = decode_budget::rgba_bytes(width, height),
+                    "uploaded the full image texture"
+                );
                 self.full_image = Some(texture);
                 self.full_image_key = Some(key);
                 self.full_image_queue.finish(key);

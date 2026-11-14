@@ -35,6 +35,8 @@ impl FullImageTexture {
             1,
             TextureArrayFormat::Rgba8Unorm,
         )?;
+        let bytes = layer_bytes(width, height);
+        tracing::debug!(width, height, bytes, "created the full image texture array");
         if let Err(error) = window.upload_texture_array_layer(array, 0, rgba.as_raw()) {
             array.remove();
             return Err(error);
@@ -59,8 +61,22 @@ impl FullImageTexture {
 
 impl Drop for FullImageTexture {
     fn drop(&mut self) {
+        let (width, height) = self.dimensions;
+        tracing::debug!(
+            width,
+            height,
+            bytes = layer_bytes(width, height),
+            "removed the full image texture array"
+        );
         self.array.remove();
     }
+}
+
+/// Bytes in one RGBA8 layer of `width` x `height`.
+fn layer_bytes(width: u32, height: u32) -> u64 {
+    u64::from(width)
+        .saturating_mul(u64::from(height))
+        .saturating_mul(4)
 }
 
 #[cfg(test)]

@@ -65,6 +65,8 @@ pub fn decode_image(path: &Path) -> Option<DynamicImage> {
 ///
 /// `Cancelled` is kept distinct from `Failed` so callers can drop stale work
 /// without reporting a decode error.
+#[derive(Debug)]
+#[must_use]
 pub enum FullImageDecodeResult {
     Decoded(RgbaImage),
     Cancelled,
@@ -95,10 +97,11 @@ pub fn decode_full_image(source: &Path) -> Option<RgbaImage> {
 /// decode stages, before the RGBA expansion, and around the EXIF rotation and
 /// downscale. Codec-internal pixel decoding (`image`'s `read_image`,
 /// `jpeg_decoder`'s `decode`, AVIF/JXL decoding) cannot be interrupted; once it
-/// finishes, the next checkpoint returns `None`.
+/// finishes, the next checkpoint reports
+/// [`FullImageDecodeResult::Cancelled`].
 ///
-/// A `None` result is reported as [`FullImageDecodeResult::Cancelled`] when the
-/// token is set and as [`FullImageDecodeResult::Failed`] otherwise.
+/// A decode that fails without the token being set is reported as
+/// [`FullImageDecodeResult::Failed`].
 pub fn decode_full_image_cancellable(source: &Path, cancel: &AtomicBool) -> FullImageDecodeResult {
     if cancelled(Some(cancel)) {
         return FullImageDecodeResult::Cancelled;

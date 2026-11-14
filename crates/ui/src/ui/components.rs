@@ -601,12 +601,7 @@ pub(crate) fn texture_layer(
     } else {
         TextureArrayUv::Normal
     };
-    let corners = Corners {
-        top_left: px(radius),
-        top_right: px(radius),
-        bottom_right: px(radius),
-        bottom_left: px(radius),
-    };
+    let corners = Corners::all(px(radius));
     canvas(
         |_, _, _| (),
         move |bounds, _, window, _| {
@@ -632,12 +627,7 @@ pub(crate) fn full_image_layer(
     radius: f32,
 ) -> impl IntoElement {
     let dimensions = texture.dimensions();
-    let corners = Corners {
-        top_left: px(radius),
-        top_right: px(radius),
-        bottom_right: px(radius),
-        bottom_left: px(radius),
-    };
+    let corners = Corners::all(px(radius));
     canvas(
         |_, _, _| (),
         move |bounds, _, window, _| {

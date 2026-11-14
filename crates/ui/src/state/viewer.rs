@@ -12,8 +12,8 @@ use crate::state::full_image::FullImageTexture;
 use crate::state::thumbnail::ThumbnailHandle;
 
 use crate::ui::theme::{
-    MOTION_MORPH, VIEWER_MINIMAP_HEIGHT, VIEWER_MINIMAP_WIDTH, eased_progress, lerp_bounds,
-    viewer_image_box_with_details_width,
+    MOTION_BASE, MOTION_MORPH, VIEWER_MINIMAP_HEIGHT, VIEWER_MINIMAP_WIDTH, eased_progress,
+    lerp_bounds, viewer_image_box_with_details_width,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -274,10 +274,22 @@ pub(crate) fn current_tagged_bounds(
         .map(|(_, bounds)| bounds)
 }
 
-/// Whether a navigation crossfade timer still owns the previous image. A later
-/// navigation or a close bumps the epoch and leaves the old timer stale.
+/// Whether a navigation crossfade timer still owns the previous image. Only a
+/// later navigation bumps the epoch and leaves the old timer stale; closing the
+/// viewer cancels the release task and takes the image instead.
 pub(crate) fn previous_image_release_due(epoch: u64, current_epoch: u64) -> bool {
     epoch == current_epoch
+}
+
+/// Delay before the outgoing crossfade image is released. Reduced motion
+/// releases it immediately; otherwise it outlives the crossfade by a small
+/// margin so the fade never loses its still.
+pub(crate) fn previous_image_release_delay(reduce_motion: bool) -> Duration {
+    if reduce_motion {
+        Duration::ZERO
+    } else {
+        MOTION_BASE + Duration::from_millis(20)
+    }
 }
 
 /// Navigation keys held down in the viewer. Key repeat is invisible to GPUI's
@@ -589,6 +601,15 @@ mod tests {
     }
 
     #[test]
+    fn previous_image_release_delay_follows_reduced_motion() {
+        assert_eq!(previous_image_release_delay(true), Duration::ZERO);
+        assert_eq!(
+            previous_image_release_delay(false),
+            Duration::from_millis(240)
+        );
+    }
+
+    #[test]
     fn preferred_bounds_falls_back_to_the_other_source() {
         let card = Bounds::new(point(px(0.), px(0.)), size(px(10.), px(10.)));
         let inspector = Bounds::new(point(px(20.), px(20.)), size(px(30.), px(30.)));
@@ -630,6 +651,13 @@ mod tests {
             ViewerNavKeys {
                 left: true,
                 right: false,
+            }
+        ));
+        assert!(!should_request_full_image(
+            true,
+            ViewerNavKeys {
+                left: false,
+                right: true,
             }
         ));
         assert!(!should_request_full_image(

@@ -120,6 +120,35 @@ mod tests {
     }
 
     #[test]
+    fn the_in_flight_key_stays_pending_until_the_upload_finishes() {
+        let mut queue = DecodeQueue::default();
+        assert!(queue.want(key(1)));
+        assert_eq!(queue.begin(), Some(key(1)));
+        // A decode that finished but has not been uploaded yet must not let
+        // another decode start for the same queue.
+        assert_eq!(queue.begin(), None);
+        assert!(queue.pending_for(1));
+        queue.finish(key(1));
+        assert!(!queue.pending_for(1));
+        assert_eq!(queue.begin(), None);
+    }
+
+    #[test]
+    fn reset_finishes_a_parked_upload_and_drops_the_queued_request() {
+        let mut queue = DecodeQueue::default();
+        assert!(queue.want(key(1)));
+        assert_eq!(queue.begin(), Some(key(1)));
+        // The selection moved on while the decoded image waited for upload.
+        assert!(!queue.want(key(2)));
+        // A reset drops the parked upload and the queued request together.
+        queue.finish(key(1));
+        queue.cancel_wanted();
+        assert_eq!(queue.begin(), None);
+        assert!(!queue.pending_for(1));
+        assert!(!queue.pending_for(2));
+    }
+
+    #[test]
     fn cancel_wanted_drops_the_queued_request() {
         // The reset path (selection clear / viewer close / removal) relies
         // on this: after a cancel, no decode starts for the old selection.

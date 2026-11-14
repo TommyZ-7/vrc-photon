@@ -8416,7 +8416,6 @@ dependencies = [
  "rfd",
  "semver",
  "serde_json",
- "smallvec",
  "tempfile",
  "tracing",
  "tracing-subscriber",
