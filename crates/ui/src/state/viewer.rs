@@ -280,6 +280,26 @@ pub(crate) fn previous_image_release_due(epoch: u64, current_epoch: u64) -> bool
     epoch == current_epoch
 }
 
+/// Navigation keys held down in the viewer. Key repeat is invisible to GPUI's
+/// actions, so the key-up events are the stop signal.
+#[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ViewerNavKeys {
+    pub(crate) left: bool,
+    pub(crate) right: bool,
+}
+
+impl ViewerNavKeys {
+    pub(crate) fn any(self) -> bool {
+        self.left || self.right
+    }
+}
+
+/// A deferred full-image request may only start while the viewer is open and
+/// the user is no longer stepping through photos.
+pub(crate) fn should_request_full_image(open: bool, keys: ViewerNavKeys) -> bool {
+    open && !keys.any()
+}
+
 pub(crate) fn preferred_bounds(
     prefer_card: bool,
     card: Option<Bounds<Pixels>>,
@@ -599,5 +619,25 @@ mod tests {
             preferred_bounds(false, Some(card), Some(inspector)),
             Some(inspector)
         );
+    }
+
+    #[test]
+    fn nav_keys_gate_full_image_requests() {
+        assert!(should_request_full_image(true, ViewerNavKeys::default()));
+        assert!(!should_request_full_image(false, ViewerNavKeys::default()));
+        assert!(!should_request_full_image(
+            true,
+            ViewerNavKeys {
+                left: true,
+                right: false,
+            }
+        ));
+        assert!(!should_request_full_image(
+            true,
+            ViewerNavKeys {
+                left: true,
+                right: true,
+            }
+        ));
     }
 }
