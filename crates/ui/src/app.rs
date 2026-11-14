@@ -309,6 +309,9 @@ pub struct App {
     /// Navigation keys currently held in the viewer. Key repeat is invisible
     /// to actions, so key-up is the stop signal.
     pub(crate) viewer_nav_keys: ViewerNavKeys,
+    /// Releases a navigation key whose key-up never reached the viewer.
+    /// Replacing or dropping the task cancels the pending release.
+    pub(crate) nav_key_watchdog: Option<Task<()>>,
     pub(crate) previous_image: Option<ViewerStill>,
     /// Releases `previous_image` once the navigation crossfade has finished.
     /// Replacing or dropping the task cancels the pending release.
@@ -1061,6 +1064,7 @@ impl App {
                 // GPUI does not synthesize key-up on focus loss, so a held
                 // navigation key would otherwise suppress every full-image
                 // request until the same key is released.
+                this.nav_key_watchdog = None;
                 if this.viewer_nav_keys.any() {
                     this.viewer_nav_keys = ViewerNavKeys::default();
                     if this.quick_look_open {
@@ -1231,6 +1235,7 @@ impl App {
             full_image_cancel: None,
             full_image_request_task: None,
             viewer_nav_keys: ViewerNavKeys::default(),
+            nav_key_watchdog: None,
             previous_image: None,
             previous_image_release_task: None,
             thumbnail_array_error: None,
@@ -1604,11 +1609,11 @@ impl Render for App {
                 this.handle_viewer_escape(window, cx)
             }))
             .on_action(cx.listener(|this, _: &ViewerPreviousPhoto, window, cx| {
-                this.begin_viewer_nav_key(true);
+                this.begin_viewer_nav_key(true, cx);
                 this.step_viewer_photo(-1, window, cx)
             }))
             .on_action(cx.listener(|this, _: &ViewerNextPhoto, window, cx| {
-                this.begin_viewer_nav_key(false);
+                this.begin_viewer_nav_key(false, cx);
                 this.step_viewer_photo(1, window, cx)
             }))
             .on_action(cx.listener(|this, _: &ViewerZoomIn, window, cx| {

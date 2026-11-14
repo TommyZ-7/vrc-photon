@@ -477,6 +477,13 @@ impl App {
                 self.request_thumbnail(&photo, cx);
             }
         }
+        if self.quick_look_open && self.selected.is_some_and(|id| replaced.contains(&id)) {
+            // The replacement dropped the decoded full image for the selected
+            // photo (and cancelled any decode in flight). Ask for it again so
+            // the viewer does not stay on the thumbnail until the next
+            // navigation.
+            self.schedule_full_image_request(cx);
+        }
         // Stats, the compressed-id scan, and the job counters moved to the
         // background snapshot; this path used to run them on the UI thread
         // after every 250 ms compression burst.
