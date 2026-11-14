@@ -472,7 +472,7 @@ crates/ui/src/
    SHA-256 を検証し、`<data_dir>/plugins/<plugin_id>/models/<revision>/` に置く。
    M2 はダウンロード再開と分割パートに対応しない。
 3. タグ付けジョブは `tagging_jobs` に積む。手動実行と自動投入は `pending`、
-   バックログは `waiting` で積み、利用者の「バックログを開始」で `pending` に
+   バックログは `waiting` で積み、利用者の「待機中のものを処理」で `pending` に
    移す。active なジョブが同じ写真にある場合は partial unique index で重複しない。
    `--once` のメンテナンス実行ではタグ付けワーカーを起動しない。
 4. `TaggingWorker` は `pending` を1件ずつ原子的に取得し、`variant` を確定する。
