@@ -175,7 +175,7 @@ impl App {
             SetupPage::Discord => self.setup_discord(cx).into_any_element(),
             SetupPage::Compression => self.setup_compression(cx),
             SetupPage::Theme => self.setup_theme(cx).into_any_element(),
-            SetupPage::AiTagging => div().into_any_element(),
+            SetupPage::AiTagging => self.setup_ai(cx).into_any_element(),
         }
     }
 
@@ -792,6 +792,64 @@ impl App {
             .child(card_divider(&p))
             .child(self.integration_settings_body(enabled, settings_body))
             .into_any_element()
+    }
+
+    fn setup_ai(&self, cx: &mut Context<Self>) -> Div {
+        let p = self.palette;
+        let installed = self.ai.active.is_some();
+        v_flex()
+            .gap(px(10.))
+            .child(setup_switch_row(
+                &p,
+                tr!("integrations.ai.title"),
+                "setup-ai-enabled",
+                self.settings.ai_tagging_enabled,
+                cx,
+                |app, value, _, cx| {
+                    app.save_ai_runtime_settings(cx, |settings| {
+                        settings.ai_tagging_enabled = value;
+                    });
+                },
+            ))
+            .child(card_divider(&p))
+            .child(
+                v_flex()
+                    .gap(px(12.))
+                    .child(
+                        Button::new("setup-ai-install")
+                            .label(tr!("settings.ai.install"))
+                            .secondary()
+                            .w_full()
+                            .h(px(38.))
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.install_ai_plugin(window, cx)
+                            })),
+                    )
+                    .child(
+                        Button::new("setup-ai-download")
+                            .label(tr!("settings.ai.download"))
+                            .secondary()
+                            .w_full()
+                            .h(px(38.))
+                            .disabled(!installed)
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.request_ai_model_download(window, cx)
+                            })),
+                    ),
+            )
+            .child(card_divider(&p))
+            .child(setup_switch_row(
+                &p,
+                tr!("integrations.ai.auto"),
+                "setup-ai-auto",
+                self.settings.ai_tagging_auto,
+                cx,
+                |app, value, _, cx| {
+                    app.save_ai_runtime_settings(cx, |settings| {
+                        settings.ai_tagging_auto = value;
+                    });
+                },
+            ))
     }
 
     fn setup_folder_row(
