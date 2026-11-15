@@ -208,6 +208,12 @@ pub struct AppSettings {
     /// Unix timestamp when the user accepted the model licence.
     #[serde(default)]
     pub ai_model_license_consent_at: Option<i64>,
+    /// Whether the first-run setup was completed or dismissed. Older settings
+    /// without this field belong to an existing install and must not show the
+    /// wizard again, so serde defaults to `true`; a brand-new install uses
+    /// `Default::default()` (false).
+    #[serde(default = "default_true")]
+    pub setup_completed: bool,
 }
 
 fn default_true() -> bool {
@@ -383,6 +389,7 @@ impl Default for AppSettings {
             ai_tagging_backend: default_ai_backend(),
             ai_tagging_idle_timeout_sec: default_ai_idle_timeout(),
             ai_model_license_consent_at: None,
+            setup_completed: false,
         }
     }
 }
@@ -1441,6 +1448,29 @@ mod tests {
             settings.import_options(),
             crate::importer::ImportOptions::default()
         );
+    }
+
+    #[test]
+    fn fresh_settings_start_with_setup_pending() {
+        let db = Db::open_in_memory().unwrap();
+        assert!(!AppSettings::load(&db).unwrap().setup_completed);
+    }
+
+    #[test]
+    fn legacy_settings_without_the_setup_flag_count_as_completed() {
+        let settings: AppSettings = serde_json::from_str(r#"{"language":"ja"}"#).unwrap();
+        assert!(settings.setup_completed);
+    }
+
+    #[test]
+    fn setup_completed_roundtrips() {
+        let db = Db::open_in_memory().unwrap();
+        let settings = AppSettings {
+            setup_completed: true,
+            ..Default::default()
+        };
+        settings.save(&db).unwrap();
+        assert!(AppSettings::load(&db).unwrap().setup_completed);
     }
 
     #[test]
