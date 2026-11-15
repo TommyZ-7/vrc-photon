@@ -67,9 +67,10 @@ impl SetupPage {
 
 /// Whether the first-run wizard should open.
 ///
-/// A missing settings row is the only fresh-install signal. Existing installs
-/// carry `setup_completed = true` through the serde default, and a library
-/// with photos also means the user already has a working install.
+/// A missing settings row is the fresh-install signal; without a row, a
+/// library with photos belongs to an older install. A present row with
+/// `setup_completed = false` is an interrupted wizard and resumes regardless
+/// of the current photo count.
 pub(crate) fn should_show_setup(
     demo: bool,
     database_ok: bool,
