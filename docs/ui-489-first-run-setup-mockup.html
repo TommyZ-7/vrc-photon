@@ -2134,7 +2134,7 @@
                     <span class="option-icon"><svg class="icon"><use href="#i-layers"></use></svg></span>
                     <div class="option-copy">
                       <b data-i18n="auto.format.title">保存形式</b>
-                      <span data-i18n="auto.format.body">WebP（可逆）で保存し、画質を落とさずに容量を減らします。</span>
+                      <span data-i18n="auto.format.body">WebP（可逆）で保存します。画質を保ったまま容量を抑える設定です。</span>
                     </div>
                     <span class="state-pill neutral" data-i18n="auto.format.state">WebP</span>
                   </div>
@@ -2475,7 +2475,7 @@
       'auto.keep.title': '圧縮後も元の写真を残す',
       'auto.keep.body': '元の写真は VRChat のフォルダに残ります。OFF にすると、圧縮に成功したあと OS のゴミ箱へ移動します。',
       'auto.format.title': '保存形式',
-      'auto.format.body': 'WebP（可逆）で保存し、画質を落とさずに容量を減らします。',
+      'auto.format.body': 'WebP（可逆）で保存します。画質を保ったまま容量を抑える設定です。',
       'auto.format.state': 'WebP',
       'auto.safe': '元の写真は自動では削除されません。',
       'auto.caution': '圧縮に成功した元の写真は OS のゴミ箱へ移動します。',
@@ -2567,7 +2567,7 @@
       'auto.keep.title': 'Keep the original after compressing',
       'auto.keep.body': 'Originals stay in your VRChat folder. Turn this off to move them to the OS trash after a successful compression.',
       'auto.format.title': 'File format',
-      'auto.format.body': 'Saves lossless WebP to reduce size without losing quality.',
+      'auto.format.body': 'Saves lossless WebP. Keeps the original quality while reducing size where possible.',
       'auto.format.state': 'WebP',
       'auto.safe': 'Originals are not deleted automatically.',
       'auto.caution': 'Compressed originals will be moved to the OS trash.',
@@ -2639,6 +2639,7 @@
 
   const $ = (id) => document.getElementById(id);
   const appWindow = $('appWindow');
+  const appChrome = [document.querySelector('.sidebar'), document.querySelector('.main')];
   const setupScrim = $('setupScrim');
   const setupModal = $('setupModal');
   const stepPanes = Array.from(document.querySelectorAll('.step-pane'));
@@ -2845,6 +2846,10 @@
         : '既存ユーザー（表示されない）';
   }
 
+  function setAppInert(value) {
+    appChrome.forEach((element) => { element.inert = value; });
+  }
+
   function restartModalEntry() {
     setupModal.classList.remove('is-entering');
     void setupModal.offsetWidth;
@@ -2859,6 +2864,7 @@
     nextSpinner.hidden = true;
     nextIcon.style.display = '';
     closeSkipConfirm(true);
+    setAppInert(true);
     setupScrim.classList.remove('is-hidden');
     setupModal.classList.remove('is-closing');
     updateViewUI();
@@ -2868,6 +2874,7 @@
   }
 
   function hideSetup() {
+    setAppInert(false);
     setupModal.classList.add('is-closing');
     setupScrim.classList.add('is-hidden');
     window.setTimeout(() => setupModal.classList.remove('is-closing'), 280);
@@ -3105,6 +3112,7 @@
   setStepInstant(0);
   updateViewUI();
   updateStepUI();
+  setAppInert(true);
   window.setTimeout(() => setupModal.classList.remove('is-entering'), 520);
   window.setTimeout(() => setupModal.focus({ preventScroll: true }), 520);
 </script>
