@@ -25,7 +25,9 @@ use crate::app::daemon::open_path;
 use crate::state::display_image::thumbnail_placeholder_label;
 use crate::state::photo_browser::{PAGE_SIZE, PageFailure, PhotoIndex};
 use crate::state::viewer::ViewerOpenSource;
-use crate::ui::components::{ButtonState, ButtonTone, photo_world_label, thumbnail_layer};
+use crate::ui::components::{
+    ButtonState, ButtonTone, glass_panel, photo_world_label, thumbnail_layer,
+};
 use crate::ui::theme::*;
 
 /// Stable keyboard-focus state for one AI tag chip. The entity lives in the
@@ -311,10 +313,37 @@ impl App {
         let card_width = inspector_card_width(content_width);
         let preview_height = inspector_preview_height(content_height);
         let Some(photo) = self.selected_photo.as_ref() else {
+            // Keep the inspector card mounted when nothing is selected; an
+            // empty column looks like the panel vanished and leaves a gap
+            // beside the gallery.
             return v_flex()
                 .w(px(column_width))
                 .h_full()
                 .flex_shrink_0()
+                .child(
+                    glass_panel(&p)
+                        .flex_1()
+                        .w(px(card_width))
+                        .rounded(px(17.))
+                        .flex()
+                        .flex_col()
+                        .justify_center()
+                        .gap(px(6.))
+                        .px(px(20.))
+                        .child(
+                            div()
+                                .text_size(px(12.))
+                                .font_medium()
+                                .text_color(rgb(p.text))
+                                .child(tr!("photos.select_prompt")),
+                        )
+                        .child(
+                            div()
+                                .text_size(px(10.))
+                                .text_color(rgb(p.muted_2))
+                                .child(tr!("photos.select_prompt_hint")),
+                        ),
+                )
                 .into_any_element();
         };
 
