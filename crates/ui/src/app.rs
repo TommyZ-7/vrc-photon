@@ -18,6 +18,7 @@ pub(crate) mod photos;
 pub(crate) mod search;
 pub(crate) mod search_suggest;
 pub(crate) mod session;
+pub(crate) mod setup;
 pub(crate) mod tag_edit;
 pub(crate) mod viewer;
 
