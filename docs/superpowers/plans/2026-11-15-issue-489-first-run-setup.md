@@ -19,8 +19,8 @@
 ## Global Constraints
 
 - セットアップは初回起動時のみ。`AppSettings::setup_completed` を永続化し、2回目以降は表示しない。
-- 既存の設定行がある環境（アップデート移行を含む）は表示しない。旧 JSON に `setup_completed` が無い場合は「完了済み」として扱う。
-- 設定行が無くても、ライブラリに写真がある環境では表示しない。
+- 既存の設定行がある環境（アップデート移行を含む）は、`setup_completed = true` なら表示しない。旧 JSON に `setup_completed` が無い場合は「完了済み」として扱う。`false` は中断したセットアップとして再開する。
+- 設定行が無くても、ライブラリに写真がある環境では表示しない（設定行の有無で新規インストールと既存ライブラリを区別する）。設定行が壊れている場合は表示しない。
 - デモ DB、`--demo`、DB オープン失敗時のフォールバックでは表示しない。
 - 完了・閉じる（× / Esc）のどちらでも `setup_completed = true` を保存し、通常のメイン画面へ移る。
 - ウィザード表示中はシェルを描かない。ウィンドウ操作のため 46 px の最小タイトルバーだけ残す。
@@ -173,12 +173,19 @@ mod tests {
 
     #[test]
     fn setup_only_shows_for_a_fresh_install() {
-        assert!(should_show_setup(false, true, false, false, 0));
-        assert!(!should_show_setup(true, true, false, false, 0));
-        assert!(!should_show_setup(false, false, false, false, 0));
-        assert!(!should_show_setup(false, true, true, false, 0));
-        assert!(!should_show_setup(false, true, false, true, 0));
-        assert!(!should_show_setup(false, true, false, false, 3));
+        assert!(should_show_setup(false, true, false, false, false, 0));
+        assert!(!should_show_setup(true, true, false, false, false, 0));
+        assert!(!should_show_setup(false, false, false, false, false, 0));
+        assert!(!should_show_setup(false, true, true, false, false, 0));
+        assert!(!should_show_setup(false, true, false, false, false, 3));
+        assert!(!should_show_setup(false, true, false, true, true, 0));
+    }
+
+    #[test]
+    fn an_interrupted_setup_resumes_even_after_photos_are_indexed() {
+        assert!(should_show_setup(false, true, false, true, false, 0));
+        assert!(should_show_setup(false, true, false, true, false, 3));
+        assert!(!should_show_setup(false, true, false, true, true, 3));
     }
 }
 ```
@@ -230,14 +237,18 @@ pub(crate) fn should_show_setup(
     demo: bool,
     database_ok: bool,
     settings_load_failed: bool,
+    settings_row_present: bool,
     setup_completed: bool,
     library_photo_count: i64,
 ) -> bool {
-    !demo
-        && database_ok
-        && !settings_load_failed
-        && !setup_completed
-        && library_photo_count == 0
+    if demo || !database_ok || settings_load_failed {
+        return false;
+    }
+    if settings_row_present {
+        !setup_completed
+    } else {
+        library_photo_count == 0
+    }
 }
 
 pub(crate) struct SetupState {
@@ -325,11 +336,20 @@ let mut initial_settings = settings_load.unwrap_or_else(|error| {
     AppSettings::default()
 });
 ...
-let library_photo_count = db.count_photos().unwrap_or(0);
+let settings_row_present = db.get_setting("app_settings").ok().flatten().is_some();
+if settings_load_failed {
+    initial_settings.setup_completed = true;
+}
+let library_photo_count = if settings_row_present {
+    0
+} else {
+    db.count_photos().unwrap_or(0)
+};
 let setup_open = should_show_setup(
     demo,
     database_ok,
     settings_load_failed,
+    settings_row_present,
     initial_settings.setup_completed,
     library_photo_count,
 );
@@ -467,7 +487,7 @@ setup.folders.change: "Change"
 
 - [x] **Step 2: パス保存処理を抽出する**
 
-`ui/settings.rs` の保存ボタンのインライン処理を `pub(crate) fn save_library_paths(&mut self, cx: &mut Context<Self>) -> bool` に移す。既存の挙動（保存失敗でロールバックとトースト、ルート変更で `apply_library_snapshot_with_anchor`、パス変更で `DaemonCommand::Rescan` と `send_wake_commands`）をそのまま維持する。設定画面のボタンは成功時に `toast_success(tr!("settings.library.saved"), cx)` を出す。
+`ui/settings.rs` の保存ボタンのインライン処理を `pub(crate) fn save_library_paths(&mut self, cx: &mut Context<Self>) -> bool` に移す。既存の挙動（保存失敗でロールバック、ルート変更で `apply_library_snapshot_with_anchor`、パス変更で `DaemonCommand::Rescan` と `send_wake_commands`）をそのまま維持する。保存失敗時はトーストに加えて、ウィザード表示中なら `setup.error` にも同じメッセージを入れる。設定画面のボタンは成功時に `toast_success(tr!("settings.library.saved"), cx)` を出す。
 
 - [x] **Step 3: フォルダピッカーを追加する**
 
@@ -484,7 +504,7 @@ setup.folders.change: "Change"
 
 - [x] **Step 5: ページ離脱時の保存を接続する**
 
-`App::commit_setup_page` に `SetupPage::Folders => self.save_library_paths(cx)` を追加する。失敗時はページに留まる。
+`App::commit_setup_page` に `SetupPage::Folders => self.save_library_paths(cx)` を追加する。失敗時はページに留まり、`setup.error` に保存失敗メッセージを入れてフォルダページにインライン表示する（トーストはウィザード終了までキューに残るため）。
 
 - [x] **Step 6: ビルドとテスト**
 
@@ -622,36 +642,23 @@ setup.discord.webhook_label: "Webhook URL"
 
 - [x] **Step 3: Webhook 保存を実装する**
 
-`app/setup.rs` に追加する。
+`app/setup.rs` に純粋な検証ヘルパーと保存処理を追加する。
 
 ```rust
-fn save_setup_webhook(&mut self, cx: &mut Context<Self>) -> bool {
-    let raw = self.discord_url_input.read(cx).value().trim().to_string();
+pub(crate) fn setup_webhook_value(raw: &str) -> Result<Option<String>, &'static str> {
+    let raw = raw.trim();
     if raw.is_empty() {
-        return true; // 空欄は変更なし
+        return Ok(None); // 空欄は変更なし
     }
-    match validate_webhook_url(&raw) {
-        Ok(parsed) => match save_discord_webhook(&self.db, parsed.as_str()) {
-            Ok(()) => {
-                self.discord_url = Some(parsed.as_str().to_string());
-                true
-            }
-            Err(error) => {
-                self.setup.error = Some(
-                    tr_args!("settings.save_failed", error = error).into(),
-                );
-                false
-            }
-        },
-        Err(error) => {
-            self.setup.error = Some(tr(webhook_error_key(error)).into());
-            false
-        }
-    }
+    validate_webhook_url(raw)
+        .map(|parsed| Some(parsed.as_str().to_string()))
+        .map_err(webhook_error_key)
 }
 ```
 
-`webhook_error_key` を `pub(crate)` にする。保存成功時のトーストは出さない（ウィザード中は静かに進む）。
+`save_setup_webhook` はこのヘルパーを使い、`Ok(None)` は何もせず true、`Ok(Some(url))` は `save_discord_webhook`、`Err(key)` は `setup.error` に `tr(key)` を入れて false を返す。`webhook_error_key` を `pub(crate)` にする。保存成功時のトーストは出さない。
+
+テストで空欄 → `Ok(None)`、HTTP URL → `Err`、正しい HTTPS URL → `Ok(Some(url))` を固定する。
 
 - [x] **Step 4: 自動圧縮ページを描く**
 
