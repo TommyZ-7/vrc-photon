@@ -3034,6 +3034,66 @@ fn auto_job_enqueue_is_once_per_photo() {
 }
 
 #[test]
+fn auto_backlog_queues_only_uncompressed_idle_photos() {
+    let db = Db::open_in_memory().unwrap();
+    let ids = seed_photos(&db, 4);
+
+    db.add_derivative(
+        ids[0],
+        "/photos/compressed/a.webp",
+        "webp",
+        16,
+        10,
+        10,
+        None,
+        CompressionOrigin::Auto,
+        "keep",
+    )
+    .unwrap();
+    db.save_profile(&profile("p", "P")).unwrap();
+    db.enqueue_job(ids[1], "p", "keep").unwrap();
+    db.enqueue_auto_job_with_status(ids[2], "keep", QueueStatus::Failed)
+        .unwrap();
+
+    assert_eq!(db.enqueue_auto_jobs_for_uncompressed("replace").unwrap(), 1);
+    let jobs = db.list_jobs(10).unwrap();
+    let queued = jobs
+        .iter()
+        .find(|job| {
+            job.photo_id == ids[3]
+                && job.origin == CompressionOrigin::Auto
+                && job.status == QueueStatus::Waiting
+        })
+        .expect("the uncompressed idle photo is queued as waiting");
+    assert_eq!(queued.policy, "replace");
+    assert!(queued.profile_id.is_none());
+    assert!(queued.output_dir.is_none());
+
+    assert_eq!(db.release_waiting_jobs("replace").unwrap(), 1);
+    assert_eq!(db.enqueue_auto_jobs_for_uncompressed("keep").unwrap(), 0);
+}
+
+#[test]
+fn explicit_compression_starts_only_the_selected_waiting_auto_jobs() {
+    let db = Db::open_in_memory().unwrap();
+    let ids = seed_photos(&db, 2);
+    db.enqueue_auto_job_with_status(ids[0], "keep", QueueStatus::Waiting)
+        .unwrap();
+    db.enqueue_auto_job_with_status(ids[1], "keep", QueueStatus::Waiting)
+        .unwrap();
+
+    assert_eq!(db.start_waiting_auto_jobs(&[ids[0]], "replace").unwrap(), 1);
+
+    let jobs = db.list_jobs(10).unwrap();
+    let started = jobs.iter().find(|job| job.photo_id == ids[0]).unwrap();
+    assert_eq!(started.status, QueueStatus::Pending);
+    assert_eq!(started.policy, "replace");
+    let untouched = jobs.iter().find(|job| job.photo_id == ids[1]).unwrap();
+    assert_eq!(untouched.status, QueueStatus::Waiting);
+    assert_eq!(untouched.policy, "keep");
+}
+
+#[test]
 fn waiting_jobs_are_not_dequeued_until_released() {
     let db = Db::open_in_memory().unwrap();
     let root = db.add_root("/photos", "reference").unwrap();

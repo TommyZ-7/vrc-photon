@@ -525,18 +525,15 @@ impl App {
                 ),
                 large_button(
                     &self.palette,
-                    "ribbon-manual-compress",
+                    "ribbon-auto-compress",
                     tr!("chrome.group.compress"),
                     IconName::Minimize,
                     selection_look(self.has_action_selection()),
                     metrics,
-                    self.ribbon_manual_compress_focus.clone(),
+                    self.ribbon_auto_compress_focus.clone(),
                     focusable,
                     cx,
-                    |this, _, cx| {
-                        let ids = this.selected_action_ids();
-                        this.open_manual_compression(ids, cx);
-                    },
+                    |this, _, cx| this.compress_selection_auto(cx),
                 ),
             ],
             tr!("chrome.group.organize"),

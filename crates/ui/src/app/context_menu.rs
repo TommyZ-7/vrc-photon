@@ -159,6 +159,7 @@ impl PhotoApp {
         let app = cx.entity().downgrade();
         let action_context = source_focus.clone();
         let menu = PopupMenu::build(window, cx, move |menu, window, cx| {
+            let app_for_auto = app.clone();
             let app_for_folder = app.clone();
             let app_for_clipboard = app.clone();
             let app_for_discord = app.clone();
@@ -176,10 +177,22 @@ impl PhotoApp {
                     window,
                     cx,
                     move |menu, _window, _cx| {
+                        let app_for_auto = app_for_auto.clone();
                         let app_for_folder = app_for_folder.clone();
                         let app_for_clipboard = app_for_clipboard.clone();
                         let clipboard_label = clipboard_label.clone();
                         menu.item(
+                            PopupMenuItem::new(tr!("photos.context_menu.auto_compress")).on_click(
+                                move |_, _window, cx| {
+                                    if let Some(app) = app_for_auto.upgrade() {
+                                        app.update(cx, |app, cx| {
+                                            app.compress_selection_auto(cx);
+                                        });
+                                    }
+                                },
+                            ),
+                        )
+                        .item(
                             PopupMenuItem::new(tr!("photos.context_menu.compress_folder"))
                                 .on_click(move |_, window, cx| {
                                     if let Some(app) = app_for_folder.upgrade() {

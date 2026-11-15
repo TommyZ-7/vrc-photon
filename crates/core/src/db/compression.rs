@@ -337,6 +337,60 @@ impl Db {
         Ok(inserted == 1)
     }
 
+    /// Enqueues one automatic job for every visible photo that has no
+    /// derivative and no active compression job. This backs the bulk
+    /// "compress uncompressed photos" action; already compressed photos and
+    /// photos with queued work are left untouched.
+    pub fn enqueue_auto_jobs_for_uncompressed(&self, policy: &str) -> Result<usize> {
+        let inserted = self.conn.execute(
+            "INSERT INTO compression_jobs(id, photo_id, profile_id, origin, status, progress, policy, output_dir, created_at) \
+             SELECT lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-' || \
+                    lower(hex(randomblob(2))) || '-' || lower(hex(randomblob(2))) || '-' || \
+                    lower(hex(randomblob(6))), \
+                    p.id, NULL, 'auto', 'waiting', 0, ?1, NULL, ?2 \
+             FROM photos p \
+             WHERE p.status IN ('present', 'replaced') \
+               AND NOT EXISTS (SELECT 1 FROM derivatives d WHERE d.photo_id = p.id) \
+               AND NOT EXISTS ( \
+                   SELECT 1 FROM deletion_requests dr \
+                   WHERE dr.photo_id = p.id AND dr.status IN ('pending', 'blocked', 'running') \
+               ) \
+               AND NOT EXISTS ( \
+                   SELECT 1 FROM compression_jobs j \
+                   WHERE j.photo_id = p.id \
+                     AND (j.origin = 'auto' OR j.status IN ('waiting', 'pending', 'processing')) \
+               )",
+            params![policy, now_string()],
+        )?;
+        Ok(inserted)
+    }
+
+    /// Starts waiting automatic jobs for the given photos so an explicit
+    /// compress action runs them immediately.
+    pub fn start_waiting_auto_jobs(&self, photo_ids: &[i64], policy: &str) -> Result<usize> {
+        let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
+        let mut changed = 0;
+        for photo_id in photo_ids {
+            changed += tx.execute(
+                "UPDATE compression_jobs SET status = 'pending', progress = 0, error = NULL, \
+                    started_at = NULL, finished_at = NULL, policy = ?1 \
+                 WHERE photo_id = ?2 AND origin = 'auto' AND status = 'waiting' \
+                   AND EXISTS ( \
+                       SELECT 1 FROM photos p \
+                       WHERE p.id = compression_jobs.photo_id AND p.status <> 'deleting' \
+                   ) \
+                   AND NOT EXISTS ( \
+                       SELECT 1 FROM deletion_requests dr \
+                       WHERE dr.photo_id = compression_jobs.photo_id \
+                         AND dr.status IN ('pending', 'blocked', 'running') \
+                   )",
+                params![policy, photo_id],
+            )?;
+        }
+        tx.commit()?;
+        Ok(changed)
+    }
+
     /// Enqueues a manual job for an existing profile with an optional output
     /// directory override.
     pub fn enqueue_job_for_existing_profile_with_output_dir(
