@@ -18,6 +18,7 @@ pub(crate) mod photos;
 pub(crate) mod search;
 pub(crate) mod search_suggest;
 pub(crate) mod session;
+pub(crate) mod setup;
 pub(crate) mod tag_edit;
 pub(crate) mod viewer;
 
@@ -444,6 +445,8 @@ pub struct App {
     pub(crate) tag_input: Entity<InputState>,
     pub(crate) tag_edit_input: Entity<InputState>,
     pub(crate) tag_edit: tag_edit::TagEditState,
+    /// First-run wizard state. The wizard owns the window until it closes.
+    pub(crate) setup: setup::SetupState,
     pub(crate) note_edit_input: Entity<TextareaState>,
     pub(crate) note_edit_id: Option<i64>,
     pub(crate) photo_root_input: Entity<InputState>,
@@ -613,6 +616,7 @@ impl App {
             ),
             self.notification_modal_open,
         ) || self.tag_edit.open
+            || self.setup.open
     }
 
     /// Whether global shortcuts must stay inert right now: a full-window
@@ -717,13 +721,34 @@ impl App {
         let db_path = db.path().and_then(|path| std::fs::canonicalize(path).ok());
         let health_token = std::env::var("VRC_PHOTON_HEALTH_TOKEN").ok();
         let updating = health_token.is_some();
-        let mut initial_settings = AppSettings::load(&db).unwrap_or_else(|error| {
+        let settings_row_present = db.get_setting("app_settings").ok().flatten().is_some();
+        let settings_load = AppSettings::load(&db);
+        let settings_load_failed = settings_load.is_err();
+        let mut initial_settings = settings_load.unwrap_or_else(|error| {
             // `AppSettings::load` backs up malformed JSON before returning, so
             // defaults only fill this first frame.
             tracing::warn!(%error, "cannot load app settings; using defaults for this frame");
             AppSettings::default()
         });
+        if settings_load_failed {
+            // Never let a corrupt row fall back to a fresh-install default and
+            // rewrite itself as `setup_completed = false` later in the session.
+            initial_settings.setup_completed = true;
+        }
         initial_settings.language = vrc_photon_i18n::set_locale(&initial_settings.language);
+        let library_photo_count = if settings_row_present {
+            0
+        } else {
+            db.count_photos().unwrap_or(0)
+        };
+        let setup_open = setup::should_show_setup(
+            demo,
+            database_ok,
+            settings_load_failed,
+            settings_row_present,
+            initial_settings.setup_completed,
+            library_photo_count,
+        );
         let initial_palette = resolve(
             &initial_settings.ui_theme_main,
             &initial_settings.ui_theme_accent,
@@ -1100,6 +1125,7 @@ impl App {
         });
         let background_reader = BackgroundReader::for_database(&db);
         let library_reader = BackgroundReader::for_database(&db);
+        let setup = setup::SetupState::new(setup_open, cx);
         let mut app = Self {
             db,
             background_reader,
@@ -1315,6 +1341,7 @@ impl App {
             tag_input,
             tag_edit_input,
             tag_edit,
+            setup,
             note_edit_input,
             note_edit_id: None,
             photo_root_input,
@@ -1521,7 +1548,7 @@ impl App {
 
 impl Render for App {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        if std::mem::take(&mut self.initial_focus_pending) {
+        if !self.setup.open && std::mem::take(&mut self.initial_focus_pending) {
             window.focus(&self.photo_grid_focus, cx);
         }
         self.render_epoch = self.render_epoch.wrapping_add(1);
@@ -1559,6 +1586,14 @@ impl Render for App {
                         .label(tr!("common.quit"))
                         .on_click(cx.listener(|_, _, _, cx| cx.quit())),
                 );
+        }
+        if self.setup.open {
+            if std::mem::take(&mut self.setup.focus_pending) {
+                window.focus(&self.setup.focus, cx);
+            }
+            // Keep queued toasts (empty library, daemon start) behind the
+            // wizard; they flush on the first main-screen frame after close.
+            return self.setup_screen(window, cx);
         }
         self.ensure_thumbnail_array(window, cx);
         self.drain_thumbnail_uploads(window, cx);

@@ -693,10 +693,11 @@ discord_send_original, discord_auto_mode, discord_auto_since,
 discord_consent_at,
 ai_tagging_enabled, ai_tagging_auto,
 ai_presence_threshold, ai_tagging_backend, ai_tagging_idle_timeout_sec,
-ai_model_license_consent_at
+ai_model_license_consent_at, setup_completed
 ```
 
 - `thumbnail_size` は 256 / 384 / 512 のいずれか（既定 384）。`thumbnail_cache_mb` は既定 8192、0 は無制限。
+- `setup_completed` は初回セットアップの完了・閉じるで `true` になる。新規インストールの既定は `false`。この項目を持たない旧設定は既存ユーザーとして `true` に読み替える。
 - `compression_workers` は 1〜4（既定 1）。
 - `ui_grid_gap` は 0〜32（既定 14）、`ui_card_radius` は 0〜24（既定 13）。
 - `ui_card_size` は `small` / `medium` / `large` / `extra_large`（既定 `medium`）。

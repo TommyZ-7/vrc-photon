@@ -1,0 +1,1406 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VRC PhotoN — 初回セットアップ モック（#489）</title>
+<style>
+  :root {
+    --panel: #111a2b;
+    --panel-2: #1a2434;
+    --line: rgba(151, 178, 218, .16);
+    --line-strong: rgba(163, 192, 235, .28);
+    --text: #e9eff9;
+    --muted: #b5c0d3;
+    --dim: #7f8ca3;
+    --accent: #61c9f6;
+    --accent-soft: rgba(97, 201, 246, .14);
+    --accent-strong: #45b9ec;
+    --danger: #ff7a8a;
+    --font: "Noto Sans JP", "Hiragino Sans", "Yu Gothic UI", system-ui, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { background: #050a12; }
+
+  body {
+    margin: 0;
+    color: var(--text);
+    font-family: var(--font);
+    background:
+      radial-gradient(ellipse 70% 55% at 14% 10%, rgba(38, 104, 176, .32), transparent 68%),
+      radial-gradient(ellipse 60% 55% at 86% 88%, rgba(111, 54, 151, .28), transparent 70%),
+      #050a12;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  button { font-family: inherit; }
+
+  .review-head {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 40px 24px 22px;
+  }
+
+  .review-kicker {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 24px;
+    padding: 0 9px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    color: var(--accent);
+    background: var(--accent-soft);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .04em;
+  }
+
+  .review-head h1 {
+    margin: 14px 0 8px;
+    font-size: 24px;
+    font-weight: 650;
+    letter-spacing: .01em;
+  }
+
+  .review-head p {
+    margin: 0;
+    max-width: 900px;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.85;
+  }
+
+  .review-notes {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 18px;
+  }
+
+  .note {
+    padding: 12px 14px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: rgba(17, 26, 43, .72);
+  }
+
+  .note b {
+    display: block;
+    margin-bottom: 5px;
+    color: var(--text);
+    font-size: 11px;
+    font-weight: 650;
+  }
+
+  .note span, .note li {
+    color: var(--dim);
+    font-size: 10.5px;
+    line-height: 1.65;
+  }
+
+  .note ul {
+    margin: 0;
+    padding-left: 15px;
+  }
+
+  .note li { margin: 2px 0; }
+
+  .mock-nav {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 10px 24px;
+    background: rgba(5, 10, 18, .82);
+    backdrop-filter: blur(14px);
+    border-bottom: 1px solid rgba(151, 178, 218, .10);
+    overflow-x: auto;
+  }
+
+  .mock-nav a {
+    flex-shrink: 0;
+    padding: 5px 9px;
+    border-radius: 7px;
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 11px;
+    border: 1px solid transparent;
+  }
+
+  .mock-nav a:hover {
+    color: var(--text);
+    background: var(--accent-soft);
+    border-color: rgba(97, 201, 246, .22);
+  }
+
+  .mock-nav .nav-label {
+    flex-shrink: 0;
+    margin-right: 4px;
+    color: var(--dim);
+    font-size: 10px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+
+  main {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 22px 24px 80px;
+  }
+
+  .mock {
+    margin-bottom: 34px;
+    scroll-margin-top: 62px;
+  }
+
+  .caption {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin: 0 2px 9px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .caption .num {
+    color: var(--accent);
+    font-size: 11px;
+    font-weight: 650;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+
+  .caption .title {
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .caption .hint {
+    margin-left: auto;
+    color: var(--dim);
+    font-size: 10.5px;
+  }
+
+  .frame-wrap {
+    width: 100%;
+    overflow: hidden;
+    border: 1px solid rgba(151, 178, 218, .13);
+    border-radius: 14px;
+    background: #050a12;
+    transform-origin: top left;
+  }
+
+  .frame {
+    position: relative;
+    width: 1280px;
+    height: 820px;
+    overflow: hidden;
+    transform-origin: top left;
+    background:
+      radial-gradient(ellipse 62% 52% at 17% 12%, rgba(32, 92, 160, .62), transparent 68%),
+      radial-gradient(ellipse 58% 58% at 82% 82%, rgba(105, 51, 143, .48), transparent 70%),
+      linear-gradient(135deg, #08111f 0%, #0a1426 44%, #0b1222 100%);
+  }
+
+  .frame::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: .16;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 220 220' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.34'/%3E%3C/svg%3E");
+    mix-blend-mode: overlay;
+  }
+
+  /* ---------- minimal titlebar (design images crop it; the app keeps window controls) ---------- */
+
+  .titlebar {
+    position: relative;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    height: 46px;
+    padding: 0 8px 0 14px;
+    gap: 9px;
+    border-bottom: 1px solid rgba(151, 178, 218, .08);
+  }
+
+  .app-glyph {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    flex-shrink: 0;
+    border-radius: 7px;
+    background: var(--accent-strong);
+    box-shadow: 0 3px 10px rgba(69, 185, 236, .28), inset 0 1px 0 rgba(255, 255, 255, .36);
+    color: #06121f;
+  }
+
+  .app-name { color: var(--muted); font-size: 11px; letter-spacing: .01em; }
+  .titlebar-sep { width: 1px; height: 14px; background: rgba(151, 178, 218, .16); }
+  .titlebar-drag { flex: 1; }
+  .win-controls { display: flex; align-items: stretch; align-self: stretch; height: 100%; margin-right: -8px; }
+
+  .win-controls span {
+    display: grid;
+    place-items: center;
+    width: 35px;
+    height: 34px;
+    margin-top: 6px;
+    color: var(--dim);
+    border-radius: 5px;
+  }
+
+  .win-controls span:hover { background: rgba(151, 178, 218, .09); color: var(--text); }
+  .win-controls .close:hover { background: rgba(255, 92, 112, .18); color: #ff9aa7; }
+
+  /* ---------- stage + modal ---------- */
+
+  .stage {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 774px;
+  }
+
+  .modal {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    width: 600px;
+    height: 561px;
+    padding: 36px 38px 28px;
+    border: 1px solid rgba(151, 178, 218, .18);
+    border-radius: 20px;
+    background:
+      radial-gradient(ellipse 70% 46% at 76% -8%, rgba(56, 120, 190, .16), transparent 70%),
+      linear-gradient(180deg, #131d2f 0%, #0e1727 58%, #0d1523 100%);
+    box-shadow:
+      0 44px 110px rgba(0, 0, 0, .48),
+      0 14px 38px rgba(0, 0, 0, .34),
+      inset 0 1px 0 rgba(255, 255, 255, .06);
+  }
+
+  .modal h2 {
+    margin: 0;
+    color: var(--text);
+    font-size: 24px;
+    font-weight: 600;
+    letter-spacing: .005em;
+    line-height: 1.25;
+  }
+
+  .modal-body {
+    flex: 1;
+    min-height: 0;
+    padding-top: 30px;
+  }
+
+  .modal-footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  .btn {
+    height: 38px;
+    padding: 0 18px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .btn.secondary { background: #202a3b; border-color: rgba(163, 192, 235, .2); color: var(--text); }
+  .btn.secondary:hover { background: #273246; }
+  .btn.primary { background: var(--accent); color: #06121f; font-weight: 600; }
+  .btn.primary:hover { background: #7ad5fb; }
+
+  /* ---------- shared settings pieces (match the settings screen) ---------- */
+
+  .field-label {
+    display: block;
+    margin-bottom: 7px;
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  .section-label {
+    margin: 0 0 9px;
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .divider {
+    height: 1px;
+    background: rgba(151, 178, 218, .11);
+    margin: 12px 0;
+  }
+
+  .switch-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 22px;
+  }
+
+  .switch-row .grow { flex: 1; min-width: 0; }
+
+  .row-label {
+    color: var(--text);
+    font-size: 13px;
+    line-height: 1.4;
+  }
+
+  .switch {
+    position: relative;
+    width: 38px;
+    height: 20px;
+    flex-shrink: 0;
+    padding: 0;
+    border-radius: 999px;
+    background: #313c50;
+    border: 1px solid rgba(163, 192, 235, .12);
+    cursor: pointer;
+  }
+
+  .switch::after {
+    content: "";
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #f2f6fc;
+    transition: left .15s ease;
+  }
+
+  .switch.on { background: var(--accent); border-color: rgba(97, 201, 246, .4); }
+  .switch.on::after { left: 21px; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+
+  .chip {
+    padding: 5px 10px;
+    border: 0;
+    border-radius: 8px;
+    color: var(--muted);
+    background: transparent;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.2;
+    cursor: pointer;
+  }
+
+  .chip.active { background: var(--accent-soft); color: var(--accent); }
+
+  .text-input {
+    display: flex;
+    align-items: center;
+    height: 34px;
+    padding: 0 11px;
+    border: 1px solid rgba(163, 192, 235, .24);
+    border-radius: 8px;
+    background: #1a2434;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .text-input.placeholder { color: #68768d; }
+  .text-input.url { height: 38px; }
+
+  .slider-block { display: flex; flex-direction: column; gap: 7px; }
+
+  .slider-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    color: var(--text);
+    font-size: 12px;
+  }
+
+  .slider-head .value { font-weight: 600; }
+
+  .slider-track {
+    position: relative;
+    height: 4px;
+    border-radius: 999px;
+    background: #2a3547;
+  }
+
+  .slider-track .fill {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    border-radius: 999px;
+    background: var(--accent);
+  }
+
+  .slider-track .knob {
+    position: absolute;
+    top: 50%;
+    width: 12px;
+    height: 12px;
+    margin-left: -6px;
+    transform: translateY(-50%);
+    border-radius: 50%;
+    background: #e9eff9;
+    border: 2px solid var(--accent);
+  }
+
+  .range {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 16px;
+    margin: 0;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .range::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: 999px;
+    background: #2a3547;
+  }
+
+  .range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px;
+    height: 12px;
+    margin-top: -4px;
+    border-radius: 50%;
+    background: #e9eff9;
+    border: 2px solid var(--accent);
+  }
+
+  .range::-moz-range-track {
+    height: 4px;
+    border-radius: 999px;
+    background: #2a3547;
+  }
+
+  .range::-moz-range-thumb {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #e9eff9;
+    border: 2px solid var(--accent);
+  }
+
+  /* ---------- page 4 preview ---------- */
+
+  .display-layout {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+  }
+
+  .display-controls {
+    width: 240px;
+    flex-shrink: 0;
+  }
+
+  .display-preview {
+    flex: 1;
+    min-width: 0;
+    padding: 10px;
+    border: 1px solid rgba(151, 178, 218, .14);
+    border-radius: 12px;
+    background: #0b111c;
+  }
+
+  .preview-label {
+    margin: 0 0 8px;
+    color: var(--dim);
+    font-size: 10px;
+  }
+
+  .preview-surface {
+    --preview-gap: 14px;
+    --preview-radius: 13px;
+    padding: 8px;
+    border: 1px solid rgba(151, 178, 218, .08);
+    border-radius: 10px;
+    background: #080e18;
+  }
+
+  .preview-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 100px);
+    gap: var(--preview-gap);
+  }
+
+  .preview-card {
+    width: 100px;
+    flex-shrink: 0;
+    overflow: hidden;
+    border: 1px solid rgba(151, 178, 218, .16);
+    border-radius: var(--preview-radius);
+    background: #121b29;
+  }
+
+  .preview-image {
+    position: relative;
+    height: 60px;
+    background: linear-gradient(135deg, #2d4f78 0%, #35556f 52%, #744a7c 100%);
+    border-radius: max(0px, calc(var(--preview-radius) - 1px)) max(0px, calc(var(--preview-radius) - 1px)) 0 0;
+  }
+
+  .preview-image.alt {
+    background: linear-gradient(135deg, #286153 0%, #3d6a61 48%, #9a6748 100%);
+  }
+
+  .preview-image.amber {
+    background: linear-gradient(135deg, #6d5127 0%, #8f6536 50%, #b07a4c 100%);
+  }
+
+  .preview-image.rose {
+    background: linear-gradient(135deg, #6a3048 0%, #8a3f5c 52%, #a25772 100%);
+  }
+
+  .preview-badge {
+    position: absolute;
+    top: 5px;
+    left: 5px;
+    padding: 1px 5px;
+    border-radius: 999px;
+    background: rgba(5, 10, 18, .74);
+    color: var(--accent);
+    font-size: 6.5px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .preview-body { padding: 5px 6px 6px; }
+
+  .preview-world {
+    overflow: hidden;
+    color: var(--text);
+    font-size: 8.5px;
+    line-height: 1.25;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .preview-meta {
+    display: flex;
+    gap: 3px;
+    margin-top: 2px;
+    overflow: hidden;
+    color: var(--dim);
+    font-size: 7px;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+
+  .preview-surface:not(.show-status) .preview-badge { display: none; }
+  .preview-surface:not(.show-world) .preview-world { display: none; }
+  .preview-surface:not(.show-date) .preview-date,
+  .preview-surface:not(.show-size) .preview-size { display: none; }
+  .preview-surface:not(.show-date) .preview-sep,
+  .preview-surface:not(.show-size) .preview-sep { display: none; }
+  .preview-surface:not(.show-date):not(.show-size) .preview-meta { display: none; }
+  .preview-surface:not(.show-world):not(.show-date):not(.show-size) .preview-body { display: none; }
+
+  .discord-fields { transition: opacity .18s ease; }
+  .discord-fields.dimmed { opacity: .5; pointer-events: none; }
+
+  .stack-7 { display: flex; flex-direction: column; gap: 7px; }
+  .stack-10 { display: flex; flex-direction: column; gap: 10px; }
+  .stack-12 { display: flex; flex-direction: column; gap: 12px; }
+  .stack-14 { display: flex; flex-direction: column; gap: 14px; }
+  .stack-18 { display: flex; flex-direction: column; gap: 18px; }
+
+  .muted { color: var(--muted); }
+  .dim { color: var(--dim); }
+
+  /* ---------- page 3 folders ---------- */
+
+  .path-row { display: flex; align-items: center; gap: 8px; }
+  .path-row .text-input { flex: 1; min-width: 0; }
+
+  .change-btn {
+    height: 34px;
+    padding: 0 12px;
+    border: 1px solid rgba(163, 192, 235, .22);
+    border-radius: 8px;
+    background: #202a3b;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  /* ---------- page 7 theme (18 + 18, 6 per row, same as settings) ---------- */
+
+  .axis-head {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    margin-bottom: 9px;
+  }
+
+  .axis-title {
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .axis-selected {
+    color: var(--muted);
+    font-size: 10.5px;
+  }
+
+  .theme-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 30px);
+    gap: 8px;
+  }
+
+  .theme-swatch {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border-radius: 50%;
+    border: 1px solid rgba(233, 239, 249, .2);
+    background: var(--sw);
+    color: var(--fg);
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .theme-swatch .check { opacity: 0; }
+  .theme-swatch.selected .check { opacity: 1; }
+
+
+  /* ---------- page 8 AI preview ---------- */
+
+  .ai-intro {
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.65;
+  }
+
+  .ai-booth {
+    margin-top: 6px;
+    color: #5fd6a8;
+    font-size: 11px;
+    font-weight: 500;
+  }
+
+  .ai-preview {
+    margin-top: 14px;
+    padding: 10px;
+    border: 1px solid rgba(151, 178, 218, .12);
+    border-radius: 12px;
+    background: #080e18;
+  }
+
+  .ai-image {
+    height: 86px;
+    border: 1px solid rgba(151, 178, 218, .16);
+    border-radius: 8px;
+    background: linear-gradient(135deg, #3f678f 0%, #356a5d 58%, #1c3d36 100%);
+  }
+
+  .ai-panel {
+    margin-top: 8px;
+    padding: 9px;
+    border: 1px solid rgba(95, 214, 168, .25);
+    border-radius: 10px;
+    background: rgba(95, 214, 168, .07);
+  }
+
+  .ai-head {
+    color: #5fd6a8;
+    font-size: 10px;
+    font-weight: 600;
+  }
+
+  .ai-section {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 7px;
+    color: var(--muted);
+    font-size: 9px;
+    font-weight: 500;
+  }
+
+  .ai-section::before {
+    content: "";
+    width: 2px;
+    height: 9px;
+    border-radius: 99px;
+    background: rgba(95, 214, 168, .5);
+  }
+
+  .ai-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+
+  .ai-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 7px;
+    border: 1px solid rgba(95, 214, 168, .35);
+    border-radius: 999px;
+    background: rgba(95, 214, 168, .1);
+    color: #5fd6a8;
+    font-size: 10px;
+  }
+
+  .ai-tag .p { color: var(--muted); font-size: 9px; }
+
+  .ai-facts { display: flex; gap: 6px; margin-top: 8px; }
+
+  .ai-fact {
+    flex: 1;
+    padding: 5px 7px;
+    border-radius: 7px;
+    background: rgba(95, 214, 168, .05);
+  }
+
+  .ai-fact .k { color: var(--dim); font-size: 9px; }
+  .ai-fact .v { margin-top: 1px; color: var(--text); font-size: 11px; font-weight: 500; }
+
+  /* ---------- page 8 AI ---------- */
+
+  .wide-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 38px;
+    border: 1px solid rgba(163, 192, 235, .22);
+    border-radius: 8px;
+    background: #202a3b;
+    color: var(--text);
+    font-size: 13px;
+  }
+
+  .wide-btn:hover { background: #273246; }
+
+  .wide-btn.disabled { opacity: .45; }
+
+  @media (max-width: 900px) {
+    .review-notes { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header class="review-head">
+  <div class="review-kicker">#489 / 初回セットアップ</div>
+  <h1>VRC PhotoN 初回セットアップ モック</h1>
+  <p>
+    デザイン画像は方向性として扱い、設定項目は実装の設定画面（<code>docs/ui.md</code> §2.9 / §2.10）と
+    <code>AppSettings</code> に合わせたレビュー用モックです。各フレームは 1280×820。
+    上の 46px は最小タイトルバーで、その下の 774px がデザイン画像と同じ領域です。
+  </p>
+  <div class="review-notes">
+    <div class="note">
+      <b>設定画面との対応</b>
+      <ul>
+        <li>2 起動 → 設定 &gt; 起動</li>
+        <li>3 フォルダ → 設定 &gt; ライブラリ</li>
+        <li>4 表示 → 設定 &gt; 表示 / サムネイル</li>
+        <li>5 Discord → 連携・自動 &gt; Discord 連携</li>
+        <li>6 自動圧縮 → 連携・自動 &gt; 自動圧縮</li>
+        <li>7 テーマ → 設定 &gt; テーマ</li>
+        <li>8 AI → 紹介と表示プレビュー（設定は「設定 &gt; AIタグ付け」）</li>
+      </ul>
+    </div>
+    <div class="note">
+      <b>初回に必要な項目だけを抜粋</b>
+      <span>
+        自動送信・送信履歴・Discord 圧縮、圧縮の画質・リサイズ、AI のバックエンド・閾値・variant 管理、
+        ワールド名解決、最大FPS、自動更新、サムネイルキャッシュ、クリップボードは設定画面に残します。
+        フォルダの「変更」は初回用の追加（設定画面は直接入力）です。
+      </span>
+    </div>
+    <div class="note">
+      <b>状態は一例</b>
+      <span>
+        起動は 自動起動ON / トレイON / アニメーションOFF、表示は4項目ON・14px・13px・384×216、
+        自動圧縮は WebP ロスレス、テーマは既定のチャコール＋スカイ。Discord は初期OFFで、下部項目はグレーアウトします（スイッチで切替）。
+        AI は設定ではなく、紹介文とタグ表示のプレビューです。表示ページ右のプレビューは、スイッチ・スライダー・解像度の操作に追従します。
+        右上の×は削除（Escで閉じる）。ページの次へ / 戻るは横スライド 180ms です。
+      </span>
+    </div>
+  </div>
+</header>
+
+<nav class="mock-nav" aria-label="ページ">
+  <span class="nav-label">Pages</span>
+  <a href="#page-1">1 ようこそ</a>
+  <a href="#page-2">2 起動</a>
+  <a href="#page-3">3 フォルダ</a>
+  <a href="#page-4">4 表示</a>
+  <a href="#page-5">5 Discord</a>
+  <a href="#page-6">6 自動圧縮</a>
+  <a href="#page-7">7 テーマ</a>
+  <a href="#page-8">8 AI</a>
+</nav>
+
+<main>
+  <!-- ========== PAGE 1 ========== -->
+  <section class="mock" id="page-1">
+    <div class="caption">
+      <span class="num">Page 1</span><span class="title">ようこそ</span>
+      <span class="hint">表示言語 / 次へ</span>
+    </div>
+    <div class="frame-wrap"><div class="frame">
+      <div class="titlebar">
+        <div class="app-glyph">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M8 1.5v13M1.5 8h13M3.4 3.4l9.2 9.2M12.6 3.4 3.4 12.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <span class="app-name">VRC PhotoN</span>
+        <span class="titlebar-sep"></span>
+        <span class="titlebar-drag"></span>
+        <div class="win-controls" aria-hidden="true"><span>—</span><span>▢</span><span class="close">×</span></div>
+      </div>
+      <div class="stage">
+        <div class="modal">
+          <h2>VRC PhotoN へようこそ</h2>
+          <div class="modal-body">
+            <div class="stack-7">
+              <label class="field-label">表示言語</label>
+              <div class="chips">
+                <span class="chip active">日本語</span>
+                <span class="chip">English</span>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn primary" data-next="page-2">次へ</button>
+          </div>
+        </div>
+      </div>
+    </div></div>
+  </section>
+
+  <!-- ========== PAGE 2 ========== -->
+  <section class="mock" id="page-2">
+    <div class="caption">
+      <span class="num">Page 2</span><span class="title">起動</span>
+      <span class="hint">設定 &gt; 起動 と同じ3項目</span>
+    </div>
+    <div class="frame-wrap"><div class="frame">
+      <div class="titlebar">
+        <div class="app-glyph"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 1.5v13M1.5 8h13M3.4 3.4l9.2 9.2M12.6 3.4 3.4 12.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div>
+        <span class="app-name">VRC PhotoN</span><span class="titlebar-sep"></span><span class="titlebar-drag"></span>
+        <div class="win-controls" aria-hidden="true"><span>—</span><span>▢</span><span class="close">×</span></div>
+      </div>
+      <div class="stage">
+        <div class="modal">
+          <h2>起動</h2>
+          <div class="modal-body">
+            <div class="stack-18">
+              <div class="switch-row"><span class="grow row-label">自動起動</span><span class="switch on"></span></div>
+              <div class="switch-row"><span class="grow row-label">トレイ常駐</span><span class="switch on"></span></div>
+              <div class="switch-row"><span class="grow row-label">アニメーションを減らす</span><span class="switch"></span></div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn secondary" data-prev="page-1">戻る</button>
+            <button class="btn primary" data-next="page-3">次へ</button>
+          </div>
+        </div>
+      </div>
+    </div></div>
+  </section>
+
+  <!-- ========== PAGE 3 ========== -->
+  <section class="mock" id="page-3">
+    <div class="caption">
+      <span class="num">Page 3</span><span class="title">フォルダ</span>
+      <span class="hint">設定 &gt; ライブラリ の3パス</span>
+    </div>
+    <div class="frame-wrap"><div class="frame">
+      <div class="titlebar">
+        <div class="app-glyph"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 1.5v13M1.5 8h13M3.4 3.4l9.2 9.2M12.6 3.4 3.4 12.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div>
+        <span class="app-name">VRC PhotoN</span><span class="titlebar-sep"></span><span class="titlebar-drag"></span>
+        <div class="win-controls" aria-hidden="true"><span>—</span><span>▢</span><span class="close">×</span></div>
+      </div>
+      <div class="stage">
+        <div class="modal">
+          <h2>フォルダ</h2>
+          <div class="modal-body">
+            <div class="stack-18">
+              <div class="stack-7">
+                <label class="field-label">写真フォルダ</label>
+                <div class="path-row">
+                  <div class="text-input">C:\Users\you\Pictures\VRChat</div>
+                  <button class="change-btn">変更</button>
+                </div>
+              </div>
+              <div class="stack-7">
+                <label class="field-label">ログフォルダ</label>
+                <div class="path-row">
+                  <div class="text-input">C:\Users\you\AppData\LocalLow\VRChat\VRChat</div>
+                  <button class="change-btn">変更</button>
+                </div>
+              </div>
+              <div class="stack-7">
+                <label class="field-label">取り込み先</label>
+                <div class="path-row">
+                  <div class="text-input">C:\Users\you\AppData\Local\vrc-photon\imported</div>
+                  <button class="change-btn">変更</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn secondary" data-prev="page-2">戻る</button>
+            <button class="btn primary" data-next="page-4">次へ</button>
+          </div>
+        </div>
+      </div>
+    </div></div>
+  </section>
+
+  <!-- ========== PAGE 4 ========== -->
+  <section class="mock" id="page-4">
+    <div class="caption">
+      <span class="num">Page 4</span><span class="title">表示とサムネイル</span>
+      <span class="hint">設定 &gt; 表示 / サムネイル（2×2プレビュー）</span>
+    </div>
+    <div class="frame-wrap"><div class="frame">
+      <div class="titlebar">
+        <div class="app-glyph"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 1.5v13M1.5 8h13M3.4 3.4l9.2 9.2M12.6 3.4 3.4 12.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div>
+        <span class="app-name">VRC PhotoN</span><span class="titlebar-sep"></span><span class="titlebar-drag"></span>
+        <div class="win-controls" aria-hidden="true"><span>—</span><span>▢</span><span class="close">×</span></div>
+      </div>
+      <div class="stage">
+        <div class="modal">
+          <h2>表示とサムネイル</h2>
+          <div class="modal-body">
+            <div class="display-layout">
+              <div class="display-controls">
+                <div class="section-label">表示（ライブラリ・検索）</div>
+                <div class="stack-7">
+                  <div class="switch-row">
+                    <span class="grow row-label">圧縮状態</span>
+                    <button class="switch on" type="button" data-display="status" aria-pressed="true" aria-label="圧縮状態"></button>
+                  </div>
+                  <div class="switch-row">
+                    <span class="grow row-label">ワールド名</span>
+                    <button class="switch on" type="button" data-display="world" aria-pressed="true" aria-label="ワールド名"></button>
+                  </div>
+                  <div class="switch-row">
+                    <span class="grow row-label">日付</span>
+                    <button class="switch on" type="button" data-display="date" aria-pressed="true" aria-label="日付"></button>
+                  </div>
+                  <div class="switch-row">
+                    <span class="grow row-label">サイズ</span>
+                    <button class="switch on" type="button" data-display="size" aria-pressed="true" aria-label="サイズ"></button>
+                  </div>
+                </div>
+                <div class="divider"></div>
+                <div class="stack-10">
+                  <div class="slider-block">
+                    <div class="slider-head"><span>グリッド間隔</span><span class="value" data-gap-value>14 px</span></div>
+                    <input class="range" type="range" min="0" max="32" step="1" value="14" data-gap aria-label="グリッド間隔">
+                  </div>
+                  <div class="slider-block">
+                    <div class="slider-head"><span>カードの角丸</span><span class="value" data-radius-value>13 px</span></div>
+                    <input class="range" type="range" min="0" max="24" step="1" value="13" data-radius aria-label="カードの角丸">
+                  </div>
+                </div>
+                <div class="divider"></div>
+                <div class="section-label">サムネイル</div>
+                <div class="chips">
+                  <button class="chip" type="button" data-thumb="256×144">256×144</button>
+                  <button class="chip active" type="button" data-thumb="384×216">384×216</button>
+                  <button class="chip" type="button" data-thumb="512×288">512×288</button>
+                </div>
+              </div>
+              <aside class="display-preview" aria-label="表示プレビュー">
+                <div class="preview-label">プレビュー</div>
+                <div class="preview-surface show-status show-world show-date show-size" data-preview>
+                  <div class="preview-grid">
+                    <article class="preview-card">
+                      <div class="preview-image">
+                        <span class="preview-badge">圧縮済</span>
+                      </div>
+                      <div class="preview-body">
+                        <div class="preview-world">VRChat Home</div>
+                        <div class="preview-meta">
+                          <span class="preview-date">2026/11/15</span>
+                          <span class="preview-sep">·</span>
+                          <span class="preview-size">1.2 MB</span>
+                        </div>
+                      </div>
+                    </article>
+                    <article class="preview-card">
+                      <div class="preview-image alt">
+                        <span class="preview-badge">圧縮済</span>
+                      </div>
+                      <div class="preview-body">
+                        <div class="preview-world">The Black Cat</div>
+                        <div class="preview-meta">
+                          <span class="preview-date">2026/11/14</span>
+                          <span class="preview-sep">·</span>
+                          <span class="preview-size">980 KB</span>
+                        </div>
+                      </div>
+                    </article>
+                    <article class="preview-card">
+                      <div class="preview-image amber">
+                        <span class="preview-badge">圧縮済</span>
+                      </div>
+                      <div class="preview-body">
+                        <div class="preview-world">Furality Aqua</div>
+                        <div class="preview-meta">
+                          <span class="preview-date">2026/11/12</span>
+                          <span class="preview-sep">·</span>
+                          <span class="preview-size">2.4 MB</span>
+                        </div>
+                      </div>
+                    </article>
+                    <article class="preview-card">
+                      <div class="preview-image rose">
+                        <span class="preview-badge">圧縮済</span>
+                      </div>
+                      <div class="preview-body">
+                        <div class="preview-world">Midnight Rooftop</div>
+                        <div class="preview-meta">
+                          <span class="preview-date">2026/11/09</span>
+                          <span class="preview-sep">·</span>
+                          <span class="preview-size">1.7 MB</span>
+                        </div>
+                      </div>
+                    </article>
+                  </div>
+                </div>
+              </aside>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn secondary" data-prev="page-3">戻る</button>
+            <button class="btn primary" data-next="page-5">次へ</button>
+          </div>
+        </div>
+      </div>
+    </div></div>
+  </section>
+
+  <!-- ========== PAGE 5 ========== -->
+  <section class="mock" id="page-5">
+    <div class="caption">
+      <span class="num">Page 5</span><span class="title">Discord 連携</span>
+      <span class="hint">初期OFF / 下部グレーアウト</span>
+    </div>
+    <div class="frame-wrap"><div class="frame">
+      <div class="titlebar">
+        <div class="app-glyph"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 1.5v13M1.5 8h13M3.4 3.4l9.2 9.2M12.6 3.4 3.4 12.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div>
+        <span class="app-name">VRC PhotoN</span><span class="titlebar-sep"></span><span class="titlebar-drag"></span>
+        <div class="win-controls" aria-hidden="true"><span>—</span><span>▢</span><span class="close">×</span></div>
+      </div>
+      <div class="stage">
+        <div class="modal">
+          <h2>Discord</h2>
+          <div class="modal-body">
+            <div class="switch-row"><span class="grow row-label">Discord 連携</span><button class="switch" type="button" id="discord-master" aria-pressed="false" aria-label="Discord 連携"></button></div>
+            <div class="divider"></div>
+            <div class="stack-14 discord-fields dimmed" id="discord-fields">
+              <div class="stack-7">
+                <label class="field-label">Webhook URL</label>
+                <div class="text-input url placeholder">https://discord.com/api/webhooks/&lt;id&gt;/&lt;token&gt;</div>
+              </div>
+              <div class="stack-7">
+                <label class="field-label">送信先名</label>
+                <div class="text-input">Discord</div>
+              </div>
+              <div class="switch-row"><span class="grow row-label">プレイヤー名を含める</span><span class="switch"></span></div>
+              <div class="switch-row"><span class="grow row-label">原画を優先</span><span class="switch on"></span></div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn secondary" data-prev="page-4">戻る</button>
+            <button class="btn primary" data-next="page-6">次へ</button>
+          </div>
+        </div>
+      </div>
+    </div></div>
+  </section>
+
+  <!-- ========== PAGE 6 ========== -->
+  <section class="mock" id="page-6">
+    <div class="caption">
+      <span class="num">Page 6</span><span class="title">自動圧縮</span>
+      <span class="hint">連携・自動 &gt; 自動圧縮</span>
+    </div>
+    <div class="frame-wrap"><div class="frame">
+      <div class="titlebar">
+        <div class="app-glyph"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 1.5v13M1.5 8h13M3.4 3.4l9.2 9.2M12.6 3.4 3.4 12.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div>
+        <span class="app-name">VRC PhotoN</span><span class="titlebar-sep"></span><span class="titlebar-drag"></span>
+        <div class="win-controls" aria-hidden="true"><span>—</span><span>▢</span><span class="close">×</span></div>
+      </div>
+      <div class="stage">
+        <div class="modal">
+          <h2>自動圧縮</h2>
+          <div class="modal-body">
+            <div class="stack-10">
+              <div class="switch-row"><span class="grow row-label">自動圧縮</span><span class="switch on"></span></div>
+              <div class="switch-row"><span class="grow row-label">新規写真をすぐに圧縮</span><span class="switch on"></span></div>
+              <div class="switch-row"><span class="grow row-label">自動圧縮後に元画像を保持</span><span class="switch on"></span></div>
+            </div>
+            <div class="divider"></div>
+            <div class="section-label">圧縮設定</div>
+            <div class="chips" style="margin-bottom: 12px;">
+              <span class="chip">JPEG</span>
+              <span class="chip active">WebP</span>
+              <span class="chip">AVIF</span>
+              <span class="chip">JPEG XL</span>
+            </div>
+            <div class="switch-row"><span class="grow row-label">ロスレス</span><span class="switch on"></span></div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn secondary" data-prev="page-5">戻る</button>
+            <button class="btn primary" data-next="page-7">次へ</button>
+          </div>
+        </div>
+      </div>
+    </div></div>
+  </section>
+
+  <!-- ========== PAGE 7 ========== -->
+  <section class="mock" id="page-7">
+    <div class="caption">
+      <span class="num">Page 7</span><span class="title">テーマ</span>
+      <span class="hint">設定 &gt; テーマ（メイン18色 / サブ18色）</span>
+    </div>
+    <div class="frame-wrap"><div class="frame">
+      <div class="titlebar">
+        <div class="app-glyph"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 1.5v13M1.5 8h13M3.4 3.4l9.2 9.2M12.6 3.4 3.4 12.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div>
+        <span class="app-name">VRC PhotoN</span><span class="titlebar-sep"></span><span class="titlebar-drag"></span>
+        <div class="win-controls" aria-hidden="true"><span>—</span><span>▢</span><span class="close">×</span></div>
+      </div>
+      <div class="stage">
+        <div class="modal">
+          <h2>テーマ</h2>
+          <div class="modal-body">
+            <div class="axis-head">
+              <span class="axis-title">メインカラー（背景・パネル）</span>
+              <span class="axis-selected">· チャコール</span>
+            </div>
+            <div class="theme-grid">
+              <span class="theme-swatch selected" style="--sw:#1a2130;--fg:#f2f6fc" title="チャコール"><span class="check">✓</span></span>
+              <span class="theme-swatch" style="--sw:#181d32;--fg:#f2f6fc" title="ミッドナイト"><span class="check">✓</span></span>
+              <span class="theme-swatch" style="--sw:#1c2e27;--fg:#f2f6fc" title="フォレスト"><span class="check">✓</span></span>
+              <span class="theme-swatch" style="--sw:#2a1b2f;--fg:#f2f6fc" title="プラム"><span class="check">✓</span></span>
+              <span class="theme-swatch" style="--sw:#2e1c1f;--fg:#f2f6fc" title="ワイン"><span class="check">✓</span></span>
+              <span class="theme-swatch" style="--sw:#2e261c;--fg:#f2f6fc" title="セピア"><span class="check">✓</span></span>
+
+              <span class="theme-swatch" style="--sw:#e9edf3;--fg:#101418" title="ペーパー"><span class="check">✓</span></span>
+              <span class="theme-swatch" style="--sw:#f7f4ee;--fg:#101418" title="アイボリー"><span class="check">✓</span></span>
+              <span class="theme-swatch" style="--sw:#e4eef6;--fg:#101418" title="ミスト"><span class="check">✓</span></span>
+              <span class="theme-swatch" style="--sw:#e1f3e8;--fg:#101418" title="セージ"><span class="check">✓</span></span>
+              <span class="theme-swatch" style="--sw:#f6eaed;--fg:#101418" title="ブラッシュ"><span class="check">✓</span></span>
+              <span class="theme-swatch" style="--sw:#e9e3f4;--fg:#101418" title="クラウド"><span class="check">✓</span></span>
+
+              <span class="theme-swatch" style="--sw:#f0d0d8;--fg:#101418" title="さくら"><span class="check">✓</span></span>
+              <span class="theme-swatch" style="--sw:#ded2ee;--fg:#101418" title="ラベンダー"><span class="check">✓</span></span>
+              <span class="theme-swatch" style="--sw:#d2eee2;--fg:#101418" title="ミント"><span class="check">✓</span></span>
+              <span class="theme-swatch" style="--sw:#cfe2f1;--fg:#101418" title="スカイ"><span class="check">✓</span></span>
+              <span class="theme-swatch" style="--sw:#f0ddd0;--fg:#101418" title="ピーチ"><span class="check">✓</span></span>
+              <span class="theme-swatch" style="--sw:#eeead2;--fg:#101418" title="レモン"><span class="check">✓</span></span>
+            </div>
+            <div class="divider" style="margin: 16px 0;"></div>
+            <div class="axis-head">
+              <span class="axis-title">サブカラー（アクセント）</span>
+              <span class="axis-selected">· スカイ</span>
+            </div>
+            <div class="theme-grid">
+              <span class="theme-swatch" style="--sw:#2559b1;--fg:#f2f6fc" title="ディープブルー"><span class="check">✓</span></span>
+              <span class="theme-swatch" style="--sw:#29a37a;--fg:#f2f6fc" title="エメラルド"><span class="check">✓</span></span>
+              <span class="theme-swatch" style="--sw:#bc2442;--fg:#f2f6fc" title="クリムゾン"><span class="check">✓</span></span>
+              <span class="theme-swatch" style="--sw:#7135b6;--fg:#f2f6fc" title="バイオレット"><span class="check">✓</span></span>
+              <span class="theme-swatch" style="--sw:#e29612;--fg:#101418" title="アンバー"><span class="check">✓</span></span>
+              <span class="theme-swatch" style="--sw:#2999a3;--fg:#f2f6fc" title="ティール"><span class="check">✓</span></span>
+
+              <span class="theme-swatch" style="--sw:#f1f2f3;--fg:#101418" title="ホワイト"><span class="check">✓</span></span>
+              <span class="theme-swatch" style="--sw:#cdd0d6;--fg:#101418" title="シルバー"><span class="check">✓</span></span>
+              <span class="theme-swatch" style="--sw:#d4e4ed;--fg:#101418" title="アイス"><span class="check">✓</span></span>
+              <span class="theme-swatch" style="--sw:#f1ede4;--fg:#101418" title="パール"><span class="check">✓</span></span>
+              <span class="theme-swatch" style="--sw:#b3b6bd;--fg:#101418" title="スモーク"><span class="check">✓</span></span>
+              <span class="theme-swatch" style="--sw:#eae2cd;--fg:#101418" title="シャンパン"><span class="check">✓</span></span>
+
+              <span class="theme-swatch selected" style="--sw:#66b2ff;--fg:#101418" title="スカイ"><span class="check">✓</span></span>
+              <span class="theme-swatch" style="--sw:#86ead1;--fg:#101418" title="ミント"><span class="check">✓</span></span>
+              <span class="theme-swatch" style="--sw:#f9b694;--fg:#101418" title="ピーチ"><span class="check">✓</span></span>
+              <span class="theme-swatch" style="--sw:#c09df1;--fg:#101418" title="ラベンダー"><span class="check">✓</span></span>
+              <span class="theme-swatch" style="--sw:#f68eb0;--fg:#101418" title="ローズ"><span class="check">✓</span></span>
+              <span class="theme-swatch" style="--sw:#f8e481;--fg:#101418" title="レモン"><span class="check">✓</span></span>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn secondary" data-prev="page-6">戻る</button>
+            <button class="btn primary" data-next="page-8">次へ</button>
+          </div>
+        </div>
+      </div>
+    </div></div>
+  </section>
+
+  <!-- ========== PAGE 8 ========== -->
+  <section class="mock" id="page-8">
+    <div class="caption">
+      <span class="num">Page 8</span><span class="title">AIタグ付け</span>
+      <span class="hint">紹介とタグ表示プレビュー</span>
+    </div>
+    <div class="frame-wrap"><div class="frame">
+      <div class="titlebar">
+        <div class="app-glyph"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 1.5v13M1.5 8h13M3.4 3.4l9.2 9.2M12.6 3.4 3.4 12.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div>
+        <span class="app-name">VRC PhotoN</span><span class="titlebar-sep"></span><span class="titlebar-drag"></span>
+        <div class="win-controls" aria-hidden="true"><span>—</span><span>▢</span><span class="close">×</span></div>
+      </div>
+      <div class="stage">
+        <div class="modal">
+          <h2>AIタグ付け</h2>
+          <div class="modal-body">
+            <div class="ai-intro">AIタグ付けを有効にすると、写真の内容から人物の有無・屋外/屋内・雰囲気などを自動でタグ付けします。解析はこの端末内で完結し、写真は外部へ送信されません。プラグインとモデルの準備は設定画面から行えます。</div>
+            <div class="ai-booth">AIタグ付けプラグインは BOOTH で購入できます。</div>
+            <div class="ai-preview">
+              <div class="ai-image"></div>
+              <div class="ai-panel">
+                <div class="ai-head">AIタグ</div>
+                <div class="ai-section">場所</div>
+                <div class="ai-tags"><span class="ai-tag">✦ 屋外 <span class="p">92%</span></span></div>
+                <div class="ai-section">雰囲気</div>
+                <div class="ai-tags"><span class="ai-tag">✦ 夕方 <span class="p">81%</span></span><span class="ai-tag">✦ 賑やか <span class="p">76%</span></span></div>
+                <div class="ai-facts">
+                  <div class="ai-fact"><div class="k">人数（AI）</div><div class="v">2人</div></div>
+                  <div class="ai-fact"><div class="k">場所（AI）</div><div class="v">公園</div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn secondary" data-prev="page-7">戻る</button>
+            <button class="btn primary">完了</button>
+          </div>
+        </div>
+      </div>
+    </div></div>
+  </section>
+</main>
+
+<script>
+  // Scale each 1280x820 frame to the review pane. The mock stays 1:1.
+  function fitFrames() {
+    document.querySelectorAll(".frame-wrap").forEach((wrap) => {
+      const frame = wrap.querySelector(".frame");
+      if (!frame) return;
+      const scale = Math.min(1, wrap.clientWidth / 1280);
+      frame.style.transform = "scale(" + scale + ")";
+      wrap.style.height = Math.round(820 * scale) + "px";
+    });
+  }
+
+  function fitAndJump() {
+    fitFrames();
+    if (location.hash) {
+      requestAnimationFrame(() => {
+        document.querySelector(location.hash)?.scrollIntoView({ block: "start" });
+      });
+    }
+  }
+
+  window.addEventListener("resize", fitFrames);
+  window.addEventListener("load", fitAndJump);
+  fitFrames();
+
+  // Discord starts off: the fields below the switch are dimmed until the
+  // reviewer enables the integration.
+  const discordMaster = document.querySelector("#discord-master");
+  const discordFields = document.querySelector("#discord-fields");
+  if (discordMaster && discordFields) {
+    discordMaster.addEventListener("click", () => {
+      const on = discordMaster.classList.toggle("on");
+      discordMaster.setAttribute("aria-pressed", on ? "true" : "false");
+      discordFields.classList.toggle("dimmed", !on);
+    });
+  }
+
+  // Page 4 live preview: the switches, sliders, and thumbnail chips update
+  // the sample cards so the reviewer can see the display result.
+  const previewSurface = document.querySelector("[data-preview]");
+  const gapInput = document.querySelector("[data-gap]");
+  const radiusInput = document.querySelector("[data-radius]");
+  const gapValue = document.querySelector("[data-gap-value]");
+  const radiusValue = document.querySelector("[data-radius-value]");
+
+  function updateDisplayPreview() {
+    if (!previewSurface || !gapInput || !radiusInput) return;
+    previewSurface.style.setProperty("--preview-gap", gapInput.value + "px");
+    previewSurface.style.setProperty("--preview-radius", radiusInput.value + "px");
+    if (gapValue) gapValue.textContent = gapInput.value + " px";
+    if (radiusValue) radiusValue.textContent = radiusInput.value + " px";
+    ["status", "world", "date", "size"].forEach((key) => {
+      const toggle = document.querySelector('[data-display="' + key + '"]');
+      if (!toggle) return;
+      previewSurface.classList.toggle("show-" + key, toggle.classList.contains("on"));
+    });
+  }
+
+  document.querySelectorAll("[data-display]").forEach((toggle) => {
+    toggle.addEventListener("click", () => {
+      toggle.classList.toggle("on");
+      toggle.setAttribute("aria-pressed", toggle.classList.contains("on") ? "true" : "false");
+      updateDisplayPreview();
+    });
+  });
+
+  [gapInput, radiusInput].forEach((input) => {
+    if (input) input.addEventListener("input", updateDisplayPreview);
+  });
+
+  const thumbnailChips = document.querySelectorAll("[data-thumb]");
+  thumbnailChips.forEach((chip) => {
+    chip.addEventListener("click", () => {
+      thumbnailChips.forEach((item) => item.classList.remove("active"));
+      chip.classList.add("active");
+      updateDisplayPreview();
+    });
+  });
+
+  updateDisplayPreview();
+
+  document.querySelectorAll("[data-next]").forEach((button) => {
+    button.addEventListener("click", () => {
+      document.getElementById(button.dataset.next)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  });
+  document.querySelectorAll("[data-prev]").forEach((button) => {
+    button.addEventListener("click", () => {
+      document.getElementById(button.dataset.prev)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  });
+</script>
+</body>
+</html>

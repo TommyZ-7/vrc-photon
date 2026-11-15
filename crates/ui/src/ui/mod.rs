@@ -19,6 +19,7 @@ pub(crate) mod palette;
 pub(crate) mod search;
 pub(crate) mod search_suggest;
 pub(crate) mod settings;
+pub(crate) mod setup;
 pub(crate) mod shell;
 pub(crate) mod tag_edit;
 pub(crate) mod theme;
