@@ -4,6 +4,7 @@
 //! and the page-leave commits live here; rendering lives in `ui::setup`.
 
 use gpui_kit::*;
+use vrc_photon_i18n::tr_args;
 
 use crate::app::App;
 
@@ -87,6 +88,56 @@ impl SetupState {
             focus_pending: open,
             error: None,
         }
+    }
+}
+
+impl App {
+    pub(crate) fn advance_setup(&mut self, cx: &mut Context<Self>) {
+        if !self.commit_setup_page(cx) {
+            cx.notify();
+            return;
+        }
+        match self.setup.page.next() {
+            Some(page) => {
+                self.setup.page = page;
+                self.setup.error = None;
+                self.setup.focus_pending = true;
+                cx.notify();
+            }
+            None => self.finish_setup(cx),
+        }
+    }
+
+    pub(crate) fn back_setup(&mut self, cx: &mut Context<Self>) {
+        if let Some(page) = self.setup.page.prev() {
+            self.setup.page = page;
+            self.setup.error = None;
+            self.setup.focus_pending = true;
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn dismiss_setup(&mut self, cx: &mut Context<Self>) {
+        if self.commit_setup_page(cx) {
+            self.finish_setup(cx);
+        } else {
+            cx.notify();
+        }
+    }
+
+    fn commit_setup_page(&mut self, _cx: &mut Context<Self>) -> bool {
+        true // Task 4 / Task 6 add the folder and webhook commits.
+    }
+
+    fn finish_setup(&mut self, cx: &mut Context<Self>) {
+        self.settings.setup_completed = true;
+        if let Err(error) = self.settings.save(&self.db) {
+            tracing::warn!(%error, "cannot save the setup completion flag");
+            self.toast_error(tr_args!("settings.save_failed", error = error), cx);
+        }
+        self.setup.open = false;
+        self.initial_focus_pending = true;
+        cx.notify();
     }
 }
 

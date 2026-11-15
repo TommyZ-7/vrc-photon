@@ -445,6 +445,8 @@ pub struct App {
     pub(crate) tag_input: Entity<InputState>,
     pub(crate) tag_edit_input: Entity<InputState>,
     pub(crate) tag_edit: tag_edit::TagEditState,
+    /// First-run wizard state. The wizard owns the window until it closes.
+    pub(crate) setup: setup::SetupState,
     pub(crate) note_edit_input: Entity<TextareaState>,
     pub(crate) note_edit_id: Option<i64>,
     pub(crate) photo_root_input: Entity<InputState>,
@@ -614,6 +616,7 @@ impl App {
             ),
             self.notification_modal_open,
         ) || self.tag_edit.open
+            || self.setup.open
     }
 
     /// Whether global shortcuts must stay inert right now: a full-window
@@ -718,13 +721,23 @@ impl App {
         let db_path = db.path().and_then(|path| std::fs::canonicalize(path).ok());
         let health_token = std::env::var("VRC_PHOTON_HEALTH_TOKEN").ok();
         let updating = health_token.is_some();
-        let mut initial_settings = AppSettings::load(&db).unwrap_or_else(|error| {
+        let settings_load = AppSettings::load(&db);
+        let settings_load_failed = settings_load.is_err();
+        let mut initial_settings = settings_load.unwrap_or_else(|error| {
             // `AppSettings::load` backs up malformed JSON before returning, so
             // defaults only fill this first frame.
             tracing::warn!(%error, "cannot load app settings; using defaults for this frame");
             AppSettings::default()
         });
         initial_settings.language = vrc_photon_i18n::set_locale(&initial_settings.language);
+        let library_photo_count = db.count_photos().unwrap_or(0);
+        let setup_open = setup::should_show_setup(
+            demo,
+            database_ok,
+            settings_load_failed,
+            initial_settings.setup_completed,
+            library_photo_count,
+        );
         let initial_palette = resolve(
             &initial_settings.ui_theme_main,
             &initial_settings.ui_theme_accent,
@@ -1101,6 +1114,7 @@ impl App {
         });
         let background_reader = BackgroundReader::for_database(&db);
         let library_reader = BackgroundReader::for_database(&db);
+        let setup = setup::SetupState::new(setup_open, cx);
         let mut app = Self {
             db,
             background_reader,
@@ -1316,6 +1330,7 @@ impl App {
             tag_input,
             tag_edit_input,
             tag_edit,
+            setup,
             note_edit_input,
             note_edit_id: None,
             photo_root_input,
@@ -1573,6 +1588,12 @@ impl Render for App {
         }
         self.guard_viewer_selection(window, cx);
         self.sync_photo_context_menu(window, cx);
+        if self.setup.open {
+            if std::mem::take(&mut self.setup.focus_pending) {
+                window.focus(&self.setup.focus, cx);
+            }
+            return self.setup_screen(window, cx);
+        }
         let mut root = h_flex()
             .relative()
             .size_full()
