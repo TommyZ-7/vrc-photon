@@ -1,0 +1,3112 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VRC PhotoN — 初回起動セットアップ モック (#489)</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%230d1420'/%3E%3Ccircle cx='16' cy='16' r='7' fill='none' stroke='%238bcbff' stroke-width='2'/%3E%3C/svg%3E">
+<style>
+  :root {
+    color-scheme: dark;
+    --font: "Inter", "Noto Sans JP", "Hiragino Sans", "Yu Gothic UI", system-ui, -apple-system, sans-serif;
+    --mono: "SFMono-Regular", "Cascadia Code", "Cascadia Mono", Consolas, "Liberation Mono", monospace;
+    --ease: cubic-bezier(0.22, 0.8, 0.24, 1);
+    --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+    --page-text: #eef4ff;
+    --page-muted: #a8b4ca;
+    --page-dim: #7f8ba3;
+    --page-faint: #5e6a81;
+    --page-accent: #8bcbff;
+    --page-green: #7ee2b8;
+    --page-amber: #f4c878;
+    --page-line: rgba(255, 255, 255, 0.105);
+    --page-line-strong: rgba(255, 255, 255, 0.17);
+    --page-line-soft: rgba(255, 255, 255, 0.06);
+    --page-card: #0d1420;
+    --page-deep: #080d15;
+  }
+
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html { overflow-x: hidden; }
+  body {
+    margin: 0;
+    min-width: 320px;
+    background: #05070d;
+    color: var(--page-text);
+    font-family: var(--font);
+    font-size: 13px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -2;
+    background:
+      radial-gradient(ellipse 58% 54% at 10% 2%, rgba(54, 107, 255, 0.26), transparent 66%),
+      radial-gradient(ellipse 46% 52% at 92% 6%, rgba(255, 86, 181, 0.11), transparent 68%),
+      radial-gradient(ellipse 52% 48% at 64% 104%, rgba(30, 202, 178, 0.09), transparent 68%),
+      linear-gradient(140deg, #04060c 0%, #0a0f1e 44%, #060811 100%);
+  }
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    opacity: 0.025;
+    pointer-events: none;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
+    mix-blend-mode: overlay;
+  }
+
+  button, input { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  a { color: inherit; }
+  ::selection { background: rgba(139, 203, 255, 0.28); }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 99px; background: rgba(255,255,255,.14); background-clip: padding-box; }
+  :focus-visible { outline: 2px solid rgba(139, 203, 255, 0.78); outline-offset: 2px; }
+
+  .icon {
+    width: 18px;
+    height: 18px;
+    flex: 0 0 auto;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .icon-sm { width: 15px; height: 15px; }
+  .icon-xs { width: 12px; height: 12px; }
+  kbd {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 17px;
+    padding: 0 4px;
+    border: 1px solid var(--page-line);
+    border-radius: 4px;
+    background: rgba(255,255,255,.035);
+    color: var(--page-faint);
+    font-family: var(--mono);
+    font-size: 8px;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  /* ---------- page ---------- */
+  .page { width: min(1460px, calc(100% - 48px)); margin: 0 auto; padding: 38px 0 64px; }
+  .masthead {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 32px;
+    align-items: end;
+    padding-bottom: 6px;
+  }
+  .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--page-accent);
+    font-size: 10px;
+    font-weight: 650;
+    letter-spacing: 0.04em;
+    margin-bottom: 10px;
+  }
+  .eyebrow::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--page-accent);
+    box-shadow: 0 0 12px rgba(139,203,255,.8);
+  }
+  .issue-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 24px;
+    padding: 0 9px;
+    border: 1px solid var(--page-line);
+    border-radius: 999px;
+    background: rgba(255,255,255,.025);
+    color: var(--page-muted);
+    font-family: var(--mono);
+    font-size: 9px;
+    font-weight: 400;
+    letter-spacing: 0.02em;
+  }
+  .issue-chip b { color: var(--page-text); font-weight: 600; }
+  .issue-chip.draft { border-color: rgba(244,200,120,.26); background: rgba(244,200,120,.06); color: #f7d99a; }
+  h1 {
+    margin: 0;
+    font-size: clamp(30px, 3.6vw, 46px);
+    line-height: 1.12;
+    letter-spacing: -0.035em;
+    font-weight: 680;
+  }
+  .lede {
+    margin: 12px 0 0;
+    max-width: 860px;
+    color: var(--page-muted);
+    font-size: 13px;
+    line-height: 1.8;
+  }
+  .lede b { color: var(--page-text); font-weight: 560; }
+  .meta-card {
+    min-width: 270px;
+    padding: 14px 16px;
+    border: 1px solid var(--page-line);
+    border-radius: 16px;
+    background: rgba(13,20,32,.72);
+  }
+  .meta-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 18px;
+    padding: 5px 0;
+    color: var(--page-dim);
+    font-size: 10.5px;
+  }
+  .meta-row b { color: var(--page-text); font-weight: 550; text-align: right; }
+  .meta-row + .meta-row { border-top: 1px solid var(--page-line-soft); }
+
+  .stage-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding: 20px 0 10px;
+  }
+  .seg {
+    display: inline-flex;
+    padding: 3px;
+    border: 1px solid var(--page-line);
+    border-radius: 999px;
+    background: rgba(8,13,21,.72);
+  }
+  .seg button {
+    height: 29px;
+    padding: 0 12px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--page-dim);
+    font-size: 10px;
+    font-weight: 550;
+    transition: background .18s var(--ease), color .18s var(--ease);
+  }
+  .seg button:hover { color: var(--page-text); }
+  .seg button.active {
+    background: rgba(90,169,255,.16);
+    color: #dceeff;
+    box-shadow: inset 0 0 0 1px rgba(90,169,255,.24);
+  }
+  .toolbar-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 29px;
+    padding: 0 10px;
+    border: 1px solid var(--page-line);
+    border-radius: 8px;
+    background: rgba(255,255,255,.025);
+    color: var(--page-muted);
+    font-size: 10px;
+    transition: border-color .18s, background .18s, color .18s;
+  }
+  .toolbar-btn:hover { border-color: var(--page-line-strong); color: var(--page-text); background: rgba(255,255,255,.05); }
+  .toolbar-btn .icon { width: 13px; height: 13px; }
+  .toolbar-btn.danger { color: #ffb1bd; border-color: rgba(255,148,168,.2); }
+  .toolbar-btn.danger:hover { color: #ffd3da; border-color: rgba(255,148,168,.36); background: rgba(255,148,168,.08); }
+  .toolbar-spacer { flex: 1; }
+  .loop-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    color: var(--page-faint);
+    font-size: 10px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .loop-toggle input { width: 13px; height: 13px; accent-color: #5aa9ff; }
+  .stage-note {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    color: var(--page-faint);
+    font-size: 10px;
+  }
+  .stage-note::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--page-green);
+    box-shadow: 0 0 10px rgba(126,226,184,.65);
+  }
+
+  .step-rail {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+    padding: 0 0 12px;
+  }
+  .step-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    height: 29px;
+    padding: 0 9px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--page-dim);
+    font-size: 9.5px;
+    transition: background .18s, border-color .18s, color .18s;
+  }
+  .step-chip .n { color: var(--page-faint); font-family: var(--mono); font-size: 7.5px; }
+  .step-chip:hover { color: var(--page-text); background: rgba(255,255,255,.035); }
+  .step-chip.active {
+    border-color: rgba(139,203,255,.2);
+    background: rgba(139,203,255,.09);
+    color: #dceeff;
+  }
+  .step-chip.active .n { color: var(--page-accent); }
+  .detect-switch { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; color: var(--page-faint); font-size: 9px; }
+  .detect-switch .seg button { height: 25px; padding: 0 9px; font-size: 9px; }
+
+  .stage-scroll { overflow-x: auto; padding: 0 0 10px; }
+  .stage-hint { margin: 8px 0 0; color: var(--page-faint); font-size: 9.5px; }
+
+  /* ---------- simulated app window ---------- */
+  .app-window {
+    --ui-bg: #05080e;
+    --ui-sidebar: #0b111b;
+    --ui-header: #101725;
+    --ui-ribbon: #0d1420;
+    --ui-card: #0d1420;
+    --ui-inner: #111927;
+    --ui-deep: #0a1019;
+    --ui-raised: #172132;
+    --ui-text: #eef3fb;
+    --ui-muted: #a3adbd;
+    --ui-dim: #7f8ba3;
+    --ui-faint: #5e6a81;
+    --ui-line: rgba(255,255,255,.10);
+    --ui-line-strong: rgba(255,255,255,.17);
+    --ui-line-soft: rgba(255,255,255,.056);
+    --ui-accent: #8bcbff;
+    --ui-accent-fill: #8bcbff;
+    --ui-accent-soft: rgba(139,203,255,.13);
+    --ui-accent-soft-hover: rgba(139,203,255,.19);
+    --ui-accent-border: rgba(139,203,255,.34);
+    --ui-on-accent: #06131f;
+    --ui-green: #7ee2b8;
+    --ui-green-soft: rgba(126,226,184,.10);
+    --ui-green-border: rgba(126,226,184,.22);
+    --ui-amber: #f4c878;
+    --ui-amber-soft: rgba(244,200,120,.10);
+    --ui-amber-border: rgba(244,200,120,.24);
+    --ui-red: #ff8e9e;
+    --ui-scrim: rgba(5,7,10,.82);
+    --ui-shadow: rgba(0,0,0,.5);
+    --ui-bloom: rgba(64,125,255,.22);
+
+    position: relative;
+    display: grid;
+    grid-template-columns: 224px minmax(0, 1fr);
+    width: 1360px;
+    height: 820px;
+    margin: 0 auto;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,.13);
+    border-radius: 26px;
+    background: var(--ui-bg);
+    color: var(--ui-text);
+    color-scheme: dark;
+    box-shadow: 0 50px 130px rgba(0,0,0,.62), 0 12px 36px rgba(0,0,0,.38), inset 0 1px 0 rgba(255,255,255,.08);
+    transition: background-color .32s var(--ease), border-color .32s var(--ease);
+  }
+  .app-window[data-theme="midnight"] {
+    --ui-bg: #04060d;
+    --ui-sidebar: #090e1c;
+    --ui-header: #0d1426;
+    --ui-ribbon: #0a101f;
+    --ui-card: #0a101e;
+    --ui-inner: #10182b;
+    --ui-deep: #070c17;
+    --ui-raised: #1a2338;
+    --ui-text: #f0effc;
+    --ui-muted: #aaa8c2;
+    --ui-dim: #827f9c;
+    --ui-faint: #625f7a;
+    --ui-line: rgba(214,208,255,.11);
+    --ui-line-strong: rgba(214,208,255,.19);
+    --ui-line-soft: rgba(214,208,255,.06);
+    --ui-accent: #c0b0ff;
+    --ui-accent-fill: #b6a3ff;
+    --ui-accent-soft: rgba(192,176,255,.14);
+    --ui-accent-soft-hover: rgba(192,176,255,.20);
+    --ui-accent-border: rgba(192,176,255,.36);
+    --ui-on-accent: #120b25;
+    --ui-green: #8ee6c2;
+    --ui-green-soft: rgba(142,230,194,.10);
+    --ui-green-border: rgba(142,230,194,.22);
+    --ui-amber: #f4c878;
+    --ui-amber-soft: rgba(244,200,120,.10);
+    --ui-amber-border: rgba(244,200,120,.24);
+    --ui-red: #ff9aab;
+    --ui-scrim: rgba(3,5,11,.83);
+    --ui-bloom: rgba(122,86,255,.24);
+  }
+  .app-window[data-theme="forest"] {
+    --ui-bg: #040b09;
+    --ui-sidebar: #07110e;
+    --ui-header: #0b1713;
+    --ui-ribbon: #08130f;
+    --ui-card: #081310;
+    --ui-inner: #0e1c16;
+    --ui-deep: #06100d;
+    --ui-raised: #17281f;
+    --ui-text: #edf8f2;
+    --ui-muted: #a4b9ae;
+    --ui-dim: #7d9387;
+    --ui-faint: #5d7367;
+    --ui-line: rgba(214,255,235,.10);
+    --ui-line-strong: rgba(214,255,235,.18);
+    --ui-line-soft: rgba(214,255,235,.055);
+    --ui-accent: #7ee2b8;
+    --ui-accent-fill: #7ee2b8;
+    --ui-accent-soft: rgba(126,226,184,.13);
+    --ui-accent-soft-hover: rgba(126,226,184,.19);
+    --ui-accent-border: rgba(126,226,184,.34);
+    --ui-on-accent: #05130d;
+    --ui-green: #8fe8bd;
+    --ui-green-soft: rgba(143,232,189,.10);
+    --ui-green-border: rgba(143,232,189,.22);
+    --ui-amber: #f0c77a;
+    --ui-amber-soft: rgba(240,199,122,.10);
+    --ui-amber-border: rgba(240,199,122,.24);
+    --ui-red: #ff9aa6;
+    --ui-scrim: rgba(3,8,6,.84);
+    --ui-bloom: rgba(32,170,120,.20);
+  }
+  .app-window[data-theme="paper"] .logo-halo { opacity: .4; }
+  .app-window[data-theme="paper"] .logo-ring { border-color: rgba(183,121,31,.25); }
+
+  .app-window[data-theme="paper"] {
+    color-scheme: light;
+    --ui-bg: #eef1f5;
+    --ui-sidebar: #f7f8fb;
+    --ui-header: #ffffff;
+    --ui-ribbon: #fbfcfe;
+    --ui-card: #ffffff;
+    --ui-inner: #f3f5f9;
+    --ui-deep: #e7ebf1;
+    --ui-raised: #ffffff;
+    --ui-text: #171c24;
+    --ui-muted: #4b5563;
+    --ui-dim: #6b7688;
+    --ui-faint: #87909e;
+    --ui-line: rgba(15,23,42,.12);
+    --ui-line-strong: rgba(15,23,42,.20);
+    --ui-line-soft: rgba(15,23,42,.07);
+    --ui-accent: #a16207;
+    --ui-accent-fill: #b7791f;
+    --ui-accent-soft: rgba(183,121,31,.12);
+    --ui-accent-soft-hover: rgba(183,121,31,.18);
+    --ui-accent-border: rgba(183,121,31,.32);
+    --ui-on-accent: #ffffff;
+    --ui-green: #0f7a5c;
+    --ui-green-soft: rgba(15,122,92,.09);
+    --ui-green-border: rgba(15,122,92,.22);
+    --ui-amber: #a16207;
+    --ui-amber-soft: rgba(161,98,7,.09);
+    --ui-amber-border: rgba(161,98,7,.24);
+    --ui-red: #b4233a;
+    --ui-scrim: rgba(18,25,38,.38);
+    --ui-shadow: rgba(15,23,42,.18);
+    --ui-bloom: rgba(224,170,80,.20);
+  }
+
+  .app-window, .sidebar, .header-card, .titlebar, .ribbon, .panel, .photo-card,
+  .inspector-preview, .setup-modal, .modal-footer, .path-card, .setting-row,
+  .settings-group, .option-row, .theme-card, .summary-card, .summary-row,
+  .app-toast, .skip-confirm {
+    transition: background-color .32s var(--ease), border-color .32s var(--ease), color .32s var(--ease);
+  }
+
+  /* ---------- app shell ---------- */
+  .sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px 12px 12px;
+    background: var(--ui-sidebar);
+    border-right: 1px solid var(--ui-line-soft);
+  }
+  .nav { display: flex; flex-direction: column; gap: 3px; }
+  .nav-item {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    height: 34px;
+    padding: 0 9px;
+    border: 1px solid transparent;
+    border-radius: 9px;
+    color: var(--ui-dim);
+    font-size: 10.5px;
+    text-decoration: none;
+  }
+  .nav-item:hover { color: var(--ui-text); background: var(--ui-accent-soft); }
+  .nav-item.active {
+    color: var(--ui-text);
+    background: var(--ui-accent-soft);
+    border-color: var(--ui-accent-border);
+  }
+  .nav-item.active::before {
+    content: "";
+    position: absolute;
+    left: -12px;
+    top: 8px;
+    bottom: 8px;
+    width: 2px;
+    border-radius: 0 2px 2px 0;
+    background: var(--ui-accent);
+  }
+  .nav-item .icon { width: 16px; height: 16px; }
+  .nav-item.active .icon { color: var(--ui-accent); }
+  .nav-count { margin-left: auto; color: var(--ui-faint); font-family: var(--mono); font-size: 8px; }
+  .sidebar-section {
+    margin-top: 2px;
+    padding: 10px;
+    border: 1px solid var(--ui-line-soft);
+    border-radius: 12px;
+    background: var(--ui-inner);
+  }
+  .sidebar-label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    color: var(--ui-faint);
+    font-size: 8px;
+    letter-spacing: .07em;
+  }
+  .sidebar-label b { color: var(--ui-muted); font-weight: 500; }
+  .status-tabs { display: flex; gap: 3px; margin-bottom: 8px; }
+  .status-tab {
+    height: 20px;
+    padding: 0 6px;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--ui-faint);
+    font-size: 7.5px;
+  }
+  .status-tab.active { background: var(--ui-accent-soft); color: var(--ui-accent); }
+  .status-line { display: flex; justify-content: space-between; gap: 8px; color: var(--ui-muted); font-size: 8.5px; }
+  .status-line + .status-line { margin-top: 4px; color: var(--ui-faint); font-size: 8px; }
+  .status-bar { height: 2px; margin: 8px 0 6px; border-radius: 99px; background: var(--ui-deep); overflow: hidden; }
+  .status-bar span { display: block; width: 62%; height: 100%; border-radius: inherit; background: var(--ui-accent); }
+  .storage-row { display: flex; justify-content: space-between; color: var(--ui-muted); font-size: 8.5px; }
+  .storage-row + .storage-row { margin-top: 4px; color: var(--ui-faint); font-size: 8px; }
+  .daemon-pill { display: flex; align-items: center; gap: 6px; margin-top: 9px; color: var(--ui-faint); font-size: 8px; }
+  .daemon-pill::before {
+    content: "";
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--ui-green);
+    box-shadow: 0 0 8px var(--ui-green);
+  }
+  .version { margin-top: auto; color: var(--ui-faint); font-family: var(--mono); font-size: 7.5px; text-align: right; }
+
+  .main { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--ui-bg); }
+  .header-card {
+    margin: 12px 12px 0;
+    overflow: hidden;
+    border: 1px solid var(--ui-line);
+    border-radius: 22px;
+    background: var(--ui-header);
+    box-shadow: inset 0 1px 0 var(--ui-line-soft);
+  }
+  .titlebar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 46px;
+    padding: 0 15px;
+    border-bottom: 1px solid var(--ui-line-soft);
+    background: var(--ui-card);
+  }
+  .brand-glyph {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 7px;
+    background: var(--ui-accent-soft);
+    border: 1px solid var(--ui-accent-border);
+    color: var(--ui-accent);
+  }
+  .brand-glyph .icon { width: 13px; height: 13px; }
+  .titlebar-title { color: var(--ui-muted); font-size: 10px; font-weight: 550; }
+  .titlebar-sep { width: 1px; height: 16px; background: var(--ui-line); }
+  .titlebar-screen { color: var(--ui-text); font-size: 10.5px; font-weight: 600; }
+  .titlebar-spacer { flex: 1; }
+  .titlebar-icon {
+    display: grid;
+    place-items: center;
+    width: 27px;
+    height: 27px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--ui-faint);
+    position: relative;
+  }
+  .titlebar-icon:hover { background: var(--ui-accent-soft); color: var(--ui-text); }
+  .titlebar-icon .icon { width: 14px; height: 14px; }
+  .bell-dot {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--ui-amber);
+    box-shadow: 0 0 6px var(--ui-amber);
+  }
+  .window-buttons { display: flex; gap: 2px; margin-left: 4px; }
+  .window-buttons span {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 27px;
+    border-radius: 6px;
+    color: var(--ui-faint);
+    font-family: var(--mono);
+    font-size: 10px;
+  }
+  .ribbon {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    height: 62px;
+    padding: 0 10px;
+    background: var(--ui-ribbon);
+    overflow: hidden;
+  }
+  .ribbon-group {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    height: 46px;
+    padding: 0 9px;
+    border-right: 1px solid var(--ui-line-soft);
+  }
+  .ribbon-group:last-child { border-right: 0; }
+  .ribbon-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    min-width: 46px;
+    height: 40px;
+    padding: 0 5px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--ui-dim);
+    font-size: 8.5px;
+    line-height: 1;
+    text-align: center;
+  }
+  .ribbon-btn .icon { width: 16px; height: 16px; color: var(--ui-muted); }
+  .ribbon-btn:hover { color: var(--ui-text); background: var(--ui-accent-soft); border-color: var(--ui-line-soft); }
+  .ribbon-btn.primary { color: var(--ui-text); background: var(--ui-accent-soft); border-color: var(--ui-accent-border); }
+  .ribbon-btn.primary .icon { color: var(--ui-accent); }
+  .ribbon-label { margin-left: auto; color: var(--ui-faint); font-size: 7px; letter-spacing: .05em; }
+
+  .content { flex: 1; min-height: 0; padding: 12px; }
+  .photo-layout { display: grid; grid-template-columns: minmax(0, 1fr) 284px; gap: 12px; height: 100%; min-height: 0; }
+  .panel {
+    overflow: hidden;
+    border: 1px solid var(--ui-line);
+    border-radius: 22px;
+    background: var(--ui-card);
+    box-shadow: inset 0 1px 0 var(--ui-line-soft);
+  }
+  .gallery { display: flex; flex-direction: column; min-height: 0; position: relative; }
+  .gallery-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 42px;
+    padding: 0 13px;
+    border-bottom: 1px solid var(--ui-line-soft);
+    color: var(--ui-muted);
+    font-size: 9.5px;
+  }
+  .gallery-head b { color: var(--ui-text); font-size: 11px; font-weight: 600; }
+  .gallery-head .count { color: var(--ui-faint); font-family: var(--mono); font-size: 8px; }
+  .gallery-head .spacer { flex: 1; }
+  .tiny-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 23px;
+    padding: 0 8px;
+    border: 1px solid var(--ui-line);
+    border-radius: 6px;
+    background: var(--ui-inner);
+    color: var(--ui-dim);
+    font-size: 8.5px;
+  }
+  .tiny-btn:hover { color: var(--ui-text); border-color: var(--ui-line-strong); }
+  .tiny-btn .icon { width: 11px; height: 11px; }
+  .grid-wrap {
+    flex: 1;
+    min-height: 0;
+    padding: 13px;
+    position: relative;
+    background: radial-gradient(ellipse 80% 60% at 50% 0%, var(--ui-accent-soft), transparent 68%);
+  }
+  .grid-wrap::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1;
+    height: 58px;
+    background: linear-gradient(180deg, transparent, var(--ui-card));
+    pointer-events: none;
+  }
+  .photo-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; align-content: start; }
+  .photo-card {
+    position: relative;
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid var(--ui-line-soft);
+    border-radius: 13px;
+    background: var(--ui-inner);
+  }
+  .photo-card.selected { border-color: var(--ui-accent); box-shadow: 0 0 0 1px var(--ui-accent); }
+  .thumb { position: relative; aspect-ratio: 3 / 2; overflow: hidden; background: var(--ui-inner); }
+  .thumb::before, .thumb::after { content: ""; position: absolute; pointer-events: none; }
+  .thumb-overlay { position: absolute; inset: 0; background: linear-gradient(180deg, transparent 56%, rgba(3,6,12,.36)); }
+  .scene-night { background: linear-gradient(180deg, #0a1730 0%, #102b52 52%, #07101f 100%); }
+  .scene-night::before {
+    width: 120%;
+    height: 55%;
+    left: -10%;
+    bottom: -8%;
+    background: linear-gradient(180deg, transparent, rgba(3,8,16,.88)), repeating-linear-gradient(90deg, rgba(128,196,255,.18) 0 2px, transparent 2px 17px);
+    clip-path: polygon(0 40%, 8% 40%, 8% 20%, 16% 20%, 16% 52%, 24% 52%, 24% 8%, 33% 8%, 33% 46%, 42% 46%, 42% 26%, 50% 26%, 50% 60%, 58% 60%, 58% 14%, 67% 14%, 67% 44%, 76% 44%, 76% 22%, 85% 22%, 85% 55%, 94% 55%, 94% 30%, 100% 30%, 100% 100%, 0 100%);
+  }
+  .scene-night::after {
+    width: 58px;
+    height: 58px;
+    right: 12%;
+    top: 12%;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(139,203,255,.85), rgba(139,203,255,.15) 45%, transparent 70%);
+    filter: blur(1px);
+  }
+  .scene-sunset { background: linear-gradient(180deg, #301a2f 0%, #8a3e42 48%, #e08b55 72%, #1a1725 100%); }
+  .scene-sunset::before {
+    width: 34%;
+    aspect-ratio: 1;
+    left: 33%;
+    top: 27%;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(255,222,174,.95), rgba(255,168,102,.45) 48%, transparent 72%);
+    filter: blur(1px);
+  }
+  .scene-sunset::after {
+    width: 100%;
+    height: 36%;
+    left: 0;
+    bottom: 0;
+    background: linear-gradient(180deg, transparent, rgba(7,9,17,.92)), repeating-linear-gradient(90deg, rgba(9,12,20,.92) 0 18px, transparent 18px 32px);
+    clip-path: polygon(0 45%, 10% 45%, 10% 22%, 20% 22%, 20% 58%, 31% 58%, 31% 34%, 44% 34%, 44% 66%, 57% 66%, 57% 18%, 69% 18%, 69% 52%, 81% 52%, 81% 30%, 91% 30%, 91% 60%, 100% 60%, 100% 100%, 0 100%);
+  }
+  .scene-forest { background: linear-gradient(180deg, #081a1a 0%, #0d302b 46%, #06100f 100%); }
+  .scene-forest::before {
+    width: 100%;
+    height: 100%;
+    left: 0;
+    top: 0;
+    background: radial-gradient(ellipse 44% 52% at 50% 38%, rgba(126,226,184,.26), transparent 70%), repeating-linear-gradient(102deg, rgba(5,18,17,.9) 0 7px, transparent 7px 26px);
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%, 0 50%, 8% 50%, 8% 22%, 20% 22%, 20% 48%, 33% 48%, 33% 14%, 47% 14%, 47% 52%, 61% 52%, 61% 20%, 74% 20%, 74% 46%, 87% 46%, 87% 28%, 100% 28%);
+    opacity: .7;
+  }
+  .scene-forest::after {
+    width: 18%;
+    height: 42%;
+    left: 41%;
+    bottom: 0;
+    background: linear-gradient(180deg, transparent, rgba(4,9,9,.9));
+    border-left: 2px solid rgba(126,226,184,.28);
+    border-right: 2px solid rgba(126,226,184,.28);
+  }
+  .scene-aqua { background: linear-gradient(180deg, #08223a 0%, #0d4660 50%, #05131f 100%); }
+  .scene-aqua::before {
+    width: 90%;
+    height: 50%;
+    left: 5%;
+    top: 20%;
+    border-radius: 50% 50% 12% 12%;
+    background: radial-gradient(ellipse at 50% 25%, rgba(154,234,255,.32), transparent 66%), repeating-linear-gradient(90deg, rgba(154,234,255,.16) 0 1px, transparent 1px 22px);
+    transform: perspective(300px) rotateX(52deg);
+    opacity: .9;
+  }
+  .scene-aqua::after {
+    width: 100%;
+    height: 34%;
+    left: 0;
+    bottom: 0;
+    background: linear-gradient(180deg, transparent, rgba(3,12,20,.9)), repeating-linear-gradient(0deg, rgba(154,234,255,.1) 0 1px, transparent 1px 8px);
+  }
+  .scene-stage { background: linear-gradient(180deg, #190e2e 0%, #3d1d58 48%, #0e0918 100%); }
+  .scene-stage::before {
+    width: 70%;
+    height: 52%;
+    left: 15%;
+    top: 10%;
+    background: radial-gradient(ellipse at 50% 100%, rgba(255,173,225,.32), transparent 68%), conic-gradient(from 220deg at 50% 100%, transparent, rgba(139,203,255,.22), transparent 34%, rgba(255,148,168,.22), transparent 68%);
+    filter: blur(2px);
+  }
+  .scene-stage::after {
+    width: 44%;
+    height: 16%;
+    left: 28%;
+    bottom: 0;
+    border-radius: 50% 50% 0 0;
+    background: linear-gradient(180deg, rgba(255,255,255,.16), rgba(8,5,15,.8));
+  }
+  .scene-snow { background: linear-gradient(180deg, #12263d 0%, #31516b 55%, #0b1620 100%); }
+  .scene-snow::before {
+    width: 100%;
+    height: 44%;
+    left: 0;
+    bottom: 0;
+    background: linear-gradient(180deg, rgba(235,248,255,.35), rgba(9,18,26,.9));
+    clip-path: polygon(0 62%, 18% 44%, 36% 58%, 52% 26%, 68% 52%, 84% 34%, 100% 56%, 100% 100%, 0 100%);
+  }
+  .scene-snow::after {
+    width: 34px;
+    height: 34px;
+    right: 15%;
+    top: 16%;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(225,244,255,.8), transparent 68%);
+    box-shadow: 0 0 26px rgba(190,229,255,.3);
+  }
+  .scene-garden { background: linear-gradient(180deg, #251726 0%, #6b304d 46%, #1a101b 100%); }
+  .scene-garden::before {
+    width: 100%;
+    height: 100%;
+    left: 0;
+    top: 0;
+    background: radial-gradient(ellipse 40% 46% at 32% 40%, rgba(255,170,210,.32), transparent 68%), radial-gradient(ellipse 36% 42% at 70% 32%, rgba(255,210,230,.2), transparent 66%);
+  }
+  .scene-garden::after {
+    width: 100%;
+    height: 36%;
+    left: 0;
+    bottom: 0;
+    background: linear-gradient(180deg, transparent, rgba(12,7,14,.9)), repeating-linear-gradient(78deg, rgba(255,170,210,.18) 0 2px, transparent 2px 28px);
+    clip-path: polygon(0 58%, 22% 44%, 44% 56%, 66% 38%, 88% 54%, 100% 46%, 100% 100%, 0 100%);
+  }
+  .scene-desert { background: linear-gradient(180deg, #2d1d18 0%, #8d5a3a 48%, #1d130f 100%); }
+  .scene-desert::before {
+    width: 100%;
+    height: 58%;
+    left: 0;
+    bottom: 0;
+    background: linear-gradient(180deg, transparent, rgba(17,11,9,.92)), repeating-linear-gradient(115deg, rgba(255,216,166,.14) 0 1px, transparent 1px 16px);
+    clip-path: polygon(0 54%, 16% 38%, 30% 52%, 48% 28%, 64% 50%, 80% 36%, 100% 56%, 100% 100%, 0 100%);
+  }
+  .scene-neon { background: linear-gradient(180deg, #081327 0%, #14264f 48%, #090b18 100%); }
+  .scene-neon::before {
+    width: 100%;
+    height: 100%;
+    left: 0;
+    top: 0;
+    background: linear-gradient(90deg, transparent 18%, rgba(110,160,255,.22) 18.5%, transparent 19%), linear-gradient(90deg, transparent 72%, rgba(255,120,210,.2) 72.5%, transparent 73%), radial-gradient(ellipse 40% 60% at 28% 40%, rgba(90,169,255,.3), transparent 70%);
+  }
+  .scene-neon::after {
+    width: 100%;
+    height: 30%;
+    left: 0;
+    bottom: 0;
+    background: linear-gradient(180deg, transparent, rgba(4,7,15,.9)), repeating-linear-gradient(0deg, rgba(90,169,255,.16) 0 1px, transparent 1px 12px);
+  }
+  .card-top { position: absolute; inset: 8px 8px auto; display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; z-index: 2; }
+  .card-flags { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+  .flag {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    height: 15px;
+    padding: 0 5px;
+    border-radius: 99px;
+    font-size: 6.5px;
+    letter-spacing: .02em;
+    background: rgba(5,9,15,.66);
+    border: 1px solid rgba(255,255,255,.12);
+    color: #a3adbd;
+  }
+  .flag .dot { width: 4px; height: 4px; border-radius: 50%; background: #7ee2b8; }
+  .flag.fav { color: #f4c878; border-color: rgba(244,200,120,.2); }
+  .card-body { display: flex; flex-direction: column; gap: 2px; padding: 7px 8px 8px; }
+  .card-title { overflow: hidden; color: var(--ui-text); font-size: 9px; font-weight: 560; text-overflow: ellipsis; white-space: nowrap; }
+  .card-meta { display: flex; justify-content: space-between; gap: 6px; color: var(--ui-faint); font-family: var(--mono); font-size: 7px; }
+  .year-rail {
+    position: absolute;
+    top: 58px;
+    right: 2px;
+    bottom: 14px;
+    width: 17px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    color: var(--ui-faint);
+    font-family: var(--mono);
+    font-size: 6.5px;
+    opacity: .8;
+    z-index: 2;
+  }
+  .year-rail span { position: relative; }
+  .year-rail span::before { content: ""; position: absolute; left: 50%; top: 12px; width: 1px; height: 24px; background: var(--ui-line-soft); }
+  .year-rail span:last-child::before { display: none; }
+
+  .inspector { display: flex; flex-direction: column; min-height: 0; }
+  .inspector-preview { position: relative; height: 150px; overflow: hidden; border-bottom: 1px solid var(--ui-line-soft); background: var(--ui-inner); }
+  .inspector-preview .scene-sunset { position: absolute; inset: 0; }
+  .inspector-preview::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(5,9,15,.02), rgba(13,20,32,.86)); }
+  .inspector-badges { position: absolute; left: 11px; bottom: 10px; display: flex; gap: 4px; z-index: 2; }
+  .inspector-body { flex: 1; min-height: 0; overflow: auto; padding: 11px 12px 12px; }
+  .inspector-title-row { display: flex; align-items: center; gap: 7px; }
+  .inspector-title { font-size: 15px; line-height: 1.2; letter-spacing: -.02em; font-weight: 650; color: var(--ui-text); }
+  .favorite { margin-left: auto; color: var(--ui-amber); }
+  .inspector-date { margin: 4px 0 10px; color: var(--ui-faint); font-family: var(--mono); font-size: 7.5px; }
+  .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; padding: 9px 0; border-top: 1px solid var(--ui-line-soft); border-bottom: 1px solid var(--ui-line-soft); }
+  .meta-grid label { display: block; color: var(--ui-faint); font-size: 7px; }
+  .meta-grid b { display: block; overflow: hidden; margin-top: 2px; color: var(--ui-muted); font-size: 8.5px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+  .inspector-section { padding-top: 10px; }
+  .section-label { margin-bottom: 6px; color: var(--ui-faint); font-size: 7.5px; letter-spacing: .04em; }
+  .tag-row { display: flex; flex-wrap: wrap; gap: 4px; }
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    height: 19px;
+    padding: 0 6px;
+    border: 1px solid var(--ui-line);
+    border-radius: 99px;
+    background: var(--ui-inner);
+    color: var(--ui-muted);
+    font-size: 7.5px;
+  }
+  .tag b { color: var(--ui-faint); font-weight: 400; }
+  .inspector-foot { display: flex; gap: 5px; padding: 9px; border-top: 1px solid var(--ui-line-soft); background: var(--ui-inner); }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    height: 27px;
+    padding: 0 9px;
+    border: 1px solid var(--ui-line);
+    border-radius: 7px;
+    background: var(--ui-card);
+    color: var(--ui-muted);
+    font-size: 8.5px;
+  }
+  .btn:hover { color: var(--ui-text); border-color: var(--ui-line-strong); }
+  .btn.primary { background: var(--ui-accent-soft); border-color: var(--ui-accent-border); color: var(--ui-accent); }
+  .btn .icon { width: 12px; height: 12px; }
+
+  /* ---------- setup scrim + modal ---------- */
+  .setup-scrim {
+    position: absolute;
+    inset: 0;
+    z-index: 60;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: var(--ui-scrim);
+    opacity: 1;
+    transition: opacity .26s var(--ease), visibility 0s 0s;
+    animation: scrim-in .3s var(--ease);
+  }
+  .setup-scrim.is-hidden {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity .26s var(--ease), visibility 0s .26s;
+  }
+  .setup-modal {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    width: 780px;
+    height: 640px;
+    max-width: 100%;
+    max-height: 100%;
+    overflow: hidden;
+    border: 1px solid var(--ui-line-strong);
+    border-radius: 20px;
+    background: var(--ui-card);
+    box-shadow: 0 44px 110px var(--ui-shadow), 0 14px 38px rgba(0,0,0,.34), inset 0 1px 0 var(--ui-line-soft);
+  }
+  .setup-modal.is-closing { animation: modal-out .26s var(--ease) both; }
+  .setup-modal.is-entering { animation: modal-in .46s var(--ease-out) both; }
+  .modal-bloom { position: absolute; inset: 0; overflow: hidden; border-radius: inherit; pointer-events: none; }
+  .modal-bloom::before {
+    content: "";
+    position: absolute;
+    width: 560px;
+    height: 380px;
+    top: -230px;
+    right: -140px;
+    background: radial-gradient(ellipse, var(--ui-bloom), transparent 66%);
+    filter: blur(12px);
+    opacity: .8;
+    animation: bloom-drift 16s ease-in-out infinite alternate;
+  }
+  .modal-bloom::after {
+    content: "";
+    position: absolute;
+    width: 380px;
+    height: 300px;
+    left: -190px;
+    bottom: -190px;
+    background: radial-gradient(ellipse, var(--ui-accent-soft), transparent 68%);
+    filter: blur(16px);
+    opacity: .55;
+    animation: bloom-drift 19s ease-in-out infinite alternate-reverse;
+  }
+  .modal-progress {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    z-index: 5;
+    background: var(--ui-line-soft);
+  }
+  .modal-progress span {
+    display: block;
+    width: 20%;
+    height: 100%;
+    background: linear-gradient(90deg, var(--ui-accent), var(--ui-accent-fill));
+    box-shadow: 0 0 12px var(--ui-accent-soft-hover);
+    transition: width .48s var(--ease);
+  }
+  .modal-top {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+    height: 62px;
+    padding: 0 28px;
+  }
+  .back-btn {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: 1px solid var(--ui-line);
+    border-radius: 50%;
+    background: var(--ui-inner);
+    color: var(--ui-muted);
+    transition: background .18s, border-color .18s, color .18s, opacity .18s, transform .18s;
+  }
+  .back-btn:hover { border-color: var(--ui-line-strong); color: var(--ui-text); background: var(--ui-accent-soft); }
+  .back-btn:active { transform: scale(.96); }
+  .back-btn.is-hidden { opacity: 0; visibility: hidden; pointer-events: none; transform: translateX(-4px); }
+  .back-btn .icon { width: 14px; height: 14px; }
+  .modal-brand { display: flex; align-items: center; gap: 9px; min-width: 0; }
+  .modal-brand .brand-glyph { width: 26px; height: 26px; border-radius: 8px; }
+  .modal-brand .brand-glyph .icon { width: 15px; height: 15px; }
+  .brand-copy { min-width: 0; }
+  .brand-copy b { display: block; color: var(--ui-text); font-size: 10.5px; font-weight: 600; line-height: 1.3; }
+  .brand-copy span { display: block; color: var(--ui-dim); font-size: 8.5px; line-height: 1.4; }
+  .top-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+  .lang-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 28px;
+    padding: 0 8px;
+    border: 1px solid var(--ui-line);
+    border-radius: 7px;
+    background: transparent;
+    color: var(--ui-muted);
+    font-size: 9.5px;
+    transition: background .18s, border-color .18s, color .18s;
+  }
+  .lang-btn:hover { border-color: var(--ui-line-strong); color: var(--ui-text); background: var(--ui-accent-soft); }
+  .lang-btn .icon { width: 12px; height: 12px; }
+  .skip-btn {
+    height: 28px;
+    padding: 0 4px;
+    border: 0;
+    background: transparent;
+    color: var(--ui-dim);
+    font-size: 10px;
+    transition: color .18s;
+  }
+  .skip-btn:hover { color: var(--ui-text); }
+
+  .modal-body {
+    position: relative;
+    z-index: 2;
+    flex: 1;
+    min-height: 0;
+    padding: 8px 56px 0;
+  }
+  .step-panes { position: relative; height: 100%; }
+  .step-pane {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    opacity: 0;
+    visibility: hidden;
+  }
+  .step-pane.active { opacity: 1; visibility: visible; z-index: 2; }
+  .step-kicker {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 9px;
+    color: var(--ui-accent);
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: .18em;
+    line-height: 1.3;
+  }
+  .step-kicker::before { content: ""; width: 16px; height: 1px; background: currentColor; opacity: .65; }
+  .step-title {
+    margin: 0;
+    color: var(--ui-text);
+    font-size: 30px;
+    line-height: 1.2;
+    letter-spacing: -.035em;
+    font-weight: 650;
+  }
+  .step-lede {
+    max-width: 590px;
+    margin: 11px 0 0;
+    color: var(--ui-muted);
+    font-size: 13px;
+    line-height: 1.75;
+  }
+  .foot-note {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-top: 20px;
+    padding: 0 0 4px;
+    color: var(--ui-dim);
+    font-size: 10px;
+    line-height: 1.6;
+  }
+  .foot-note .icon { width: 12px; height: 12px; color: var(--ui-faint); }
+
+  /* welcome */
+  .welcome-head { display: flex; align-items: center; gap: 22px; padding-top: 2px; }
+  .welcome-logo { position: relative; flex: none; width: 82px; height: 82px; display: grid; place-items: center; }
+  .logo-halo {
+    position: absolute;
+    inset: -22px;
+    border-radius: 50%;
+    background: radial-gradient(circle, var(--ui-accent-soft-hover), transparent 68%);
+    filter: blur(4px);
+    animation: halo-pulse 6s ease-in-out infinite;
+  }
+  .logo-ring {
+    position: absolute;
+    inset: 1px;
+    border: 1px solid var(--ui-accent-border);
+    border-radius: 24px;
+    opacity: .55;
+    animation: ring-drift 18s linear infinite;
+  }
+  .logo-ring.second { inset: -7px; border-radius: 28px; opacity: .22; animation-direction: reverse; animation-duration: 24s; }
+  .logo-tile {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 62px;
+    height: 62px;
+    border: 1px solid var(--ui-accent-border);
+    border-radius: 18px;
+    background: linear-gradient(145deg, var(--ui-accent-soft), var(--ui-inner));
+    color: var(--ui-accent);
+    box-shadow: 0 10px 28px var(--ui-shadow), inset 0 1px 0 var(--ui-line-soft);
+  }
+  .logo-tile .icon { width: 30px; height: 30px; }
+  .welcome-head .step-title { font-size: 31px; }
+  .welcome-head .step-lede { max-width: 540px; }
+  .feature-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 24px; }
+  .feature-card {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    min-height: 116px;
+    padding: 14px 14px 15px;
+    border: 1px solid var(--ui-line-soft);
+    border-radius: 14px;
+    background: var(--ui-inner);
+  }
+  .feature-icon {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 9px;
+    background: var(--ui-accent-soft);
+    color: var(--ui-accent);
+  }
+  .feature-icon .icon { width: 15px; height: 15px; }
+  .feature-card b { color: var(--ui-text); font-size: 11.5px; font-weight: 600; line-height: 1.4; }
+  .feature-card span { color: var(--ui-dim); font-size: 10.5px; line-height: 1.65; }
+
+  /* photos */
+  .step-head { padding-top: 2px; }
+  .path-card {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-top: 25px;
+    padding: 15px 16px;
+    border: 1px solid var(--ui-line);
+    border-radius: 16px;
+    background: var(--ui-inner);
+    box-shadow: inset 0 1px 0 var(--ui-line-soft);
+  }
+  .path-icon {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 42px;
+    height: 42px;
+    border: 1px solid var(--ui-accent-border);
+    border-radius: 12px;
+    background: var(--ui-accent-soft);
+    color: var(--ui-accent);
+  }
+  .path-icon .icon { width: 19px; height: 19px; }
+  .path-copy { flex: 1; min-width: 0; }
+  .path-label { display: block; color: var(--ui-dim); font-size: 9.5px; letter-spacing: .04em; }
+  .path-value {
+    display: block;
+    overflow: hidden;
+    margin-top: 3px;
+    color: var(--ui-text);
+    font-family: var(--mono);
+    font-size: 11.5px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .path-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 6px; color: var(--ui-muted); font-size: 10px; }
+  .status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--ui-green);
+    box-shadow: 0 0 8px var(--ui-green);
+  }
+  .btn-quiet {
+    flex: none;
+    height: 30px;
+    padding: 0 11px;
+    border: 1px solid var(--ui-line);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--ui-muted);
+    font-size: 10.5px;
+    transition: background .18s, border-color .18s, color .18s;
+  }
+  .btn-quiet:hover { border-color: var(--ui-line-strong); color: var(--ui-text); background: var(--ui-accent-soft); }
+  .path-card.empty { border-color: var(--ui-amber-border); background: linear-gradient(180deg, var(--ui-amber-soft), var(--ui-inner)); }
+  .path-card.empty .path-icon { border-color: var(--ui-amber-border); background: var(--ui-amber-soft); color: var(--ui-amber); }
+  .path-card.empty .path-value { color: var(--ui-amber); font-family: var(--font); font-size: 11.5px; }
+  .path-card.empty .path-meta { display: block; line-height: 1.55; }
+  .path-card.empty .status-dot { background: var(--ui-amber); box-shadow: 0 0 8px var(--ui-amber); }
+  .path-card.empty .btn-quiet { border-color: var(--ui-amber-border); color: var(--ui-amber); }
+  .setting-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-top: 14px;
+    padding: 13px 16px;
+    border: 1px solid var(--ui-line-soft);
+    border-radius: 14px;
+    background: var(--ui-inner);
+  }
+  .setting-copy { flex: 1; min-width: 0; }
+  .setting-copy b { display: block; color: var(--ui-text); font-size: 12px; font-weight: 600; line-height: 1.4; }
+  .setting-copy span { display: block; margin-top: 3px; color: var(--ui-dim); font-size: 11px; line-height: 1.6; }
+
+  .photo-peek { margin-top: 16px; }
+  .peek-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 7px; }
+  .peek-head b { color: var(--ui-muted); font-size: 9.5px; font-weight: 550; }
+  .peek-head span { color: var(--ui-faint); font-size: 8.5px; }
+  .peek-strip { display: flex; gap: 7px; }
+  .peek-item {
+    position: relative;
+    flex: 1;
+    height: 76px;
+    overflow: hidden;
+    border: 1px solid var(--ui-line-soft);
+    border-radius: 9px;
+  }
+  .peek-more {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 66px;
+    height: 76px;
+    border: 1px solid var(--ui-line-soft);
+    border-radius: 9px;
+    background: var(--ui-deep);
+    color: var(--ui-dim);
+    font-family: var(--mono);
+    font-size: 9px;
+  }
+
+  /* switches */
+  .switch {
+    position: relative;
+    flex: none;
+    width: 38px;
+    height: 22px;
+    padding: 0;
+    border: 1px solid var(--ui-line-strong);
+    border-radius: 999px;
+    background: var(--ui-deep);
+    transition: background .2s var(--ease), border-color .2s var(--ease), opacity .2s;
+  }
+  .switch span {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--ui-muted);
+    transition: transform .2s var(--ease), background .2s var(--ease);
+  }
+  .switch.on { border-color: transparent; background: var(--ui-accent-fill); }
+  .switch.on span { transform: translateX(16px); background: var(--ui-on-accent); }
+  .switch:disabled { opacity: .38; cursor: not-allowed; }
+
+  /* automation */
+  .settings-group { margin-top: 23px; border: 1px solid var(--ui-line); border-radius: 16px; background: var(--ui-inner); overflow: hidden; }
+  .option-row { display: flex; align-items: center; gap: 13px; padding: 14px 16px; }
+  .option-row + .option-row { border-top: 1px solid var(--ui-line-soft); }
+  .option-row.disabled { opacity: .46; }
+  .option-icon {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 31px;
+    height: 31px;
+    border-radius: 9px;
+    background: var(--ui-accent-soft);
+    color: var(--ui-accent);
+  }
+  .option-icon .icon { width: 15px; height: 15px; }
+  .option-copy { flex: 1; min-width: 0; }
+  .option-copy b { display: block; color: var(--ui-text); font-size: 12px; font-weight: 600; line-height: 1.4; }
+  .option-copy span { display: block; margin-top: 3px; color: var(--ui-dim); font-size: 11px; line-height: 1.6; }
+  .state-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    flex: none;
+    padding: 3px 8px;
+    border: 1px solid var(--ui-green-border);
+    border-radius: 999px;
+    background: var(--ui-green-soft);
+    color: var(--ui-green);
+    font-size: 9px;
+    font-weight: 550;
+    line-height: 1.2;
+  }
+  .state-pill::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+  .state-pill.neutral { border-color: var(--ui-line); background: var(--ui-deep); color: var(--ui-muted); }
+  .safety-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-top: 13px;
+    padding: 10px 12px;
+    border: 1px solid var(--ui-green-border);
+    border-radius: 11px;
+    background: var(--ui-green-soft);
+    color: var(--ui-green);
+    font-size: 10px;
+    line-height: 1.6;
+  }
+  .safety-note .icon { width: 13px; height: 13px; margin-top: 1px; }
+  .safety-note.caution { border-color: var(--ui-amber-border); background: var(--ui-amber-soft); color: var(--ui-amber); }
+  .safety-note.neutral { border-color: var(--ui-line); background: var(--ui-deep); color: var(--ui-dim); }
+
+  /* appearance */
+  .theme-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 22px; }
+  .theme-card {
+    position: relative;
+    padding: 6px;
+    border: 1px solid var(--ui-line);
+    border-radius: 14px;
+    background: var(--ui-inner);
+    text-align: left;
+    transition: border-color .2s var(--ease), box-shadow .2s var(--ease), transform .2s var(--ease), background-color .2s;
+  }
+  .theme-card:hover { transform: translateY(-2px); border-color: var(--ui-line-strong); }
+  .theme-card.selected {
+    border-color: var(--ui-accent);
+    box-shadow: 0 0 0 1px var(--ui-accent), 0 10px 24px var(--ui-shadow);
+  }
+  .theme-preview {
+    display: grid;
+    grid-template-columns: 26px minmax(0, 1fr);
+    height: 86px;
+    overflow: hidden;
+    border: 1px solid var(--pv-line);
+    border-radius: 9px;
+    background: var(--pv-bg);
+  }
+  .tp-side { background: var(--pv-side); border-right: 1px solid var(--pv-line); }
+  .tp-main { display: flex; flex-direction: column; gap: 4px; padding: 5px; }
+  .tp-bar { height: 7px; border: 1px solid var(--pv-line); border-radius: 2px; background: var(--pv-header); }
+  .tp-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; flex: 1; }
+  .tp-tile { position: relative; overflow: hidden; border-radius: 2px; background: var(--pv-tile); }
+  .tp-tile::after { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at 32% 30%, var(--pv-accent), transparent 64%); opacity: .6; }
+  .tp-line { width: 48%; height: 2px; border-radius: 2px; background: var(--pv-accent); opacity: .75; }
+  .theme-preview[data-preview="charcoal"] { --pv-bg:#05080e; --pv-side:#0b111b; --pv-header:#101725; --pv-tile:#152138; --pv-line:rgba(255,255,255,.08); --pv-accent:#8bcbff; }
+  .theme-preview[data-preview="midnight"] { --pv-bg:#04060d; --pv-side:#090e1c; --pv-header:#0d1426; --pv-tile:#1a1633; --pv-line:rgba(214,208,255,.10); --pv-accent:#c0b0ff; }
+  .theme-preview[data-preview="forest"] { --pv-bg:#040b09; --pv-side:#07110e; --pv-header:#0b1713; --pv-tile:#123025; --pv-line:rgba(214,255,235,.09); --pv-accent:#7ee2b8; }
+  .theme-preview[data-preview="paper"] { --pv-bg:#eef1f5; --pv-side:#f7f8fb; --pv-header:#ffffff; --pv-tile:#dde5ef; --pv-line:rgba(15,23,42,.12); --pv-accent:#b7791f; }
+  .theme-label { display: flex; align-items: center; gap: 7px; padding: 8px 4px 4px; }
+  .theme-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--pv-accent, var(--ui-accent)); }
+  .theme-label div { min-width: 0; }
+  .theme-label b { display: block; overflow: hidden; color: var(--ui-text); font-size: 10px; font-weight: 600; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
+  .theme-label span { display: block; overflow: hidden; color: var(--ui-dim); font-size: 8.5px; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
+  .theme-check {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 14px;
+    height: 14px;
+    margin-left: auto;
+    border-radius: 50%;
+    background: var(--ui-accent-fill);
+    color: var(--ui-on-accent);
+    font-size: 8px;
+    opacity: 0;
+    transform: scale(.7);
+    transition: opacity .2s var(--ease), transform .2s var(--ease);
+  }
+  .theme-card.selected .theme-check { opacity: 1; transform: none; }
+  .look-motion { margin-top: 18px; }
+  .look-motion .setting-row { margin-top: 0; }
+
+  /* complete */
+  .complete-head { display: flex; flex-direction: column; align-items: center; padding-top: 2px; text-align: center; }
+  .check-wrap { position: relative; display: grid; place-items: center; width: 76px; height: 76px; margin-bottom: 14px; }
+  .check-halo {
+    position: absolute;
+    inset: -18px;
+    border-radius: 50%;
+    background: radial-gradient(circle, var(--ui-green-soft), transparent 68%);
+    animation: check-halo .9s var(--ease-out) both;
+  }
+  .check-svg { width: 64px; height: 64px; overflow: visible; }
+  .check-circle { fill: none; stroke: var(--ui-green); stroke-width: 3; stroke-linecap: round; stroke-dasharray: 196; stroke-dashoffset: 196; }
+  .check-mark { fill: none; stroke: var(--ui-green); stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 44; stroke-dashoffset: 44; }
+  .step-pane.active .check-circle { animation: draw-circle .62s var(--ease) .08s forwards; }
+  .step-pane.active .check-mark { animation: draw-check .32s var(--ease) .46s forwards; }
+  .complete-head .step-title { font-size: 28px; }
+  .complete-head .step-lede { max-width: 460px; margin-top: 9px; text-align: center; }
+  .summary-card { margin-top: 20px; overflow: hidden; border: 1px solid var(--ui-line); border-radius: 16px; background: var(--ui-inner); }
+  .summary-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 11px 15px;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+  }
+  .summary-row + .summary-row { border-top: 1px solid var(--ui-line-soft); }
+  .summary-row:hover { background: var(--ui-accent-soft); }
+  .summary-icon {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 27px;
+    height: 27px;
+    border-radius: 8px;
+    background: var(--ui-accent-soft);
+    color: var(--ui-accent);
+  }
+  .summary-icon .icon { width: 13px; height: 13px; }
+  .summary-copy { flex: 1; min-width: 0; }
+  .summary-copy span { display: block; color: var(--ui-dim); font-size: 9px; line-height: 1.4; }
+  .summary-copy b { display: block; overflow: hidden; margin-top: 1px; color: var(--ui-text); font-size: 11px; font-weight: 550; line-height: 1.5; text-overflow: ellipsis; white-space: nowrap; }
+  .sum-edit { flex: none; color: var(--ui-accent); font-size: 9px; opacity: .85; }
+
+  /* footer */
+  .modal-footer {
+    position: relative;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-shrink: 0;
+    padding: 17px 28px 19px;
+    border-top: 1px solid var(--ui-line-soft);
+    background: var(--ui-card);
+  }
+  .step-meta { display: flex; align-items: center; gap: 11px; }
+  .step-count { color: var(--ui-dim); font-family: var(--mono); font-size: 8.5px; letter-spacing: .06em; }
+  .step-dots { display: flex; align-items: center; gap: 4px; }
+  .step-dot { width: 5px; height: 5px; border-radius: 99px; background: var(--ui-line-strong); transition: width .3s var(--ease), background-color .3s var(--ease); }
+  .step-dot.active { width: 16px; background: var(--ui-accent); }
+  .modal-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    min-width: 112px;
+    height: 38px;
+    padding: 0 17px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: var(--ui-accent-fill);
+    color: var(--ui-on-accent);
+    font-size: 11.5px;
+    font-weight: 600;
+    box-shadow: 0 8px 20px var(--ui-accent-soft);
+    transition: filter .18s, transform .18s, box-shadow .18s, opacity .18s;
+  }
+  .btn-primary:hover { filter: brightness(1.08); transform: translateY(-1px); box-shadow: 0 11px 24px var(--ui-accent-soft-hover); }
+  .btn-primary:active { transform: translateY(0); }
+  .btn-primary:disabled { opacity: .6; pointer-events: none; }
+  .btn-primary .icon { width: 14px; height: 14px; }
+  .spinner {
+    width: 13px;
+    height: 13px;
+    border: 1.5px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+  }
+  .spinner[hidden] { display: none; }
+
+  .skip-confirm {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 8;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px 28px;
+    border-top: 1px solid var(--ui-line-strong);
+    background: var(--ui-deep);
+    box-shadow: 0 -18px 44px var(--ui-shadow);
+    transform: translateY(100%);
+    visibility: hidden;
+    transition: transform .28s var(--ease), visibility 0s .28s;
+  }
+  .skip-confirm.open { transform: none; visibility: visible; transition: transform .28s var(--ease); }
+  .skip-confirm-copy { flex: 1; min-width: 0; }
+  .skip-confirm-copy b { display: block; color: var(--ui-text); font-size: 11px; font-weight: 600; }
+  .skip-confirm-copy span { display: block; margin-top: 2px; color: var(--ui-dim); font-size: 10px; line-height: 1.55; }
+  .skip-confirm-actions { display: flex; flex: none; gap: 7px; }
+  .btn-secondary {
+    height: 32px;
+    padding: 0 12px;
+    border: 1px solid var(--ui-line);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--ui-muted);
+    font-size: 10px;
+    transition: background .18s, border-color .18s, color .18s;
+  }
+  .btn-secondary:hover { border-color: var(--ui-line-strong); color: var(--ui-text); background: var(--ui-accent-soft); }
+  .btn-secondary.danger { border-color: var(--ui-amber-border); color: var(--ui-amber); }
+  .btn-secondary.danger:hover { background: var(--ui-amber-soft); }
+
+  /* toast + mock badge */
+  .app-toast {
+    position: absolute;
+    right: 20px;
+    bottom: 20px;
+    z-index: 70;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    width: 322px;
+    padding: 12px 13px;
+    border: 1px solid var(--ui-line-strong);
+    border-radius: 13px;
+    background: var(--ui-card);
+    box-shadow: 0 18px 44px var(--ui-shadow);
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(8px);
+    transition: opacity .22s var(--ease), transform .22s var(--ease), visibility 0s .22s;
+  }
+  .app-toast.show { opacity: 1; visibility: visible; transform: none; transition: opacity .22s var(--ease), transform .22s var(--ease); }
+  .toast-icon {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+    background: var(--ui-green-soft);
+    color: var(--ui-green);
+  }
+  .toast-icon .icon { width: 13px; height: 13px; }
+  .app-toast.info .toast-icon { background: var(--ui-accent-soft); color: var(--ui-accent); }
+  .toast-copy { flex: 1; min-width: 0; }
+  .toast-copy b { display: block; color: var(--ui-text); font-size: 10px; font-weight: 600; }
+  .toast-copy span { display: block; margin-top: 2px; color: var(--ui-dim); font-size: 9px; line-height: 1.5; }
+  .toast-close { flex: none; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--ui-faint); font-size: 12px; line-height: 1; }
+  .toast-close:hover { background: var(--ui-accent-soft); color: var(--ui-text); }
+  .mock-badge {
+    position: absolute;
+    left: 50%;
+    top: 15px;
+    z-index: 70;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 11px;
+    border: 1px dashed rgba(244,200,120,.55);
+    border-radius: 9px;
+    background: rgba(8,13,21,.9);
+    color: #f4c878;
+    font-family: var(--mono);
+    font-size: 8.5px;
+    letter-spacing: .02em;
+    transform: translateX(-50%);
+  }
+  .mock-badge[hidden] { display: none; }
+  .mock-badge::before { content: "MOCK"; padding: 1px 4px; border: 1px solid rgba(244,200,120,.4); border-radius: 3px; font-size: 7px; }
+
+  /* reduced motion inside the simulated app */
+  .app-window.reduce-motion *,
+  .app-window.reduce-motion *::before,
+  .app-window.reduce-motion *::after {
+    animation-duration: .001ms !important;
+    animation-delay: 0ms !important;
+    transition-duration: .001ms !important;
+  }
+
+  /* ---------- notes ---------- */
+  .notes { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 30px; }
+  .note {
+    padding: 17px 19px;
+    border: 1px solid var(--page-line-soft);
+    border-radius: 16px;
+    background: rgba(13,20,32,.58);
+  }
+  .note h2 { display: flex; align-items: center; gap: 8px; margin: 0 0 9px; color: var(--page-text); font-size: 12.5px; font-weight: 600; }
+  .note h2 .note-num {
+    display: grid;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    border: 1px solid var(--page-line);
+    border-radius: 5px;
+    color: var(--page-accent);
+    font-family: var(--mono);
+    font-size: 8px;
+    font-weight: 400;
+  }
+  .note p { margin: 0; color: var(--page-muted); font-size: 10.5px; line-height: 1.75; }
+  .note p + p { margin-top: 7px; }
+  .note ul { margin: 7px 0 0; padding-left: 17px; color: var(--page-muted); font-size: 10.5px; line-height: 1.75; }
+  .note li + li { margin-top: 4px; }
+  .note b { color: var(--page-text); font-weight: 560; }
+  .note code {
+    padding: 1px 4px;
+    border: 1px solid var(--page-line-soft);
+    border-radius: 4px;
+    background: rgba(255,255,255,.035);
+    color: #c9ddff;
+    font-family: var(--mono);
+    font-size: 9px;
+  }
+  .note .pill {
+    display: inline-flex;
+    align-items: center;
+    height: 18px;
+    margin-right: 4px;
+    padding: 0 6px;
+    border: 1px solid var(--page-line);
+    border-radius: 999px;
+    color: var(--page-dim);
+    font-size: 8.5px;
+  }
+  .note .pill.ok { border-color: rgba(126,226,184,.24); color: #bff4e2; }
+  .note .pill.warn { border-color: rgba(244,200,120,.24); color: #f7d99a; }
+  .note.draft { border-color: rgba(244,200,120,.2); background: rgba(244,200,120,.035); }
+  .note.draft h2 .note-num { border-color: rgba(244,200,120,.3); color: var(--page-amber); }
+
+  @keyframes scrim-in {
+    from { opacity: 0; }
+  }
+  @keyframes modal-in {
+    from { opacity: 0; transform: translateY(14px) scale(.985); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes modal-out {
+    from { opacity: 1; transform: none; }
+    to { opacity: 0; transform: translateY(8px) scale(.99); }
+  }
+  @keyframes bloom-drift {
+    from { transform: translate3d(0, 0, 0) scale(1); }
+    to { transform: translate3d(-22px, 14px, 0) scale(1.07); }
+  }
+  @keyframes halo-pulse {
+    0%, 100% { opacity: .55; transform: scale(.96); }
+    50% { opacity: .95; transform: scale(1.04); }
+  }
+  @keyframes ring-drift {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+  @keyframes draw-circle {
+    to { stroke-dashoffset: 0; }
+  }
+  @keyframes draw-check {
+    to { stroke-dashoffset: 0; }
+  }
+  @keyframes check-halo {
+    from { opacity: 0; transform: scale(.72); }
+    45% { opacity: 1; }
+    to { opacity: .55; transform: scale(1); }
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  @media (max-width: 1120px) {
+    .masthead { grid-template-columns: 1fr; }
+    .meta-card { width: 100%; }
+    .notes { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 820px) {
+    .page { width: calc(100% - 28px); padding-top: 24px; }
+    .stage-toolbar { gap: 7px; }
+    .step-chip { padding: 0 7px; }
+    .detect-switch { margin-left: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    body::after { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="masthead">
+    <div>
+      <div class="eyebrow">
+        <span class="issue-chip"><b>#489</b> core / first run</span>
+        <span class="issue-chip draft">MOCK · 未実装</span>
+      </div>
+      <h1>初回起動セットアップ</h1>
+      <p class="lede">
+        初回起動時だけ表示する、<b>単一モーダル</b>のセットアップ。Windows の初期セットアップのように、
+        大きな見出しと余白、方向のあるスライドとフェードで5ステップを進める。
+        写真フォルダ・自動化・テーマをここで決め、完了または閉じた時点で通常のメイン画面へ戻る。
+      </p>
+    </div>
+    <aside class="meta-card">
+      <div class="meta-row"><span>表示条件</span><b>初回起動時のみ</b></div>
+      <div class="meta-row"><span>構成</span><b>単一モーダル / 5ステップ</b></div>
+      <div class="meta-row"><span>既存ユーザー</span><b>表示しない</b></div>
+      <div class="meta-row"><span>モーション</span><b>200–620 ms / ease_motion</b></div>
+      <div class="meta-row"><span>対象画面</span><b>アプリ全体</b></div>
+    </aside>
+  </header>
+
+  <div class="stage-toolbar">
+    <div class="seg" id="viewSwitch" role="group" aria-label="表示状態">
+      <button type="button" data-view="setup" class="active">初回起動</button>
+      <button type="button" data-view="done">2回目以降</button>
+      <button type="button" data-view="existing">既存ユーザー</button>
+    </div>
+    <div class="toolbar-spacer"></div>
+    <span class="stage-note" id="viewNote">モーダル表示中</span>
+    <label class="loop-toggle">
+      <input type="checkbox" id="reduceMotionToggle">
+      アニメーションを減らす
+    </label>
+    <button type="button" class="toolbar-btn" id="replayBtn">
+      <svg class="icon"><use href="#i-refresh"></use></svg>
+      最初から再生
+    </button>
+  </div>
+
+  <div class="step-rail" id="stepRail" role="group" aria-label="ステップを選択">
+    <button type="button" class="step-chip active" data-step-chip="0"><span class="n">01</span>ようこそ</button>
+    <button type="button" class="step-chip" data-step-chip="1"><span class="n">02</span>写真フォルダ</button>
+    <button type="button" class="step-chip" data-step-chip="2"><span class="n">03</span>自動化</button>
+    <button type="button" class="step-chip" data-step-chip="3"><span class="n">04</span>見た目</button>
+    <button type="button" class="step-chip" data-step-chip="4"><span class="n">05</span>完了</button>
+    <div class="detect-switch">
+      <span>モック表示</span>
+      <div class="seg" id="detectSwitch" role="group" aria-label="写真フォルダの検出状態">
+        <button type="button" data-detect="yes" class="active">検出済み</button>
+        <button type="button" data-detect="no">未検出</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="stage-scroll">
+    <div class="app-window" id="appWindow" data-theme="charcoal">
+      <aside class="sidebar">
+        <nav class="nav" aria-label="メイン">
+          <a class="nav-item active" href="#"><svg class="icon"><use href="#i-photo"></use></svg>写真<span class="nav-count">1,284</span></a>
+          <a class="nav-item" href="#"><svg class="icon"><use href="#i-search"></use></svg>検索</a>
+          <a class="nav-item" href="#"><svg class="icon"><use href="#i-compress"></use></svg>圧縮<span class="nav-count">3</span></a>
+          <a class="nav-item" href="#"><svg class="icon"><use href="#i-dashboard"></use></svg>ダッシュボード</a>
+          <a class="nav-item" href="#"><svg class="icon"><use href="#i-bot"></use></svg>連携・自動</a>
+          <a class="nav-item" href="#"><svg class="icon"><use href="#i-settings"></use></svg>設定</a>
+        </nav>
+        <div class="sidebar-section">
+          <div class="sidebar-label"><span>進行状況</span><b>2</b></div>
+          <div class="status-tabs">
+            <button type="button" class="status-tab active">圧縮</button>
+            <button type="button" class="status-tab">取り込み</button>
+            <button type="button" class="status-tab">スキャン</button>
+          </div>
+          <div class="status-line"><span>実行中</span><b>2</b></div>
+          <div class="status-line"><span>未実行</span><b>1</b></div>
+          <div class="status-bar"><span></span></div>
+          <div class="status-line"><span>失敗</span><b>0</b></div>
+        </div>
+        <div class="sidebar-section">
+          <div class="sidebar-label"><span>ライブラリ</span><b>12.4 GB</b></div>
+          <div class="storage-row"><span>写真</span><span>1,284 枚</span></div>
+          <div class="storage-row"><span>サムネイル</span><span>3.1 GB</span></div>
+          <div class="daemon-pill">監視中 · 待機</div>
+        </div>
+        <div class="version">v0.13.8</div>
+      </aside>
+
+      <div class="main">
+        <div class="header-card">
+          <div class="titlebar">
+            <span class="brand-glyph"><svg class="icon"><use href="#i-photo"></use></svg></span>
+            <span class="titlebar-title">VRC PhotoN</span>
+            <span class="titlebar-sep"></span>
+            <span class="titlebar-screen">写真</span>
+            <span class="titlebar-spacer"></span>
+            <button type="button" class="titlebar-icon" aria-label="リボンを折りたたむ"><svg class="icon"><use href="#i-chevron"></use></svg></button>
+            <button type="button" class="titlebar-icon" aria-label="通知"><svg class="icon"><use href="#i-bell"></use></svg><span class="bell-dot"></span></button>
+            <div class="window-buttons"><span>—</span><span>□</span><span>×</span></div>
+          </div>
+          <div class="ribbon">
+            <div class="ribbon-group">
+              <button type="button" class="ribbon-btn primary"><svg class="icon"><use href="#i-copy"></use></svg>コピー取込</button>
+              <button type="button" class="ribbon-btn"><svg class="icon"><use href="#i-move"></use></svg>移動取込</button>
+            </div>
+            <div class="ribbon-group">
+              <button type="button" class="ribbon-btn"><svg class="icon"><use href="#i-refresh"></use></svg>再読込</button>
+            </div>
+            <div class="ribbon-group">
+              <button type="button" class="ribbon-btn"><svg class="icon"><use href="#i-grid"></use></svg>カードサイズ</button>
+              <button type="button" class="ribbon-btn"><svg class="icon"><use href="#i-sliders"></use></svg>詳細パネル</button>
+            </div>
+            <div class="ribbon-group">
+              <button type="button" class="ribbon-btn"><svg class="icon"><use href="#i-check"></use></svg>すべて選択</button>
+              <button type="button" class="ribbon-btn"><svg class="icon"><use href="#i-target"></use></svg>選択解除</button>
+              <button type="button" class="ribbon-btn"><svg class="icon"><use href="#i-trash"></use></svg>ゴミ箱へ</button>
+              <button type="button" class="ribbon-btn"><svg class="icon"><use href="#i-compress"></use></svg>圧縮</button>
+            </div>
+            <div class="ribbon-group">
+              <button type="button" class="ribbon-btn"><svg class="icon"><use href="#i-folder"></use></svg>指定フォルダ</button>
+              <button type="button" class="ribbon-btn"><svg class="icon"><use href="#i-layers"></use></svg>プロファイル</button>
+              <button type="button" class="ribbon-btn"><svg class="icon"><use href="#i-clipboard"></use></svg>クリップボード</button>
+              <button type="button" class="ribbon-btn"><svg class="icon"><use href="#i-play"></use></svg>待機を圧縮</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="content">
+          <div class="photo-layout">
+            <section class="panel gallery">
+              <div class="gallery-head">
+                <b>2026年11月</b>
+                <span class="count">1,284枚 / 総枚数 1,284</span>
+                <span class="spacer"></span>
+                <button type="button" class="tiny-btn"><svg class="icon"><use href="#i-sliders"></use></svg>フィルター</button>
+                <button type="button" class="tiny-btn">並び: 新しい順 <svg class="icon"><use href="#i-chevron"></use></svg></button>
+              </div>
+              <div class="grid-wrap">
+                <div class="photo-grid">
+                  <article class="photo-card selected">
+                    <div class="thumb scene-sunset">
+                      <div class="card-top"><div class="card-flags"><span class="flag"><span class="dot"></span>圧縮済み</span><span class="flag fav">★</span></div></div>
+                      <div class="thumb-overlay"></div>
+                    </div>
+                    <div class="card-body"><span class="card-title">Sunset Terrace</span><span class="card-meta"><span>2026/11/14</span><span>2.4 MB</span></span></div>
+                  </article>
+                  <article class="photo-card">
+                    <div class="thumb scene-night">
+                      <div class="card-top"><div class="card-flags"><span class="flag"><span class="dot"></span>圧縮済み</span></div></div>
+                      <div class="thumb-overlay"></div>
+                    </div>
+                    <div class="card-body"><span class="card-title">Neon District</span><span class="card-meta"><span>2026/11/13</span><span>1.8 MB</span></span></div>
+                  </article>
+                  <article class="photo-card">
+                    <div class="thumb scene-forest">
+                      <div class="thumb-overlay"></div>
+                    </div>
+                    <div class="card-body"><span class="card-title">Moss Garden</span><span class="card-meta"><span>2026/11/12</span><span>3.1 MB</span></span></div>
+                  </article>
+                  <article class="photo-card">
+                    <div class="thumb scene-aqua">
+                      <div class="thumb-overlay"></div>
+                    </div>
+                    <div class="card-body"><span class="card-title">Aquarium Hall</span><span class="card-meta"><span>2026/11/10</span><span>2.7 MB</span></span></div>
+                  </article>
+                  <article class="photo-card">
+                    <div class="thumb scene-stage">
+                      <div class="card-top"><div class="card-flags"><span class="flag fav">★</span></div></div>
+                      <div class="thumb-overlay"></div>
+                    </div>
+                    <div class="card-body"><span class="card-title">Midnight Stage</span><span class="card-meta"><span>2026/11/09</span><span>2.2 MB</span></span></div>
+                  </article>
+                  <article class="photo-card">
+                    <div class="thumb scene-snow">
+                      <div class="thumb-overlay"></div>
+                    </div>
+                    <div class="card-body"><span class="card-title">Snowfield Cabin</span><span class="card-meta"><span>2026/11/07</span><span>1.9 MB</span></span></div>
+                  </article>
+                  <article class="photo-card">
+                    <div class="thumb scene-garden">
+                      <div class="thumb-overlay"></div>
+                    </div>
+                    <div class="card-body"><span class="card-title">Rose Courtyard</span><span class="card-meta"><span>2026/11/05</span><span>2.6 MB</span></span></div>
+                  </article>
+                  <article class="photo-card">
+                    <div class="thumb scene-desert">
+                      <div class="thumb-overlay"></div>
+                    </div>
+                    <div class="card-body"><span class="card-title">Dune Outpost</span><span class="card-meta"><span>2026/11/03</span><span>3.4 MB</span></span></div>
+                  </article>
+                  <article class="photo-card">
+                    <div class="thumb scene-neon">
+                      <div class="thumb-overlay"></div>
+                    </div>
+                    <div class="card-body"><span class="card-title">Blue Hour City</span><span class="card-meta"><span>2026/11/01</span><span>2.0 MB</span></span></div>
+                  </article>
+                </div>
+                <div class="year-rail"><span>2026</span><span>2025</span><span>2024</span><span>2023</span></div>
+              </div>
+            </section>
+
+            <aside class="panel inspector">
+              <div class="inspector-preview">
+                <div class="scene-sunset"></div>
+                <div class="inspector-badges"><span class="flag"><span class="dot"></span>圧縮済み</span><span class="flag fav">★</span></div>
+              </div>
+              <div class="inspector-body">
+                <div class="inspector-title-row"><span class="inspector-title">Sunset Terrace</span><span class="favorite">★</span></div>
+                <div class="inspector-date">2026/11/14 21:42 · PNG → WebP</div>
+                <div class="meta-grid">
+                  <div><label>ワールド</label><b>Sunset Terrace</b></div>
+                  <div><label>サイズ</label><b>2.4 MB</b></div>
+                  <div><label>撮影者</label><b>Tommy</b></div>
+                  <div><label>プレイヤー</label><b>4人</b></div>
+                </div>
+                <div class="inspector-section">
+                  <div class="section-label">タグ</div>
+                  <div class="tag-row"><span class="tag">夕景 <b>×</b></span><span class="tag">屋外 <b>×</b></span><span class="tag">フレンド <b>×</b></span></div>
+                </div>
+                <div class="inspector-section">
+                  <div class="section-label">メモ</div>
+                  <div class="tag-row"><span class="tag">また行きたい</span></div>
+                </div>
+              </div>
+              <div class="inspector-foot">
+                <span class="btn primary"><svg class="icon"><use href="#i-photo"></use></svg>全画面表示</span>
+                <span class="btn"><svg class="icon"><use href="#i-compress"></use></svg>圧縮</span>
+              </div>
+            </aside>
+          </div>
+        </div>
+      </div>
+      <div class="setup-scrim" id="setupScrim">
+        <section class="setup-modal is-entering" id="setupModal" role="dialog" aria-modal="true" aria-labelledby="setupTitleWelcome" tabindex="-1">
+          <div class="modal-bloom" aria-hidden="true"></div>
+          <div class="modal-progress" aria-hidden="true"><span id="progressFill"></span></div>
+
+          <div class="modal-top">
+            <button type="button" class="back-btn is-hidden" id="backBtn" aria-label="戻る">
+              <svg class="icon"><use href="#i-arrow-left"></use></svg>
+            </button>
+            <div class="modal-brand">
+              <span class="brand-glyph"><svg class="icon"><use href="#i-photo"></use></svg></span>
+              <div class="brand-copy">
+                <b>VRC PhotoN</b>
+                <span data-i18n="top.label">はじめての設定</span>
+              </div>
+            </div>
+            <div class="top-actions">
+              <button type="button" class="lang-btn" id="langBtn" aria-label="言語を切り替える">
+                <svg class="icon"><use href="#i-globe"></use></svg>
+                <span id="langLabel">日本語</span>
+              </button>
+              <button type="button" class="skip-btn" id="skipBtn" data-i18n="top.skip">あとで</button>
+            </div>
+          </div>
+
+          <div class="modal-body">
+            <div class="step-panes" id="stepPanes">
+
+              <section class="step-pane active" data-step="0" aria-labelledby="setupTitleWelcome">
+                <div class="welcome-head">
+                  <div class="welcome-logo" aria-hidden="true">
+                    <span class="logo-halo"></span>
+                    <span class="logo-ring"></span>
+                    <span class="logo-ring second"></span>
+                    <span class="logo-tile"><svg class="icon"><use href="#i-photo"></use></svg></span>
+                  </div>
+                  <div>
+                    <div class="step-kicker" data-i18n="welcome.kicker">WELCOME</div>
+                    <h2 class="step-title" id="setupTitleWelcome" data-i18n="welcome.title">VRC PhotoN へようこそ</h2>
+                  </div>
+                </div>
+                <p class="step-lede" data-i18n="welcome.lede">
+                  VRChat で撮った写真を、見つけて、整理して、軽くする。最初にいくつか確認します。
+                </p>
+                <div class="feature-grid">
+                  <div class="feature-card">
+                    <span class="feature-icon"><svg class="icon"><use href="#i-radar"></use></svg></span>
+                    <b data-i18n="welcome.f1.title">写真を自動で見つける</b>
+                    <span data-i18n="welcome.f1.body">VRChat の写真フォルダを監視し、新しい写真を追加します。</span>
+                  </div>
+                  <div class="feature-card">
+                    <span class="feature-icon"><svg class="icon"><use href="#i-zap"></use></svg></span>
+                    <b data-i18n="welcome.f2.title">圧縮して容量を減らす</b>
+                    <span data-i18n="welcome.f2.body">大きな PNG を軽い形式に変換します。元の写真は残せます。</span>
+                  </div>
+                  <div class="feature-card">
+                    <span class="feature-icon"><svg class="icon"><use href="#i-shield"></use></svg></span>
+                    <b data-i18n="welcome.f3.title">写真は端末の中に</b>
+                    <span data-i18n="welcome.f3.body">既定ではクラウドへ送りません。連携はあとから選べます。</span>
+                  </div>
+                </div>
+                <p class="foot-note">
+                  <svg class="icon"><use href="#i-sparkles"></use></svg>
+                  <span data-i18n="welcome.note">設定はすべて、あとから変更できます。</span>
+                </p>
+              </section>
+
+              <section class="step-pane" data-step="1" aria-labelledby="setupTitlePhotos">
+                <div class="step-head">
+                  <div class="step-kicker" data-i18n="photos.kicker">PHOTOS</div>
+                  <h2 class="step-title" id="setupTitlePhotos" data-i18n="photos.title">写真の場所</h2>
+                  <p class="step-lede" data-i18n="photos.lede">
+                    VRChat がこの PC に保存した写真を読み込みます。通常は自動で見つかります。
+                  </p>
+                </div>
+
+                <div class="path-card" id="photoDetected">
+                  <span class="path-icon"><svg class="icon"><use href="#i-folder"></use></svg></span>
+                  <div class="path-copy">
+                    <span class="path-label" data-i18n="photos.label">VRChat の写真</span>
+                    <b class="path-value">C:\Users\tommy\Pictures\VRChat</b>
+                    <span class="path-meta">
+                      <span class="status-dot"></span>
+                      <span data-i18n="photos.detected">検出済み</span>
+                      <span aria-hidden="true">·</span>
+                      <span data-i18n="photos.meta">1,284 枚 · 12.4 GB</span>
+                    </span>
+                  </div>
+                  <button type="button" class="btn-quiet" id="changeFolderBtn" data-i18n="photos.change">変更…</button>
+                </div>
+
+                <div class="path-card empty" id="photoMissing" hidden>
+                  <span class="path-icon"><svg class="icon"><use href="#i-folder"></use></svg></span>
+                  <div class="path-copy">
+                    <span class="path-label" data-i18n="photos.label">VRChat の写真</span>
+                    <b class="path-value" data-i18n="photos.missing.title">写真フォルダが見つかりません</b>
+                    <span class="path-meta">
+                      <span class="status-dot"></span>
+                      <span data-i18n="photos.missing.body">VRChat のスクリーンショットが保存されているフォルダを指定してください。</span>
+                    </span>
+                  </div>
+                  <button type="button" class="btn-quiet" id="chooseFolderBtn" data-i18n="photos.choose">フォルダを選ぶ…</button>
+                </div>
+
+                <div class="photo-peek" id="photoPeek">
+                  <div class="peek-head">
+                    <b data-i18n="photos.preview.title">最近の写真</b>
+                    <span data-i18n="photos.preview.body">このフォルダから読み込みます</span>
+                  </div>
+                  <div class="peek-strip" aria-hidden="true">
+                    <div class="peek-item scene-sunset"></div>
+                    <div class="peek-item scene-night"></div>
+                    <div class="peek-item scene-forest"></div>
+                    <div class="peek-item scene-aqua"></div>
+                    <div class="peek-more">+1,280</div>
+                  </div>
+                </div>
+                <div class="setting-row static">
+                  <div class="setting-copy">
+                    <b data-i18n="auto.watch.title">新しい写真を自動で見つける</b>
+                    <span data-i18n="auto.watch.body">追加されたスクリーンショットをライブラリへ反映します。</span>
+                  </div>
+                  <span class="state-pill" data-i18n="auto.watch.state">有効</span>
+                </div>
+                <p class="foot-note">
+                  <svg class="icon"><use href="#i-folder"></use></svg>
+                  <span data-i18n="photos.note">あとから設定で変更できます。</span>
+                </p>
+              </section>
+
+              <section class="step-pane" data-step="2" aria-labelledby="setupTitleAutomation">
+                <div class="step-head">
+                  <div class="step-kicker" data-i18n="auto.kicker">AUTOMATION</div>
+                  <h2 class="step-title" id="setupTitleAutomation" data-i18n="auto.title">面倒な整理はアプリに任せる</h2>
+                  <p class="step-lede" data-i18n="auto.lede">
+                    すべて既定のまま使えます。元の写真を残す設定が安全です。
+                  </p>
+                </div>
+
+                <div class="settings-group">
+                  <div class="option-row">
+                    <span class="option-icon"><svg class="icon"><use href="#i-zap"></use></svg></span>
+                    <div class="option-copy">
+                      <b data-i18n="auto.compress.title">新しい写真を自動で圧縮</b>
+                      <span data-i18n="auto.compress.body">新しい PNG を軽い形式に変換し、容量を減らします。</span>
+                    </div>
+                    <button type="button" class="switch on" data-toggle="compress" role="switch" aria-checked="true" aria-label="新しい写真を自動で圧縮"><span></span></button>
+                  </div>
+                  <div class="option-row" id="keepRow">
+                    <span class="option-icon"><svg class="icon"><use href="#i-shield"></use></svg></span>
+                    <div class="option-copy">
+                      <b data-i18n="auto.keep.title">圧縮後も元の写真を残す</b>
+                      <span data-i18n="auto.keep.body">元の写真は VRChat のフォルダに残ります。OFF にすると、圧縮に成功したあと OS のゴミ箱へ移動します。</span>
+                    </div>
+                    <button type="button" class="switch on" data-toggle="keep" role="switch" aria-checked="true" aria-label="圧縮後も元の写真を残す"><span></span></button>
+                  </div>
+                  <div class="option-row static">
+                    <span class="option-icon"><svg class="icon"><use href="#i-layers"></use></svg></span>
+                    <div class="option-copy">
+                      <b data-i18n="auto.format.title">保存形式</b>
+                      <span data-i18n="auto.format.body">WebP（可逆）で保存し、画質を落とさずに容量を減らします。</span>
+                    </div>
+                    <span class="state-pill neutral" data-i18n="auto.format.state">WebP</span>
+                  </div>
+                </div>
+
+                <div class="safety-note" id="safetyNote">
+                  <svg class="icon"><use href="#i-shield"></use></svg>
+                  <span id="safetyText" data-i18n="auto.safe">元の写真は自動では削除されません。</span>
+                </div>
+                <p class="foot-note">
+                  <svg class="icon"><use href="#i-settings"></use></svg>
+                  <span data-i18n="auto.note">自動化の設定は「連携・自動」画面で変更できます。</span>
+                </p>
+              </section>
+
+              <section class="step-pane" data-step="3" aria-labelledby="setupTitleAppearance">
+                <div class="step-head">
+                  <div class="step-kicker" data-i18n="look.kicker">APPEARANCE</div>
+                  <h2 class="step-title" id="setupTitleAppearance" data-i18n="look.title">見た目を選ぶ</h2>
+                  <p class="step-lede" data-i18n="look.lede">
+                    テーマを選ぶと、アプリ全体にすぐ反映されます。あとから変更できます。
+                  </p>
+                </div>
+
+                <div class="theme-grid" id="themeGrid" role="radiogroup" aria-label="テーマ">
+                  <button type="button" class="theme-card selected" data-theme-choice="charcoal" role="radio" aria-checked="true">
+                    <div class="theme-preview" data-preview="charcoal" aria-hidden="true">
+                      <div class="tp-side"></div>
+                      <div class="tp-main">
+                        <div class="tp-bar"></div>
+                        <div class="tp-tiles"><span class="tp-tile"></span><span class="tp-tile"></span><span class="tp-tile"></span><span class="tp-tile"></span></div>
+                        <div class="tp-line"></div>
+                      </div>
+                    </div>
+                    <div class="theme-label">
+                      <span class="theme-dot"></span>
+                      <div><b data-i18n="theme.charcoal.short">チャコール + スカイ</b><span data-i18n="theme.charcoal.accent">既定</span></div>
+                      <span class="theme-check" aria-hidden="true">✓</span>
+                    </div>
+                  </button>
+                  <button type="button" class="theme-card" data-theme-choice="midnight" role="radio" aria-checked="false">
+                    <div class="theme-preview" data-preview="midnight" aria-hidden="true">
+                      <div class="tp-side"></div>
+                      <div class="tp-main">
+                        <div class="tp-bar"></div>
+                        <div class="tp-tiles"><span class="tp-tile"></span><span class="tp-tile"></span><span class="tp-tile"></span><span class="tp-tile"></span></div>
+                        <div class="tp-line"></div>
+                      </div>
+                    </div>
+                    <div class="theme-label">
+                      <span class="theme-dot"></span>
+                      <div><b data-i18n="theme.midnight.short">ミッドナイト + バイオレット</b><span data-i18n="theme.midnight.accent">ダーク</span></div>
+                      <span class="theme-check" aria-hidden="true">✓</span>
+                    </div>
+                  </button>
+                  <button type="button" class="theme-card" data-theme-choice="forest" role="radio" aria-checked="false">
+                    <div class="theme-preview" data-preview="forest" aria-hidden="true">
+                      <div class="tp-side"></div>
+                      <div class="tp-main">
+                        <div class="tp-bar"></div>
+                        <div class="tp-tiles"><span class="tp-tile"></span><span class="tp-tile"></span><span class="tp-tile"></span><span class="tp-tile"></span></div>
+                        <div class="tp-line"></div>
+                      </div>
+                    </div>
+                    <div class="theme-label">
+                      <span class="theme-dot"></span>
+                      <div><b data-i18n="theme.forest.short">フォレスト + ミント</b><span data-i18n="theme.forest.accent">落ち着き</span></div>
+                      <span class="theme-check" aria-hidden="true">✓</span>
+                    </div>
+                  </button>
+                  <button type="button" class="theme-card" data-theme-choice="paper" role="radio" aria-checked="false">
+                    <div class="theme-preview" data-preview="paper" aria-hidden="true">
+                      <div class="tp-side"></div>
+                      <div class="tp-main">
+                        <div class="tp-bar"></div>
+                        <div class="tp-tiles"><span class="tp-tile"></span><span class="tp-tile"></span><span class="tp-tile"></span><span class="tp-tile"></span></div>
+                        <div class="tp-line"></div>
+                      </div>
+                    </div>
+                    <div class="theme-label">
+                      <span class="theme-dot"></span>
+                      <div><b data-i18n="theme.paper.short">ペーパー + アンバー</b><span data-i18n="theme.paper.accent">ライト</span></div>
+                      <span class="theme-check" aria-hidden="true">✓</span>
+                    </div>
+                  </button>
+                </div>
+
+                <div class="look-motion">
+                  <div class="setting-row">
+                    <div class="setting-copy">
+                      <b data-i18n="look.motion.title">アニメーションを減らす</b>
+                      <span data-i18n="look.motion.body">画面遷移とフェードを短くします。</span>
+                    </div>
+                    <button type="button" class="switch" data-toggle="motion" role="switch" aria-checked="false" aria-label="アニメーションを減らす"><span></span></button>
+                  </div>
+                </div>
+                <p class="foot-note">
+                  <svg class="icon"><use href="#i-palette"></use></svg>
+                  <span data-i18n="look.note">テーマと動きは設定で変更できます。</span>
+                </p>
+              </section>
+
+              <section class="step-pane" data-step="4" aria-labelledby="setupTitleDone">
+                <div class="complete-head">
+                  <div class="check-wrap" aria-hidden="true">
+                    <span class="check-halo"></span>
+                    <svg class="check-svg" viewBox="0 0 64 64">
+                      <circle class="check-circle" cx="32" cy="32" r="28"></circle>
+                      <path class="check-mark" d="M19 33.5 28 42.5 46 23.5"></path>
+                    </svg>
+                  </div>
+                  <div class="step-kicker" data-i18n="done.kicker">READY</div>
+                  <h2 class="step-title" id="setupTitleDone" data-i18n="done.title">準備ができました</h2>
+                  <p class="step-lede" data-i18n="done.lede">設定はあとから変更できます。VRC PhotoN をはじめましょう。</p>
+                </div>
+
+                <div class="summary-card">
+                  <button type="button" class="summary-row" data-goto="1">
+                    <span class="summary-icon"><svg class="icon"><use href="#i-folder"></use></svg></span>
+                    <span class="summary-copy"><span data-i18n="done.sum.photos">写真フォルダ</span><b id="summaryPhoto">C:\Users\tommy\Pictures\VRChat</b></span>
+                    <span class="sum-edit" data-i18n="done.edit">変更</span>
+                  </button>
+                  <button type="button" class="summary-row" data-goto="2">
+                    <span class="summary-icon"><svg class="icon"><use href="#i-zap"></use></svg></span>
+                    <span class="summary-copy"><span data-i18n="done.sum.auto">自動化</span><b id="summaryAutomation">監視 ON · 自動圧縮 ON · 元画像を保持</b></span>
+                    <span class="sum-edit" data-i18n="done.edit">変更</span>
+                  </button>
+                  <button type="button" class="summary-row" data-goto="3">
+                    <span class="summary-icon"><svg class="icon"><use href="#i-palette"></use></svg></span>
+                    <span class="summary-copy"><span data-i18n="done.sum.look">見た目</span><b id="summaryTheme">チャコール + スカイ</b></span>
+                    <span class="sum-edit" data-i18n="done.edit">変更</span>
+                  </button>
+                </div>
+                <p class="foot-note">
+                  <svg class="icon"><use href="#i-sparkles"></use></svg>
+                  <span data-i18n="done.note">この画面は次回起動時に表示されません。</span>
+                </p>
+              </section>
+
+            </div>
+          </div>
+
+          <div class="modal-footer">
+            <div class="step-meta">
+              <span class="step-count" id="stepCount">01 / 05</span>
+              <div class="step-dots" id="stepDots" aria-hidden="true">
+                <span class="step-dot active"></span>
+                <span class="step-dot"></span>
+                <span class="step-dot"></span>
+                <span class="step-dot"></span>
+                <span class="step-dot"></span>
+              </div>
+            </div>
+            <div class="modal-actions">
+              <button type="button" class="btn-primary" id="nextBtn" aria-label="次へ">
+                <span id="nextLabel">はじめる</span>
+                <span class="spinner" id="nextSpinner" hidden></span>
+                <svg class="icon" id="nextIcon"><use href="#i-arrow-right"></use></svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="skip-confirm" id="skipConfirm" role="alertdialog" aria-labelledby="skipTitle" aria-describedby="skipBody">
+            <div class="skip-confirm-copy">
+              <b id="skipTitle" data-i18n="skip.title">セットアップを閉じますか？</b>
+              <span id="skipBody" data-i18n="skip.body">次回起動時には表示されません。各設定は設定画面から変更できます。</span>
+            </div>
+            <div class="skip-confirm-actions">
+              <button type="button" class="btn-secondary" id="skipContinue" data-i18n="skip.continue">続ける</button>
+              <button type="button" class="btn-secondary danger" id="skipClose" data-i18n="skip.close">閉じる</button>
+            </div>
+          </div>
+        </section>
+      </div>
+      <div class="app-toast" id="appToast" role="status" aria-live="polite">
+        <div class="toast-icon"><svg class="icon"><use href="#i-check"></use></svg></div>
+        <div class="toast-copy"><b id="toastTitle"></b><span id="toastBody"></span></div>
+        <button type="button" class="toast-close" id="toastClose" aria-label="閉じる">×</button>
+      </div>
+      <div class="mock-badge" id="mockBadge" hidden>既存の設定を検出したため、セットアップは表示されません</div>
+    </div>
+  </div>
+  <p class="stage-hint">ステップを直接選ぶと、モーダル内の遷移アニメーションを確認できます。テーマと言語はモーダル内で切り替えられます。</p>
+
+  <section class="notes">
+    <article class="note">
+      <h2><span class="note-num">01</span>フローと操作</h2>
+      <ul>
+        <li><b>ようこそ</b> → <b>写真フォルダ</b> → <b>自動化</b> → <b>見た目</b> → <b>完了</b> の5ステップ。モーダルは1枚だけで、中身だけを遷移する。</li>
+        <li>上部の戻るボタンと <kbd>←</kbd>、フッターの primary と <kbd>Enter</kbd> / <kbd>→</kbd> で移動する。最終ステップの primary は「VRC PhotoN をはじめる」。</li>
+        <li>完了画面のサマリー行をクリックすると、その設定ステップへ戻る。修正してから開始できる。</li>
+        <li>右上の「あとで」と <kbd>Esc</kbd> は、フッター上に確認帯を出す。別モーダルは重ねない。閉じることは完了と同じ扱いで、次回起動時には表示しない。</li>
+        <li>スクリムのクリックでは閉じない。初回設定の誤操作を防ぐため、既存の取り込み・圧縮ダイアログとはここだけ挙動を変える。</li>
+        <li>完了・閉じた後は通常のメイン画面へ戻り、トーストで「次回は表示しない」ことを伝える。</li>
+      </ul>
+    </article>
+
+    <article class="note">
+      <h2><span class="note-num">02</span>モーション</h2>
+      <ul>
+        <li>モーダル表示: 460 ms。背景スクリム: 260 ms。不透明度・14 px の持ち上げ・0.985 の縮小を同時に動かす。</li>
+        <li>ステップ遷移: 入り 340 ms / 出 200 ms。進むときは右から +28 px、戻るときは左から -28 px。出る側は 18 px 反対方向へ抜ける。</li>
+        <li>進捗線: 480 ms。テーマ切替: 320 ms。チェック描画: 円 620 ms + チェック 320 ms（460 ms 遅延）。</li>
+        <li>イージングは実装の <code>ease_motion</code> に合わせた <code>cubic-bezier(0.22, 0.8, 0.24, 1)</code>。移動量は <code>SCREEN_SLIDE</code> の 14 px より少し大きくし、ステップ感を出す。</li>
+        <li>「アニメーションを減らす」が ON のときは、移動をなくして表示切替だけにする。設定値 <code>ui_reduce_motion</code> をそのまま使う。</li>
+        <li>モーダルは 780×640 を上限に、ウィンドウ内容高 - 48 px に収める。低いときは本文だけをスクロールし、ヘッダーとフッターは固定する。</li>
+      </ul>
+    </article>
+
+    <article class="note">
+      <h2><span class="note-num">03</span>初回判定と永続化</h2>
+      <p>
+        完了状態は設定 JSON に混ぜず、<code>app_settings</code> の別キー <code>setup_completed_at</code> に Unix 秒で持つ。
+        開始状態も <code>setup_started_at</code> として別に保存する。既存の設定 JSON に新しいフィールドを足すと、
+        「フィールドがない＝未完了」と「移行前の既存ユーザー」を区別できないため。
+      </p>
+      <ul>
+        <li><span class="pill ok">表示する</span> 完了キーなし。開始キーがあれば、設定行ができていても中断したセットアップとして再表示する。</li>
+        <li><span class="pill warn">表示しない</span> 完了キーあり。開始キーがなく、設定行または写真 / revision がある場合は、移行時に完了キーを書き込んで既存ユーザーとして扱う。</li>
+        <li><span class="pill ok">新規</span> 開始・完了のどちらもなく、設定行・写真・revision も空なら新規インストール。表示前に開始キーを書き込む。</li>
+        <li>完了・閉じるのどちらでも、その場で <code>setup_completed_at</code> を保存する。途中で終了した場合は開始キーだけが残り、次回また表示する。</li>
+        <li>写真フォルダ・自動化・テーマは選択時に即時保存する。開始キーがあるので、途中で設定行ができても既存ユーザーと誤判定しない。</li>
+        <li>「あとで」で閉じた場合も再表示しない。設定画面から各項目は変更できるが、セットアップを再表示する導線はこの issue の範囲外とする。</li>
+      </ul>
+    </article>
+
+    <article class="note">
+      <h2><span class="note-num">04</span>Windows 初期セットアップとの対応</h2>
+      <ul>
+        <li>左揃えの大きな見出し、短い説明、1ページ1判断の構成を踏襲する。カードを並べすぎず、余白で区切る。</li>
+        <li>左上に戻る、右下に primary。言語とスキップは右上に小さく置き、主操作と競合させない。</li>
+        <li>背景にはテーマ色の淡いブルームを置く。Windows の壁紙のような雰囲気を、アプリの不透明パネルの中で再現する。</li>
+        <li>進捗は Windows のような「点だけ」ではなく、上部2 px の線と <code>01 / 05</code> を併用する。何ステップ残っているかを明確にする。</li>
+        <li>完了は大きなチェックの描画で締める。最後に「準備しています…」を短く挟んでからモーダルを閉じ、メイン画面へ渡す。</li>
+      </ul>
+    </article>
+
+    <article class="note">
+      <h2><span class="note-num">05</span>実装メモ</h2>
+      <ul>
+        <li>文言はすべて <code>setup.*</code> として <code>ja.yml</code> / <code>en.yml</code> に登録する。モック内の英語切替は、文言の長さと折返しを確認するためのもの。</li>
+        <li>キー例: <code>setup.welcome.title</code>, <code>setup.photos.title</code>, <code>setup.auto.title</code>, <code>setup.look.title</code>, <code>setup.done.title</code>, <code>setup.action.next</code>, <code>setup.action.start</code>, <code>setup.skip.title</code>。</li>
+        <li>フォルダ変更は既存の OS フォルダ選択ダイアログを使う。モックではトーストで代替している。</li>
+        <li><code>role="dialog"</code> / <code>aria-modal="true"</code>、フォーカストラップ、スイッチの <code>role="switch"</code> と <code>aria-checked</code>、選択中テーマの <code>aria-checked</code> を付ける。</li>
+        <li>テーマは選択時に <code>ui_theme_main</code> / <code>ui_theme_accent</code> へ即時反映する。モーダルを含む全画面が同じパレットに従う。</li>
+        <li>新しい画像アセットは増やさない。既存のアプリアイコン、アイコンセット、パレットから構成する。</li>
+      </ul>
+    </article>
+
+    <article class="note draft">
+      <h2><span class="note-num">06</span>このモックで固定する案</h2>
+      <p>
+        表示内容は「写真フォルダ・自動化・テーマ」の3点に絞る。取り込み先、AI タグ付け、Discord 連携は初回には出さず、既定値のまま通常画面で変更する。
+        完了も閉じるも同じ完了状態とし、次回起動時は表示しない。
+      </p>
+      <ul>
+        <li><span class="pill ok">決定案</span> 単一モーダル / 5ステップ / 右上に言語とスキップ / 閉じる前にインライン確認。</li>
+        <li><span class="pill warn">要承認</span> ステップ構成、閉じる＝完了の扱い、既存ユーザーの判定条件。</li>
+        <li><span class="pill">範囲外</span> 設定画面からのセットアップ再表示、取り込み先の選択、連携の初期設定。</li>
+      </ul>
+    </article>
+  </section>
+</div>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-photo" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="8.5" cy="9" r="1.5"/><path d="m5 17 4.5-4.5 3 3L16 12l3 3"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 4 4"/></symbol>
+    <symbol id="i-compress" viewBox="0 0 24 24"><path d="M8 4v5H3M16 4v5h5M8 20v-5H3M16 20v-5h5"/><path d="m4 9 5 5m11-5-5 5M4 15l5-5m11 5-5-5"/></symbol>
+    <symbol id="i-dashboard" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="8" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="15" width="7" height="6" rx="1.5"/></symbol>
+    <symbol id="i-bot" viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 3v4M9 12h.01M15 12h.01M9 16h6"/><path d="M2 13h2M20 13h2"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.08A1.7 1.7 0 0 0 8.97 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1.03H3v-4h.08A1.7 1.7 0 0 0 4.6 8.97a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 8.97 4.6 1.7 1.7 0 0 0 10 3.04V3h4v.08a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06a1.7 1.7 0 0 0-.34 1.88A1.7 1.7 0 0 0 20.96 10H21v4h-.08A1.7 1.7 0 0 0 19.4 15Z"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 6.5A2.5 2.5 0 0 1 5.5 4H9l2 2h7.5A2.5 2.5 0 0 1 21 8.5v9A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5Z"/><path d="M3 9h18"/></symbol>
+    <symbol id="i-zap" viewBox="0 0 24 24"><path d="M13 2 4.5 13.5H11l-1 8.5L19.5 10H13Z"/></symbol>
+    <symbol id="i-palette" viewBox="0 0 24 24"><path d="M12 3a9 9 0 0 0 0 18h1.5a2 2 0 0 0 0-4H12a2 2 0 0 1 0-4h4a5 5 0 0 0 5-5c0-2.8-4-5-9-5Z"/><circle cx="7.5" cy="10" r=".8"/><circle cx="9.5" cy="6.5" r=".8"/><circle cx="14.5" cy="6" r=".8"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.5 2.9 8.2 7 10 4.1-1.8 7-5.5 7-10V6Z"/><path d="m9 12 2 2 4-4"/></symbol>
+    <symbol id="i-radar" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><path d="M12 12 18 6M12 4v2M20 12h-2M12 20v-2M4 12h2"/></symbol>
+    <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="m12 3 1.7 4.3L18 9l-4.3 1.7L12 15l-1.7-4.3L6 9l4.3-1.7Z"/><path d="m18.5 15 .9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9ZM5 15l.7 1.8 1.8.7-1.8.7L5 20l-.7-1.8-1.8-.7 1.8-.7Z"/></symbol>
+    <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M4 12h16M14 6l6 6-6 6"/></symbol>
+    <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="M20 12H4M10 6l-6 6 6 6"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h9M17 18h3"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="15" cy="18" r="2"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
+    <symbol id="i-move" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
+    <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-clipboard" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="16" rx="2"/><path d="M9 5V3h6v2M9 10h6M9 14h6M9 18h4"/></symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5Z"/><path d="m3 12 9 5 9-5M3 16l9 5 9-5"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7Z"/></symbol>
+  </defs>
+</svg>
+
+<script>
+  const I18N = {
+    ja: {
+      'top.label': 'はじめての設定',
+      'top.skip': 'あとで',
+      'next': '次へ',
+      'welcome.cta': 'はじめる',
+      'aria.back': '戻る',
+      'aria.language': '言語を切り替える',
+      'welcome.kicker': 'WELCOME',
+      'welcome.title': 'VRC PhotoN へようこそ',
+      'welcome.lede': 'VRChat で撮った写真を、見つけて、整理して、軽くする。最初にいくつか確認します。',
+      'welcome.f1.title': '写真を自動で見つける',
+      'welcome.f1.body': 'VRChat の写真フォルダを監視し、新しい写真を追加します。',
+      'welcome.f2.title': '圧縮して容量を減らす',
+      'welcome.f2.body': '大きな PNG を軽い形式に変換します。元の写真は残せます。',
+      'welcome.f3.title': '写真は端末の中に',
+      'welcome.f3.body': '既定ではクラウドへ送りません。連携はあとから選べます。',
+      'welcome.note': '設定はすべて、あとから変更できます。',
+      'photos.kicker': 'PHOTOS',
+      'photos.title': '写真の場所',
+      'photos.lede': 'VRChat がこの PC に保存した写真を読み込みます。通常は自動で見つかります。',
+      'photos.label': 'VRChat の写真',
+      'photos.detected': '検出済み',
+      'photos.meta': '1,284 枚 · 12.4 GB',
+      'photos.preview.title': '最近の写真',
+      'photos.preview.body': 'このフォルダから読み込みます',
+      'photos.change': '変更…',
+      'photos.missing.title': '写真フォルダが見つかりません',
+      'photos.missing.body': 'VRChat のスクリーンショットが保存されているフォルダを指定してください。',
+      'photos.choose': 'フォルダを選ぶ…',
+      'photos.note': 'あとから設定で変更できます。',
+      'auto.kicker': 'AUTOMATION',
+      'auto.title': '面倒な整理はアプリに任せる',
+      'auto.lede': 'すべて既定のまま使えます。元の写真を残す設定が安全です。',
+      'auto.watch.title': '新しい写真を自動で見つける',
+      'auto.watch.body': '追加されたスクリーンショットをライブラリへ反映します。',
+      'auto.watch.state': '有効',
+      'auto.compress.title': '新しい写真を自動で圧縮',
+      'auto.compress.body': '新しい PNG を軽い形式に変換し、容量を減らします。',
+      'auto.keep.title': '圧縮後も元の写真を残す',
+      'auto.keep.body': '元の写真は VRChat のフォルダに残ります。OFF にすると、圧縮に成功したあと OS のゴミ箱へ移動します。',
+      'auto.format.title': '保存形式',
+      'auto.format.body': 'WebP（可逆）で保存し、画質を落とさずに容量を減らします。',
+      'auto.format.state': 'WebP',
+      'auto.safe': '元の写真は自動では削除されません。',
+      'auto.caution': '圧縮に成功した元の写真は OS のゴミ箱へ移動します。',
+      'auto.noCompress': '自動圧縮は行われません。元の写真はそのまま残ります。',
+      'auto.keepDisabled': '自動圧縮をONにすると変更できます。',
+      'auto.note': '自動化の設定は「連携・自動」画面で変更できます。',
+      'look.kicker': 'APPEARANCE',
+      'look.title': '見た目を選ぶ',
+      'look.lede': 'テーマを選ぶと、アプリ全体にすぐ反映されます。あとから変更できます。',
+      'theme.charcoal': 'チャコール + スカイ',
+      'theme.charcoal.short': 'チャコール',
+      'theme.charcoal.accent': 'スカイ · 既定',
+      'theme.midnight': 'ミッドナイト + バイオレット',
+      'theme.midnight.short': 'ミッドナイト',
+      'theme.midnight.accent': 'バイオレット · ダーク',
+      'theme.forest': 'フォレスト + ミント',
+      'theme.forest.short': 'フォレスト',
+      'theme.forest.accent': 'ミント · 落ち着き',
+      'theme.paper': 'ペーパー + アンバー',
+      'theme.paper.short': 'ペーパー',
+      'theme.paper.accent': 'アンバー · ライト',
+      'look.motion.title': 'アニメーションを減らす',
+      'look.motion.body': '画面遷移とフェードを短くします。',
+      'look.note': 'テーマと動きは設定で変更できます。',
+      'done.kicker': 'READY',
+      'done.title': '準備ができました',
+      'done.lede': '設定はあとから変更できます。VRC PhotoN をはじめましょう。',
+      'done.sum.photos': '写真フォルダ',
+      'done.sum.auto': '自動化',
+      'done.sum.look': '見た目',
+      'done.edit': '変更',
+      'done.start': 'VRC PhotoN をはじめる',
+      'done.preparing': '準備しています…',
+      'done.note': 'この画面は次回起動時に表示されません。',
+      'skip.title': 'セットアップを閉じますか？',
+      'skip.body': '次回起動時には表示されません。各設定は設定画面から変更できます。',
+      'skip.continue': '続ける',
+      'skip.close': '閉じる',
+      'summary.unset': '未設定',
+      'summary.compressOn': '自動圧縮 ON',
+      'summary.compressOff': '自動圧縮 OFF',
+      'summary.keep': '元画像を保持',
+      'summary.trash': '元画像をゴミ箱へ',
+      'toast.done.title': 'セットアップが完了しました',
+      'toast.done.body': 'この画面は次回起動時に表示されません。',
+      'toast.skip.title': 'セットアップを閉じました',
+      'toast.skip.body': '設定はいつでも変更できます。',
+      'toast.folder.title': 'フォルダを選択',
+      'toast.folder.body': '実装では OS のフォルダ選択ダイアログが開きます。'
+    },
+    en: {
+      'top.label': 'First-time setup',
+      'top.skip': 'Later',
+      'next': 'Next',
+      'welcome.cta': 'Get started',
+      'aria.back': 'Back',
+      'aria.language': 'Switch language',
+      'welcome.kicker': 'WELCOME',
+      'welcome.title': 'Welcome to VRC PhotoN',
+      'welcome.lede': 'Find the photos you took in VRChat, keep them organized, and make them lighter. Let’s check a few things first.',
+      'welcome.f1.title': 'Find photos automatically',
+      'welcome.f1.body': 'Watch your VRChat photo folder and pick up new shots.',
+      'welcome.f2.title': 'Compress and save space',
+      'welcome.f2.body': 'Turn large PNGs into smaller files while keeping the originals.',
+      'welcome.f3.title': 'Your photos stay local',
+      'welcome.f3.body': 'Nothing is uploaded by default. Integrations are optional.',
+      'welcome.note': 'Every setting can be changed later.',
+      'photos.kicker': 'PHOTOS',
+      'photos.title': 'Where are your photos?',
+      'photos.lede': 'VRC PhotoN reads the photos VRChat saved on this PC. It usually finds the folder for you.',
+      'photos.label': 'VRChat photos',
+      'photos.detected': 'Detected',
+      'photos.meta': '1,284 photos · 12.4 GB',
+      'photos.preview.title': 'Recent photos',
+      'photos.preview.body': 'Will be read from this folder',
+      'photos.change': 'Change…',
+      'photos.missing.title': 'We could not find your photo folder',
+      'photos.missing.body': 'Choose the folder where VRChat saves screenshots.',
+      'photos.choose': 'Choose folder…',
+      'photos.note': 'You can change this later in Settings.',
+      'auto.kicker': 'AUTOMATION',
+      'auto.title': 'Let the app handle the routine',
+      'auto.lede': 'The defaults are safe. Keeping originals is the cautious choice.',
+      'auto.watch.title': 'Watch for new photos',
+      'auto.watch.body': 'Add new screenshots to the library as they appear.',
+      'auto.watch.state': 'On',
+      'auto.compress.title': 'Compress new photos automatically',
+      'auto.compress.body': 'Convert new PNGs to smaller files to save disk space.',
+      'auto.keep.title': 'Keep the original after compressing',
+      'auto.keep.body': 'Originals stay in your VRChat folder. Turn this off to move them to the OS trash after a successful compression.',
+      'auto.format.title': 'File format',
+      'auto.format.body': 'Saves lossless WebP to reduce size without losing quality.',
+      'auto.format.state': 'WebP',
+      'auto.safe': 'Originals are not deleted automatically.',
+      'auto.caution': 'Compressed originals will be moved to the OS trash.',
+      'auto.noCompress': 'Automatic compression is off. Originals stay untouched.',
+      'auto.keepDisabled': 'Turn on automatic compression to change this.',
+      'auto.note': 'You can change automation in Integrations & Automation.',
+      'look.kicker': 'APPEARANCE',
+      'look.title': 'Make it yours',
+      'look.lede': 'Pick a theme. It applies to the whole app right away, and you can change it later.',
+      'theme.charcoal': 'Charcoal + Sky',
+      'theme.charcoal.short': 'Charcoal',
+      'theme.charcoal.accent': 'Sky · Default',
+      'theme.midnight': 'Midnight + Violet',
+      'theme.midnight.short': 'Midnight',
+      'theme.midnight.accent': 'Violet · Dark',
+      'theme.forest': 'Forest + Mint',
+      'theme.forest.short': 'Forest',
+      'theme.forest.accent': 'Mint · Calm',
+      'theme.paper': 'Paper + Amber',
+      'theme.paper.short': 'Paper',
+      'theme.paper.accent': 'Amber · Light',
+      'look.motion.title': 'Reduce motion',
+      'look.motion.body': 'Shorten transitions and fades.',
+      'look.note': 'Theme and motion can be changed in Settings.',
+      'done.kicker': 'READY',
+      'done.title': 'You are all set',
+      'done.lede': 'Everything can be changed later. Enjoy your VRChat photos.',
+      'done.sum.photos': 'Photo folder',
+      'done.sum.auto': 'Automation',
+      'done.sum.look': 'Appearance',
+      'done.edit': 'Change',
+      'done.start': 'Start VRC PhotoN',
+      'done.preparing': 'Getting ready…',
+      'done.note': 'This screen will not appear on the next launch.',
+      'skip.title': 'Close setup?',
+      'skip.body': 'It will not appear on the next launch. You can still change each setting in Settings.',
+      'skip.continue': 'Keep going',
+      'skip.close': 'Close',
+      'summary.unset': 'Not set',
+      'summary.compressOn': 'Auto-compress on',
+      'summary.compressOff': 'Auto-compress off',
+      'summary.keep': 'Keep originals',
+      'summary.trash': 'Move originals to trash',
+      'toast.done.title': 'Setup complete',
+      'toast.done.body': 'This screen will not appear next time.',
+      'toast.skip.title': 'Setup closed',
+      'toast.skip.body': 'You can change the settings anytime.',
+      'toast.folder.title': 'Choose a folder',
+      'toast.folder.body': 'In the app, this opens the OS folder picker.'
+    }
+  };
+
+  const PHOTO_PATH = 'C:\\Users\\tommy\\Pictures\\VRChat';
+  const STEP_TITLES = ['setupTitleWelcome', 'setupTitlePhotos', 'setupTitleAutomation', 'setupTitleAppearance', 'setupTitleDone'];
+  const THEMES = ['charcoal', 'midnight', 'forest', 'paper'];
+  const TOTAL_STEPS = 5;
+
+  const state = {
+    step: 0,
+    lang: 'ja',
+    theme: 'charcoal',
+    detected: true,
+    compress: true,
+    keep: true,
+    reduceMotion: false,
+    view: 'setup',
+    busy: false
+  };
+
+  const $ = (id) => document.getElementById(id);
+  const appWindow = $('appWindow');
+  const setupScrim = $('setupScrim');
+  const setupModal = $('setupModal');
+  const stepPanes = Array.from(document.querySelectorAll('.step-pane'));
+  const stepDots = Array.from(document.querySelectorAll('#stepDots .step-dot'));
+  const stepChips = Array.from(document.querySelectorAll('[data-step-chip]'));
+  const viewButtons = Array.from(document.querySelectorAll('#viewSwitch button'));
+  const detectButtons = Array.from(document.querySelectorAll('#detectSwitch button'));
+  const themeCards = Array.from(document.querySelectorAll('[data-theme-choice]'));
+  const nextBtn = $('nextBtn');
+  const nextLabel = $('nextLabel');
+  const nextIcon = $('nextIcon');
+  const nextIconUse = nextIcon.querySelector('use');
+  const nextSpinner = $('nextSpinner');
+  const backBtn = $('backBtn');
+  const skipConfirm = $('skipConfirm');
+  const skipBtn = $('skipBtn');
+  const skipContinue = $('skipContinue');
+  const skipClose = $('skipClose');
+  const reduceMotionToggle = $('reduceMotionToggle');
+  const motionSwitch = document.querySelector('[data-toggle="motion"]');
+  const keepRow = $('keepRow');
+  const keepSwitch = document.querySelector('[data-toggle="keep"]');
+  const appToast = $('appToast');
+  const toastTitle = $('toastTitle');
+  const toastBody = $('toastBody');
+  const toastIconUse = appToast.querySelector('.toast-icon use');
+  const mockBadge = $('mockBadge');
+  const viewNote = $('viewNote');
+  let toastTimer = null;
+
+  function t(key) {
+    return I18N[state.lang][key] ?? I18N.ja[key] ?? key;
+  }
+
+  function padStep(n) {
+    return String(n + 1).padStart(2, '0') + ' / 05';
+  }
+
+  function buildAutomationSummary() {
+    if (!state.compress) return t('summary.compressOff');
+    return [t('summary.compressOn'), state.keep ? t('summary.keep') : t('summary.trash')].join(' · ');
+  }
+
+  function updateDynamicText() {
+    $('summaryPhoto').textContent = state.detected ? PHOTO_PATH : t('summary.unset');
+    $('summaryAutomation').textContent = buildAutomationSummary();
+    $('summaryTheme').textContent = t('theme.' + state.theme);
+    const safetyText = $('safetyText');
+    const safetyNote = $('safetyNote');
+    safetyNote.classList.remove('caution', 'neutral');
+    if (!state.compress) {
+      safetyText.textContent = t('auto.noCompress');
+      safetyNote.classList.add('neutral');
+    } else if (!state.keep) {
+      safetyText.textContent = t('auto.caution');
+      safetyNote.classList.add('caution');
+    } else {
+      safetyText.textContent = t('auto.safe');
+    }
+  }
+
+  function applyLanguage() {
+    document.documentElement.lang = state.lang;
+    document.querySelectorAll('[data-i18n]').forEach((element) => {
+      const value = t(element.dataset.i18n);
+      if (value) element.textContent = value;
+    });
+    $('langLabel').textContent = state.lang === 'ja' ? '日本語' : 'English';
+    $('backBtn').setAttribute('aria-label', t('aria.back'));
+    $('langBtn').setAttribute('aria-label', t('aria.language'));
+    document.querySelectorAll('[data-toggle="compress"]').forEach((button) => button.setAttribute('aria-label', t('auto.compress.title')));
+    keepSwitch.setAttribute('aria-label', t('auto.keep.title'));
+    motionSwitch.setAttribute('aria-label', t('look.motion.title'));
+    updateDynamicText();
+    updateStepUI();
+  }
+
+  function applyTheme(name) {
+    if (!THEMES.includes(name)) return;
+    state.theme = name;
+    appWindow.dataset.theme = name;
+    themeCards.forEach((card) => {
+      const selected = card.dataset.themeChoice === name;
+      card.classList.toggle('selected', selected);
+      card.setAttribute('aria-checked', selected ? 'true' : 'false');
+    });
+    updateDynamicText();
+  }
+
+  function applyAutomation() {
+    document.querySelectorAll('[data-toggle="compress"]').forEach((button) => {
+      button.classList.toggle('on', state.compress);
+      button.setAttribute('aria-checked', state.compress ? 'true' : 'false');
+    });
+    keepSwitch.classList.toggle('on', state.keep);
+    keepSwitch.setAttribute('aria-checked', state.keep ? 'true' : 'false');
+    keepSwitch.disabled = !state.compress;
+    keepRow.classList.toggle('disabled', !state.compress);
+    keepRow.setAttribute('aria-disabled', state.compress ? 'false' : 'true');
+    keepRow.title = state.compress ? '' : t('auto.keepDisabled');
+    updateDynamicText();
+  }
+
+  function applyDetection() {
+    $('photoDetected').hidden = !state.detected;
+    $('photoMissing').hidden = state.detected;
+    $('photoPeek').hidden = !state.detected;
+    detectButtons.forEach((button) => button.classList.toggle('active', (button.dataset.detect === 'yes') === state.detected));
+    updateDynamicText();
+  }
+
+  function setReduceMotion(value) {
+    state.reduceMotion = value;
+    appWindow.classList.toggle('reduce-motion', value);
+    reduceMotionToggle.checked = value;
+    motionSwitch.classList.toggle('on', value);
+    motionSwitch.setAttribute('aria-checked', value ? 'true' : 'false');
+  }
+
+  function updateStepUI() {
+    stepDots.forEach((dot, index) => dot.classList.toggle('active', index === state.step));
+    stepChips.forEach((chip, index) => chip.classList.toggle('active', index === state.step));
+    $('stepCount').textContent = padStep(state.step);
+    $('progressFill').style.width = ((state.step + 1) / TOTAL_STEPS * 100) + '%';
+    backBtn.classList.toggle('is-hidden', state.step === 0);
+    setupModal.setAttribute('aria-labelledby', STEP_TITLES[state.step]);
+
+    if (state.busy) return;
+    let label = t('next');
+    if (state.step === 0) label = t('welcome.cta');
+    if (state.step === TOTAL_STEPS - 1) label = t('done.start');
+    nextLabel.textContent = label;
+    nextBtn.setAttribute('aria-label', label);
+    nextIconUse.setAttribute('href', state.step === TOTAL_STEPS - 1 ? '#i-check' : '#i-arrow-right');
+  }
+
+  function resetPaneStyles(pane) {
+    if (!pane) return;
+    pane.getAnimations().forEach((animation) => animation.cancel());
+    pane.style.visibility = '';
+    pane.style.opacity = '';
+    pane.style.transform = '';
+    pane.style.zIndex = '';
+  }
+
+  function setStepInstant(step) {
+    state.step = Math.max(0, Math.min(TOTAL_STEPS - 1, step));
+    stepPanes.forEach((pane, index) => {
+      resetPaneStyles(pane);
+      pane.classList.toggle('active', index === state.step);
+    });
+    updateStepUI();
+  }
+
+  function goToStep(step, options = {}) {
+    const target = Math.max(0, Math.min(TOTAL_STEPS - 1, step));
+    if (target === state.step) {
+      updateStepUI();
+      return;
+    }
+    const previous = state.step;
+    const direction = options.direction ?? (target > previous ? 1 : -1);
+    const oldPane = stepPanes[previous];
+    const nextPane = stepPanes[target];
+
+    stepPanes.forEach(resetPaneStyles);
+    state.step = target;
+    stepPanes.forEach((pane) => pane.classList.remove('active'));
+    nextPane.classList.add('active');
+
+    if (!state.reduceMotion) {
+      oldPane.style.visibility = 'visible';
+      oldPane.style.opacity = '1';
+      oldPane.style.zIndex = '1';
+      const out = oldPane.animate(
+        [
+          { opacity: 1, transform: 'translateX(0)' },
+          { opacity: 0, transform: `translateX(${-direction * 18}px)` }
+        ],
+        { duration: 200, easing: 'cubic-bezier(0.4, 0, 1, 1)', fill: 'both' }
+      );
+      out.onfinish = () => resetPaneStyles(oldPane);
+
+      const incoming = nextPane.animate(
+        [
+          { opacity: 0, transform: `translateX(${direction * 28}px)` },
+          { opacity: 1, transform: 'translateX(0)' }
+        ],
+        { duration: 340, easing: 'cubic-bezier(0.22, 0.8, 0.24, 1)', fill: 'both' }
+      );
+      incoming.onfinish = () => resetPaneStyles(nextPane);
+    }
+
+    updateStepUI();
+  }
+
+  function updateViewUI() {
+    viewButtons.forEach((button) => button.classList.toggle('active', button.dataset.view === state.view));
+    mockBadge.hidden = state.view !== 'existing';
+    viewNote.textContent = state.view === 'setup'
+      ? 'モーダル表示中'
+      : state.view === 'done'
+        ? '完了後（表示されない）'
+        : '既存ユーザー（表示されない）';
+  }
+
+  function restartModalEntry() {
+    setupModal.classList.remove('is-entering');
+    void setupModal.offsetWidth;
+    setupModal.classList.add('is-entering');
+    window.setTimeout(() => setupModal.classList.remove('is-entering'), 520);
+  }
+
+  function showSetup() {
+    state.view = 'setup';
+    state.busy = false;
+    nextBtn.disabled = false;
+    nextSpinner.hidden = true;
+    nextIcon.style.display = '';
+    closeSkipConfirm(true);
+    setupScrim.classList.remove('is-hidden');
+    setupModal.classList.remove('is-closing');
+    updateViewUI();
+    restartModalEntry();
+    updateStepUI();
+    window.setTimeout(() => setupModal.focus({ preventScroll: true }), 40);
+  }
+
+  function hideSetup() {
+    setupModal.classList.add('is-closing');
+    setupScrim.classList.add('is-hidden');
+    window.setTimeout(() => setupModal.classList.remove('is-closing'), 280);
+  }
+
+  function setView(view) {
+    if (view === 'setup') {
+      showSetup();
+      return;
+    }
+    state.view = view;
+    hideToast();
+    updateViewUI();
+    hideSetup();
+  }
+
+  function openSkipConfirm() {
+    skipConfirm.classList.add('open');
+    window.setTimeout(() => skipContinue.focus(), 30);
+  }
+
+  function closeSkipConfirm(immediate = false) {
+    skipConfirm.classList.remove('open');
+    if (!immediate && state.view === 'setup') skipBtn.focus();
+  }
+
+  function showToast(kind) {
+    const info = kind !== 'done';
+    appToast.classList.toggle('info', info);
+    toastIconUse.setAttribute('href', kind === 'folder' ? '#i-folder' : info ? '#i-sparkles' : '#i-check');
+    if (kind === 'done') {
+      toastTitle.textContent = t('toast.done.title');
+      toastBody.textContent = t('toast.done.body');
+    } else if (kind === 'skip') {
+      toastTitle.textContent = t('toast.skip.title');
+      toastBody.textContent = t('toast.skip.body');
+    } else {
+      toastTitle.textContent = t('toast.folder.title');
+      toastBody.textContent = t('toast.folder.body');
+    }
+    appToast.classList.add('show');
+    if (toastTimer) window.clearTimeout(toastTimer);
+    toastTimer = window.setTimeout(hideToast, 5200);
+  }
+
+  function hideToast() {
+    appToast.classList.remove('show');
+    if (toastTimer) {
+      window.clearTimeout(toastTimer);
+      toastTimer = null;
+    }
+  }
+
+  function finishSetup(skipped) {
+    state.busy = false;
+    nextBtn.disabled = false;
+    nextSpinner.hidden = true;
+    nextIcon.style.display = '';
+    state.view = 'done';
+    updateViewUI();
+    hideSetup();
+    window.setTimeout(() => showToast(skipped ? 'skip' : 'done'), 160);
+  }
+
+  function completeSetup(skipped = false) {
+    if (state.busy) return;
+    closeSkipConfirm(true);
+    if (skipped) {
+      finishSetup(true);
+      return;
+    }
+    state.busy = true;
+    nextBtn.disabled = true;
+    nextLabel.textContent = t('done.preparing');
+    nextBtn.setAttribute('aria-label', t('done.preparing'));
+    nextSpinner.hidden = false;
+    nextIcon.style.display = 'none';
+    window.setTimeout(() => finishSetup(false), 720);
+  }
+
+  function nextStep() {
+    if (state.busy) return;
+    if (state.step === TOTAL_STEPS - 1) {
+      completeSetup(false);
+      return;
+    }
+    goToStep(state.step + 1);
+  }
+
+  function resetDemo() {
+    hideToast();
+    closeSkipConfirm(true);
+    state.step = 0;
+    state.lang = 'ja';
+    state.theme = 'charcoal';
+    state.detected = true;
+    state.compress = true;
+    state.keep = true;
+    state.view = 'setup';
+    state.busy = false;
+    setReduceMotion(false);
+    applyTheme('charcoal');
+    applyLanguage();
+    applyAutomation();
+    applyDetection();
+    setStepInstant(0);
+    nextBtn.disabled = false;
+    nextSpinner.hidden = true;
+    nextIcon.style.display = '';
+    showSetup();
+    updateViewUI();
+  }
+
+  /* events */
+  viewButtons.forEach((button) => {
+    button.addEventListener('click', () => setView(button.dataset.view));
+  });
+
+  stepChips.forEach((chip, index) => {
+    chip.addEventListener('click', () => {
+      if (state.view !== 'setup') showSetup();
+      goToStep(index);
+    });
+  });
+
+  detectButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+      state.detected = button.dataset.detect === 'yes';
+      applyDetection();
+      if (state.view !== 'setup') showSetup();
+      goToStep(1);
+    });
+  });
+
+  $('replayBtn').addEventListener('click', resetDemo);
+  $('langBtn').addEventListener('click', () => {
+    state.lang = state.lang === 'ja' ? 'en' : 'ja';
+    applyLanguage();
+  });
+  $('nextBtn').addEventListener('click', nextStep);
+  $('backBtn').addEventListener('click', () => goToStep(state.step - 1));
+  skipBtn.addEventListener('click', openSkipConfirm);
+  skipContinue.addEventListener('click', () => closeSkipConfirm(false));
+  skipClose.addEventListener('click', () => completeSetup(true));
+  $('toastClose').addEventListener('click', hideToast);
+  $('changeFolderBtn').addEventListener('click', () => showToast('folder'));
+  $('chooseFolderBtn').addEventListener('click', () => showToast('folder'));
+
+  themeCards.forEach((card) => {
+    card.addEventListener('click', () => applyTheme(card.dataset.themeChoice));
+  });
+
+  document.querySelectorAll('[data-toggle]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const key = button.dataset.toggle;
+      if (key === 'compress') state.compress = !state.compress;
+      else if (key === 'keep') state.keep = !state.keep;
+      else if (key === 'motion') {
+        setReduceMotion(!state.reduceMotion);
+        return;
+      }
+      applyAutomation();
+    });
+  });
+
+  document.querySelectorAll('[data-goto]').forEach((button) => {
+    button.addEventListener('click', () => goToStep(Number(button.dataset.goto)));
+  });
+
+  reduceMotionToggle.addEventListener('change', () => setReduceMotion(reduceMotionToggle.checked));
+
+  setupScrim.addEventListener('click', (event) => {
+    if (event.target === setupScrim) event.stopPropagation();
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (state.view !== 'setup') return;
+    if (event.target.closest('.stage-toolbar') || event.target.closest('.step-rail')) return;
+    if (setupScrim.classList.contains('is-hidden')) return;
+
+    const themeCard = event.target.closest('[data-theme-choice]');
+    if (themeCard && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) {
+      event.preventDefault();
+      const current = THEMES.indexOf(state.theme);
+      const delta = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : -1;
+      const next = THEMES[(current + delta + THEMES.length) % THEMES.length];
+      applyTheme(next);
+      document.querySelector(`[data-theme-choice="${next}"]`).focus();
+      return;
+    }
+
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      if (skipConfirm.classList.contains('open')) closeSkipConfirm(false);
+      else openSkipConfirm();
+      return;
+    }
+    if (skipConfirm.classList.contains('open')) return;
+
+    const onControl = event.target.closest('button, input, [role="switch"], [role="radio"]');
+    if (event.key === 'Enter' && onControl) return;
+    if (event.key === 'Enter' || event.key === 'ArrowRight') {
+      event.preventDefault();
+      nextStep();
+    } else if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      goToStep(state.step - 1);
+    }
+  });
+
+  setupModal.addEventListener('keydown', (event) => {
+    if (event.key !== 'Tab') return;
+    const items = Array.from(setupModal.querySelectorAll('button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])'))
+      .filter((element) => element.offsetParent !== null)
+      .filter((element) => getComputedStyle(element).visibility !== 'hidden')
+      .filter((element) => !element.closest('.skip-confirm:not(.open)'));
+    if (items.length === 0) return;
+    const first = items[0];
+    const last = items[items.length - 1];
+    if (event.shiftKey && (document.activeElement === first || !setupModal.contains(document.activeElement))) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  });
+
+  /* initial state */
+  applyTheme(state.theme);
+  applyLanguage();
+  applyAutomation();
+  applyDetection();
+  setReduceMotion(false);
+  setStepInstant(0);
+  updateViewUI();
+  updateStepUI();
+  window.setTimeout(() => setupModal.classList.remove('is-entering'), 520);
+  window.setTimeout(() => setupModal.focus({ preventScroll: true }), 520);
+</script>
+</body>
+</html>
