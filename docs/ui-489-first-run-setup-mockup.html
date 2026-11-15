@@ -613,18 +613,6 @@
     white-space: nowrap;
   }
 
-  .preview-foot {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 6px;
-    margin-top: 8px;
-    color: var(--dim);
-    font-size: 9px;
-  }
-
-  .preview-note { color: #5f6d83; font-size: 8px; }
-
   .preview-surface:not(.show-status) .preview-badge { display: none; }
   .preview-surface:not(.show-world) .preview-world { display: none; }
   .preview-surface:not(.show-date) .preview-date,
@@ -712,6 +700,13 @@
     color: var(--muted);
     font-size: 12px;
     line-height: 1.65;
+  }
+
+  .ai-booth {
+    margin-top: 6px;
+    color: #5fd6a8;
+    font-size: 11px;
+    font-weight: 500;
   }
 
   .ai-preview {
@@ -1101,10 +1096,6 @@
                     </article>
                   </div>
                 </div>
-                <div class="preview-foot">
-                  <span data-thumb-value>サムネイル 384×216</span>
-                  <span class="preview-note">設定は即時反映</span>
-                </div>
               </aside>
             </div>
           </div>
@@ -1293,6 +1284,7 @@
           <h2>AIタグ付け</h2>
           <div class="modal-body">
             <div class="ai-intro">AIタグ付けを有効にすると、写真の内容から人物の有無・屋外/屋内・雰囲気などを自動でタグ付けします。解析はこの端末内で完結し、写真は外部へ送信されません。プラグインとモデルの準備は設定画面から行えます。</div>
+            <div class="ai-booth">AIタグ付けプラグインは BOOTH で購入できます。</div>
             <div class="ai-preview">
               <div class="ai-image"></div>
               <div class="ai-panel">
@@ -1362,7 +1354,6 @@
   const radiusInput = document.querySelector("[data-radius]");
   const gapValue = document.querySelector("[data-gap-value]");
   const radiusValue = document.querySelector("[data-radius-value]");
-  const thumbValue = document.querySelector("[data-thumb-value]");
 
   function updateDisplayPreview() {
     if (!previewSurface || !gapInput || !radiusInput) return;
@@ -1394,7 +1385,6 @@
     chip.addEventListener("click", () => {
       thumbnailChips.forEach((item) => item.classList.remove("active"));
       chip.classList.add("active");
-      if (thumbValue) thumbValue.textContent = "サムネイル " + chip.dataset.thumb;
       updateDisplayPreview();
     });
   });
