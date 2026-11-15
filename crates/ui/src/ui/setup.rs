@@ -13,7 +13,7 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use vrc_photon_core::model::CompressionFormat;
 use vrc_photon_core::thumbnail::THUMBNAIL_SIZES;
-use vrc_photon_i18n::{tr, tr_args};
+use vrc_photon_i18n::tr;
 
 use crate::app::App;
 use crate::app::compression::FeatureCompressionTarget;
@@ -569,7 +569,6 @@ impl App {
             .border_color(rgba(with_alpha(p.text, 0x12)))
             .bg(rgb(p.panel_deep))
             .child(rows);
-        let thumbnail = self.settings.thumbnail_size;
         v_flex()
             .flex_1()
             .min_w_0()
@@ -581,19 +580,6 @@ impl App {
                     .child(tr!("setup.display.preview")),
             )
             .child(surface)
-            .child(
-                h_flex()
-                    .items_baseline()
-                    .justify_between()
-                    .gap(px(6.))
-                    .text_size(px(9.))
-                    .text_color(rgb(p.muted_2))
-                    .child(tr_args!(
-                        "setup.display.preview_thumbnail",
-                        size = format!("{}×{}", thumbnail, thumbnail * 9 / 16)
-                    ))
-                    .child(tr!("setup.display.preview_live")),
-            )
     }
 
     fn setup_theme(&self, cx: &mut Context<Self>) -> Div {
@@ -869,7 +855,7 @@ impl App {
         };
 
         let sample_image = div()
-            .h(px(86.))
+            .h(px(76.))
             .w_full()
             .rounded(px(8.))
             .border_1()
@@ -881,8 +867,8 @@ impl App {
             ));
 
         let ai_panel = v_flex()
-            .gap(px(7.))
-            .p(px(9.))
+            .gap(px(6.))
+            .p(px(8.))
             .rounded(px(10.))
             .bg(rgba(with_alpha(p.green, 0x0c)))
             .border_1()
@@ -920,18 +906,29 @@ impl App {
             );
 
         v_flex()
-            .gap(px(14.))
+            .gap(px(10.))
             .child(
-                div()
-                    .text_size(px(12.))
-                    .line_height(relative(1.65))
-                    .text_color(rgb(p.muted))
-                    .child(tr!("setup.ai.intro")),
+                v_flex()
+                    .gap(px(4.))
+                    .child(
+                        div()
+                            .text_size(px(12.))
+                            .line_height(relative(1.6))
+                            .text_color(rgb(p.muted))
+                            .child(tr!("setup.ai.intro")),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(11.))
+                            .font_medium()
+                            .text_color(rgb(p.green))
+                            .child(tr!("setup.ai.booth")),
+                    ),
             )
             .child(
                 v_flex()
                     .gap(px(8.))
-                    .p(px(10.))
+                    .p(px(8.))
                     .rounded(px(12.))
                     .bg(rgb(p.panel_deep))
                     .border_1()
