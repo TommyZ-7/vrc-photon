@@ -4,6 +4,7 @@
 //! and the page-leave commits live here; rendering lives in `ui::setup`.
 
 use std::path::PathBuf;
+use std::time::Duration;
 
 use gpui_kit::*;
 use vrc_photon_core::discord::validate_webhook_url;
@@ -13,6 +14,7 @@ use vrc_photon_i18n::{tr, tr_args};
 use crate::app::App;
 use crate::app::discord::webhook_error_key;
 use crate::app::file_picker::{self, DialogOptions};
+use crate::state::motion::ToggleMotion;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum SetupPathField {
@@ -105,12 +107,26 @@ pub(crate) fn setup_webhook_value(raw: &str) -> Result<Option<String>, &'static 
         .map_err(webhook_error_key)
 }
 
+/// Horizontal offset for a page that slides in from the side. `value` goes
+/// from 1 (fully offset) to 0 (settled).
+pub(crate) fn setup_page_offset(direction: f32, value: f32) -> f32 {
+    direction * 28.0 * value.clamp(0.0, 1.0)
+}
+
+/// The preview card's text body exists only when at least one text option is
+/// on; otherwise the card is just its image and must not keep empty padding.
+pub(crate) fn display_preview_has_body(world: bool, date: bool, size: bool) -> bool {
+    world || date || size
+}
+
 pub(crate) struct SetupState {
     pub(crate) open: bool,
     pub(crate) page: SetupPage,
     pub(crate) focus: FocusHandle,
     pub(crate) focus_pending: bool,
     pub(crate) error: Option<SharedString>,
+    pub(crate) motion: ToggleMotion,
+    pub(crate) direction: f32,
 }
 
 impl SetupState {
@@ -121,6 +137,8 @@ impl SetupState {
             focus: cx.focus_handle(),
             focus_pending: open,
             error: None,
+            motion: ToggleMotion::settled(0.0),
+            direction: 1.0,
         }
     }
 }
@@ -136,6 +154,7 @@ impl App {
                 self.setup.page = page;
                 self.setup.error = None;
                 self.setup.focus_pending = true;
+                self.start_setup_page_motion(1.0);
                 cx.notify();
             }
             None => self.finish_setup(cx),
@@ -153,8 +172,17 @@ impl App {
             self.setup.page = page;
             self.setup.error = None;
             self.setup.focus_pending = true;
+            self.start_setup_page_motion(-1.0);
             cx.notify();
         }
+    }
+
+    fn start_setup_page_motion(&mut self, direction: f32) {
+        self.setup.direction = direction;
+        self.setup.motion = ToggleMotion::settled(1.0);
+        self.setup
+            .motion
+            .animate_to(0.0, Duration::from_millis(180));
     }
 
     pub(crate) fn dismiss_setup(&mut self, cx: &mut Context<Self>) {
@@ -270,7 +298,10 @@ impl App {
 
 #[cfg(test)]
 mod tests {
-    use super::{SetupPage, setup_webhook_value, should_show_setup};
+    use super::{
+        SetupPage, display_preview_has_body, setup_page_offset, setup_webhook_value,
+        should_show_setup,
+    };
 
     #[test]
     fn setup_pages_advance_and_return_in_order() {
@@ -309,6 +340,22 @@ mod tests {
         assert!(should_show_setup(false, true, false, true, false, 0));
         assert!(should_show_setup(false, true, false, true, false, 3));
         assert!(!should_show_setup(false, true, false, true, true, 3));
+    }
+
+    #[test]
+    fn setup_page_offset_slides_from_the_side_and_settles_at_zero() {
+        assert_eq!(setup_page_offset(1.0, 1.0), 28.0);
+        assert_eq!(setup_page_offset(-1.0, 1.0), -28.0);
+        assert_eq!(setup_page_offset(1.0, 0.5), 14.0);
+        assert_eq!(setup_page_offset(1.0, 0.0), 0.0);
+    }
+
+    #[test]
+    fn display_preview_body_hides_when_all_text_options_are_off() {
+        assert!(!display_preview_has_body(false, false, false));
+        assert!(display_preview_has_body(true, false, false));
+        assert!(display_preview_has_body(false, true, false));
+        assert!(display_preview_has_body(false, false, true));
     }
 
     #[test]

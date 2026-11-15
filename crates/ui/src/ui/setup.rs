@@ -17,7 +17,7 @@ use vrc_photon_i18n::{tr, tr_args};
 
 use crate::app::App;
 use crate::app::compression::FeatureCompressionTarget;
-use crate::app::setup::{SetupPage, SetupPathField};
+use crate::app::setup::{SetupPage, SetupPathField, display_preview_has_body, setup_page_offset};
 use crate::ui::components::{card_divider, compression_policy_warning, dialog_panel};
 use crate::ui::settings::ThemeAxis;
 use crate::ui::theme::*;
@@ -27,32 +27,30 @@ impl App {
         let p = self.palette;
         let title = setup_page_title(self.setup.page);
 
-        let header = h_flex()
-            .items_start()
-            .gap(px(10.))
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .text_size(px(24.))
-                    .font_semibold()
-                    .text_color(rgb(p.text))
-                    .child(title),
-            )
-            .child(
-                Button::new("setup-close")
-                    .icon(Icon::new(IconName::Close))
-                    .small()
-                    .ghost()
-                    .tooltip(tr!("setup.close"))
-                    .on_click(cx.listener(|this, _, _, cx| this.dismiss_setup(cx))),
-            );
+        let header = h_flex().items_start().gap(px(10.)).child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .text_size(px(24.))
+                .font_semibold()
+                .text_color(rgb(p.text))
+                .child(title),
+        );
 
-        let body = v_flex()
-            .flex_1()
-            .min_h_0()
-            .pt(px(30.))
-            .child(self.setup_body(cx));
+        let motion = self.setup.motion;
+        let direction = self.setup.direction;
+        let page = self.setup_body(cx);
+        let animated_page = div().w_full().child(page).with_animation(
+            ("setup-page", motion.epoch()),
+            Animation::new(motion.driver_duration())
+                .with_easing(ease_motion)
+                .with_max_fps(self.motion_fps(window, cx)),
+            move |el, _| {
+                el.relative()
+                    .left(px(setup_page_offset(direction, motion.value())))
+            },
+        );
+        let body = v_flex().flex_1().min_h_0().pt(px(30.)).child(animated_page);
 
         let mut footer = h_flex().items_center().gap(px(8.)).child(div().flex_1());
         if self.setup.page.prev().is_some() {
@@ -169,10 +167,10 @@ impl App {
             SetupPage::Startup => self.setup_startup(cx).into_any_element(),
             SetupPage::Folders => self.setup_folders(cx).into_any_element(),
             SetupPage::Display => self.setup_display(cx).into_any_element(),
-            SetupPage::Discord => self.setup_discord(cx).into_any_element(),
+            SetupPage::Discord => self.setup_discord(cx),
             SetupPage::Compression => self.setup_compression(cx),
             SetupPage::Theme => self.setup_theme(cx).into_any_element(),
-            SetupPage::AiTagging => self.setup_ai(cx).into_any_element(),
+            SetupPage::AiTagging => self.setup_ai().into_any_element(),
         }
     }
 
@@ -465,23 +463,26 @@ impl App {
         let radius = f32::from(self.settings.ui_card_radius);
         let gap = f32::from(self.settings.ui_grid_gap);
         let inner_radius = inner_corner_radius(radius, 1.0);
-        let worlds = ["VRChat Home", "The Black Cat"];
-        let dates = ["2026/11/15", "2026/11/14"];
-        let sizes = ["1.2 MB", "980 KB"];
-        let cards = h_flex().gap(px(gap)).children((0..2).map(|index| {
-            let image = if index == 0 {
-                linear_gradient(
-                    135.,
-                    linear_color_stop(rgba(with_alpha(p.accent, 0x66)), 0.),
-                    linear_color_stop(rgba(with_alpha(p.panel_deep, 0xff)), 1.),
-                )
-            } else {
-                linear_gradient(
-                    135.,
-                    linear_color_stop(rgba(with_alpha(p.green, 0x55)), 0.),
-                    linear_color_stop(rgba(with_alpha(p.panel_deep, 0xff)), 1.),
-                )
-            };
+        let worlds = [
+            "VRChat Home",
+            "The Black Cat",
+            "Furality Aqua",
+            "Midnight Rooftop",
+        ];
+        let dates = ["2026/11/15", "2026/11/14", "2026/11/12", "2026/11/09"];
+        let sizes = ["1.2 MB", "980 KB", "2.4 MB", "1.7 MB"];
+        let tints = [p.accent, p.green, p.amber, p.red];
+        let has_body = display_preview_has_body(
+            self.settings.ui_card_show_world,
+            self.settings.ui_card_show_date,
+            self.settings.ui_card_show_size,
+        );
+        let card = |index: usize| -> Div {
+            let image = linear_gradient(
+                135.,
+                linear_color_stop(rgba(with_alpha(tints[index], 0x66)), 0.),
+                linear_color_stop(rgba(with_alpha(p.panel_deep, 0xff)), 1.),
+            );
             v_flex()
                 .w(px(100.))
                 .flex_shrink_0()
@@ -515,45 +516,51 @@ impl App {
                             )
                         }),
                 )
-                .child(
-                    v_flex()
-                        .p(px(5.))
-                        .gap(px(2.))
-                        .when(self.settings.ui_card_show_world, |this| {
-                            this.child(
-                                div()
-                                    .truncate()
-                                    .text_size(px(8.5))
-                                    .font_medium()
-                                    .text_color(rgb(p.text))
-                                    .child(worlds[index]),
-                            )
-                        })
-                        .when(
-                            self.settings.ui_card_show_date || self.settings.ui_card_show_size,
-                            |this| {
+                .when(has_body, |this| {
+                    this.child(
+                        v_flex()
+                            .p(px(5.))
+                            .gap(px(2.))
+                            .when(self.settings.ui_card_show_world, |this| {
                                 this.child(
-                                    h_flex()
-                                        .items_center()
-                                        .gap(px(3.))
-                                        .text_size(px(7.5))
-                                        .text_color(rgb(p.muted_2))
-                                        .when(self.settings.ui_card_show_date, |this| {
-                                            this.child(dates[index])
-                                        })
-                                        .when(
-                                            self.settings.ui_card_show_date
-                                                && self.settings.ui_card_show_size,
-                                            |this| this.child("·"),
-                                        )
-                                        .when(self.settings.ui_card_show_size, |this| {
-                                            this.child(sizes[index])
-                                        }),
+                                    div()
+                                        .truncate()
+                                        .text_size(px(8.5))
+                                        .font_medium()
+                                        .text_color(rgb(p.text))
+                                        .child(worlds[index]),
                                 )
-                            },
-                        ),
-                )
-        }));
+                            })
+                            .when(
+                                self.settings.ui_card_show_date || self.settings.ui_card_show_size,
+                                |this| {
+                                    this.child(
+                                        h_flex()
+                                            .items_center()
+                                            .gap(px(3.))
+                                            .text_size(px(7.5))
+                                            .text_color(rgb(p.muted_2))
+                                            .when(self.settings.ui_card_show_date, |this| {
+                                                this.child(dates[index])
+                                            })
+                                            .when(
+                                                self.settings.ui_card_show_date
+                                                    && self.settings.ui_card_show_size,
+                                                |this| this.child("·"),
+                                            )
+                                            .when(self.settings.ui_card_show_size, |this| {
+                                                this.child(sizes[index])
+                                            }),
+                                    )
+                                },
+                            ),
+                    )
+                })
+        };
+        let rows = v_flex()
+            .gap(px(gap))
+            .child(h_flex().gap(px(gap)).child(card(0)).child(card(1)))
+            .child(h_flex().gap(px(gap)).child(card(2)).child(card(3)));
 
         let surface = div()
             .p(px(8.))
@@ -561,7 +568,7 @@ impl App {
             .border_1()
             .border_color(rgba(with_alpha(p.text, 0x12)))
             .bg(rgb(p.panel_deep))
-            .child(cards);
+            .child(rows);
         let thumbnail = self.settings.thumbnail_size;
         v_flex()
             .flex_1()
@@ -598,19 +605,11 @@ impl App {
             .child(self.theme_axis(ThemeAxis::Accent, cx))
     }
 
-    fn setup_discord(&self, cx: &mut Context<Self>) -> Div {
+    fn setup_discord(&self, cx: &mut Context<Self>) -> AnyElement {
         let p = self.palette;
-        let body = v_flex()
+        let enabled = self.settings.discord_enabled;
+        let fields = v_flex()
             .gap(px(14.))
-            .child(setup_switch_row(
-                &p,
-                tr!("integrations.discord.title"),
-                "setup-discord-enabled",
-                self.settings.discord_enabled,
-                cx,
-                |app, value, _, cx| app.set_discord_enabled(value, cx),
-            ))
-            .child(card_divider(&p))
             .child(
                 v_flex()
                     .gap(px(7.))
@@ -622,9 +621,6 @@ impl App {
                     )
                     .child(Input::new(&self.discord_url_input).h(px(38.))),
             )
-            .when_some(self.setup.error.clone(), |this, error| {
-                this.child(div().text_size(px(11.)).text_color(rgb(p.red)).child(error))
-            })
             .child(
                 v_flex()
                     .gap(px(7.))
@@ -652,10 +648,25 @@ impl App {
                 cx,
                 |app, value, _, cx| app.set_discord_send_original(value, cx),
             ));
-        // Keep the page useful while the toggle is off; the settings screen
-        // collapses the body, but a first-run user needs to see what enabling
-        // Discord will configure.
-        body
+
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(10.))
+            .child(setup_switch_row(
+                &p,
+                tr!("integrations.discord.title"),
+                "setup-discord-enabled",
+                enabled,
+                cx,
+                |app, value, _, cx| app.set_discord_enabled(value, cx),
+            ))
+            .child(card_divider(&p))
+            .child(self.integration_settings_body(enabled, fields))
+            .when_some(self.setup.error.clone(), |this, error| {
+                this.child(div().text_size(px(11.)).text_color(rgb(p.red)).child(error))
+            })
+            .into_any_element()
     }
 
     fn setup_compression(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -791,62 +802,143 @@ impl App {
             .into_any_element()
     }
 
-    fn setup_ai(&self, cx: &mut Context<Self>) -> Div {
+    fn setup_ai(&self) -> Div {
         let p = self.palette;
-        let installed = self.ai.active.is_some();
+        let tag = |label: String, probability: &'static str| -> Div {
+            h_flex()
+                .items_center()
+                .gap(px(3.))
+                .px(px(7.))
+                .py(px(2.))
+                .rounded_full()
+                .bg(rgba(with_alpha(p.green, 0x14)))
+                .border_1()
+                .border_color(rgba(with_alpha(p.green, 0x38)))
+                .text_size(px(10.))
+                .text_color(rgb(p.green))
+                .child("✦")
+                .child(label)
+                .child(
+                    div()
+                        .text_size(px(9.))
+                        .text_color(rgb(p.muted))
+                        .child(probability),
+                )
+        };
+        let section = |label: String| -> Div {
+            h_flex()
+                .items_center()
+                .gap(px(6.))
+                .child(
+                    div()
+                        .w(px(2.))
+                        .h(px(9.))
+                        .rounded_full()
+                        .bg(rgba(with_alpha(p.green, 0x66))),
+                )
+                .child(
+                    div()
+                        .text_size(px(9.))
+                        .font_medium()
+                        .text_color(rgb(p.muted))
+                        .child(label),
+                )
+        };
+        let fact = |label: String, value: String| -> Div {
+            v_flex()
+                .flex_1()
+                .min_w_0()
+                .gap(px(1.))
+                .px(px(7.))
+                .py(px(5.))
+                .rounded(px(7.))
+                .bg(rgba(with_alpha(p.green, 0x0a)))
+                .child(
+                    div()
+                        .text_size(px(9.))
+                        .text_color(rgb(p.muted_2))
+                        .child(label),
+                )
+                .child(
+                    div()
+                        .text_size(px(11.))
+                        .font_medium()
+                        .text_color(rgb(p.text))
+                        .child(value),
+                )
+        };
+
+        let sample_image = div()
+            .h(px(86.))
+            .w_full()
+            .rounded(px(8.))
+            .border_1()
+            .border_color(rgba(with_alpha(p.text, 0x18)))
+            .bg(linear_gradient(
+                135.,
+                linear_color_stop(rgba(with_alpha(p.accent, 0x66)), 0.),
+                linear_color_stop(rgba(with_alpha(p.green, 0x2e)), 1.),
+            ));
+
+        let ai_panel = v_flex()
+            .gap(px(7.))
+            .p(px(9.))
+            .rounded(px(10.))
+            .bg(rgba(with_alpha(p.green, 0x0c)))
+            .border_1()
+            .border_color(rgba(with_alpha(p.green, 0x33)))
+            .child(
+                div()
+                    .text_size(px(10.))
+                    .font_semibold()
+                    .text_color(rgb(p.green))
+                    .child(tr!("photos.section.ai_tags")),
+            )
+            .child(section(tr!("photos.ai.place_section")))
+            .child(
+                h_flex()
+                    .flex_wrap()
+                    .gap(px(4.))
+                    .child(tag(tr!("setup.ai.preview.tag.place"), "92%")),
+            )
+            .child(section(tr!("photos.ai.atmosphere")))
+            .child(
+                h_flex()
+                    .flex_wrap()
+                    .gap(px(4.))
+                    .child(tag(tr!("setup.ai.preview.tag.light"), "81%"))
+                    .child(tag(tr!("setup.ai.preview.tag.mood"), "76%")),
+            )
+            .child(
+                h_flex()
+                    .gap(px(6.))
+                    .child(fact(
+                        tr!("photos.ai.people"),
+                        tr!("setup.ai.preview.people"),
+                    ))
+                    .child(fact(tr!("photos.ai.place"), tr!("setup.ai.preview.place"))),
+            );
+
         v_flex()
-            .gap(px(10.))
-            .child(setup_switch_row(
-                &p,
-                tr!("integrations.ai.title"),
-                "setup-ai-enabled",
-                self.settings.ai_tagging_enabled,
-                cx,
-                |app, value, _, cx| {
-                    app.save_ai_runtime_settings(cx, |settings| {
-                        settings.ai_tagging_enabled = value;
-                    });
-                },
-            ))
-            .child(card_divider(&p))
+            .gap(px(14.))
+            .child(
+                div()
+                    .text_size(px(12.))
+                    .line_height(relative(1.65))
+                    .text_color(rgb(p.muted))
+                    .child(tr!("setup.ai.intro")),
+            )
             .child(
                 v_flex()
-                    .gap(px(12.))
-                    .child(
-                        Button::new("setup-ai-install")
-                            .label(tr!("settings.ai.install"))
-                            .secondary()
-                            .w_full()
-                            .h(px(38.))
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.install_ai_plugin(window, cx)
-                            })),
-                    )
-                    .child(
-                        Button::new("setup-ai-download")
-                            .label(tr!("settings.ai.download"))
-                            .secondary()
-                            .w_full()
-                            .h(px(38.))
-                            .disabled(!installed)
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.request_ai_model_download(window, cx)
-                            })),
-                    ),
+                    .gap(px(8.))
+                    .p(px(10.))
+                    .rounded(px(12.))
+                    .bg(rgb(p.panel_deep))
+                    .border_1()
+                    .border_color(rgba(with_alpha(p.text, 0x12)))
+                    .child(sample_image)
+                    .child(ai_panel),
             )
-            .child(card_divider(&p))
-            .child(setup_switch_row(
-                &p,
-                tr!("integrations.ai.auto"),
-                "setup-ai-auto",
-                self.settings.ai_tagging_auto,
-                cx,
-                |app, value, _, cx| {
-                    app.save_ai_runtime_settings(cx, |settings| {
-                        settings.ai_tagging_auto = value;
-                    });
-                },
-            ))
     }
 
     fn setup_folder_row(
