@@ -1098,18 +1098,6 @@
     visibility: hidden;
   }
   .step-pane.active { opacity: 1; visibility: visible; z-index: 2; }
-  .step-kicker {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 9px;
-    color: var(--ui-accent);
-    font-family: var(--mono);
-    font-size: 9px;
-    letter-spacing: .18em;
-    line-height: 1.3;
-  }
-  .step-kicker::before { content: ""; width: 16px; height: 1px; background: currentColor; opacity: .65; }
   .step-title {
     margin: 0;
     color: var(--ui-text);
@@ -2011,7 +1999,6 @@
                     <span class="logo-tile"><svg class="icon"><use href="#i-photo"></use></svg></span>
                   </div>
                   <div>
-                    <div class="step-kicker" data-i18n="welcome.kicker">WELCOME</div>
                     <h2 class="step-title" id="setupTitleWelcome" data-i18n="welcome.title">VRC PhotoN へようこそ</h2>
                   </div>
                 </div>
@@ -2043,7 +2030,6 @@
 
               <section class="step-pane" data-step="1" aria-labelledby="setupTitlePhotos">
                 <div class="step-head">
-                  <div class="step-kicker" data-i18n="photos.kicker">PHOTOS</div>
                   <h2 class="step-title" id="setupTitlePhotos" data-i18n="photos.title">写真の場所</h2>
                   <p class="step-lede" data-i18n="photos.lede">
                     VRChat がこの PC に保存した写真を読み込みます。通常は自動で見つかります。
@@ -2106,7 +2092,6 @@
 
               <section class="step-pane" data-step="2" aria-labelledby="setupTitleAutomation">
                 <div class="step-head">
-                  <div class="step-kicker" data-i18n="auto.kicker">AUTOMATION</div>
                   <h2 class="step-title" id="setupTitleAutomation" data-i18n="auto.title">面倒な整理はアプリに任せる</h2>
                   <p class="step-lede" data-i18n="auto.lede">
                     すべて既定のまま使えます。元の写真を残す設定が安全です。
@@ -2152,7 +2137,6 @@
 
               <section class="step-pane" data-step="3" aria-labelledby="setupTitleAppearance">
                 <div class="step-head">
-                  <div class="step-kicker" data-i18n="look.kicker">APPEARANCE</div>
                   <h2 class="step-title" id="setupTitleAppearance" data-i18n="look.title">見た目を選ぶ</h2>
                   <p class="step-lede" data-i18n="look.lede">
                     テーマを選ぶと、アプリ全体にすぐ反映されます。あとから変更できます。
@@ -2246,7 +2230,6 @@
                       <path class="check-mark" d="M19 33.5 28 42.5 46 23.5"></path>
                     </svg>
                   </div>
-                  <div class="step-kicker" data-i18n="done.kicker">READY</div>
                   <h2 class="step-title" id="setupTitleDone" data-i18n="done.title">準備ができました</h2>
                   <p class="step-lede" data-i18n="done.lede">設定はあとから変更できます。VRC PhotoN をはじめましょう。</p>
                 </div>
@@ -2441,7 +2424,6 @@
       'welcome.cta': 'はじめる',
       'aria.back': '戻る',
       'aria.language': '言語を切り替える',
-      'welcome.kicker': 'WELCOME',
       'welcome.title': 'VRC PhotoN へようこそ',
       'welcome.lede': 'VRChat で撮った写真を、見つけて、整理して、軽くする。最初にいくつか確認します。',
       'welcome.f1.title': '写真を自動で見つける',
@@ -2451,7 +2433,6 @@
       'welcome.f3.title': '写真は端末の中に',
       'welcome.f3.body': '既定ではクラウドへ送りません。連携はあとから選べます。',
       'welcome.note': '設定はすべて、あとから変更できます。',
-      'photos.kicker': 'PHOTOS',
       'photos.title': '写真の場所',
       'photos.lede': 'VRChat がこの PC に保存した写真を読み込みます。通常は自動で見つかります。',
       'photos.label': 'VRChat の写真',
@@ -2464,7 +2445,6 @@
       'photos.missing.body': 'VRChat のスクリーンショットが保存されているフォルダを指定してください。',
       'photos.choose': 'フォルダを選ぶ…',
       'photos.note': 'あとから設定で変更できます。',
-      'auto.kicker': 'AUTOMATION',
       'auto.title': '面倒な整理はアプリに任せる',
       'auto.lede': 'すべて既定のまま使えます。元の写真を残す設定が安全です。',
       'auto.watch.title': '新しい写真を自動で見つける',
@@ -2482,7 +2462,6 @@
       'auto.noCompress': '自動圧縮は行われません。元の写真はそのまま残ります。',
       'auto.keepDisabled': '自動圧縮をONにすると変更できます。',
       'auto.note': '自動化の設定は「連携・自動」画面で変更できます。',
-      'look.kicker': 'APPEARANCE',
       'look.title': '見た目を選ぶ',
       'look.lede': 'テーマを選ぶと、アプリ全体にすぐ反映されます。あとから変更できます。',
       'theme.charcoal': 'チャコール + スカイ',
@@ -2500,7 +2479,6 @@
       'look.motion.title': 'アニメーションを減らす',
       'look.motion.body': '画面遷移とフェードを短くします。',
       'look.note': 'テーマと動きは設定で変更できます。',
-      'done.kicker': 'READY',
       'done.title': '準備ができました',
       'done.lede': '設定はあとから変更できます。VRC PhotoN をはじめましょう。',
       'done.sum.photos': '写真フォルダ',
@@ -2533,7 +2511,6 @@
       'welcome.cta': 'Get started',
       'aria.back': 'Back',
       'aria.language': 'Switch language',
-      'welcome.kicker': 'WELCOME',
       'welcome.title': 'Welcome to VRC PhotoN',
       'welcome.lede': 'Find the photos you took in VRChat, keep them organized, and make them lighter. Let’s check a few things first.',
       'welcome.f1.title': 'Find photos automatically',
@@ -2543,7 +2520,6 @@
       'welcome.f3.title': 'Your photos stay local',
       'welcome.f3.body': 'Nothing is uploaded by default. Integrations are optional.',
       'welcome.note': 'Every setting can be changed later.',
-      'photos.kicker': 'PHOTOS',
       'photos.title': 'Where are your photos?',
       'photos.lede': 'VRC PhotoN reads the photos VRChat saved on this PC. It usually finds the folder for you.',
       'photos.label': 'VRChat photos',
@@ -2556,7 +2532,6 @@
       'photos.missing.body': 'Choose the folder where VRChat saves screenshots.',
       'photos.choose': 'Choose folder…',
       'photos.note': 'You can change this later in Settings.',
-      'auto.kicker': 'AUTOMATION',
       'auto.title': 'Let the app handle the routine',
       'auto.lede': 'The defaults are safe. Keeping originals is the cautious choice.',
       'auto.watch.title': 'Watch for new photos',
@@ -2574,7 +2549,6 @@
       'auto.noCompress': 'Automatic compression is off. Originals stay untouched.',
       'auto.keepDisabled': 'Turn on automatic compression to change this.',
       'auto.note': 'You can change automation in Integrations & Automation.',
-      'look.kicker': 'APPEARANCE',
       'look.title': 'Make it yours',
       'look.lede': 'Pick a theme. It applies to the whole app right away, and you can change it later.',
       'theme.charcoal': 'Charcoal + Sky',
@@ -2592,7 +2566,6 @@
       'look.motion.title': 'Reduce motion',
       'look.motion.body': 'Shorten transitions and fades.',
       'look.note': 'Theme and motion can be changed in Settings.',
-      'done.kicker': 'READY',
       'done.title': 'You are all set',
       'done.lede': 'Everything can be changed later. Enjoy your VRChat photos.',
       'done.sum.photos': 'Photo folder',
