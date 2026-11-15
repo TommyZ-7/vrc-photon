@@ -292,24 +292,6 @@
       inset 0 1px 0 rgba(255, 255, 255, .06);
   }
 
-  .modal-close {
-    position: absolute;
-    top: 18px;
-    right: 19px;
-    display: grid;
-    place-items: center;
-    width: 26px;
-    height: 26px;
-    padding: 0;
-    border: 0;
-    border-radius: 7px;
-    background: transparent;
-    color: var(--dim);
-    cursor: pointer;
-  }
-
-  .modal-close:hover { color: var(--text); background: rgba(151, 178, 218, .1); }
-
   .modal h2 {
     margin: 0;
     color: var(--text);
@@ -563,7 +545,8 @@
   }
 
   .preview-grid {
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(2, 100px);
     gap: var(--preview-gap);
   }
 
@@ -585,6 +568,14 @@
 
   .preview-image.alt {
     background: linear-gradient(135deg, #286153 0%, #3d6a61 48%, #9a6748 100%);
+  }
+
+  .preview-image.amber {
+    background: linear-gradient(135deg, #6d5127 0%, #8f6536 50%, #b07a4c 100%);
+  }
+
+  .preview-image.rose {
+    background: linear-gradient(135deg, #6a3048 0%, #8a3f5c 52%, #a25772 100%);
   }
 
   .preview-badge {
@@ -641,6 +632,10 @@
   .preview-surface:not(.show-date) .preview-sep,
   .preview-surface:not(.show-size) .preview-sep { display: none; }
   .preview-surface:not(.show-date):not(.show-size) .preview-meta { display: none; }
+  .preview-surface:not(.show-world):not(.show-date):not(.show-size) .preview-body { display: none; }
+
+  .discord-fields { transition: opacity .18s ease; }
+  .discord-fields.dimmed { opacity: .5; pointer-events: none; }
 
   .stack-7 { display: flex; flex-direction: column; gap: 7px; }
   .stack-10 { display: flex; flex-direction: column; gap: 10px; }
@@ -710,6 +705,90 @@
   .theme-swatch .check { opacity: 0; }
   .theme-swatch.selected .check { opacity: 1; }
 
+
+  /* ---------- page 8 AI preview ---------- */
+
+  .ai-intro {
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.65;
+  }
+
+  .ai-preview {
+    margin-top: 14px;
+    padding: 10px;
+    border: 1px solid rgba(151, 178, 218, .12);
+    border-radius: 12px;
+    background: #080e18;
+  }
+
+  .ai-image {
+    height: 86px;
+    border: 1px solid rgba(151, 178, 218, .16);
+    border-radius: 8px;
+    background: linear-gradient(135deg, #3f678f 0%, #356a5d 58%, #1c3d36 100%);
+  }
+
+  .ai-panel {
+    margin-top: 8px;
+    padding: 9px;
+    border: 1px solid rgba(95, 214, 168, .25);
+    border-radius: 10px;
+    background: rgba(95, 214, 168, .07);
+  }
+
+  .ai-head {
+    color: #5fd6a8;
+    font-size: 10px;
+    font-weight: 600;
+  }
+
+  .ai-section {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 7px;
+    color: var(--muted);
+    font-size: 9px;
+    font-weight: 500;
+  }
+
+  .ai-section::before {
+    content: "";
+    width: 2px;
+    height: 9px;
+    border-radius: 99px;
+    background: rgba(95, 214, 168, .5);
+  }
+
+  .ai-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+
+  .ai-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 7px;
+    border: 1px solid rgba(95, 214, 168, .35);
+    border-radius: 999px;
+    background: rgba(95, 214, 168, .1);
+    color: #5fd6a8;
+    font-size: 10px;
+  }
+
+  .ai-tag .p { color: var(--muted); font-size: 9px; }
+
+  .ai-facts { display: flex; gap: 6px; margin-top: 8px; }
+
+  .ai-fact {
+    flex: 1;
+    padding: 5px 7px;
+    border-radius: 7px;
+    background: rgba(95, 214, 168, .05);
+  }
+
+  .ai-fact .k { color: var(--dim); font-size: 9px; }
+  .ai-fact .v { margin-top: 1px; color: var(--text); font-size: 11px; font-weight: 500; }
+
   /* ---------- page 8 AI ---------- */
 
   .wide-btn {
@@ -754,7 +833,7 @@
         <li>5 Discord → 連携・自動 &gt; Discord 連携</li>
         <li>6 自動圧縮 → 連携・自動 &gt; 自動圧縮</li>
         <li>7 テーマ → 設定 &gt; テーマ</li>
-        <li>8 AI → 設定 &gt; AIタグ付け / 連携・自動 &gt; AI</li>
+        <li>8 AI → 紹介と表示プレビュー（設定は「設定 &gt; AIタグ付け」）</li>
       </ul>
     </div>
     <div class="note">
@@ -769,9 +848,9 @@
       <b>状態は一例</b>
       <span>
         起動は 自動起動ON / トレイON / アニメーションOFF、表示は4項目ON・14px・13px・384×216、
-        自動圧縮は WebP ロスレス、テーマは既定のチャコール＋スカイ。Discord は項目を見せるためON表示（実際の初期値はOFF）。
-        AI は未導入状態で、モデルDLはプラグイン導入後に有効になります。
-        表示ページ右のプレビューは、スイッチ・スライダー・解像度の操作に追従します。
+        自動圧縮は WebP ロスレス、テーマは既定のチャコール＋スカイ。Discord は初期OFFで、下部項目はグレーアウトします（スイッチで切替）。
+        AI は設定ではなく、紹介文とタグ表示のプレビューです。表示ページ右のプレビューは、スイッチ・スライダー・解像度の操作に追従します。
+        右上の×は削除（Escで閉じる）。ページの次へ / 戻るは横スライド 180ms です。
       </span>
     </div>
   </div>
@@ -810,7 +889,6 @@
       </div>
       <div class="stage">
         <div class="modal">
-          <button class="modal-close" aria-label="閉じる">×</button>
           <h2>VRC PhotoN へようこそ</h2>
           <div class="modal-body">
             <div class="stack-7">
@@ -843,7 +921,6 @@
       </div>
       <div class="stage">
         <div class="modal">
-          <button class="modal-close" aria-label="閉じる">×</button>
           <h2>起動</h2>
           <div class="modal-body">
             <div class="stack-18">
@@ -875,7 +952,6 @@
       </div>
       <div class="stage">
         <div class="modal">
-          <button class="modal-close" aria-label="閉じる">×</button>
           <h2>フォルダ</h2>
           <div class="modal-body">
             <div class="stack-18">
@@ -915,7 +991,7 @@
   <section class="mock" id="page-4">
     <div class="caption">
       <span class="num">Page 4</span><span class="title">表示とサムネイル</span>
-      <span class="hint">設定 &gt; 表示 / サムネイル</span>
+      <span class="hint">設定 &gt; 表示 / サムネイル（2×2プレビュー）</span>
     </div>
     <div class="frame-wrap"><div class="frame">
       <div class="titlebar">
@@ -925,7 +1001,6 @@
       </div>
       <div class="stage">
         <div class="modal">
-          <button class="modal-close" aria-label="閉じる">×</button>
           <h2>表示とサムネイル</h2>
           <div class="modal-body">
             <div class="display-layout">
@@ -998,6 +1073,32 @@
                         </div>
                       </div>
                     </article>
+                    <article class="preview-card">
+                      <div class="preview-image amber">
+                        <span class="preview-badge">圧縮済</span>
+                      </div>
+                      <div class="preview-body">
+                        <div class="preview-world">Furality Aqua</div>
+                        <div class="preview-meta">
+                          <span class="preview-date">2026/11/12</span>
+                          <span class="preview-sep">·</span>
+                          <span class="preview-size">2.4 MB</span>
+                        </div>
+                      </div>
+                    </article>
+                    <article class="preview-card">
+                      <div class="preview-image rose">
+                        <span class="preview-badge">圧縮済</span>
+                      </div>
+                      <div class="preview-body">
+                        <div class="preview-world">Midnight Rooftop</div>
+                        <div class="preview-meta">
+                          <span class="preview-date">2026/11/09</span>
+                          <span class="preview-sep">·</span>
+                          <span class="preview-size">1.7 MB</span>
+                        </div>
+                      </div>
+                    </article>
                   </div>
                 </div>
                 <div class="preview-foot">
@@ -1020,7 +1121,7 @@
   <section class="mock" id="page-5">
     <div class="caption">
       <span class="num">Page 5</span><span class="title">Discord 連携</span>
-      <span class="hint">連携・自動 &gt; Discord 連携</span>
+      <span class="hint">初期OFF / 下部グレーアウト</span>
     </div>
     <div class="frame-wrap"><div class="frame">
       <div class="titlebar">
@@ -1030,12 +1131,11 @@
       </div>
       <div class="stage">
         <div class="modal">
-          <button class="modal-close" aria-label="閉じる">×</button>
           <h2>Discord</h2>
           <div class="modal-body">
-            <div class="switch-row"><span class="grow row-label">Discord 連携</span><span class="switch on"></span></div>
+            <div class="switch-row"><span class="grow row-label">Discord 連携</span><button class="switch" type="button" id="discord-master" aria-pressed="false" aria-label="Discord 連携"></button></div>
             <div class="divider"></div>
-            <div class="stack-14">
+            <div class="stack-14 discord-fields dimmed" id="discord-fields">
               <div class="stack-7">
                 <label class="field-label">Webhook URL</label>
                 <div class="text-input url placeholder">https://discord.com/api/webhooks/&lt;id&gt;/&lt;token&gt;</div>
@@ -1071,7 +1171,6 @@
       </div>
       <div class="stage">
         <div class="modal">
-          <button class="modal-close" aria-label="閉じる">×</button>
           <h2>自動圧縮</h2>
           <div class="modal-body">
             <div class="stack-10">
@@ -1112,7 +1211,6 @@
       </div>
       <div class="stage">
         <div class="modal">
-          <button class="modal-close" aria-label="閉じる">×</button>
           <h2>テーマ</h2>
           <div class="modal-body">
             <div class="axis-head">
@@ -1182,7 +1280,7 @@
   <section class="mock" id="page-8">
     <div class="caption">
       <span class="num">Page 8</span><span class="title">AIタグ付け</span>
-      <span class="hint">設定 &gt; AIタグ付け / 連携・自動 &gt; AI</span>
+      <span class="hint">紹介とタグ表示プレビュー</span>
     </div>
     <div class="frame-wrap"><div class="frame">
       <div class="titlebar">
@@ -1192,17 +1290,23 @@
       </div>
       <div class="stage">
         <div class="modal">
-          <button class="modal-close" aria-label="閉じる">×</button>
           <h2>AIタグ付け</h2>
           <div class="modal-body">
-            <div class="switch-row"><span class="grow row-label">AIタグ付け</span><span class="switch"></span></div>
-            <div class="divider"></div>
-            <div class="stack-12">
-              <button class="wide-btn">プラグインZIPを取り込む</button>
-              <button class="wide-btn disabled">モデルをダウンロード</button>
+            <div class="ai-intro">AIタグ付けを有効にすると、写真の内容から人物の有無・屋外/屋内・雰囲気などを自動でタグ付けします。解析はこの端末内で完結し、写真は外部へ送信されません。プラグインとモデルの準備は設定画面から行えます。</div>
+            <div class="ai-preview">
+              <div class="ai-image"></div>
+              <div class="ai-panel">
+                <div class="ai-head">AIタグ</div>
+                <div class="ai-section">場所</div>
+                <div class="ai-tags"><span class="ai-tag">✦ 屋外 <span class="p">92%</span></span></div>
+                <div class="ai-section">雰囲気</div>
+                <div class="ai-tags"><span class="ai-tag">✦ 夕方 <span class="p">81%</span></span><span class="ai-tag">✦ 賑やか <span class="p">76%</span></span></div>
+                <div class="ai-facts">
+                  <div class="ai-fact"><div class="k">人数（AI）</div><div class="v">2人</div></div>
+                  <div class="ai-fact"><div class="k">場所（AI）</div><div class="v">公園</div></div>
+                </div>
+              </div>
             </div>
-            <div class="divider"></div>
-            <div class="switch-row"><span class="grow row-label">新規画像を自動タグ付け</span><span class="switch"></span></div>
           </div>
           <div class="modal-footer">
             <button class="btn secondary" data-prev="page-7">戻る</button>
@@ -1238,6 +1342,18 @@
   window.addEventListener("resize", fitFrames);
   window.addEventListener("load", fitAndJump);
   fitFrames();
+
+  // Discord starts off: the fields below the switch are dimmed until the
+  // reviewer enables the integration.
+  const discordMaster = document.querySelector("#discord-master");
+  const discordFields = document.querySelector("#discord-fields");
+  if (discordMaster && discordFields) {
+    discordMaster.addEventListener("click", () => {
+      const on = discordMaster.classList.toggle("on");
+      discordMaster.setAttribute("aria-pressed", on ? "true" : "false");
+      discordFields.classList.toggle("dimmed", !on);
+    });
+  }
 
   // Page 4 live preview: the switches, sliders, and thumbnail chips update
   // the sample cards so the reviewer can see the display result.
