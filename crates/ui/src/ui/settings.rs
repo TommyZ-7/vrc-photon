@@ -661,7 +661,7 @@ impl App {
             .child(self.theme_axis(ThemeAxis::Accent, cx))
     }
 
-    fn theme_axis(&self, axis: ThemeAxis, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(crate) fn theme_axis(&self, axis: ThemeAxis, cx: &mut Context<Self>) -> impl IntoElement {
         let p = self.palette;
         let selected_main = find_main(&self.settings.ui_theme_main);
         let selected_accent = find_accent(&self.settings.ui_theme_accent);

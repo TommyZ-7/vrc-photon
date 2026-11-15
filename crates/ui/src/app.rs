@@ -1576,6 +1576,14 @@ impl Render for App {
                         .on_click(cx.listener(|_, _, _, cx| cx.quit())),
                 );
         }
+        if self.setup.open {
+            if std::mem::take(&mut self.setup.focus_pending) {
+                window.focus(&self.setup.focus, cx);
+            }
+            // Keep queued toasts (empty library, daemon start) behind the
+            // wizard; they flush on the first main-screen frame after close.
+            return self.setup_screen(window, cx);
+        }
         self.ensure_thumbnail_array(window, cx);
         self.drain_thumbnail_uploads(window, cx);
         self.drain_full_image_upload(window, cx);
@@ -1588,12 +1596,6 @@ impl Render for App {
         }
         self.guard_viewer_selection(window, cx);
         self.sync_photo_context_menu(window, cx);
-        if self.setup.open {
-            if std::mem::take(&mut self.setup.focus_pending) {
-                window.focus(&self.setup.focus, cx);
-            }
-            return self.setup_screen(window, cx);
-        }
         let mut root = h_flex()
             .relative()
             .size_full()
