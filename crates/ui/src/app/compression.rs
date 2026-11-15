@@ -1,5 +1,5 @@
 //! App-side compression profile state: profile ordering, duplication, deletion,
-//! and manual-compression queueing.
+//! manual-compression queueing, and automatic-compression queueing.
 //!
 //! Rendering stays in `ui::compression`; these methods only touch App fields and
 //! the compression queue.
@@ -12,7 +12,8 @@ use gpui_kit::component::button::ButtonVariant;
 use gpui_kit::*;
 use vrc_photon_core::compressor;
 use vrc_photon_core::model::{
-    CompressionOptions, CompressionProfile, MAX_JOB_RETRIES, MAX_PROFILE_NAME_CHARS, ResizeSettings,
+    CompressionOptions, CompressionProfile, MAX_JOB_RETRIES, MAX_PROFILE_NAME_CHARS, QueueStatus,
+    ResizeSettings,
 };
 use vrc_photon_i18n::{tr, tr_args};
 
@@ -291,6 +292,98 @@ impl App {
             .ok();
         })
         .detach();
+    }
+
+    /// Queues the current selection for the same automatic compression path
+    /// that import uses: automatic settings, `compressed/` output, and the
+    /// current keep-original policy. Explicit clicks run immediately instead
+    /// of waiting for the import-time queue release.
+    pub(crate) fn compress_selection_auto(&mut self, cx: &mut Context<Self>) {
+        let ids = self.selected_action_ids();
+        if ids.is_empty() {
+            self.toast_error(tr!("compression.select_photos"), cx);
+            cx.notify();
+            return;
+        }
+        let policy = compression_policy(self.settings.auto_compress_keep_original);
+        let mut enqueued = 0usize;
+        let mut failed = 0usize;
+        for photo_id in &ids {
+            match self
+                .db
+                .enqueue_auto_job_with_status(*photo_id, policy, QueueStatus::Pending)
+            {
+                Ok(true) => enqueued += 1,
+                Ok(false) => {}
+                Err(error) => {
+                    failed += 1;
+                    tracing::warn!(%error, photo_id, "cannot enqueue automatic compression");
+                }
+            }
+        }
+        // A photo imported with "compress immediately" off already has a
+        // waiting automatic job; an explicit click must start it now instead
+        // of leaving it for the waiting-queue release.
+        let promoted = match self.db.start_waiting_auto_jobs(&ids, policy) {
+            Ok(count) => count,
+            Err(error) => {
+                failed += 1;
+                tracing::warn!(%error, "cannot start waiting automatic compression jobs");
+                0
+            }
+        };
+        let started = enqueued + promoted;
+        if started > 0 {
+            let failure_note = if failed > 0 {
+                tr_args!("compression.enqueue.failed_note", count = failed)
+            } else {
+                String::new()
+            };
+            self.toast_success(
+                tr_args!(
+                    "compression.auto.enqueue.success",
+                    count = started,
+                    failures = failure_note
+                ),
+                cx,
+            );
+            self.refresh_live_async(cx);
+            self.send_wake_jobs(cx);
+        } else if failed > 0 {
+            self.toast_error(tr!("compression.auto.enqueue.error"), cx);
+        } else {
+            self.toast_info(tr!("compression.auto.enqueue.none"), cx);
+        }
+        cx.notify();
+    }
+
+    /// Queues every visible photo that has no derivative yet for automatic
+    /// compression, then releases the waiting queue so the whole backlog runs.
+    pub(crate) fn process_uncompressed_compression(&mut self, cx: &mut Context<Self>) {
+        let policy = compression_policy(self.settings.auto_compress_keep_original);
+        match self.db.enqueue_auto_jobs_for_uncompressed(policy) {
+            Ok(queued) => match self.db.release_waiting_jobs(policy) {
+                Ok(0) if queued == 0 => self.toast_info(tr!("compression.auto.bulk.empty"), cx),
+                Ok(count) if count > 0 => {
+                    self.toast_success(
+                        tr_args!("compression.auto.bulk.started", count = count),
+                        cx,
+                    );
+                    self.refresh_live_async(cx);
+                    self.send_wake_jobs(cx);
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    tracing::warn!(%error, "cannot start the automatic compression backlog");
+                    self.toast_error(tr_args!("compression.auto.bulk.error", error = error), cx);
+                }
+            },
+            Err(error) => {
+                tracing::warn!(%error, "cannot enqueue the automatic compression backlog");
+                self.toast_error(tr_args!("compression.auto.bulk.error", error = error), cx);
+            }
+        }
+        cx.notify();
     }
 
     fn open_manual_compression_with_target(

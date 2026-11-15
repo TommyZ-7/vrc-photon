@@ -492,7 +492,7 @@ pub struct App {
     pub(crate) ribbon_select_all_focus: FocusHandle,
     pub(crate) ribbon_clear_selection_focus: FocusHandle,
     pub(crate) ribbon_trash_focus: FocusHandle,
-    pub(crate) ribbon_manual_compress_focus: FocusHandle,
+    pub(crate) ribbon_auto_compress_focus: FocusHandle,
     pub(crate) ribbon_compress_folder_focus: FocusHandle,
     pub(crate) ribbon_compress_profile_focus: FocusHandle,
     pub(crate) ribbon_compress_clipboard_focus: FocusHandle,
@@ -1038,7 +1038,7 @@ impl App {
         let ribbon_select_all_focus = cx.focus_handle();
         let ribbon_clear_selection_focus = cx.focus_handle();
         let ribbon_trash_focus = cx.focus_handle();
-        let ribbon_manual_compress_focus = cx.focus_handle();
+        let ribbon_auto_compress_focus = cx.focus_handle();
         let ribbon_compress_folder_focus = cx.focus_handle();
         let ribbon_compress_profile_focus = cx.focus_handle();
         let ribbon_compress_clipboard_focus = cx.focus_handle();
@@ -1386,7 +1386,7 @@ impl App {
             ribbon_select_all_focus,
             ribbon_clear_selection_focus,
             ribbon_trash_focus,
-            ribbon_manual_compress_focus,
+            ribbon_auto_compress_focus,
             ribbon_compress_folder_focus,
             ribbon_compress_profile_focus,
             ribbon_compress_clipboard_focus,

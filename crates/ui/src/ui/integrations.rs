@@ -221,6 +221,16 @@ impl App {
                 },
             )
             .child(card_divider(&p))
+            .child(
+                Button::new("integrations-auto-process-uncompressed")
+                    .label(tr!("integrations.auto.process_uncompressed"))
+                    .small()
+                    .w_full()
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.process_uncompressed_compression(cx);
+                    })),
+            )
+            .child(card_divider(&p))
             .child(self.section_label(tr!("integrations.compression.section")))
             .child(self.compression_options_editor(
                 "auto-compression",
