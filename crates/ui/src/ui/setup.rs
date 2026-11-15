@@ -23,11 +23,7 @@ use crate::ui::settings::ThemeAxis;
 use crate::ui::theme::*;
 
 impl App {
-    pub(crate) fn setup_screen(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Div {
+    pub(crate) fn setup_screen(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Div {
         let p = self.palette;
         let title = setup_page_title(self.setup.page);
 
@@ -52,12 +48,13 @@ impl App {
                     .on_click(cx.listener(|this, _, _, cx| this.dismiss_setup(cx))),
             );
 
-        let body = v_flex().flex_1().min_h_0().pt(px(30.)).child(self.setup_body(cx));
+        let body = v_flex()
+            .flex_1()
+            .min_h_0()
+            .pt(px(30.))
+            .child(self.setup_body(cx));
 
-        let mut footer = h_flex()
-            .items_center()
-            .gap(px(8.))
-            .child(div().flex_1());
+        let mut footer = h_flex().items_center().gap(px(8.)).child(div().flex_1());
         if self.setup.page.prev().is_some() {
             footer = footer.child(
                 Button::new("setup-back")
@@ -182,34 +179,39 @@ impl App {
     fn setup_welcome(&self, cx: &mut Context<Self>) -> Div {
         let p = self.palette;
         let active = vrc_photon_i18n::normalize(&self.settings.language);
-        let chips = h_flex().flex_wrap().gap(px(4.)).children(
-            vrc_photon_i18n::locales().into_iter().map(|locale| {
-                let selected = locale.code == active;
-                let code = locale.code.clone();
-                div()
-                    .id(SharedString::from(format!("setup-language-{}", locale.code)))
-                    .px(px(10.))
-                    .py(px(5.))
-                    .rounded(px(8.))
-                    .bg(if selected {
-                        rgb(p.accent_soft)
-                    } else {
-                        rgba(0x00000000)
-                    })
-                    .text_size(px(11.))
-                    .font_medium()
-                    .text_color(if selected {
-                        rgb(p.accent)
-                    } else {
-                        rgb(p.muted)
-                    })
-                    .cursor_pointer()
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        this.set_language(&code, window, cx)
-                    }))
-                    .child(locale.name)
-            }),
-        );
+        let chips =
+            h_flex()
+                .flex_wrap()
+                .gap(px(4.))
+                .children(vrc_photon_i18n::locales().into_iter().map(|locale| {
+                    let selected = locale.code == active;
+                    let code = locale.code.clone();
+                    div()
+                        .id(SharedString::from(format!(
+                            "setup-language-{}",
+                            locale.code
+                        )))
+                        .px(px(10.))
+                        .py(px(5.))
+                        .rounded(px(8.))
+                        .bg(if selected {
+                            rgb(p.accent_soft)
+                        } else {
+                            rgba(0x00000000)
+                        })
+                        .text_size(px(11.))
+                        .font_medium()
+                        .text_color(if selected {
+                            rgb(p.accent)
+                        } else {
+                            rgb(p.muted)
+                        })
+                        .cursor_pointer()
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.set_language(&code, window, cx)
+                        }))
+                        .child(locale.name)
+                }));
         v_flex()
             .gap(px(7.))
             .child(
@@ -295,159 +297,158 @@ impl App {
 
     fn setup_display(&self, cx: &mut Context<Self>) -> Div {
         let p = self.palette;
-        let left = v_flex()
-            .w(px(240.))
-            .flex_shrink_0()
-            .gap(px(10.))
-            .child(
-                div()
-                    .text_size(px(13.))
-                    .font_semibold()
-                    .text_color(rgb(p.text))
-                    .child(tr!("settings.display.title")),
-            )
-            .child(
-                v_flex()
-                    .gap(px(7.))
-                    .child(setup_switch_row(
-                        &p,
-                        tr!("settings.display.status.label"),
-                        "setup-card-status",
-                        self.settings.ui_card_show_status,
-                        cx,
-                        |app, value, _, cx| {
-                            app.settings.ui_card_show_status = value;
-                            if let Err(error) = app.settings.save(&app.db) {
-                                tracing::warn!(%error, "cannot save card status setting");
-                            }
-                            cx.notify();
-                        },
-                    ))
-                    .child(setup_switch_row(
-                        &p,
-                        tr!("settings.display.world.label"),
-                        "setup-card-world",
-                        self.settings.ui_card_show_world,
-                        cx,
-                        |app, value, _, cx| {
-                            app.settings.ui_card_show_world = value;
-                            if let Err(error) = app.settings.save(&app.db) {
-                                tracing::warn!(%error, "cannot save card world setting");
-                            }
-                            cx.notify();
-                        },
-                    ))
-                    .child(setup_switch_row(
-                        &p,
-                        tr!("settings.display.date.label"),
-                        "setup-card-date",
-                        self.settings.ui_card_show_date,
-                        cx,
-                        |app, value, _, cx| {
-                            app.settings.ui_card_show_date = value;
-                            if let Err(error) = app.settings.save(&app.db) {
-                                tracing::warn!(%error, "cannot save card date setting");
-                            }
-                            cx.notify();
-                        },
-                    ))
-                    .child(setup_switch_row(
-                        &p,
-                        tr!("settings.display.size.label"),
-                        "setup-card-size",
-                        self.settings.ui_card_show_size,
-                        cx,
-                        |app, value, _, cx| {
-                            app.settings.ui_card_show_size = value;
-                            if let Err(error) = app.settings.save(&app.db) {
-                                tracing::warn!(%error, "cannot save card size setting");
-                            }
-                            cx.notify();
-                        },
-                    )),
-            )
-            .child(card_divider(&p))
-            .child(
-                v_flex()
-                    .gap(px(6.))
-                    .child(
-                        h_flex()
-                            .items_baseline()
-                            .justify_between()
-                            .child(
-                                div()
-                                    .text_size(px(12.))
-                                    .text_color(rgb(p.text))
-                                    .child(tr!("settings.display.grid_gap.label")),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(12.))
-                                    .font_semibold()
-                                    .text_color(rgb(p.text))
-                                    .child(format!("{} px", self.settings.ui_grid_gap)),
-                            ),
-                    )
-                    .child(Slider::new(&self.grid_gap_slider).w_full()),
-            )
-            .child(
-                v_flex()
-                    .gap(px(6.))
-                    .child(
-                        h_flex()
-                            .items_baseline()
-                            .justify_between()
-                            .child(
-                                div()
-                                    .text_size(px(12.))
-                                    .text_color(rgb(p.text))
-                                    .child(tr!("settings.display.card_radius.label")),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(12.))
-                                    .font_semibold()
-                                    .text_color(rgb(p.text))
-                                    .child(format!("{} px", self.settings.ui_card_radius)),
-                            ),
-                    )
-                    .child(Slider::new(&self.card_radius_slider).w_full()),
-            )
-            .child(card_divider(&p))
-            .child(
-                div()
-                    .text_size(px(13.))
-                    .font_semibold()
-                    .text_color(rgb(p.text))
-                    .child(tr!("settings.thumbnail.title")),
-            )
-            .child(h_flex().gap(px(4.)).children(
-                THUMBNAIL_SIZES.into_iter().map(|size| {
-                    let active = self.settings.thumbnail_size == size;
+        let left =
+            v_flex()
+                .w(px(240.))
+                .flex_shrink_0()
+                .gap(px(10.))
+                .child(
                     div()
-                        .id(SharedString::from(format!("setup-thumbnail-{size}")))
-                        .px(px(10.))
-                        .py(px(5.))
-                        .rounded(px(8.))
-                        .bg(if active {
-                            rgb(p.accent_soft)
-                        } else {
-                            rgba(0x00000000)
-                        })
-                        .text_size(px(11.))
-                        .font_medium()
-                        .text_color(if active {
-                            rgb(p.accent)
-                        } else {
-                            rgb(p.muted)
-                        })
-                        .cursor_pointer()
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.set_thumbnail_size(size, cx)
-                        }))
-                        .child(format!("{size}×{}", size * 9 / 16))
-                }),
-            ));
+                        .text_size(px(13.))
+                        .font_semibold()
+                        .text_color(rgb(p.text))
+                        .child(tr!("settings.display.title")),
+                )
+                .child(
+                    v_flex()
+                        .gap(px(7.))
+                        .child(setup_switch_row(
+                            &p,
+                            tr!("settings.display.status.label"),
+                            "setup-card-status",
+                            self.settings.ui_card_show_status,
+                            cx,
+                            |app, value, _, cx| {
+                                app.settings.ui_card_show_status = value;
+                                if let Err(error) = app.settings.save(&app.db) {
+                                    tracing::warn!(%error, "cannot save card status setting");
+                                }
+                                cx.notify();
+                            },
+                        ))
+                        .child(setup_switch_row(
+                            &p,
+                            tr!("settings.display.world.label"),
+                            "setup-card-world",
+                            self.settings.ui_card_show_world,
+                            cx,
+                            |app, value, _, cx| {
+                                app.settings.ui_card_show_world = value;
+                                if let Err(error) = app.settings.save(&app.db) {
+                                    tracing::warn!(%error, "cannot save card world setting");
+                                }
+                                cx.notify();
+                            },
+                        ))
+                        .child(setup_switch_row(
+                            &p,
+                            tr!("settings.display.date.label"),
+                            "setup-card-date",
+                            self.settings.ui_card_show_date,
+                            cx,
+                            |app, value, _, cx| {
+                                app.settings.ui_card_show_date = value;
+                                if let Err(error) = app.settings.save(&app.db) {
+                                    tracing::warn!(%error, "cannot save card date setting");
+                                }
+                                cx.notify();
+                            },
+                        ))
+                        .child(setup_switch_row(
+                            &p,
+                            tr!("settings.display.size.label"),
+                            "setup-card-size",
+                            self.settings.ui_card_show_size,
+                            cx,
+                            |app, value, _, cx| {
+                                app.settings.ui_card_show_size = value;
+                                if let Err(error) = app.settings.save(&app.db) {
+                                    tracing::warn!(%error, "cannot save card size setting");
+                                }
+                                cx.notify();
+                            },
+                        )),
+                )
+                .child(card_divider(&p))
+                .child(
+                    v_flex()
+                        .gap(px(6.))
+                        .child(
+                            h_flex()
+                                .items_baseline()
+                                .justify_between()
+                                .child(
+                                    div()
+                                        .text_size(px(12.))
+                                        .text_color(rgb(p.text))
+                                        .child(tr!("settings.display.grid_gap.label")),
+                                )
+                                .child(
+                                    div()
+                                        .text_size(px(12.))
+                                        .font_semibold()
+                                        .text_color(rgb(p.text))
+                                        .child(format!("{} px", self.settings.ui_grid_gap)),
+                                ),
+                        )
+                        .child(Slider::new(&self.grid_gap_slider).w_full()),
+                )
+                .child(
+                    v_flex()
+                        .gap(px(6.))
+                        .child(
+                            h_flex()
+                                .items_baseline()
+                                .justify_between()
+                                .child(
+                                    div()
+                                        .text_size(px(12.))
+                                        .text_color(rgb(p.text))
+                                        .child(tr!("settings.display.card_radius.label")),
+                                )
+                                .child(
+                                    div()
+                                        .text_size(px(12.))
+                                        .font_semibold()
+                                        .text_color(rgb(p.text))
+                                        .child(format!("{} px", self.settings.ui_card_radius)),
+                                ),
+                        )
+                        .child(Slider::new(&self.card_radius_slider).w_full()),
+                )
+                .child(card_divider(&p))
+                .child(
+                    div()
+                        .text_size(px(13.))
+                        .font_semibold()
+                        .text_color(rgb(p.text))
+                        .child(tr!("settings.thumbnail.title")),
+                )
+                .child(
+                    h_flex()
+                        .gap(px(4.))
+                        .children(THUMBNAIL_SIZES.into_iter().map(|size| {
+                            let active = self.settings.thumbnail_size == size;
+                            div()
+                                .id(SharedString::from(format!("setup-thumbnail-{size}")))
+                                .px(px(10.))
+                                .py(px(5.))
+                                .rounded(px(8.))
+                                .bg(if active {
+                                    rgb(p.accent_soft)
+                                } else {
+                                    rgba(0x00000000)
+                                })
+                                .text_size(px(11.))
+                                .font_medium()
+                                .text_color(if active { rgb(p.accent) } else { rgb(p.muted) })
+                                .cursor_pointer()
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.set_thumbnail_size(size, cx)
+                                }))
+                                .child(format!("{size}×{}", size * 9 / 16))
+                        })),
+                );
 
         h_flex()
             .items_start()
@@ -619,12 +620,7 @@ impl App {
                     .child(Input::new(&self.discord_url_input).h(px(38.))),
             )
             .when_some(self.setup.error.clone(), |this, error| {
-                this.child(
-                    div()
-                        .text_size(px(11.))
-                        .text_color(rgb(p.red))
-                        .child(error),
-                )
+                this.child(div().text_size(px(11.)).text_color(rgb(p.red)).child(error))
             })
             .child(
                 v_flex()
@@ -709,48 +705,46 @@ impl App {
                     .text_color(rgb(p.text))
                     .child(tr!("integrations.compression.section")),
             )
-            .child(h_flex().flex_wrap().gap(px(4.)).children(
-                [
-                    CompressionFormat::Jpeg,
-                    CompressionFormat::Webp,
-                    CompressionFormat::Avif,
-                    CompressionFormat::JpegXl,
-                ]
-                .into_iter()
-                .map(|format| {
-                    let active = options.format == format;
-                    let selected = format.clone();
-                    div()
-                        .id(SharedString::from(format!(
-                            "setup-format-{}",
-                            format.as_str()
-                        )))
-                        .px(px(10.))
-                        .py(px(5.))
-                        .rounded(px(8.))
-                        .bg(if active {
-                            rgb(p.accent_soft)
-                        } else {
-                            rgba(0x00000000)
-                        })
-                        .text_size(px(11.))
-                        .font_medium()
-                        .text_color(if active {
-                            rgb(p.accent)
-                        } else {
-                            rgb(p.muted)
-                        })
-                        .cursor_pointer()
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.edit_feature_compression(
-                                FeatureCompressionTarget::Auto,
-                                |options| options.set_format(selected.clone()),
-                                cx,
-                            )
-                        }))
-                        .child(format_label(&format))
-                }),
-            ))
+            .child(
+                h_flex().flex_wrap().gap(px(4.)).children(
+                    [
+                        CompressionFormat::Jpeg,
+                        CompressionFormat::Webp,
+                        CompressionFormat::Avif,
+                        CompressionFormat::JpegXl,
+                    ]
+                    .into_iter()
+                    .map(|format| {
+                        let active = options.format == format;
+                        let selected = format.clone();
+                        div()
+                            .id(SharedString::from(format!(
+                                "setup-format-{}",
+                                format.as_str()
+                            )))
+                            .px(px(10.))
+                            .py(px(5.))
+                            .rounded(px(8.))
+                            .bg(if active {
+                                rgb(p.accent_soft)
+                            } else {
+                                rgba(0x00000000)
+                            })
+                            .text_size(px(11.))
+                            .font_medium()
+                            .text_color(if active { rgb(p.accent) } else { rgb(p.muted) })
+                            .cursor_pointer()
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.edit_feature_compression(
+                                    FeatureCompressionTarget::Auto,
+                                    |options| options.set_format(selected.clone()),
+                                    cx,
+                                )
+                            }))
+                            .child(format_label(&format))
+                    }),
+                ),
+            )
             .child(
                 h_flex()
                     .items_center()
@@ -906,13 +900,9 @@ fn setup_switch_row(
                 .text_color(rgb(p.text))
                 .child(label),
         )
-        .child(
-            Switch::new(id)
-                .checked(checked)
-                .on_click(cx.listener(move |app, value, window, cx| {
-                    on_toggle(app, *value, window, cx)
-                })),
-        )
+        .child(Switch::new(id).checked(checked).on_click(
+            cx.listener(move |app, value, window, cx| on_toggle(app, *value, window, cx)),
+        ))
 }
 
 fn setup_page_title(page: SetupPage) -> String {

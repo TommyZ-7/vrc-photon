@@ -96,9 +96,8 @@ pub(crate) fn apply_library_path_inputs(
     settings.managed_dir = (!imported.is_empty()).then(|| imported.to_string());
 
     let root_changed = settings.photo_roots != previous_root;
-    let any = root_changed
-        || settings.log_dir != previous_log
-        || settings.managed_dir != previous_import;
+    let any =
+        root_changed || settings.log_dir != previous_log || settings.managed_dir != previous_import;
     LibraryPathChanges {
         root: root_changed,
         any,
@@ -570,10 +569,7 @@ impl App {
         let changes = apply_library_path_inputs(&mut self.settings, &root, &log, &imported);
         if let Err(error) = self.settings.save(&self.db) {
             self.settings = previous;
-            self.toast_error(
-                tr_args!("settings.language.save_failed", error = error),
-                cx,
-            );
+            self.toast_error(tr_args!("settings.language.save_failed", error = error), cx);
             tracing::warn!(%error, "cannot save path settings");
             cx.notify();
             return false;
@@ -2108,8 +2104,7 @@ mod path_input_tests {
             managed_dir: None,
             ..Default::default()
         };
-        let changes =
-            apply_library_path_inputs(&mut settings, "/tmp/photos", "/tmp/logs", "");
+        let changes = apply_library_path_inputs(&mut settings, "/tmp/photos", "/tmp/logs", "");
         assert!(!changes.root);
         assert!(!changes.any);
     }

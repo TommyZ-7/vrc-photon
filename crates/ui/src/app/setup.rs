@@ -77,11 +77,7 @@ pub(crate) fn should_show_setup(
     setup_completed: bool,
     library_photo_count: i64,
 ) -> bool {
-    !demo
-        && database_ok
-        && !settings_load_failed
-        && !setup_completed
-        && library_photo_count == 0
+    !demo && database_ok && !settings_load_failed && !setup_completed && library_photo_count == 0
 }
 
 pub(crate) struct SetupState {
@@ -190,8 +186,7 @@ impl App {
                     true
                 }
                 Err(error) => {
-                    self.setup.error =
-                        Some(tr_args!("settings.save_failed", error = error).into());
+                    self.setup.error = Some(tr_args!("settings.save_failed", error = error).into());
                     false
                 }
             },
