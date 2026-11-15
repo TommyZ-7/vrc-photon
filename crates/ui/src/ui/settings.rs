@@ -20,7 +20,7 @@ use std::path::Path;
 use vrc_photon_ai_protocol::ModelState;
 use vrc_photon_core::ai::PluginInstallation;
 use vrc_photon_core::model::DaemonCommand;
-use vrc_photon_core::settings::CardSize;
+use vrc_photon_core::settings::{AppSettings, CardSize};
 use vrc_photon_core::thumbnail;
 use vrc_photon_i18n::{tr, tr_args};
 use vrc_photon_ipc::Response;
@@ -60,6 +60,48 @@ impl ThemeAxis {
             Self::Main => tr!("theme.color.main.title"),
             Self::Accent => tr!("theme.color.accent.title"),
         }
+    }
+}
+
+/// Whether a library path edit changed the photo root, and whether anything
+/// changed at all. The photo root needs a library snapshot refresh; any path
+/// change needs a daemon rescan.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct LibraryPathChanges {
+    pub(crate) root: bool,
+    pub(crate) any: bool,
+}
+
+/// Applies the three path fields to the settings with the same trimming and
+/// blank-clearing rules as the settings screen.
+pub(crate) fn apply_library_path_inputs(
+    settings: &mut AppSettings,
+    photo_root: &str,
+    log_dir: &str,
+    import_dir: &str,
+) -> LibraryPathChanges {
+    let previous_root = std::mem::take(&mut settings.photo_roots);
+    let previous_log = settings.log_dir.take();
+    let previous_import = settings.managed_dir.take();
+
+    let root = photo_root.trim();
+    settings.photo_roots = if root.is_empty() {
+        Vec::new()
+    } else {
+        vec![root.to_string()]
+    };
+    let log = log_dir.trim();
+    settings.log_dir = (!log.is_empty()).then(|| log.to_string());
+    let imported = import_dir.trim();
+    settings.managed_dir = (!imported.is_empty()).then(|| imported.to_string());
+
+    let root_changed = settings.photo_roots != previous_root;
+    let any = root_changed
+        || settings.log_dir != previous_log
+        || settings.managed_dir != previous_import;
+    LibraryPathChanges {
+        root: root_changed,
+        any,
     }
 }
 
@@ -119,72 +161,12 @@ impl App {
                                         .small()
                                         .primary()
                                         .on_click(cx.listener(|this, _, _, cx| {
-                                            let root =
-                                                this.photo_root_input.read(cx).value().to_string();
-                                            let log =
-                                                this.log_dir_input.read(cx).value().to_string();
-                                            let imported =
-                                                this.import_dir_input.read(cx).value().to_string();
-                                            let previous = this.settings.clone();
-                                            this.settings.photo_roots = if root.trim().is_empty() {
-                                                Vec::new()
-                                            } else {
-                                                vec![root.trim().to_string()]
-                                            };
-                                            this.settings.log_dir = if log.trim().is_empty() {
-                                                None
-                                            } else {
-                                                Some(log.trim().to_string())
-                                            };
-                                            this.settings.managed_dir =
-                                                if imported.trim().is_empty() {
-                                                    None
-                                                } else {
-                                                    Some(imported.trim().to_string())
-                                                };
-                                            let root_changed =
-                                                this.settings.photo_roots != previous.photo_roots;
-                                            let paths_changed = root_changed
-                                                || this.settings.log_dir != previous.log_dir
-                                                || this.settings.managed_dir
-                                                    != previous.managed_dir;
-                                            if let Err(error) = this.settings.save(&this.db) {
-                                                this.settings = previous;
-                                                this.toast_error(
-                                                    tr_args!(
-                                                        "settings.language.save_failed",
-                                                        error = error
-                                                    ),
+                                            if this.save_library_paths(cx) {
+                                                this.toast_success(
+                                                    tr!("settings.library.saved"),
                                                     cx,
                                                 );
-                                                tracing::warn!(
-                                                    %error,
-                                                    "cannot save path settings"
-                                                );
-                                                cx.notify();
-                                                return;
                                             }
-                                            if root_changed {
-                                                let revision = this.db.library_revision().ok();
-                                                this.apply_library_snapshot_with_anchor(
-                                                    revision, false, cx,
-                                                );
-                                            }
-                                            if paths_changed {
-                                                if let Err(error) = this
-                                                    .db
-                                                    .request_daemon_command(DaemonCommand::Rescan)
-                                                {
-                                                    tracing::warn!(
-                                                        %error,
-                                                        "cannot request daemon rescan"
-                                                    );
-                                                } else {
-                                                    this.send_wake_commands(cx);
-                                                }
-                                            }
-                                            this.toast_success(tr!("settings.library.saved"), cx);
-                                            cx.notify();
                                         })),
                                 ),
                             ),
@@ -575,6 +557,40 @@ impl App {
                     ),
             )
             .vertical_scrollbar(&self.settings_scroll)
+    }
+
+    /// Saves the three library path fields and refreshes the library/daemon.
+    /// Returns false when the database write failed and the settings were
+    /// rolled back.
+    pub(crate) fn save_library_paths(&mut self, cx: &mut Context<Self>) -> bool {
+        let root = self.photo_root_input.read(cx).value().to_string();
+        let log = self.log_dir_input.read(cx).value().to_string();
+        let imported = self.import_dir_input.read(cx).value().to_string();
+        let previous = self.settings.clone();
+        let changes = apply_library_path_inputs(&mut self.settings, &root, &log, &imported);
+        if let Err(error) = self.settings.save(&self.db) {
+            self.settings = previous;
+            self.toast_error(
+                tr_args!("settings.language.save_failed", error = error),
+                cx,
+            );
+            tracing::warn!(%error, "cannot save path settings");
+            cx.notify();
+            return false;
+        }
+        if changes.root {
+            let revision = self.db.library_revision().ok();
+            self.apply_library_snapshot_with_anchor(revision, false, cx);
+        }
+        if changes.any {
+            if let Err(error) = self.db.request_daemon_command(DaemonCommand::Rescan) {
+                tracing::warn!(%error, "cannot request daemon rescan");
+            } else {
+                self.send_wake_commands(cx);
+            }
+        }
+        cx.notify();
+        true
     }
 
     fn language_card(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -1007,7 +1023,7 @@ impl App {
         .detach();
     }
 
-    fn set_reduce_motion(&mut self, enabled: bool, cx: &mut Context<Self>) {
+    pub(crate) fn set_reduce_motion(&mut self, enabled: bool, cx: &mut Context<Self>) {
         self.settings.ui_reduce_motion = enabled;
         if let Err(error) = self.settings.save(&self.db) {
             tracing::warn!(%error, "cannot save reduce-motion setting");
@@ -2044,5 +2060,57 @@ impl App {
             .on_click(cx.listener(|this, _, window, cx| this.close_ai_uninstall_modal(window, cx)))
             .child(panel)
             .into_any_element()
+    }
+}
+
+#[cfg(test)]
+mod path_input_tests {
+    use super::apply_library_path_inputs;
+    use vrc_photon_core::settings::AppSettings;
+
+    #[test]
+    fn library_path_inputs_trim_and_report_changes() {
+        let mut settings = AppSettings::default();
+        let changes = apply_library_path_inputs(
+            &mut settings,
+            "  /tmp/photos  ",
+            " /tmp/logs ",
+            " /tmp/imported ",
+        );
+        assert!(changes.root);
+        assert!(changes.any);
+        assert_eq!(settings.photo_roots, vec!["/tmp/photos".to_string()]);
+        assert_eq!(settings.log_dir.as_deref(), Some("/tmp/logs"));
+        assert_eq!(settings.managed_dir.as_deref(), Some("/tmp/imported"));
+    }
+
+    #[test]
+    fn blank_library_paths_clear_the_fields() {
+        let mut settings = AppSettings {
+            photo_roots: vec!["/tmp/photos".to_string()],
+            log_dir: Some("/tmp/logs".to_string()),
+            managed_dir: Some("/tmp/imported".to_string()),
+            ..Default::default()
+        };
+        let changes = apply_library_path_inputs(&mut settings, " ", "", "\t");
+        assert!(changes.root);
+        assert!(changes.any);
+        assert!(settings.photo_roots.is_empty());
+        assert_eq!(settings.log_dir, None);
+        assert_eq!(settings.managed_dir, None);
+    }
+
+    #[test]
+    fn unchanged_library_paths_report_no_change() {
+        let mut settings = AppSettings {
+            photo_roots: vec!["/tmp/photos".to_string()],
+            log_dir: Some("/tmp/logs".to_string()),
+            managed_dir: None,
+            ..Default::default()
+        };
+        let changes =
+            apply_library_path_inputs(&mut settings, "/tmp/photos", "/tmp/logs", "");
+        assert!(!changes.root);
+        assert!(!changes.any);
     }
 }

@@ -184,6 +184,7 @@ const CALL_SITES: &[(&str, &[&str])] = &[
     ("session.unlinked_date", &["count", "date"]),
     ("session.continued_count", &["count"]),
     ("ai.tags.picker.selected", &["count"]),
+    ("setup.display.preview_thumbnail", &["size"]),
     ("settings.language.save_failed", &["error"]),
     ("settings.save_failed", &["error"]),
     ("settings.ai.error_code", &["code"]),

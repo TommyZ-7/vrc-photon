@@ -3,10 +3,20 @@
 //! The wizard only appears for a brand-new install. Page order, persistence,
 //! and the page-leave commits live here; rendering lives in `ui::setup`.
 
+use std::path::PathBuf;
+
 use gpui_kit::*;
 use vrc_photon_i18n::tr_args;
 
 use crate::app::App;
+use crate::app::file_picker::{self, DialogOptions};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SetupPathField {
+    PhotoRoot,
+    LogDir,
+    ImportDir,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum SetupPage {
@@ -125,8 +135,50 @@ impl App {
         }
     }
 
-    fn commit_setup_page(&mut self, _cx: &mut Context<Self>) -> bool {
-        true // Task 4 / Task 6 add the folder and webhook commits.
+    pub(crate) fn pick_setup_folder(
+        &mut self,
+        field: SetupPathField,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let current = match field {
+            SetupPathField::PhotoRoot => self.photo_root_input.read(cx).value().to_string(),
+            SetupPathField::LogDir => self.log_dir_input.read(cx).value().to_string(),
+            SetupPathField::ImportDir => self.import_dir_input.read(cx).value().to_string(),
+        };
+        let directory = PathBuf::from(current);
+        let options = DialogOptions {
+            directory: directory.is_dir().then_some(directory),
+            ..DialogOptions::default()
+        };
+        let dialog = options.dialog(Some(&*window));
+        cx.spawn_in(window, async move |this, cx| {
+            let Some(dir) = file_picker::pick_folder(dialog).await else {
+                return;
+            };
+            let path = dir.to_string_lossy().to_string();
+            cx.update(|window, cx| {
+                this.update(cx, |this, cx| {
+                    let input = match field {
+                        SetupPathField::PhotoRoot => &this.photo_root_input,
+                        SetupPathField::LogDir => &this.log_dir_input,
+                        SetupPathField::ImportDir => &this.import_dir_input,
+                    };
+                    input.update(cx, |state, cx| state.set_value(path, window, cx));
+                    cx.notify();
+                })
+                .ok();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn commit_setup_page(&mut self, cx: &mut Context<Self>) -> bool {
+        match self.setup.page {
+            SetupPage::Folders => self.save_library_paths(cx),
+            _ => true,
+        }
     }
 
     fn finish_setup(&mut self, cx: &mut Context<Self>) {
