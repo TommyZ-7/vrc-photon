@@ -293,6 +293,9 @@ impl App {
                 SetupPathField::ImportDir,
                 cx,
             ))
+            .when_some(self.setup.error.clone(), |this, error| {
+                this.child(div().text_size(px(11.)).text_color(rgb(p.red)).child(error))
+            })
     }
 
     fn setup_display(&self, cx: &mut Context<Self>) -> Div {

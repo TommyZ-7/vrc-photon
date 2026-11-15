@@ -721,6 +721,7 @@ impl App {
         let db_path = db.path().and_then(|path| std::fs::canonicalize(path).ok());
         let health_token = std::env::var("VRC_PHOTON_HEALTH_TOKEN").ok();
         let updating = health_token.is_some();
+        let settings_row_present = db.get_setting("app_settings").ok().flatten().is_some();
         let settings_load = AppSettings::load(&db);
         let settings_load_failed = settings_load.is_err();
         let mut initial_settings = settings_load.unwrap_or_else(|error| {
@@ -729,12 +730,22 @@ impl App {
             tracing::warn!(%error, "cannot load app settings; using defaults for this frame");
             AppSettings::default()
         });
+        if settings_load_failed {
+            // Never let a corrupt row fall back to a fresh-install default and
+            // rewrite itself as `setup_completed = false` later in the session.
+            initial_settings.setup_completed = true;
+        }
         initial_settings.language = vrc_photon_i18n::set_locale(&initial_settings.language);
-        let library_photo_count = db.count_photos().unwrap_or(0);
+        let library_photo_count = if settings_row_present {
+            0
+        } else {
+            db.count_photos().unwrap_or(0)
+        };
         let setup_open = setup::should_show_setup(
             demo,
             database_ok,
             settings_load_failed,
+            settings_row_present,
             initial_settings.setup_completed,
             library_photo_count,
         );
@@ -1537,7 +1548,7 @@ impl App {
 
 impl Render for App {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        if std::mem::take(&mut self.initial_focus_pending) {
+        if !self.setup.open && std::mem::take(&mut self.initial_focus_pending) {
             window.focus(&self.photo_grid_focus, cx);
         }
         self.render_epoch = self.render_epoch.wrapping_add(1);

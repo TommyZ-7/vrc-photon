@@ -74,10 +74,34 @@ pub(crate) fn should_show_setup(
     demo: bool,
     database_ok: bool,
     settings_load_failed: bool,
+    settings_row_present: bool,
     setup_completed: bool,
     library_photo_count: i64,
 ) -> bool {
-    !demo && database_ok && !settings_load_failed && !setup_completed && library_photo_count == 0
+    if demo || !database_ok || settings_load_failed {
+        return false;
+    }
+    if settings_row_present {
+        // A row with false means the wizard was interrupted after it saved a
+        // setting. Resume it even when the daemon has already indexed photos.
+        !setup_completed
+    } else {
+        // No row is a fresh install. A library with photos but no settings
+        // belongs to an older install and must not show the wizard.
+        library_photo_count == 0
+    }
+}
+
+/// Trims a webhook field and validates it. `Ok(None)` means "leave the stored
+/// webhook unchanged"; `Err(key)` is the catalog key for the inline error.
+pub(crate) fn setup_webhook_value(raw: &str) -> Result<Option<String>, &'static str> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return Ok(None);
+    }
+    validate_webhook_url(raw)
+        .map(|parsed| Some(parsed.as_str().to_string()))
+        .map_err(webhook_error_key)
 }
 
 pub(crate) struct SetupState {
@@ -118,6 +142,12 @@ impl App {
     }
 
     pub(crate) fn back_setup(&mut self, cx: &mut Context<Self>) {
+        if matches!(self.setup.page, SetupPage::Folders | SetupPage::Discord)
+            && !self.commit_setup_page(cx)
+        {
+            cx.notify();
+            return;
+        }
         if let Some(page) = self.setup.page.prev() {
             self.setup.page = page;
             self.setup.error = None;
@@ -174,14 +204,12 @@ impl App {
     }
 
     fn save_setup_webhook(&mut self, cx: &mut Context<Self>) -> bool {
-        let raw = self.discord_url_input.read(cx).value().trim().to_string();
-        if raw.is_empty() {
-            return true;
-        }
-        match validate_webhook_url(&raw) {
-            Ok(parsed) => match save_discord_webhook(&self.db, parsed.as_str()) {
+        let raw = self.discord_url_input.read(cx).value().to_string();
+        match setup_webhook_value(&raw) {
+            Ok(None) => true,
+            Ok(Some(url)) => match save_discord_webhook(&self.db, &url) {
                 Ok(()) => {
-                    self.discord_url = Some(parsed.as_str().to_string());
+                    self.discord_url = Some(url);
                     self.discord_url_editing = false;
                     true
                 }
@@ -190,8 +218,8 @@ impl App {
                     false
                 }
             },
-            Err(error) => {
-                self.setup.error = Some(tr(webhook_error_key(error)).into());
+            Err(key) => {
+                self.setup.error = Some(tr(key).into());
                 false
             }
         }
@@ -241,7 +269,7 @@ impl App {
 
 #[cfg(test)]
 mod tests {
-    use super::{SetupPage, should_show_setup};
+    use super::{SetupPage, setup_webhook_value, should_show_setup};
 
     #[test]
     fn setup_pages_advance_and_return_in_order() {
@@ -267,11 +295,26 @@ mod tests {
 
     #[test]
     fn setup_only_shows_for_a_fresh_install() {
-        assert!(should_show_setup(false, true, false, false, 0));
-        assert!(!should_show_setup(true, true, false, false, 0));
-        assert!(!should_show_setup(false, false, false, false, 0));
-        assert!(!should_show_setup(false, true, true, false, 0));
-        assert!(!should_show_setup(false, true, false, true, 0));
-        assert!(!should_show_setup(false, true, false, false, 3));
+        assert!(should_show_setup(false, true, false, false, false, 0));
+        assert!(!should_show_setup(true, true, false, false, false, 0));
+        assert!(!should_show_setup(false, false, false, false, false, 0));
+        assert!(!should_show_setup(false, true, true, false, false, 0));
+        assert!(!should_show_setup(false, true, false, true, true, 0));
+        assert!(!should_show_setup(false, true, false, false, false, 3));
+    }
+
+    #[test]
+    fn an_interrupted_setup_resumes_even_after_photos_are_indexed() {
+        assert!(should_show_setup(false, true, false, true, false, 0));
+        assert!(should_show_setup(false, true, false, true, false, 3));
+        assert!(!should_show_setup(false, true, false, true, true, 3));
+    }
+
+    #[test]
+    fn setup_webhook_values_are_validated() {
+        assert_eq!(setup_webhook_value("   "), Ok(None));
+        assert!(setup_webhook_value("http://discord.com/api/webhooks/1/t").is_err());
+        let url = "https://discord.com/api/webhooks/123/token";
+        assert_eq!(setup_webhook_value(url), Ok(Some(url.to_string())));
     }
 }

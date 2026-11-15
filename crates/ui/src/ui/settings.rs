@@ -569,7 +569,13 @@ impl App {
         let changes = apply_library_path_inputs(&mut self.settings, &root, &log, &imported);
         if let Err(error) = self.settings.save(&self.db) {
             self.settings = previous;
-            self.toast_error(tr_args!("settings.language.save_failed", error = error), cx);
+            let message = tr_args!("settings.language.save_failed", error = error);
+            self.toast_error(message.clone(), cx);
+            if self.setup.open {
+                // The wizard queues toasts until it closes, so a failed
+                // page-leave must also surface inline or Next looks dead.
+                self.setup.error = Some(message.into());
+            }
             tracing::warn!(%error, "cannot save path settings");
             cx.notify();
             return false;
