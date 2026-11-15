@@ -11,12 +11,14 @@ use gpui_kit::component::switch::Switch;
 use gpui_kit::component::*;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
+use vrc_photon_core::model::CompressionFormat;
 use vrc_photon_core::thumbnail::THUMBNAIL_SIZES;
 use vrc_photon_i18n::{tr, tr_args};
 
 use crate::app::App;
+use crate::app::compression::FeatureCompressionTarget;
 use crate::app::setup::{SetupPage, SetupPathField};
-use crate::ui::components::{card_divider, dialog_panel};
+use crate::ui::components::{card_divider, compression_policy_warning, dialog_panel};
 use crate::ui::settings::ThemeAxis;
 use crate::ui::theme::*;
 
@@ -170,8 +172,8 @@ impl App {
             SetupPage::Startup => self.setup_startup(cx).into_any_element(),
             SetupPage::Folders => self.setup_folders(cx).into_any_element(),
             SetupPage::Display => self.setup_display(cx).into_any_element(),
-            SetupPage::Discord => div().into_any_element(),
-            SetupPage::Compression => div().into_any_element(),
+            SetupPage::Discord => self.setup_discord(cx).into_any_element(),
+            SetupPage::Compression => self.setup_compression(cx),
             SetupPage::Theme => self.setup_theme(cx).into_any_element(),
             SetupPage::AiTagging => div().into_any_element(),
         }
@@ -590,6 +592,206 @@ impl App {
             .child(self.theme_axis(ThemeAxis::Main, cx))
             .child(card_divider(&p))
             .child(self.theme_axis(ThemeAxis::Accent, cx))
+    }
+
+    fn setup_discord(&self, cx: &mut Context<Self>) -> Div {
+        let p = self.palette;
+        let body = v_flex()
+            .gap(px(14.))
+            .child(setup_switch_row(
+                &p,
+                tr!("integrations.discord.title"),
+                "setup-discord-enabled",
+                self.settings.discord_enabled,
+                cx,
+                |app, value, _, cx| app.set_discord_enabled(value, cx),
+            ))
+            .child(card_divider(&p))
+            .child(
+                v_flex()
+                    .gap(px(7.))
+                    .child(
+                        div()
+                            .text_size(px(13.))
+                            .text_color(rgb(p.text))
+                            .child(tr!("setup.discord.webhook_label")),
+                    )
+                    .child(Input::new(&self.discord_url_input).h(px(38.))),
+            )
+            .when_some(self.setup.error.clone(), |this, error| {
+                this.child(
+                    div()
+                        .text_size(px(11.))
+                        .text_color(rgb(p.red))
+                        .child(error),
+                )
+            })
+            .child(
+                v_flex()
+                    .gap(px(7.))
+                    .child(
+                        div()
+                            .text_size(px(13.))
+                            .text_color(rgb(p.text))
+                            .child(tr!("integrations.discord.destination.label")),
+                    )
+                    .child(Input::new(&self.discord_destination_input).h(px(34.))),
+            )
+            .child(setup_switch_row(
+                &p,
+                tr!("integrations.discord.players.label"),
+                "setup-discord-players",
+                self.settings.discord_include_players,
+                cx,
+                |app, value, _, cx| app.set_discord_include_players(value, cx),
+            ))
+            .child(setup_switch_row(
+                &p,
+                tr!("integrations.discord.source.prefer_original"),
+                "setup-discord-original",
+                self.settings.discord_send_original,
+                cx,
+                |app, value, _, cx| app.set_discord_send_original(value, cx),
+            ));
+        // Keep the page useful while the toggle is off; the settings screen
+        // collapses the body, but a first-run user needs to see what enabling
+        // Discord will configure.
+        body
+    }
+
+    fn setup_compression(&self, cx: &mut Context<Self>) -> AnyElement {
+        let p = self.palette;
+        let enabled = self.settings.auto_compress;
+        let options = self.settings.auto_compression.clone();
+
+        let settings_body = v_flex()
+            .gap(px(7.))
+            .child(setup_switch_row(
+                &p,
+                tr!("settings.startup.immediate"),
+                "setup-auto-immediate",
+                self.settings.auto_compress_immediate,
+                cx,
+                |app, value, _, cx| app.set_setup_immediate(value, cx),
+            ))
+            .child(setup_switch_row(
+                &p,
+                tr!("settings.startup.keep_original"),
+                "setup-auto-keep",
+                self.settings.auto_compress_keep_original,
+                cx,
+                |app, value, _, cx| app.set_setup_keep_original(value, cx),
+            ))
+            .when_some(
+                compression_policy_warning(
+                    self.settings.auto_compress_keep_original,
+                    self.settings.auto_compress,
+                ),
+                |this, warning| {
+                    this.child(
+                        div()
+                            .p(px(10.))
+                            .rounded(px(8.))
+                            .bg(rgb(p.red_soft))
+                            .border_1()
+                            .border_color(rgb(p.red_border))
+                            .text_size(px(10.))
+                            .text_color(rgb(p.red))
+                            .child(warning),
+                    )
+                },
+            )
+            .child(card_divider(&p))
+            .child(
+                div()
+                    .text_size(px(13.))
+                    .font_semibold()
+                    .text_color(rgb(p.text))
+                    .child(tr!("integrations.compression.section")),
+            )
+            .child(h_flex().flex_wrap().gap(px(4.)).children(
+                [
+                    CompressionFormat::Jpeg,
+                    CompressionFormat::Webp,
+                    CompressionFormat::Avif,
+                    CompressionFormat::JpegXl,
+                ]
+                .into_iter()
+                .map(|format| {
+                    let active = options.format == format;
+                    let selected = format.clone();
+                    div()
+                        .id(SharedString::from(format!(
+                            "setup-format-{}",
+                            format.as_str()
+                        )))
+                        .px(px(10.))
+                        .py(px(5.))
+                        .rounded(px(8.))
+                        .bg(if active {
+                            rgb(p.accent_soft)
+                        } else {
+                            rgba(0x00000000)
+                        })
+                        .text_size(px(11.))
+                        .font_medium()
+                        .text_color(if active {
+                            rgb(p.accent)
+                        } else {
+                            rgb(p.muted)
+                        })
+                        .cursor_pointer()
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.edit_feature_compression(
+                                FeatureCompressionTarget::Auto,
+                                |options| options.set_format(selected.clone()),
+                                cx,
+                            )
+                        }))
+                        .child(format_label(&format))
+                }),
+            ))
+            .child(
+                h_flex()
+                    .items_center()
+                    .gap(px(12.))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .text_size(px(13.))
+                            .text_color(rgb(p.text))
+                            .child(tr!("compression.lossless")),
+                    )
+                    .child(
+                        Switch::new("setup-lossless")
+                            .checked(options.lossless)
+                            .disabled(!options.format.supports_lossless())
+                            .on_click(cx.listener(|this, value, _, cx| {
+                                this.edit_feature_compression(
+                                    FeatureCompressionTarget::Auto,
+                                    |options| options.lossless = *value,
+                                    cx,
+                                );
+                            })),
+                    ),
+            );
+
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(10.))
+            .child(setup_switch_row(
+                &p,
+                tr!("settings.startup.auto_compress"),
+                "setup-auto-enabled",
+                enabled,
+                cx,
+                |app, value, _, cx| app.set_auto_compress_enabled(value, cx),
+            ))
+            .child(card_divider(&p))
+            .child(self.integration_settings_body(enabled, settings_body))
+            .into_any_element()
     }
 
     fn setup_folder_row(

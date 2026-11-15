@@ -599,7 +599,7 @@ impl App {
             .into_any_element()
     }
 
-    fn set_auto_compress_enabled(&mut self, enabled: bool, cx: &mut Context<Self>) {
+    pub(crate) fn set_auto_compress_enabled(&mut self, enabled: bool, cx: &mut Context<Self>) {
         if self.settings.auto_compress == enabled {
             return;
         }

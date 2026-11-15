@@ -6,9 +6,12 @@
 use std::path::PathBuf;
 
 use gpui_kit::*;
-use vrc_photon_i18n::tr_args;
+use vrc_photon_core::discord::validate_webhook_url;
+use vrc_photon_core::settings::save_discord_webhook;
+use vrc_photon_i18n::{tr, tr_args};
 
 use crate::app::App;
+use crate::app::discord::webhook_error_key;
 use crate::app::file_picker::{self, DialogOptions};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -174,9 +177,57 @@ impl App {
         .detach();
     }
 
+    fn save_setup_webhook(&mut self, cx: &mut Context<Self>) -> bool {
+        let raw = self.discord_url_input.read(cx).value().trim().to_string();
+        if raw.is_empty() {
+            return true;
+        }
+        match validate_webhook_url(&raw) {
+            Ok(parsed) => match save_discord_webhook(&self.db, parsed.as_str()) {
+                Ok(()) => {
+                    self.discord_url = Some(parsed.as_str().to_string());
+                    self.discord_url_editing = false;
+                    true
+                }
+                Err(error) => {
+                    self.setup.error =
+                        Some(tr_args!("settings.save_failed", error = error).into());
+                    false
+                }
+            },
+            Err(error) => {
+                self.setup.error = Some(tr(webhook_error_key(error)).into());
+                false
+            }
+        }
+    }
+
+    pub(crate) fn set_setup_immediate(&mut self, immediate: bool, cx: &mut Context<Self>) {
+        if self.settings.auto_compress_immediate == immediate {
+            return;
+        }
+        self.settings.auto_compress_immediate = immediate;
+        if let Err(error) = self.settings.save(&self.db) {
+            tracing::warn!(%error, "cannot save immediate compression setting");
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn set_setup_keep_original(&mut self, keep: bool, cx: &mut Context<Self>) {
+        if self.settings.auto_compress_keep_original == keep {
+            return;
+        }
+        self.settings.auto_compress_keep_original = keep;
+        if let Err(error) = self.settings.save(&self.db) {
+            tracing::warn!(%error, "cannot save keep-original setting");
+        }
+        cx.notify();
+    }
+
     fn commit_setup_page(&mut self, cx: &mut Context<Self>) -> bool {
         match self.setup.page {
             SetupPage::Folders => self.save_library_paths(cx),
+            SetupPage::Discord => self.save_setup_webhook(cx),
             _ => true,
         }
     }
