@@ -14,7 +14,6 @@
     --dim: #7f8ba3;
     --faint: #5e6a81;
     --accent: #8bcbff;
-    --blue: #5aa9ff;
     --green: #7ee2b8;
     --rose: #ff94a8;
     --amber: #f4c878;
@@ -23,11 +22,9 @@
     --line-soft: rgba(255, 255, 255, 0.065);
     --panel: #0d1420;
     --panel-deep: #080d15;
-    --panel-inner: #111927;
     --panel-2: #151f2f;
     --accent-soft: rgba(139, 203, 255, 0.14);
     --r-card: 22px;
-    --r-inner: 16px;
   }
 
   * { box-sizing: border-box; }
@@ -60,7 +57,7 @@
   .eyebrow { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; }
   .issue-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border: 1px solid rgba(139,203,255,.24); border-radius: 999px; background: rgba(139,203,255,.08); color: var(--accent); font-size: 10px; letter-spacing: .08em; }
   h1 { margin: 11px 0 9px; font-size: clamp(25px, 3vw, 36px); line-height: 1.22; letter-spacing: -.035em; font-weight: 620; }
-  .lede { max-width: 900px; margin: 0; color: var(--muted); font-size: 13px; }
+  .lede { max-width: 920px; margin: 0; color: var(--muted); font-size: 13px; }
   .lede b { color: var(--text); font-weight: 560; }
   .meta-card { flex: none; min-width: 300px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 16px; background: rgba(13,20,32,.72); }
   .meta-row { display: flex; justify-content: space-between; gap: 18px; padding: 4px 0; color: var(--dim); font-size: 11px; }
@@ -70,7 +67,7 @@
   .section-label { display: flex; align-items: baseline; gap: 12px; margin: 44px 0 14px; }
   .section-label h2 { margin: 0; font-size: 15px; font-weight: 580; letter-spacing: -.01em; }
   .section-label span { color: var(--dim); font-size: 11px; }
-  .section-note { max-width: 980px; margin: -4px 0 18px; color: var(--dim); font-size: 11.5px; }
+  .section-note { max-width: 1000px; margin: -4px 0 18px; color: var(--dim); font-size: 11.5px; }
   .section-note b { color: var(--muted); font-weight: 560; }
 
   .decision-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 18px 0 6px; }
@@ -80,7 +77,7 @@
   .decision p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
   .decision .ok { display: inline-block; margin-top: 8px; padding: 2px 7px; border-radius: 999px; color: var(--green); background: rgba(126,226,184,.07); border: 1px solid rgba(126,226,184,.18); font-size: 9.5px; }
 
-  /* Shared control */
+  /* Shared controls */
   .control-stage { display: grid; grid-template-columns: 1.15fr 1fr; gap: 18px; align-items: start; }
   .control-panel { border: 1px solid var(--line); border-radius: var(--r-card); background: linear-gradient(180deg, rgba(17,25,39,.78), rgba(9,14,23,.9)); padding: 18px; box-shadow: 0 20px 60px rgba(0,0,0,.22); }
   .control-panel h3 { margin: 0 0 4px; font-size: 12px; font-weight: 580; }
@@ -88,12 +85,22 @@
   .control-block { padding: 13px 14px; border: 1px solid var(--line-soft); border-radius: 14px; background: rgba(255,255,255,.018); }
   .control-block + .control-block { margin-top: 10px; }
   .control-label { color: var(--text); font-size: 12px; font-weight: 560; margin-bottom: 9px; }
+  .control-hint { margin-top: 8px; color: var(--dim); font-size: 10px; line-height: 1.55; }
+  .control-note { margin-top: 9px; padding: 7px 9px; border-radius: 8px; background: rgba(244,200,120,.06); border: 1px solid rgba(244,200,120,.15); color: var(--amber); font-size: 9.5px; }
+
+  /* Segmented control */
+  .segment-control { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 10px; background: rgba(5,9,15,.45); }
+  .segment { display: flex; align-items: center; justify-content: center; min-height: 28px; border-radius: 7px; color: var(--muted); font-size: 10.5px; font-weight: 500; cursor: pointer; }
+  .segment.active { background: var(--accent-soft); color: var(--accent); box-shadow: inset 0 0 0 1px rgba(139,203,255,.22); }
+  .segment.disabled { opacity: .45; cursor: default; }
+
+  /* Chips for bulk scope */
   .chip-row { display: flex; flex-wrap: wrap; gap: 5px; }
   .chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 999px; border: 1px solid transparent; background: var(--panel-2); color: var(--muted); font-size: 10.5px; font-weight: 500; white-space: nowrap; }
   .chip.active { background: var(--accent-soft); border-color: rgba(139,203,255,.32); color: var(--accent); }
-  .chip.disabled { opacity: .45; }
-  .control-hint { margin-top: 8px; color: var(--dim); font-size: 10px; line-height: 1.55; }
-  .control-note { margin-top: 9px; padding: 7px 9px; border-radius: 8px; background: rgba(244,200,120,.06); border: 1px solid rgba(244,200,120,.15); color: var(--amber); font-size: 9.5px; }
+  .bulk-block { padding: 13px 14px; border: 1px solid rgba(139,203,255,.14); border-radius: 14px; background: rgba(139,203,255,.025); }
+  .bulk-block .control-label { margin-bottom: 7px; }
+  .bulk-block .btn { margin-top: 10px; }
   .state-table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
   .state-table th { text-align: left; color: var(--dim); font-weight: 500; padding: 6px 8px; border-bottom: 1px solid var(--line-soft); }
   .state-table td { padding: 7px 8px; border-bottom: 1px solid var(--line-soft); color: var(--muted); vertical-align: top; }
@@ -101,7 +108,7 @@
   .state-table td:first-child { color: var(--text); white-space: nowrap; }
 
   /* App shell */
-  .app-shell { display: grid; grid-template-columns: 196px 1fr; min-height: 720px; border: 1px solid var(--line); border-radius: var(--r-card); overflow: hidden; background: #070b12; box-shadow: 0 24px 80px rgba(0,0,0,.35); }
+  .app-shell { display: grid; grid-template-columns: 196px 1fr; min-height: 760px; border: 1px solid var(--line); border-radius: var(--r-card); overflow: hidden; background: #070b12; box-shadow: 0 24px 80px rgba(0,0,0,.35); }
   .sidebar { padding: 16px 12px; border-right: 1px solid var(--line-soft); background: linear-gradient(180deg, rgba(14,21,34,.9), rgba(7,11,18,.95)); }
   .brand { display: flex; align-items: center; gap: 8px; padding: 2px 6px 18px; color: var(--text); font-size: 12px; font-weight: 600; }
   .brand-mark { width: 18px; height: 18px; border-radius: 6px; border: 1px solid rgba(139,203,255,.35); background: radial-gradient(circle at 35% 35%, rgba(139,203,255,.42), rgba(139,203,255,.05)); }
@@ -141,7 +148,7 @@
   .row .label { flex: 1; min-width: 0; color: var(--text); font-size: 11.5px; }
   .row .desc { margin-top: 2px; color: var(--dim); font-size: 9.5px; }
   .switch { width: 30px; height: 17px; border-radius: 999px; background: rgba(255,255,255,.12); position: relative; flex: none; }
-  .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%; background: var(--muted); transition: transform .15s ease; }
+  .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%; background: var(--muted); }
   .switch.on { background: rgba(139,203,255,.5); }
   .switch.on::after { transform: translateX(13px); background: #eaf6ff; }
   .warning { padding: 8px 10px; border-radius: 8px; font-size: 9.5px; line-height: 1.55; }
@@ -165,6 +172,9 @@
   .badge.amber { color: var(--amber); background: rgba(244,200,120,.07); border: 1px solid rgba(244,200,120,.18); }
   .badge.rose { color: var(--rose); background: rgba(255,148,168,.07); border: 1px solid rgba(255,148,168,.18); }
   .badge.accent { color: var(--accent); background: rgba(139,203,255,.07); border: 1px solid rgba(139,203,255,.18); }
+  .format-row { display: flex; gap: 5px; flex-wrap: wrap; }
+  .format-chip { padding: 3px 9px; border-radius: 8px; background: rgba(255,255,255,.035); color: var(--muted); font-size: 9.5px; }
+  .format-chip.active { background: var(--accent-soft); color: var(--accent); }
 
   .detail-panel { display: none; }
   .detail-panel.active { display: block; }
@@ -173,11 +183,9 @@
   .setup-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; }
   .setup-frame { width: 600px; height: 561px; flex: none; border: 1px solid var(--line-strong); border-radius: 18px; overflow: hidden; background: #070b12; box-shadow: 0 24px 70px rgba(0,0,0,.35); display: flex; flex-direction: column; }
   .setup-titlebar { height: 32px; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; border-bottom: 1px solid var(--line-soft); background: rgba(10,15,24,.92); color: var(--faint); font-size: 9px; }
-  .setup-dots { display: flex; gap: 4px; }
-  .setup-dots span { width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,.14); }
   .setup-body { flex: 1; min-height: 0; padding: 17px 22px 10px; overflow: hidden; }
   .setup-body h3 { margin: 0 0 4px; font-size: 15px; font-weight: 600; letter-spacing: -.02em; }
-  .setup-body .setup-lede { margin: 0 0 13px; color: var(--dim); font-size: 10px; line-height: 1.55; }
+  .setup-body .setup-lede { margin: 0 0 11px; color: var(--dim); font-size: 10px; line-height: 1.55; }
   .setup-body.setup-tight { display: flex; flex-direction: column; gap: 7px; }
   .setup-tight h3 { margin-bottom: 0; }
   .setup-tight .input { min-height: 26px; padding: 3px 8px; font-size: 9.5px; }
@@ -189,15 +197,8 @@
   .setup-footer { height: 45px; display: flex; align-items: center; justify-content: space-between; padding: 0 18px; border-top: 1px solid var(--line-soft); background: rgba(8,12,19,.9); }
   .setup-footer .left { color: var(--faint); font-size: 9px; }
   .setup-footer .right { display: flex; gap: 6px; }
-  .setup-compact .card-section-title { font-size: 11px; }
-  .setup-compact .control-block { padding: 10px 11px; }
-  .setup-compact .control-hint { font-size: 9px; }
-  .setup-compact .chip { font-size: 9.5px; padding: 3px 8px; }
   .setup-switch-row { display: flex; align-items: center; gap: 10px; min-height: 27px; }
   .setup-switch-row .label { flex: 1; color: var(--text); font-size: 10.5px; }
-  .format-row { display: flex; gap: 5px; flex-wrap: wrap; }
-  .format-chip { padding: 3px 9px; border-radius: 8px; background: rgba(255,255,255,.035); color: var(--muted); font-size: 9.5px; }
-  .format-chip.active { background: var(--accent-soft); color: var(--accent); }
   .preview-wrap { padding: 8px; border-radius: 12px; border: 1px solid rgba(255,255,255,.08); background: var(--panel-deep); }
   .preview-image { height: 52px; border-radius: 8px; border: 1px solid rgba(255,255,255,.09); background: linear-gradient(135deg, rgba(139,203,255,.4), rgba(126,226,184,.18)); }
   .preview-tags { display: flex; flex-direction: column; gap: 5px; margin-top: 7px; padding: 7px; border-radius: 9px; border: 1px solid rgba(126,226,184,.2); background: rgba(126,226,184,.045); }
@@ -214,13 +215,11 @@
   .dialog-note { margin-top: 9px; padding: 8px 10px; border-radius: 8px; background: rgba(244,200,120,.06); border: 1px solid rgba(244,200,120,.16); color: var(--amber); font-size: 9.5px; }
   .dialog-actions { display: flex; justify-content: flex-end; gap: 7px; padding: 10px 18px 15px; }
 
-  /* Review table */
   .review-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 11px; }
   .review-table th { text-align: left; color: var(--dim); font-weight: 500; padding: 8px 10px; border-bottom: 1px solid var(--line); }
   .review-table td { padding: 9px 10px; border-bottom: 1px solid var(--line-soft); color: var(--muted); vertical-align: top; }
   .review-table td:first-child { color: var(--text); white-space: nowrap; }
   .review-table tr:last-child td { border-bottom: 0; }
-  .review-table .tag-s { display: inline-block; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--line); color: var(--dim); font-size: 9px; }
 
   .footer-note { margin-top: 42px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 16px; background: rgba(13,20,32,.7); color: var(--muted); font-size: 11.5px; }
   .footer-note b { color: var(--text); }
@@ -251,25 +250,24 @@
       <div class="eyebrow"><span class="issue-chip">#682</span><span>settings unification</span></div>
       <h1>自動動作の設定を3機能で統一する</h1>
       <p class="lede">
-        自動圧縮・Discord 自動送信・AI 自動タグ付けの<b>自動動作</b>を
-        「しない／即時／待機」の3値に、<b>対象範囲</b>を
-        「有効化以降の新規のみ／既存の未処理分も含める」の2値に揃える。
-        対象範囲は<b>一括処理ボタン</b>にだけ適用し、自動投入は新規索引写真だけを対象にする。
+        自動圧縮・Discord 自動送信・AI 自動タグ付けの<b>自動動作</b>を3分割セグメントに、
+        <b>一括処理</b>を対象範囲2チップ＋実行ボタンに統一する。
+        一括処理は自動動作が「しない」でも使え、機能のマスタースイッチがオフのときだけ無効になる。
       </p>
     </div>
     <div class="meta-card">
       <div class="meta-row"><span>対象</span><b>連携・自動 / 初回セットアップ</b></div>
-      <div class="meta-row"><span>共通型</span><b>AutoBehavior { mode, scope, activated_at }</b></div>
-      <div class="meta-row"><span>実行</span><b>既存写真は一括処理ボタンのみ</b></div>
-      <div class="meta-row"><span>PR</span><b>docs 1 + 実装 1</b></div>
+      <div class="meta-row"><span>自動動作</span><b>しない / 即時 / 待機</b></div>
+      <div class="meta-row"><span>一括処理</span><b>対象範囲 ＋ 実行ボタン</b></div>
+      <div class="meta-row"><span>表示順</span><b>ヘッダー → 機能固有 → 自動動作 → 一括処理 → 状態</b></div>
     </div>
   </header>
 
   <div class="decision-grid">
     <div class="decision">
       <div class="q">Q1 / Q9</div>
-      <h3>対象範囲は一括処理の範囲</h3>
-      <p>既存分を自動で積まない。ボタンを押したときだけ、選択した範囲の未処理写真を積む。</p>
+      <h3>一括処理は手動のみ</h3>
+      <p>既存分を自動で積まない。対象範囲は「一括処理」ボタンが対象にする写真の範囲を決める。</p>
       <span class="ok">手動のみ</span>
     </div>
     <div class="decision">
@@ -279,74 +277,77 @@
       <span class="ok">photos.created_at</span>
     </div>
     <div class="decision">
-      <div class="q">Q3 / Q8</div>
-      <h3>Discord は未送信を件数確認</h3>
-      <p>送信成功履歴がなく、待機・実行待ち・処理中でない写真。件数付きダイアログで確認する。</p>
-      <span class="ok">失敗・取消も含む</span>
+      <div class="q">Q4 / Q10</div>
+      <h3>マスタースイッチは残す</h3>
+      <p>自動動作が「しない」でも一括処理は使える。無効になるのは機能のマスタースイッチがオフのときだけ。</p>
+      <span class="ok">Off でも一括処理は有効</span>
     </div>
     <div class="decision">
-      <div class="q">Q4 / Q10</div>
-      <h3>「しない」は一括処理も無効</h3>
-      <p>自動圧縮のマスタースイッチは廃止。まとめて処理したいときは「待機」を選ぶ。</p>
-      <span class="ok">3値に一本化</span>
+      <div class="q">Q5 / Q13</div>
+      <h3>自動動作はセグメント、一括処理はラベルごと統一</h3>
+      <p>「自動動作」は3分割セグメント。「対象範囲」ではなく「一括処理」と表示し、対象範囲とボタンを同じブロックに置く。</p>
+      <span class="ok">表示順も統一</span>
     </div>
   </div>
 
-  <div class="section-label"><h2>1. 共通コントロール</h2><span>3カード + 3セットアップページで同一</span></div>
+  <div class="section-label"><h2>1. 共通コントロール</h2><span>3カード + 3セットアップページ（セットアップは自動動作のみ）</span></div>
   <p class="section-note">
-    上から「自動動作」3チップ、「対象範囲」2チップの順に固定する。チップの下には
-    選択中の意味を1行で出し、対象範囲が一括処理にだけ効くことを補足する。
+    自動動作は3分割のセグメント。一括処理は「対象範囲2チップ ＋ 説明 ＋ 実行ボタン」を
+    1つのブロックにまとめる。対象範囲が何に効くのかを、ボタンのすぐ上で示す。
   </p>
 
   <div class="control-stage">
     <div class="control-panel">
       <h3>既定の表示（自動圧縮 / 即時・新規のみ）</h3>
-      <p class="sub">カード内では区切り線の下にこのブロックを置く。見出しの大きさは 12 px。</p>
+      <p class="sub">カード内では機能固有の設定の後に置く。見出しは 12 px。</p>
       <div class="control-block">
         <div class="control-label">自動動作</div>
-        <div class="chip-row">
-          <span class="chip">しない</span>
-          <span class="chip active">即時</span>
-          <span class="chip">待機</span>
+        <div class="segment-control">
+          <div class="segment">しない</div>
+          <div class="segment active">即時</div>
+          <div class="segment">待機</div>
         </div>
         <div class="control-hint">新しく追加された写真をすぐに処理します。</div>
       </div>
-      <div class="control-block">
-        <div class="control-label">対象範囲</div>
+      <div class="bulk-block">
+        <div class="control-label">一括処理</div>
         <div class="chip-row">
           <span class="chip active">有効化以降の新規のみ</span>
           <span class="chip">既存の未処理分も含める</span>
         </div>
-        <div class="control-hint">一括処理は、自動動作を有効にした後に追加された写真だけを対象にします。</div>
-        <div class="control-hint" style="color:var(--faint)">対象範囲は一括処理ボタンに適用されます。</div>
+        <div class="control-hint">一括処理の対象にする写真の範囲を選びます。</div>
+        <div class="control-hint">一括処理は、機能を有効にした後に追加された写真だけを対象にします。</div>
+        <button class="btn full">未圧縮画像を一括圧縮</button>
       </div>
     </div>
 
     <div class="control-panel">
-      <h3>状態のバリエーション</h3>
-      <p class="sub">「しない」のときは一括処理を無効にし、理由を出す。</p>
+      <h3>マスタースイッチと自動動作の関係</h3>
+      <p class="sub">「しない」は自動処理を止めるだけで、一括処理は止めない。</p>
       <table class="state-table">
-        <tr><th>自動動作</th><th>新規写真</th><th>一括処理</th></tr>
-        <tr><td>しない</td><td>自動では処理しない</td><td class="badge rose" style="display:table-cell;border-radius:8px">無効</td></tr>
-        <tr><td>即時</td><td><span class="badge green">pending</span> で積む</td><td><span class="badge accent">有効</span></td></tr>
-        <tr><td>待機</td><td><span class="badge amber">waiting</span> で積む</td><td><span class="badge accent">有効</span></td></tr>
+        <tr><th>マスター</th><th>自動動作</th><th>新規写真</th><th>一括処理</th></tr>
+        <tr><td>オフ</td><td>—</td><td>自動では処理しない</td><td><span class="badge rose">無効</span></td></tr>
+        <tr><td>オン</td><td>しない</td><td>自動では処理しない</td><td><span class="badge accent">有効</span></td></tr>
+        <tr><td>オン</td><td>即時</td><td><span class="badge green">pending</span></td><td><span class="badge accent">有効</span></td></tr>
+        <tr><td>オン</td><td>待機</td><td><span class="badge amber">waiting</span></td><td><span class="badge accent">有効</span></td></tr>
       </table>
       <div class="control-block" style="margin-top:12px">
-        <div class="control-label">自動動作</div>
-        <div class="chip-row">
-          <span class="chip active">しない</span>
-          <span class="chip">即時</span>
-          <span class="chip">待機</span>
+        <div class="control-label">自動動作（マスタースイッチがオフ）</div>
+        <div class="segment-control">
+          <div class="segment disabled">しない</div>
+          <div class="segment disabled">即時</div>
+          <div class="segment disabled">待機</div>
         </div>
-        <div class="control-note">一括処理を使うには、自動動作を「待機」にしてください。</div>
+        <div class="control-note">マスタースイッチがオフのため、一括処理も無効です。</div>
       </div>
     </div>
   </div>
 
-  <div class="section-label"><h2>2. 連携・自動</h2><span>マスター・ディテール / タブで3カードを確認</span></div>
+  <div class="section-label"><h2>2. 連携・自動</h2><span>3カードの表示順を統一</span></div>
   <p class="section-note">
-    左の一覧は現行のまま。右の詳細カードだけを変更する。タブはモック用の切り替えで、
-    実画面では左の一覧選択で切り替わる。
+    すべてのカードで「ヘッダー＋マスタースイッチ → 機能固有の設定 → 自動動作 →
+    一括処理 → 状態・履歴」の順に並べる。タブはモック用の切り替えで、実画面では
+    左の一覧選択で切り替わる。
   </p>
 
   <div class="tabs">
@@ -389,35 +390,15 @@
           <section class="detail-panel active" data-panel="auto">
             <div class="card">
               <div class="card-head">
-                <div class="title">自動圧縮<div class="subtitle">新しい写真を自動で圧縮します。</div></div>
+                <div class="title">自動圧縮<div class="subtitle">自動圧縮の設定を管理します。</div></div>
+                <span class="switch on"></span>
               </div>
               <div class="card-body">
-                <div class="divider"></div>
-                <div class="control-block">
-                  <div class="control-label">自動動作</div>
-                  <div class="chip-row">
-                    <span class="chip">しない</span>
-                    <span class="chip active">即時</span>
-                    <span class="chip">待機</span>
-                  </div>
-                  <div class="control-hint">新しく追加された写真をすぐに処理します。</div>
-                </div>
-                <div class="control-block" style="margin-top:-2px">
-                  <div class="control-label">対象範囲</div>
-                  <div class="chip-row">
-                    <span class="chip active">有効化以降の新規のみ</span>
-                    <span class="chip">既存の未処理分も含める</span>
-                  </div>
-                  <div class="control-hint">一括処理は、自動動作を有効にした後に追加された写真だけを対象にします。</div>
-                  <div class="control-hint" style="color:var(--faint)">対象範囲は一括処理ボタンに適用されます。</div>
-                </div>
                 <div class="divider"></div>
                 <div class="row">
                   <div class="label">自動圧縮後に元画像を保持<div class="desc">置換すると元画像は圧縮成功後に削除されます。</div></div>
                   <span class="switch on"></span>
                 </div>
-                <div class="divider"></div>
-                <button class="btn full">未圧縮画像を一括圧縮</button>
                 <div class="divider"></div>
                 <div class="card-section-title small">圧縮設定</div>
                 <div class="format-row">
@@ -428,6 +409,26 @@
                 </div>
                 <div class="row"><div class="label">ロスレス</div><span class="switch on"></span></div>
                 <div class="row"><div class="label">リサイズ</div><span class="switch"></span><span class="badge">元のサイズ</span></div>
+                <div class="divider"></div>
+                <div class="control-block">
+                  <div class="control-label">自動動作</div>
+                  <div class="segment-control">
+                    <div class="segment active">しない</div>
+                    <div class="segment">即時</div>
+                    <div class="segment">待機</div>
+                  </div>
+                  <div class="control-hint">新しい写真を自動では処理しません。</div>
+                </div>
+                <div class="bulk-block">
+                  <div class="control-label">一括処理</div>
+                  <div class="chip-row">
+                    <span class="chip active">有効化以降の新規のみ</span>
+                    <span class="chip">既存の未処理分も含める</span>
+                  </div>
+                  <div class="control-hint">一括処理の対象にする写真の範囲を選びます。</div>
+                  <div class="control-hint">一括処理は、機能を有効にした後に追加された写真だけを対象にします。</div>
+                  <button class="btn full">未圧縮画像を一括圧縮</button>
+                </div>
               </div>
             </div>
           </section>
@@ -448,26 +449,34 @@
                 <div class="row"><div class="label">原画を優先</div><span class="switch on"></span></div>
                 <div class="row"><div class="label">プレイヤー名を含める</div><span class="switch"></span></div>
                 <div class="divider"></div>
+                <div class="card-section-title small">圧縮設定</div>
+                <div class="format-row">
+                  <span class="format-chip">JPEG</span>
+                  <span class="format-chip active">WebP</span>
+                  <span class="format-chip">AVIF</span>
+                  <span class="format-chip">JPEG XL</span>
+                </div>
+                <div class="divider"></div>
                 <div class="control-block">
                   <div class="control-label">自動動作</div>
-                  <div class="chip-row">
-                    <span class="chip">しない</span>
-                    <span class="chip">即時</span>
-                    <span class="chip active">待機</span>
+                  <div class="segment-control">
+                    <div class="segment">しない</div>
+                    <div class="segment">即時</div>
+                    <div class="segment active">待機</div>
                   </div>
                   <div class="control-hint">新しく追加された写真を待機ジョブとして積み、あとから一括で開始できます。</div>
                 </div>
-                <div class="control-block" style="margin-top:-2px">
-                  <div class="control-label">対象範囲</div>
+                <div class="warning amber">非公開インスタンスで撮影した写真も送信対象になります。Webhook の投稿先を確認してください。</div>
+                <div class="bulk-block">
+                  <div class="control-label">一括処理</div>
                   <div class="chip-row">
                     <span class="chip">有効化以降の新規のみ</span>
                     <span class="chip active">既存の未処理分も含める</span>
                   </div>
+                  <div class="control-hint">一括処理の対象にする写真の範囲を選びます。</div>
                   <div class="control-hint">一括処理は、有効化前の写真も含めたすべての未処理分を対象にします。</div>
-                  <div class="control-hint" style="color:var(--faint)">対象範囲は一括処理ボタンに適用されます。</div>
+                  <button class="btn full">未送信を一括送信</button>
                 </div>
-                <div class="warning amber">非公開インスタンスで撮影した写真も送信対象になります。Webhook の投稿先を確認してください。</div>
-                <button class="btn full">未送信を一括送信</button>
                 <div class="divider"></div>
                 <div class="card-section-title small">送信履歴</div>
                 <div class="queue-row"><span class="badge amber">待機</span><span class="name">vrc-photon-1042.png</span><span class="meta">VRC PhotoN</span></div>
@@ -485,32 +494,6 @@
               </div>
               <div class="card-body">
                 <div class="divider"></div>
-                <div class="stats">
-                  <span class="stat">待機 <b>3</b></span>
-                  <span class="stat">処理中 <b>1</b></span>
-                  <span class="stat">失敗 <b>0</b></span>
-                </div>
-                <div class="queue-row"><span class="badge accent">処理中</span><span class="name">vrc-photon-1038.png</span><span class="meta">雰囲気タグを生成中</span></div>
-                <div class="control-block">
-                  <div class="control-label">自動動作</div>
-                  <div class="chip-row">
-                    <span class="chip">しない</span>
-                    <span class="chip active">即時</span>
-                    <span class="chip">待機</span>
-                  </div>
-                  <div class="control-hint">新しく追加された写真をすぐに処理します。</div>
-                </div>
-                <div class="control-block" style="margin-top:-2px">
-                  <div class="control-label">対象範囲</div>
-                  <div class="chip-row">
-                    <span class="chip active">有効化以降の新規のみ</span>
-                    <span class="chip">既存の未処理分も含める</span>
-                  </div>
-                  <div class="control-hint">一括処理は、自動動作を有効にした後に追加された写真だけを対象にします。</div>
-                  <div class="control-hint" style="color:var(--faint)">対象範囲は一括処理ボタンに適用されます。</div>
-                </div>
-                <button class="btn full">未タグ付けのものを一括処理</button>
-                <div class="divider"></div>
                 <div class="card-section-title small">バックエンド</div>
                 <div class="chip-row">
                   <span class="chip active">自動</span>
@@ -518,7 +501,33 @@
                   <span class="chip">CPU</span>
                 </div>
                 <div class="divider"></div>
-                <button class="btn small">設定を開く</button>
+                <div class="control-block">
+                  <div class="control-label">自動動作</div>
+                  <div class="segment-control">
+                    <div class="segment">しない</div>
+                    <div class="segment active">即時</div>
+                    <div class="segment">待機</div>
+                  </div>
+                  <div class="control-hint">新しく追加された写真をすぐに処理します。</div>
+                </div>
+                <div class="bulk-block">
+                  <div class="control-label">一括処理</div>
+                  <div class="chip-row">
+                    <span class="chip active">有効化以降の新規のみ</span>
+                    <span class="chip">既存の未処理分も含める</span>
+                  </div>
+                  <div class="control-hint">一括処理の対象にする写真の範囲を選びます。</div>
+                  <div class="control-hint">一括処理は、機能を有効にした後に追加された写真だけを対象にします。</div>
+                  <button class="btn full">未タグ付けのものを一括処理</button>
+                </div>
+                <div class="divider"></div>
+                <div class="stats">
+                  <span class="stat">待機 <b>3</b></span>
+                  <span class="stat">処理中 <b>1</b></span>
+                  <span class="stat">失敗 <b>0</b></span>
+                </div>
+                <div class="queue-row"><span class="badge accent">処理中</span><span class="name">vrc-photon-1038.png</span><span class="meta">雰囲気タグを生成中</span></div>
+                <button class="btn small">待機中のものを処理</button>
               </div>
             </div>
           </section>
@@ -527,56 +536,48 @@
     </main>
   </div>
 
-  <div class="section-label"><h2>3. 初回セットアップ</h2><span>600 × 561 / 3ページとも同じ順序</span></div>
+  <div class="section-label"><h2>3. 初回セットアップ</h2><span>自動動作だけ / 一括処理は表示しない</span></div>
   <p class="section-note">
-    自動圧縮はヘッダーのマスタースイッチと「新規写真をすぐに圧縮」を削除し、
-    共通コントロールに置き換える。Discord は連携スイッチを残して共通コントロールを追加。
-    AI は紹介文とプレビューの間に共通コントロールだけを追加する。
+    セットアップでは自動動作のセグメントだけを置く。対象範囲と一括処理ボタンは
+    「連携・自動」の詳細に集約し、初回の画面を複雑にしない。
+    自動圧縮と Discord のマスタースイッチは現行どおり残す。
   </p>
 
   <div class="setup-grid">
     <!-- Setup compression -->
-    <div class="setup-frame setup-compact">
+    <div class="setup-frame setup-tight">
       <div class="setup-titlebar"><span>セットアップ</span><span>3 / 8</span></div>
       <div class="setup-body">
         <h3>自動圧縮</h3>
-        <div class="control-block">
-          <div class="control-label">自動動作</div>
-          <div class="chip-row">
-            <span class="chip">しない</span>
-            <span class="chip active">即時</span>
-            <span class="chip">待機</span>
-          </div>
-          <div class="control-hint">新しく追加された写真をすぐに処理します。</div>
-        </div>
-        <div class="control-block">
-          <div class="control-label">対象範囲</div>
-          <div class="chip-row">
-            <span class="chip active">有効化以降の新規のみ</span>
-            <span class="chip">既存の未処理分も含める</span>
-          </div>
-          <div class="control-hint">一括処理は、自動動作を有効にした後に追加された写真だけを対象にします。</div>
-        </div>
-        <div class="divider" style="margin:11px 0 9px"></div>
+        <div class="setup-switch-row"><span class="label">自動圧縮</span><span class="switch on"></span></div>
         <div class="setup-switch-row"><span class="label">自動圧縮後に元画像を保持</span><span class="switch on"></span></div>
-        <div class="divider" style="margin:9px 0"></div>
+        <div class="divider"></div>
         <div class="card-section-title">圧縮設定</div>
-        <div class="format-row" style="margin:6px 0 7px">
+        <div class="format-row" style="margin:5px 0 6px">
           <span class="format-chip">JPEG</span>
           <span class="format-chip active">WebP</span>
           <span class="format-chip">AVIF</span>
           <span class="format-chip">JPEG XL</span>
         </div>
         <div class="setup-switch-row"><span class="label">ロスレス</span><span class="switch on"></span></div>
-        <div style="margin-top:10px;color:var(--dim);font-size:9px;line-height:1.55">既存の写真は「連携・自動」の一括処理から圧縮できます。</div>
+        <div class="divider"></div>
+        <div class="control-block">
+          <div class="control-label">自動動作</div>
+          <div class="segment-control">
+            <div class="segment">しない</div>
+            <div class="segment active">即時</div>
+            <div class="segment">待機</div>
+          </div>
+          <div class="control-hint">新しく追加された写真をすぐに処理します。</div>
+        </div>
       </div>
       <div class="setup-footer"><span class="left">戻る</span><span class="right"><button class="btn small primary">次へ</button></span></div>
     </div>
 
     <!-- Setup Discord -->
-    <div class="setup-frame setup-compact">
+    <div class="setup-frame setup-tight">
       <div class="setup-titlebar"><span>セットアップ</span><span>4 / 8</span></div>
-      <div class="setup-body setup-tight">
+      <div class="setup-body">
         <h3>Discord 連携</h3>
         <div class="setup-switch-row"><span class="label">Discord 連携</span><span class="switch on"></span></div>
         <div class="divider"></div>
@@ -589,49 +590,32 @@
         <div class="divider"></div>
         <div class="control-block">
           <div class="control-label">自動動作</div>
-          <div class="chip-row">
-            <span class="chip active">しない</span>
-            <span class="chip">即時</span>
-            <span class="chip">待機</span>
+          <div class="segment-control">
+            <div class="segment active">しない</div>
+            <div class="segment">即時</div>
+            <div class="segment">待機</div>
           </div>
-          <div class="control-hint">自動では処理しません。</div>
-        </div>
-        <div class="control-block">
-          <div class="control-label">対象範囲</div>
-          <div class="chip-row">
-            <span class="chip active">有効化以降の新規のみ</span>
-            <span class="chip">既存の未処理分も含める</span>
-          </div>
-          <div class="control-hint">一括処理は、自動動作を有効にした後に追加された写真だけを対象にします。</div>
+          <div class="control-hint">新しい写真を自動では処理しません。</div>
         </div>
       </div>
       <div class="setup-footer"><span class="left">戻る</span><span class="right"><button class="btn small primary">次へ</button></span></div>
     </div>
 
     <!-- Setup AI -->
-    <div class="setup-frame setup-compact">
+    <div class="setup-frame setup-tight">
       <div class="setup-titlebar"><span>セットアップ</span><span>8 / 8</span></div>
       <div class="setup-body">
         <h3>AI タグ付け</h3>
-        <p class="setup-lede" style="margin-bottom:9px">写真の場所・雰囲気・人数をローカルで推定し、検索できるタグを付けます。プラグインの導入と有効化は設定画面で行います。</p>
+        <p class="setup-lede" style="margin-bottom:4px">写真の場所・雰囲気・人数をローカルで推定し、検索できるタグを付けます。</p>
         <div class="control-block">
           <div class="control-label">自動動作</div>
-          <div class="chip-row">
-            <span class="chip active">しない</span>
-            <span class="chip">即時</span>
-            <span class="chip">待機</span>
+          <div class="segment-control">
+            <div class="segment active">しない</div>
+            <div class="segment">即時</div>
+            <div class="segment">待機</div>
           </div>
-          <div class="control-hint">自動では処理しません。</div>
+          <div class="control-hint">新しい写真を自動では処理しません。</div>
         </div>
-        <div class="control-block">
-          <div class="control-label">対象範囲</div>
-          <div class="chip-row">
-            <span class="chip active">有効化以降の新規のみ</span>
-            <span class="chip">既存の未処理分も含める</span>
-          </div>
-          <div class="control-hint">一括処理は、自動動作を有効にした後に追加された写真だけを対象にします。</div>
-        </div>
-        <div class="divider" style="margin:10px 0"></div>
         <div class="preview-wrap">
           <div class="preview-image"></div>
           <div class="preview-tags">
@@ -639,7 +623,7 @@
             <div class="preview-tag-line"><span class="preview-tag">人数 2</span><span class="preview-tag">場所 屋外</span></div>
           </div>
         </div>
-        <div style="margin-top:8px;color:var(--green);font-size:9px">プラグインは BOOTH で配布しています。</div>
+        <div style="color:var(--green);font-size:9px">プラグインは BOOTH で配布しています。</div>
       </div>
       <div class="setup-footer"><span class="left">戻る</span><span class="right"><button class="btn small primary">完了</button></span></div>
     </div>
@@ -649,7 +633,7 @@
   <p class="section-note">
     「未送信を一括送信」を押したときだけ出す。0件ならダイアログを出さず、
     「送信対象の未送信写真はありません。」をトーストで出す。OK で既存の同意が
-    未記録なら記録し、pending で積む。
+    未記録なら記録し、pending で積む。自動動作が「しない」でも実行できる。
   </p>
 
   <div class="dialog-stage">
@@ -671,15 +655,15 @@
   <table class="review-table">
     <thead><tr><th>項目</th><th>決定</th><th>補足</th></tr></thead>
     <tbody>
-      <tr><td>自動動作</td><td>しない / 即時 / 待機</td><td>3機能で同じ `AutoMode`。圧縮のマスタースイッチは廃止。</td></tr>
-      <tr><td>対象範囲</td><td>有効化以降の新規のみ / 既存の未処理分も含める</td><td>一括処理ボタンにだけ適用。自動投入は新規索引写真だけ。</td></tr>
-      <tr><td>既存分の実行</td><td>手動ボタンのみ</td><td>初回フルスキャンでは3機能とも自動投入しない。</td></tr>
-      <tr><td>「新規」の基準</td><td>ライブラリへの追加以降</td><td>`photos.created_at`。Discord の撮影時刻カットオフは廃止。</td></tr>
-      <tr><td>Discord の対象</td><td>未送信の全写真</td><td>送信成功なし・アクティブ送信なし・削除中でない。失敗・取消は含む。</td></tr>
-      <tr><td>Discord の確認</td><td>件数付きダイアログ</td><td>0件は情報トースト。OK で同意未記録なら記録。</td></tr>
+      <tr><td>自動動作</td><td>しない / 即時 / 待機</td><td>3機能で同じ `AutoMode`。3分割のセグメントで選ぶ。</td></tr>
+      <tr><td>マスタースイッチ</td><td>機能ごとに残す</td><td>自動圧縮は `auto_compress_enabled`、Discord は `discord_enabled`、AI は `ai_tagging_enabled`。</td></tr>
+      <tr><td>一括処理</td><td>対象範囲 ＋ 実行ボタン</td><td>「対象範囲」ではなく「一括処理」と表示し、ボタンと同じブロックに置く。</td></tr>
+      <tr><td>「しない」の一括処理</td><td>有効</td><td>マスタースイッチがオンの間は使える。無効になるのはマスタースイッチがオフのときだけ。</td></tr>
+      <tr><td>表示順</td><td>ヘッダー → 機能固有 → 自動動作 → 一括処理 → 状態</td><td>3カードで同じ順にする。</td></tr>
+      <tr><td>セットアップ</td><td>自動動作だけ</td><td>対象範囲・一括処理は表示しない。圧縮と Discord のマスタースイッチは残す。</td></tr>
+      <tr><td>AI の設定導線</td><td>削除</td><td>AI カードの「設定を開く」ボタンと案内文を置かない。</td></tr>
       <tr><td>AI 即時</td><td>準備完了時のみ積む</td><td>未準備では積まない。待機は未準備でも waiting で積む。</td></tr>
-      <tr><td>「しない」の一括処理</td><td>無効</td><td>圧縮・AI は「待機」を選ぶと使える。Discord はボタンを出さない。</td></tr>
-      <tr><td>ジョブ基盤</td><td>変更しない</td><td>テーブル・状態・ワーカー・再試行は統合しない。</td></tr>
+      <tr><td>Discord の対象</td><td>未送信の全写真</td><td>送信成功なし・アクティブ送信なし・削除中でない。失敗・取消は含む。</td></tr>
     </tbody>
   </table>
 
@@ -687,7 +671,8 @@
   <table class="review-table">
     <thead><tr><th>旧設定</th><th>新設定</th><th>利用者に見える変化</th></tr></thead>
     <tbody>
-      <tr><td>`auto_compress` + `auto_compress_immediate`</td><td>`auto_compress.mode`</td><td>false→しない / true+immediate→即時 / true+!immediate→待機。</td></tr>
+      <tr><td>`auto_compress`（bool）</td><td>`auto_compress_enabled`</td><td>機能のマスタースイッチ。false はスイッチオフとして移行する。</td></tr>
+      <tr><td>`auto_compress_immediate`</td><td>`auto_compress.mode`</td><td>true→即時 / false→待機。マスタースイッチがオフなら自動動作は動かない。</td></tr>
       <tr><td>`auto_compress_backlog`</td><td>`auto_compress.scope`</td><td>true→既存も含める / false→新規のみ。初回スキャンでは自動投入しない。</td></tr>
       <tr><td>`discord_auto_mode`</td><td>`discord_auto.mode`</td><td>そのまま。`discord_auto_since` は `activated_at` に移り、自動投入の撮影時刻判定には使わない。</td></tr>
       <tr><td>`ai_tagging_auto` (bool)</td><td>`ai_tagging_auto.mode`</td><td>true→即時 / false→しない。待機が新設され、未準備でも waiting で積める。</td></tr>
@@ -697,11 +682,12 @@
   <div class="footer-note">
     <b>レビュー時の確認ポイント</b>
     <ul>
-      <li>3カードと3セットアップページで「自動動作」「対象範囲」の順序と文言が同じか。</li>
-      <li>自動圧縮カードからマスタースイッチが消え、圧縮設定が常に編集できるか。</li>
-      <li>「しない」のとき、圧縮・AI の一括処理が無効で理由が出ているか。</li>
-      <li>Discord の一括送信が未送信だけを対象にし、件数確認を出しているか。</li>
-      <li>初回フルスキャンでは自動投入せず、取り込み・監視・2回目以降のスキャンでは自動投入するか。</li>
+      <li>マスタースイッチがオンのまま自動動作を「しない」にしても、一括処理が使えるか。</li>
+      <li>自動動作が3分割セグメントになっているか。対象範囲チップと見た目が分かれているか。</li>
+      <li>3カードの表示順が「ヘッダー → 機能固有 → 自動動作 → 一括処理 → 状態」で揃っているか。</li>
+      <li>「一括処理」ブロックに対象範囲と実行ボタンがまとまり、対象が分かりやすいか。</li>
+      <li>AI カードから「設定を開く」ボタンと案内文が消えているか。</li>
+      <li>セットアップ3ページに一括処理がなく、自動動作だけがあるか。</li>
       <li>旧設定の移行と、`discord_auto_since` 廃止の挙動変化に納得できるか。</li>
     </ul>
   </div>
