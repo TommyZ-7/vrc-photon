@@ -125,27 +125,58 @@ pub fn open_ui() {
     }
 }
 
+/// Loads the icon group embedded in this executable.
+///
+/// The group contains every size generated from `packaging/icons/icon.png`,
+/// so the notification area can pick a crisp variant for the current DPI.
+#[cfg(target_os = "windows")]
 fn build_icon() -> Result<Icon> {
-    const SIZE: u32 = 32;
-    let mut rgba = vec![0u8; (SIZE * SIZE * 4) as usize];
-    for y in 0..SIZE {
-        for x in 0..SIZE {
-            let index = ((y * SIZE + x) * 4) as usize;
-            let border = x < 2 || y < 2 || x >= SIZE - 2 || y >= SIZE - 2;
-            let photo_frame = (6..=25).contains(&x)
-                && (8..=23).contains(&y)
-                && (!(9..=22).contains(&x) || !(11..=20).contains(&y));
-            let sun = (x as i32 - 21).pow(2) + (y as i32 - 14).pow(2) <= 6;
-            let mountain = y > 16 && ((x as i32 - 15).abs() + (y as i32 - 20) < 7);
-            let color = if border || photo_frame || sun || mountain {
-                [255, 255, 255, 255]
-            } else {
-                [0, 120, 212, 255]
-            };
-            rgba[index..index + 4].copy_from_slice(&color);
-        }
+    Icon::from_resource(1, None).context("cannot load the embedded tray icon")
+}
+
+/// Renders the bundled application icon at tray size.
+///
+/// Linux panels take a single RGBA image rather than a multi-size icon
+/// resource, so downscale the same artwork the Windows resource is built from.
+#[cfg(not(target_os = "windows"))]
+fn build_icon() -> Result<Icon> {
+    let rgba = bundled_icon_rgba()?;
+    Icon::from_rgba(rgba.into_raw(), TRAY_ICON_SIZE, TRAY_ICON_SIZE).context("invalid tray icon")
+}
+
+#[cfg(not(target_os = "windows"))]
+const TRAY_ICON_SIZE: u32 = 32;
+
+#[cfg(not(target_os = "windows"))]
+fn bundled_icon_rgba() -> Result<image::RgbaImage> {
+    const ICON_PNG: &[u8] = include_bytes!("../../../packaging/icons/icon.png");
+    let source = image::load_from_memory_with_format(ICON_PNG, image::ImageFormat::Png)
+        .context("cannot decode the bundled tray icon")?;
+    Ok(image::imageops::resize(
+        &source.to_rgba8(),
+        TRAY_ICON_SIZE,
+        TRAY_ICON_SIZE,
+        image::imageops::FilterType::Lanczos3,
+    ))
+}
+
+#[cfg(all(test, not(target_os = "windows")))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bundled_icon_is_resized_with_transparent_corners() {
+        let icon = bundled_icon_rgba().expect("bundled tray icon decodes");
+        assert_eq!(icon.dimensions(), (TRAY_ICON_SIZE, TRAY_ICON_SIZE));
+        assert!(
+            icon.get_pixel(0, 0)[3] < 16,
+            "the rounded corner must stay transparent"
+        );
+        assert!(
+            icon.get_pixel(TRAY_ICON_SIZE / 2, TRAY_ICON_SIZE / 2)[3] > 200,
+            "the center of the asterisk must stay opaque"
+        );
     }
-    Icon::from_rgba(rgba, SIZE, SIZE).context("invalid tray icon")
 }
 
 #[cfg(target_os = "windows")]
