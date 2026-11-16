@@ -1,10 +1,10 @@
-# 自動動作の設定を3機能で統一する (#682) 実装計画
+# 自動動作とキュー表示を3機能で統一する (#682 / #684) 実装計画
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 自動圧縮・Discord 自動送信・AI 自動タグ付けの「自動動作」と「一括処理」を、共通の `AutoBehavior` 型と共通 UI に統一する。
+**Goal:** 自動圧縮・Discord 自動送信・AI 自動タグ付けの「自動動作」「一括処理」「キュー表示」を、共通の `AutoBehavior` 型・共通 `QueueEntry` 表示・共通キュー操作に統一する。
 
-**Architecture:** 設定 JSON に共通の `AutoBehavior { mode, scope, activated_at }` を3機能分持たせ、旧フィールドは読み込み時に移行する。各機能のマスタースイッチは残し、3値は自動動作の実行契機として分離する。デーモンは新規索引写真だけを自動投入し、既存写真は「一括処理」ボタンで `scope` に従って処理する。ジョブのテーブル・状態・ワーカーは変更しない。
+**Architecture:** 設定 JSON に共通の `AutoBehavior { mode, scope, activated_at }` と機能別の `*_queue_paused` を持たせ、旧フィールドは読み込み時に移行する。ジョブのテーブル・状態・ワーカーは統合せず、UI が3機能の待機・実行待ち・実行中を `QueueEntry` に変換して同じ行部品で表示する。ダッシュボードは混合キュー、機能詳細は機能別キューを出し、失敗は通知モーダルに集約する。待機行だけを行単位・一括で削除できる。
 
 **Tech Stack:** Rust 2024, gpui-kit 0.9.1, SQLite, rust-i18n, Plannotator
 
@@ -36,8 +36,21 @@
 - AI カード内の「設定を開く」ボタンと案内文を削除する。ダッシュボードの AI カードは
   この Issue の対象外。
 - カード内の表示順を「ヘッダー＋マスタースイッチ → 機能固有の設定 →
-  自動動作 → 一括処理 → 状態・履歴」に統一する。
+  自動動作 → 一括処理 → キュー」に統一する。
 - セットアップページには「自動動作」だけを置き、「一括処理」は表示しない。
+- #684: キューは待機・実行待ち・実行中だけを表示する。失敗・完了・履歴は出さない。
+- #684: 失敗は通知モーダルに最新5件まで出し、行ごとの再試行と機能別の一括再試行を
+  用意する。失敗行はキューに戻さない。
+- #684: 機能別の一時停止を設定に保存する。停止中も実行中のジョブは完了し、
+  自動投入は続ける。停止中も待機の開始・削除はできる。
+- #684: 待機行は行単位・一括で削除できる。実行待ち・実行中は削除しない。
+  一括削除は件数付き確認を出す。
+- #684: ダッシュボードの圧縮専用キューパネルを3機能の混合キューに置き換える。
+  混合キューに一時停止／再開は置かない。
+- #684: Discord の送信履歴カード、「履歴を消去」、履歴行を削除する。
+  待機の一括送信はキューの「待機をすべて開始」に移す。
+- #684: ジョブのテーブル・状態・ワーカーは統合しない。terminal 行は通知と
+  テスト送信の結果解決のために DB に残すが、履歴 UI は作らない。
 - docs とコードは同じ PR に混ぜない。Phase 0 は docs-only PR、Phase 1 は実装 PR。
 - 検証: `cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`
 - CI が green になるまで merge しない。CI は `ci-watch` の手順で監視する。
@@ -57,10 +70,18 @@
 5. Discord の一括送信が、送信済み・待機中・実行待ち・処理中・削除中の写真を
    除外し、失敗・取消は含める。0件ではダイアログを出さない。
 6. AI の `Immediate` は未準備で積まず、`Waiting` は未準備でも `waiting` で積む。
-7. 3カードで「ヘッダー → 機能固有 → 自動動作 → 一括処理 → 状態」の順が同じ。
+7. 3カードで「ヘッダー → 機能固有 → 自動動作 → 一括処理 → キュー」の順が同じ。
    セットアップ3ページには一括処理がなく、自動動作だけがある。
 8. AI カードに「設定を開く」ボタンと案内文がない。
-9. ja / en の両カタログと `placeholders.rs` が更新され、i18n テストが通る。
+9. #684: 混合キューが3機能の待機・実行待ち・実行中を `created_at` の古い順に
+   出し、100件上限と合計件数が正しい。
+10. #684: 一時停止が再起動後も維持され、停止中は新規取得だけが止まり、
+    実行中は完了し、自動投入は続く。
+11. #684: 待機だけが行単位・一括で削除でき、削除後に同じ写真を再投入できる。
+12. #684: キューに失敗・完了・履歴が出ず、Discord の送信履歴カードと
+    「履歴を消去」がない。
+13. #684: 通知モーダルに3機能の最新5件の失敗と再試行が出る。
+14. ja / en の両カタログと `placeholders.rs` が更新され、i18n テストが通る。
 
 ---
 
@@ -78,12 +99,18 @@
 - 共通コントロールの拡大図（自動動作の3分割セグメント、一括処理の対象範囲2チップ＋
   実行ボタン、説明）。`mode = Off` でも一括処理が使えることを示す。
 - 連携・自動の3カード（自動圧縮・Discord・AI）の変更後。表示順は
-  「ヘッダー → 機能固有 → 自動動作 → 一括処理 → 状態・履歴」。
+  「ヘッダー → 機能固有 → 自動動作 → 一括処理 → キュー」。
 - 自動圧縮カードのマスタースイッチ。
 - 初回セットアップの3ページ（自動圧縮・Discord・AI）の変更後。
   一括処理は表示せず、自動動作だけを置く。
 - AI カードから「設定を開く」ボタンと案内文を削除した状態。
 - Discord の件数付き確認ダイアログ。
+- #684: ダッシュボードの3機能混合キュー（機能バッジ、待機・実行待ち・実行中、
+  待機行の削除、100件上限）。
+- #684: 機能詳細のキュー（件数、一時停止／再開、待機をすべて開始／削除、
+  待機行の削除、失敗・履歴なし）。
+- #684: 通知モーダルの「処理の失敗」（最新5件、再試行）。
+- #684: Discord の送信履歴カードと「履歴を消去」がないこと。
 - 判断項目と決定の一覧、移行の挙動変化、対象外。
 
 - [ ] **Step 2: docs PR を作る**
@@ -729,7 +756,7 @@ Expected: FAIL
 2. 機能固有の設定
 3. `auto_mode_segmented`
 4. `bulk_action_block`
-5. 状態・履歴・ジョブ
+5. キュー（待機・実行待ち・実行中。Task 9 で追加）
 
 - **自動圧縮**
   - ヘッダーに `integrations-auto-enabled` スイッチを置く。
@@ -749,14 +776,14 @@ Expected: FAIL
     `window.open_alert_dialog` で件数と非公開インスタンスの注意を表示し、OK で
     `confirm_discord_backlog` を呼ぶ。OK 時に `discord_consent_at` が `None` なら
     記録する。
-  - 送信履歴は最後に置く。
+  - 最後にキューを置く（Task 9）。送信履歴は置かない。
 - **AI タグ付け**
   - ヘッダーのマスタースイッチは現行のまま。
   - 機能固有: バックエンド。
   - 自動動作、一括処理（`integrations-ai-bulk`、ラベル
     `integrations.ai.process_untagged`）。一括処理は `ai_tagging_enabled` と
     プラグイン準備完了で有効。`mode = Off` でも有効。
-  - 状態・履歴: 待機・処理中・失敗、実行中ジョブ、「待機中のものを処理」。
+  - キュー: Task 9 で追加する。それまでの状態表示は残さない。
   - `integrations-ai-open-settings-not-ready` と
     `integrations-ai-open-settings-ready`、およびその案内文を削除する。
     未準備でも自動動作と一括処理ブロックを表示し、一括処理ボタンだけを無効にする。
@@ -840,9 +867,378 @@ git commit -m "feat(ui): show the unified automatic controls in first-run setup 
 
 ---
 
-## Phase 6: i18n・docs・検証・PR
+## Phase 6: #684 キューの設定と DB API
 
-### Task 6: 文言と仕上げ
+### Task 7: 機能別 pause 設定と共通キュー表示モデル
+
+**Files:**
+- Modify: `crates/core/src/settings.rs`
+- Create: `crates/core/src/queue.rs`
+- Modify: `crates/core/src/lib.rs`
+- Modify: `crates/core/src/db/compression.rs`
+- Modify: `crates/core/src/db/send.rs`
+- Modify: `crates/core/src/db/ai.rs`
+- Test: `crates/core/src/settings.rs`, `crates/core/src/db/tests.rs`
+
+**Interfaces:**
+- Consumes: なし。
+- Produces:
+  - `AppSettings { pub auto_compress_queue_paused: bool, pub discord_queue_paused: bool, pub ai_tagging_queue_paused: bool }`（既定 `false`）
+  - `pub enum QueueFeature { Compression, Discord, Tagging }`
+  - `pub enum QueueState { Waiting, Pending, Processing }`
+  - `pub struct QueueEntry { feature, job_id: String, photo_id: Option<i64>, photo_name: Option<String>, state, progress: f32, detail: String, created_at: String }`
+  - `pub struct QueueCounts { waiting: i64, pending: i64, processing: i64 }`
+  - `pub struct FailedJobEntry { feature, job_id: String, photo_id: Option<i64>, photo_name: Option<String>, error: String, created_at: String }`
+  - `Db::mixed_active_queue_entries(limit: i64) -> Result<Vec<QueueEntry>>`
+  - `Db::active_queue_entries(feature, limit) -> Result<Vec<QueueEntry>>`
+  - `Db::queue_counts(feature) -> Result<QueueCounts>`
+  - `Db::delete_waiting_entry(feature, job_id) -> Result<bool>`
+  - `Db::delete_all_waiting_entries(feature) -> Result<usize>`
+  - `Db::recent_failed_sends(limit) -> Result<Vec<FailedJobEntry>>` / `count_failed_sends()`
+  - `Db::recent_failed_tagging_jobs(plugin_id, limit) -> Result<Vec<FailedJobEntry>>` / `failed_tagging_job_count(plugin_id)`
+
+- [ ] **Step 1: 失敗するテストを書く**
+
+```rust
+#[test]
+fn queue_pause_settings_default_to_false_and_survive_roundtrip() {
+    let db = Db::open_in_memory().unwrap();
+    let mut settings = AppSettings::load(&db).unwrap();
+    assert!(!settings.auto_compress_queue_paused);
+    assert!(!settings.discord_queue_paused);
+    assert!(!settings.ai_tagging_queue_paused);
+    settings.auto_compress_queue_paused = true;
+    settings.discord_queue_paused = true;
+    settings.ai_tagging_queue_paused = true;
+    settings.save(&db).unwrap();
+    let loaded = AppSettings::load(&db).unwrap();
+    assert!(loaded.auto_compress_queue_paused);
+    assert!(loaded.discord_queue_paused);
+    assert!(loaded.ai_tagging_queue_paused);
+}
+
+#[test]
+fn mixed_queue_entries_are_oldest_first_and_exclude_terminal_rows() {
+    let db = Db::open_in_memory().unwrap();
+    // Seed one waiting compression job, one pending send, one processing tagging job,
+    // plus a failed and a completed row that must not appear.
+    let entries = db.mixed_active_queue_entries(100).unwrap();
+    assert_eq!(entries.len(), 3);
+    assert!(entries.windows(2).all(|w| w[0].created_at <= w[1].created_at));
+    assert!(entries.iter().all(|e| matches!(e.state, QueueState::Waiting | QueueState::Pending | QueueState::Processing)));
+}
+
+#[test]
+fn deleting_a_waiting_row_allows_the_same_photo_to_be_enqueued_again() {
+    let db = Db::open_in_memory().unwrap();
+    // Enqueue waiting compression job, delete it, enqueue again.
+    assert!(db.delete_waiting_entry(QueueFeature::Compression, &job_id).unwrap());
+    assert!(!db.delete_waiting_entry(QueueFeature::Compression, &job_id).unwrap());
+    assert!(db.enqueue_auto_job_with_status(photo_id, "keep", QueueStatus::Waiting).unwrap());
+}
+```
+
+- [ ] **Step 2: テストを実行して失敗を確認する**
+
+Run: `cargo test -p vrc-photon-core db::tests::mixed_queue_entries_are_oldest_first_and_exclude_terminal_rows`
+Expected: FAIL（型と API がない）
+
+- [ ] **Step 3: 型と DB API を実装する**
+
+`crates/core/src/queue.rs` に表示モデルを置く。DB のクエリは3テーブルを
+`status IN ('waiting','pending','processing')` で絞り、`photos.file_name` を
+LEFT JOIN する。混合キューは3つの一覧を Rust 側でマージし、`created_at` の
+古い順に並べて先頭 `limit` 件を返す。
+
+削除 API は `DELETE ... WHERE status = 'waiting'` のみ。実行待ち・実行中は
+変更しない。失敗通知用に、各テーブルの `status = 'failed'` を新しい順に返す
+クエリと件数クエリを追加する。
+
+`AppSettings` に `*_queue_paused` を追加し、`Default` と `#[serde(default)]` を
+設定する。既存 JSON の移行は不要（欠損は false）。
+
+- [ ] **Step 4: テストを実行して通す**
+
+Run: `cargo test -p vrc-photon-core settings::tests && cargo test -p vrc-photon-core db::tests`
+Expected: PASS
+
+- [ ] **Step 5: コミット**
+
+```bash
+git add crates/core
+git commit -m "feat(core): add queue pause settings and unified queue queries (#684)"
+```
+
+---
+
+## Phase 7: #684 機能別一時停止
+
+### Task 8: ワーカーの停止ゲート
+
+**Files:**
+- Modify: `crates/daemon/src/compression.rs`
+- Modify: `crates/daemon/src/discord.rs`
+- Modify: `crates/daemon/src/tagging.rs`
+- Modify: `crates/daemon/src/lifecycle.rs`
+- Test: `crates/daemon/src/tests.rs`, `crates/daemon/src/tagging.rs`
+
+**Interfaces:**
+- Consumes: `AppSettings::*_queue_paused`（Task 7）。
+- Produces:
+  - `compression::worker_loop(..., queue_paused: Arc<AtomicBool>)`
+  - `TaggingWorker::with_queue_paused(Arc<AtomicBool>)`
+  - `Daemon` の `compression_queue_paused` / `tagging_queue_paused` フィールド
+  - `refresh_compression_settings` で pause 設定を反映
+
+- [ ] **Step 1: 失敗する一時停止テストを書く**
+
+```rust
+#[test]
+fn paused_compression_worker_does_not_claim_pending_jobs() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    write_photo(&dir.path().join("photos/VRChat_2026-10-21_21-14-03.221_4x3.png"));
+    daemon.scan_root_photos(dir.path().join("photos")).unwrap();
+    save_daemon_settings(&daemon, |settings| settings.auto_compress_queue_paused = true);
+    daemon.refresh_compression_settings();
+    daemon.compress_pending().unwrap();
+    let counts = daemon.db.lock().unwrap();
+    assert_eq!(counts.count_jobs(QueueStatus::Processing).unwrap(), 0);
+    assert_eq!(counts.count_jobs(QueueStatus::Pending).unwrap(), 1);
+}
+
+#[test]
+fn paused_discord_worker_does_not_claim_pending_sends() { /* seed pending send, set paused, process_once, assert pending */ }
+
+#[test]
+fn paused_tagging_worker_does_not_claim_pending_jobs() { /* seed pending job, set paused, process_once, assert pending */ }
+```
+
+- [ ] **Step 2: テストを実行して失敗を確認する**
+
+Run: `cargo test -p vrc-photon-daemon paused_compression_worker_does_not_claim_pending_jobs`
+Expected: FAIL
+
+- [ ] **Step 3: ワーカーに停止ゲートを追加する**
+
+- 圧縮: `worker_loop` に `queue_paused` を追加し、`paused || queue_paused` を
+  バッチ取得前に見る。既存のグローバル停止は維持する。
+- Discord: `claim_ready_send` / `process_next_send` の前に
+  `settings.discord_queue_paused` を見る。停止中は `Ok(ProcessOutcome::Idle)` を返し、
+  `JobSignal` で再開を待つ。
+- AI: `TaggingWorker` に `queue_paused` を追加し、`process_once` と
+  `run_worker_loop` の取得前に見る。
+- `lifecycle.rs`:
+  - `compression_queue_paused` / `tagging_queue_paused` の `Arc<AtomicBool>` を持つ。
+  - `refresh_compression_settings` で設定値を store する。
+  - ワーカー起動時に `Arc` を渡す。
+  - `refresh_compression_settings` が pause 値の変化を検出したら、
+    `jobs.notify()` / `sends.notify()` / `tagging.notify()` を呼ぶ。
+- UI は設定を保存するだけでよい。デーモンの1秒ごとの設定再読込が
+  pause の変化を拾い、ワーカーを起こす。即時性が必要なら、保存後に
+  `WakeJobs` / `WakeSends` / `WakeTagging` を送ってもよい。
+
+- [ ] **Step 4: テストを実行して通す**
+
+Run: `cargo test -p vrc-photon-daemon`
+Expected: PASS
+
+- [ ] **Step 5: コミット**
+
+```bash
+git add crates/daemon
+git commit -m "feat(daemon): honor per-feature queue pause (#684)"
+```
+
+---
+
+## Phase 8: #684 キュー UI とダッシュボード
+
+### Task 9: 共通キュー部品・機能別キュー・混合キュー
+
+**Files:**
+- Create: `crates/ui/src/ui/queue.rs`
+- Modify: `crates/ui/src/ui/mod.rs`
+- Modify: `crates/ui/src/ui/integrations.rs`
+- Modify: `crates/ui/src/ui/discord.rs`
+- Modify: `crates/ui/src/ui/dashboard.rs`
+- Modify: `crates/ui/src/ui/compression.rs`
+- Modify: `crates/ui/src/app.rs`
+- Modify: `crates/ui/src/app/live.rs`
+- Modify: `crates/ui/src/app/compression.rs`
+- Modify: `crates/ui/src/app/discord.rs`
+- Modify: `crates/ui/src/app/ai.rs`
+- Test: 各ファイルの `#[cfg(test)] mod tests`
+
+**Interfaces:**
+- Consumes: `QueueEntry`, `QueueCounts`, `QueueFeature`（Task 7）、pause 設定（Task 7/8）。
+- Produces:
+  - `ui::queue::queue_section(app: &App, feature: QueueFeature, entries: &[QueueEntry], counts: QueueCounts, paused: bool, cx: &mut Context<App>) -> AnyElement`
+  - `ui::queue::queue_row(app: &App, entry: &QueueEntry, show_feature: bool, cx: &mut Context<App>) -> AnyElement`
+  - `App::set_queue_paused(feature, paused, cx)`
+  - `App::delete_waiting_entry(feature, job_id, cx)`
+  - `App::delete_all_waiting(feature, window, cx)`
+  - `App::release_waiting_queue(feature, window, cx)`
+  - `App::mixed_queue_entries` / `mixed_queue_counts`
+
+- [ ] **Step 1: 失敗する UI ロジックテストを書く**
+
+```rust
+#[test]
+fn mixed_queue_orders_features_by_created_at() {
+    let entries = vec![
+        entry(QueueFeature::Tagging, "3"),
+        entry(QueueFeature::Compression, "1"),
+        entry(QueueFeature::Discord, "2"),
+    ];
+    let sorted = sort_mixed_queue(entries);
+    assert_eq!(sorted[0].created_at, "1");
+    assert_eq!(sorted[2].created_at, "3");
+}
+
+#[test]
+fn waiting_rows_can_be_deleted_but_pending_and_processing_cannot() {
+    assert!(waiting_delete_available(QueueState::Waiting));
+    assert!(!waiting_delete_available(QueueState::Pending));
+    assert!(!waiting_delete_available(QueueState::Processing));
+}
+```
+
+- [ ] **Step 2: テストを実行して失敗を確認する**
+
+Run: `cargo test -p vrc-photon-ui mixed_queue_orders_features_by_created_at`
+Expected: FAIL
+
+- [ ] **Step 3: 共通キュー部品を作る**
+
+`crates/ui/src/ui/queue.rs` に次を実装する。
+
+- `queue_section`: 見出し「キュー」、件数、`一時停止／再開`、
+  `待機をすべて開始`、`待機をすべて削除`、行一覧。
+- `queue_row`: 機能バッジ（混合キューのみ）、状態バッジ、写真名、
+  進捗／ステージ、待機行の削除ボタン。
+- 行の高さ・仮想リストは既存の `QueueRow` を置き換え、100件上限で使う。
+- 状態ラベルは `QueueState` から翻訳キーへ変換する。
+- 削除ボタンは `QueueState::Waiting` のときだけ出す。
+- `待機をすべて削除` は `delete_all_waiting` を呼ぶ前に件数付き確認を出す。
+- `待機をすべて開始` は既存の release API を呼ぶ。圧縮は `keep_original=false`
+  のとき既存の置換確認を出す。
+
+- [ ] **Step 4: 3カードとダッシュボードを置き換える**
+
+- 自動圧縮: 一括処理の下に `queue_section(Compression, ...)`。
+- Discord: 送信履歴カードを削除し、一括処理の下に
+  `queue_section(Discord, ...)`。`send_history_card`、履歴行、メッセージリンク、
+  再送・取消、`履歴を消去` を削除する。テスト送信の結果解決に必要な
+  terminal 行の取得は残し、表示しない。
+- AI: 失敗件数・最新失敗行を削除し、一括処理の下に
+  `queue_section(Tagging, ...)`。待機・実行中・実行待ちだけを出す。
+- ダッシュボード: `queue_panel` を `mixed_queue_panel` に置き換える。
+  機能バッジ付きの行、合計件数、100件上限、空表示を出す。一時停止／再開は置かない。
+- 「未完了」統計カードは新しい `mixed_queue_counts` の合計にする。
+  既存の `active_job_count`（圧縮専用）はサイドバーなどで使い続ける。
+- 圧縮の `queue_panel` / failed row / retry-all は削除または通知側へ移す。
+- サイドバーの圧縮カードとリボンの圧縮操作は変更しない。
+
+- [ ] **Step 5: テストを実行して通す**
+
+Run: `cargo test -p vrc-photon-ui`
+Expected: PASS
+
+- [ ] **Step 6: コミット**
+
+```bash
+git add crates/ui
+git commit -m "feat(ui): unify the feature queues and the dashboard mixed queue (#684)"
+```
+
+---
+
+## Phase 9: #684 失敗通知
+
+### Task 10: 通知モーダルの失敗行と再試行
+
+**Files:**
+- Modify: `crates/ui/src/ui/notifications.rs`
+- Modify: `crates/ui/src/app/live.rs`
+- Modify: `crates/ui/src/app.rs`
+- Modify: `crates/ui/src/app/compression.rs`
+- Modify: `crates/ui/src/app/discord.rs`
+- Modify: `crates/ui/src/app/ai.rs`
+- Modify: `crates/core/src/db/send.rs`
+- Modify: `crates/core/src/db/ai.rs`
+- Test: `crates/ui/src/ui/notifications.rs`, `crates/ui/src/app.rs`,
+  `crates/core/src/db/tests.rs`
+
+**Interfaces:**
+- Consumes: `recent_failed_sends` / `recent_failed_tagging_jobs`（Task 7）、
+  `FailedJobEntry`。
+- Produces:
+  - `FailureNotice::{Discord, Tagging}`
+  - `NotificationSection::JobFailures`
+  - `NotificationSnapshot { compression_failed, discord_failed, tagging_failed, entries }`
+  - `App::retry_failed_send(id, cx)` / `App::retry_failed_tagging_job(id, cx)`
+  - `App::retry_all_failed_sends(cx)` / `App::retry_all_failed_tagging_jobs(cx)`
+  - `Db::retry_all_failed_sends()` / `Db::retry_all_failed_tagging_jobs(plugin_id)`
+
+- [ ] **Step 1: 失敗する通知テストを書く**
+
+```rust
+#[test]
+fn job_failures_section_appears_only_when_a_feature_has_failures() {
+    assert!(!notification_sections(false, false, 0, 0, 0, 0)
+        .contains(&NotificationSection::JobFailures));
+    assert!(notification_sections(false, false, 0, 0, 1, 0)
+        .contains(&NotificationSection::JobFailures));
+}
+
+#[test]
+fn failed_job_entries_are_newest_first_and_capped_at_five() {
+    let entries = vec![/* 7 entries */];
+    let shown = latest_failed_entries(entries, 5);
+    assert_eq!(shown.len(), 5);
+    assert!(shown.windows(2).all(|w| w[0].created_at >= w[1].created_at));
+}
+```
+
+- [ ] **Step 2: テストを実行して失敗を確認する**
+
+Run: `cargo test -p vrc-photon-ui job_failures_section_appears_only_when_a_feature_has_failures`
+Expected: FAIL
+
+- [ ] **Step 3: 通知モーダルを拡張する**
+
+- `FailureNotice` に Discord / Tagging を追加し、`failure_transition` の
+  比較対象を3機能＋daemon errors に広げる。
+- `NotificationSection::JobFailures` を追加し、いずれかの失敗件数が1以上なら出す。
+- 通知カードに機能バッジ、写真名、エラー概要、再試行ボタンを出す。
+  最新5件まで。機能ごとの件数と「すべて再試行」も出す。
+- 再試行後は該当行が消え、再試行で `pending` になった行がキューに出る。
+- 失敗行はキューに表示しない。
+- 既存の圧縮通知カードの再試行は統合する。
+
+- [ ] **Step 4: 再試行 API を追加する**
+
+Discord と AI に失敗全件の一括再試行を追加する。既存の個別再試行
+（`retry_send`, `retry_tagging_job`）を UI から呼ぶ。
+
+- [ ] **Step 5: テストを実行して通す**
+
+Run: `cargo test -p vrc-photon-ui && cargo test -p vrc-photon-core db::tests`
+Expected: PASS
+
+- [ ] **Step 6: コミット**
+
+```bash
+git add crates/ui crates/core/src/db
+git commit -m "feat(ui): notify failed queue jobs with retry (#684)"
+```
+
+---
+
+## Phase 10: i18n・docs・検証・PR
+
+### Task 11: 文言と仕上げ
 
 **Files:**
 - Modify: `crates/i18n/locales/ja.yml`
@@ -852,7 +1248,7 @@ git commit -m "feat(ui): show the unified automatic controls in first-run setup 
 - Test: workspace
 
 **Interfaces:**
-- Consumes: Task 4/5 の UI キー。
+- Consumes: Task 4/5/9/10 の UI キー。
 - Produces: なし。
 
 - [ ] **Step 1: 翻訳キーを追加する**
@@ -880,6 +1276,38 @@ integrations.discord.backlog.confirm.ok: 送信する / Send
 integrations.discord.backlog.empty: 送信対象の未送信写真はありません。
 integrations.discord.backlog.started: 未送信写真 %{count} 件を送信キューに追加しました。
 integrations.discord.backlog.error: 未送信写真を送信キューに追加できませんでした: %{error}
+queue.title: キュー / Queue
+queue.count.waiting: 待機 %{count}
+queue.count.pending: 実行待ち %{count}
+queue.count.processing: 実行中 %{count}
+queue.pause: 一時停止 / Pause
+queue.resume: 再開 / Resume
+queue.paused: 一時停止中 / Paused
+queue.start_waiting: 待機をすべて開始 / Start all waiting
+queue.delete_waiting_all: 待機をすべて削除 / Delete all waiting
+queue.delete_waiting_all.confirm.title: 待機中の行を削除 / Delete waiting rows
+queue.delete_waiting_all.confirm.body: 待機中の %{count} 件を削除します。実行待ち・実行中は削除されません。
+queue.delete_waiting_all.confirm.ok: 削除する / Delete
+queue.delete_waiting_all.done: 待機中の %{count} 件を削除しました。
+queue.delete_waiting_all.error: 待機中の行を削除できませんでした: %{error}
+queue.delete_waiting_row: 削除 / Delete
+queue.delete_waiting_row.done: 待機中の行を削除しました。
+queue.delete_waiting_row.error: 待機中の行を削除できませんでした: %{error}
+queue.start_waiting.done: %{count} 件を開始しました。
+queue.start_waiting.error: 待機中の行を開始できませんでした: %{error}
+queue.empty: キューは空です。 / The queue is empty.
+queue.limit: 先頭 %{count} 件を表示 / Showing the first %{count}
+queue.feature.compression: 自動圧縮 / Auto compression
+queue.feature.discord: Discord / Discord
+queue.feature.tagging: AI タグ付け / AI tagging
+queue.state.waiting: 待機 / Waiting
+queue.state.pending: 実行待ち / Pending
+queue.state.processing: 実行中 / Processing
+notifications.job_failures.title: 処理の失敗 / Job failures
+notifications.job_failures.count: %{count} 件 / %{count}
+notifications.job_failures.retry: 再試行 / Retry
+notifications.job_failures.retry_all: すべて再試行 / Retry all
+notifications.job_failures.error: 失敗した処理を再試行できませんでした: %{error}
 ```
 
 - `settings.startup.immediate` を ja / en から削除する。
@@ -888,11 +1316,23 @@ integrations.discord.backlog.error: 未送信写真を送信キューに追加�
   `integrations.discord.auto.consent.*` は残す。
 - `integrations.ai.auto` と `integrations.ai.open_settings` を削除する。
   `dashboard.ai.open_settings` はダッシュボード用なので残す。
+- `integrations.discord.history.*` と `compression.queue.*` のうち、履歴・失敗行・
+  再試行で未使用になったキーを削除する。`send.status.*` は通知・キューで
+  使うものを残す。
+- `integrations.ai.jobs.failed` / `integrations.ai.jobs.latest_failure` が
+  未使用になったら削除する。
 
 - [ ] **Step 2: `placeholders.rs` を更新する**
 
-`tr_args!` を使う `integrations.discord.backlog.confirm.body` /
-`.started` / `.error` を `CALL_SITES` に追加する。引数名は `count` と `error`。
+`tr_args!` を使う次のキーを `CALL_SITES` に追加する。引数名は `count` と `error`。
+
+- `integrations.discord.backlog.confirm.body` / `.started` / `.error`
+- `queue.count.waiting` / `.pending` / `.processing`
+- `queue.delete_waiting_all.confirm.body` / `.done` / `.error`
+- `queue.delete_waiting_row.error`
+- `queue.start_waiting.done` / `.error`
+- `queue.limit`
+- `notifications.job_failures.count` / `.error`
 
 - [ ] **Step 3: docs を実装に合わせる**
 
@@ -906,11 +1346,18 @@ integrations.discord.backlog.error: 未送信写真を送信キューに追加�
   - §2.10 の Discord 自動送信を共通化し、未送信の一括送信、件数付き確認、
     撮影時刻カットオフ廃止を書く。
   - §2.10 の3カードの表示順を「ヘッダー → 機能固有 → 自動動作 → 一括処理 →
-    状態・履歴」に統一する。
+    キュー」に統一する。
   - §2.12 の Discord に自動動作を追加し、自動圧縮はマスタースイッチ＋
     自動動作＋元画像保持に変更し、AI に自動動作だけを追加する。
     セットアップには一括処理を置かない。
-  - §10 参考に、#682 の設計・計画・モックのリンクを追加する。
+  - §2.8 ダッシュボードの圧縮専用キューを、3機能の混合キューに置き換える。
+    機能バッジ、待機・実行待ち・実行中、待機行の削除、100件上限を書く。
+  - §2.10 の3カードに「キュー」セクションを追加し、件数、一時停止／再開、
+    待機をすべて開始、待機をすべて削除、待機行の削除を書く。
+  - §2.10 の Discord 送信履歴の節を削除し、履歴を表示しないことを書く。
+  - §2.10 の AI カードから失敗件数・最新失敗・設定導線を削除する。
+  - §通知/モーダルに「処理の失敗」セクションを追加し、最新5件と再試行を書く。
+  - §10 参考に、#682 / #684 の設計・計画・モックのリンクを追加する。
 - `docs/features.md`
   - §3.3 自動圧縮: `auto_compress_enabled`（マスタースイッチ）と
     `auto_compress.mode` の3値、`scope` の2値、初回スキャン除外、
@@ -925,7 +1372,16 @@ integrations.discord.backlog.error: 未送信写真を送信キューに追加�
     設定画面へのボタン・案内を削除する。
   - §9 の設定一覧（320行付近）から `auto_compress_backlog` を外し、
     「自動圧縮、新規写真の即時圧縮、…」を「自動圧縮（有効化・自動動作・
-    一括処理）、自動圧縮後の元画像保持、…」に直す。
+    一括処理・キュー）、自動圧縮後の元画像保持、…」に直す。
+  - §3.5 キュー: 待機・実行待ち・実行中だけを表示し、失敗・完了・履歴を
+    出さないことを書く。一時停止の保存、実行中の完了、自動投入の継続、
+    待機の行削除・一括削除、件数確認を書く。
+  - §10 エラー表示: 失敗通知の最新5件と再試行、Discord/AI の失敗も通知に
+    集約することを書く。
+  - §13 Discord: 送信履歴カードと「履歴を消去」を削除し、待機の一括送信を
+    キューの「待機をすべて開始」に移す。terminal 行は DB に残すが表示しない。
+  - §14 AI: 連携カードの失敗件数・最新失敗・設定導線を削除し、キューは
+    待機・実行待ち・実行中だけにする。
 - `docs/data-model.md`
   - `app_settings` のキー一覧に `auto_compress_enabled` を追加し、
     `auto_compress` / `discord_auto` / `ai_tagging_auto` をオブジェクトにする。
@@ -933,6 +1389,11 @@ integrations.discord.backlog.error: 未送信写真を送信キューに追加�
     `auto_compress = Immediate / NewOnly`、`discord_auto = Off / NewOnly`、
     `ai_tagging_auto = Off / NewOnly` にする。
   - `discord_auto_since` を削除し、`activated_at` の説明を追加する。
+  - `auto_compress_queue_paused` / `discord_queue_paused` /
+    `ai_tagging_queue_paused` を追加し、既定 `false` を書く。
+  - キューは待機・実行待ち・実行中だけを表示し、terminal 行は通知・テスト送信の
+    結果解決のために残すが履歴 UI は作らないことを書く。
+  - 待機の削除は行削除であり、`pending` / `processing` は削除しないことを書く。
 - `docs/testing.md`
   - `scan_root` の新規写真が `auto_compress_backlog=false` でも自動圧縮に載る、の
     記述を、`scope` に関係なく `ScanRoot` の新規写真は自動圧縮に載る、に直す。
@@ -940,6 +1401,10 @@ integrations.discord.backlog.error: 未送信写真を送信キューに追加�
     手動確認項目に追加する。
   - マスタースイッチがオンで自動動作が `Off` のとき、一括処理が使えることを
     手動確認項目に追加する。
+  - 混合キューの3機能表示、100件上限、並び順を確認する。
+  - 一時停止の保存・再起動後の維持・実行中の完了・自動投入の継続を確認する。
+  - 待機の行削除・一括削除と、実行待ち・実行中が削除できないことを確認する。
+  - Discord の履歴カードと「履歴を消去」がないこと、失敗が通知に出ることを確認する。
 
 - [ ] **Step 4: ローカル検証**
 
@@ -954,19 +1419,26 @@ cargo test --workspace
 `--demo` で 1280×820 と 1080×700 を起動し、次を確認する。
 
 - 連携・自動の3カードで「ヘッダー → 機能固有 → 自動動作 → 一括処理 →
-  状態・履歴」の順序が同じ。
+  キュー」の順序が同じ。
 - 自動圧縮カードにマスタースイッチがあり、一括処理は `mode = Off` でも使える。
 - マスタースイッチをオフにすると、一括処理が無効になる。
 - AI カードに「設定を開く」ボタンと案内文がない。
 - Discord の一括送信ボタンと件数確認ダイアログ。
 - 初回セットアップの3ページに一括処理がなく、自動動作だけがあり、
   600×561 に収まる。
+- ダッシュボードが3機能の混合キューになり、機能バッジ・状態・写真名・
+  待機行の削除が出る。圧縮専用キューがない。
+- 機能詳細のキューに件数、一時停止／再開、待機をすべて開始／削除、
+  待機行の削除がある。失敗・履歴行がない。
+- 一時停止中は新規行が実行中にならず、実行中の行は完了する。
+- Discord の送信履歴カードと「履歴を消去」がない。
+- 通知モーダルに3機能の失敗行（最新5件）と再試行がある。
 
 - [ ] **Step 6: 実装 PR を作る**
 
-`feat: unify the automatic behavior settings across three features (#682)`。
-本文に `Closes #682` を書く。ラベルは `enhancement`。CI green を確認して merge し、
-`main` を pull する。
+`feat: unify the automatic behavior and queue views across three features (#682, #684)`。
+本文に `Closes #682` と `Closes #684` を書く。ラベルは `enhancement`。
+CI green を確認して merge し、`main` を pull する。
 
 ---
 
@@ -983,5 +1455,12 @@ cargo test --workspace
 - [ ] AI の `Immediate` は未準備で積まず、`Waiting` は未準備でも積む。
 - [ ] AI カードに「設定を開く」ボタンと案内文がない。
 - [ ] 3カードの表示順が統一され、3セットアップページには一括処理がない。
+- [ ] #684: ダッシュボードが3機能の混合キューになり、圧縮専用キューがない。
+- [ ] #684: 機能詳細のキューが待機・実行待ち・実行中だけを表示する。
+- [ ] #684: 機能別の一時停止が設定に保存され、再起動後も維持される。
+- [ ] #684: 停止中は新規取得が止まり、実行中は完了し、自動投入は続く。
+- [ ] #684: 待機だけを行単位・一括で削除でき、削除後に再投入できる。
+- [ ] #684: Discord の送信履歴カードと「履歴を消去」がない。
+- [ ] #684: 失敗行がキューに出ず、通知モーダルに最新5件と再試行が出る。
 - [ ] i18n のカタログ・placeholder テストを含む全テストが通る。
-- [ ] 実装 PR が merge され、#682 が閉じる。
+- [ ] 実装 PR が merge され、#682 と #684 が閉じる。

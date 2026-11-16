@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>VRC PhotoN — 自動動作設定の統一モック (#682)</title>
+<title>VRC PhotoN — 自動動作とキューの統一モック (#682 / #684)</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%230d1420'/%3E%3Ccircle cx='16' cy='16' r='7' fill='none' stroke='%238bcbff' stroke-width='2'/%3E%3C/svg%3E">
 <style>
   :root {
@@ -172,7 +172,49 @@
   .badge.amber { color: var(--amber); background: rgba(244,200,120,.07); border: 1px solid rgba(244,200,120,.18); }
   .badge.rose { color: var(--rose); background: rgba(255,148,168,.07); border: 1px solid rgba(255,148,168,.18); }
   .badge.accent { color: var(--accent); background: rgba(139,203,255,.07); border: 1px solid rgba(139,203,255,.18); }
+  .badge.blue { color: #8fb7ff; background: rgba(90,169,255,.07); border: 1px solid rgba(90,169,255,.18); }
   .format-row { display: flex; gap: 5px; flex-wrap: wrap; }
+
+  /* Unified queue */
+  .queue-section { padding: 13px 14px; border: 1px solid var(--line-soft); border-radius: 14px; background: rgba(255,255,255,.018); }
+  .queue-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .queue-head .title { color: var(--text); font-size: 12px; font-weight: 560; }
+  .queue-head .btn { margin-left: auto; }
+  .queue-counts { display: flex; gap: 4px; flex-wrap: wrap; }
+  .queue-actions { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 9px; }
+  .queue-list { display: flex; flex-direction: column; gap: 3px; margin-top: 9px; }
+  .queue-row { display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 6px 8px; border-radius: 8px; background: rgba(255,255,255,.025); font-size: 10px; }
+  .queue-row .name { flex: 1; min-width: 0; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .queue-row .meta { color: var(--faint); font-size: 9px; white-space: nowrap; }
+  .queue-row .delete { margin-left: auto; }
+  .queue-progress { width: 90px; height: 3px; border-radius: 999px; background: rgba(255,255,255,.08); overflow: hidden; flex: none; }
+  .queue-progress span { display: block; height: 100%; background: var(--accent); }
+  .queue-empty { padding: 14px 4px; color: var(--dim); font-size: 10.5px; }
+  .queue-limit { margin-top: 7px; color: var(--faint); font-size: 9px; }
+
+  /* Dashboard mixed queue */
+  .dash-shell { border: 1px solid var(--line); border-radius: var(--r-card); background: #070b12; padding: 16px; box-shadow: 0 24px 80px rgba(0,0,0,.35); }
+  .dash-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 12px; }
+  .dash-stat { padding: 10px 12px; border: 1px solid var(--line-soft); border-radius: 12px; background: rgba(255,255,255,.018); }
+  .dash-stat .label { color: var(--dim); font-size: 9px; }
+  .dash-stat .value { margin-top: 3px; color: var(--text); font-size: 18px; font-weight: 600; }
+  .dash-main { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 12px; align-items: start; }
+  .dash-queue { padding: 14px; border: 1px solid var(--line); border-radius: 17px; background: linear-gradient(180deg, #101827, #0a101a); }
+  .dash-queue-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-bottom: 10px; border-bottom: 1px solid var(--line-soft); }
+  .dash-queue-head .title { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; }
+  .dash-side { display: flex; flex-direction: column; gap: 10px; }
+  .dash-card { padding: 12px; border: 1px solid var(--line); border-radius: 15px; background: rgba(13,20,32,.74); }
+  .dash-card .title { font-size: 11px; font-weight: 560; }
+  .dash-card .line { display: flex; justify-content: space-between; gap: 10px; margin-top: 6px; color: var(--dim); font-size: 9.5px; }
+  .dash-card .line b { color: var(--text); font-weight: 550; }
+
+  /* Failure notification */
+  .failure-row { display: flex; align-items: flex-start; gap: 7px; padding: 8px; border-radius: 8px; background: rgba(255,148,168,.035); border: 1px solid rgba(255,148,168,.1); }
+  .failure-row + .failure-row { margin-top: 5px; }
+  .failure-row .name { flex: 1; min-width: 0; color: var(--text); font-size: 10px; }
+  .failure-row .error { color: var(--dim); font-size: 9px; margin-top: 2px; }
+  .failure-row .retry { flex: none; }
+  .failure-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
   .format-chip { padding: 3px 9px; border-radius: 8px; background: rgba(255,255,255,.035); color: var(--muted); font-size: 9.5px; }
   .format-chip.active { background: var(--accent-soft); color: var(--accent); }
 
@@ -206,7 +248,7 @@
   .preview-tag { padding: 2px 6px; border-radius: 999px; border: 1px solid rgba(126,226,184,.22); background: rgba(126,226,184,.06); color: var(--green); font-size: 8.5px; }
 
   /* Dialog */
-  .dialog-stage { display: flex; justify-content: center; padding: 8px 0 4px; }
+  .dialog-stage { display: flex; justify-content: center; gap: 20px; flex-wrap: wrap; padding: 8px 0 4px; }
   .dialog { width: 440px; border: 1px solid var(--line-strong); border-radius: 18px; background: linear-gradient(180deg, #111a28, #0a101a); box-shadow: 0 30px 90px rgba(0,0,0,.5); overflow: hidden; }
   .dialog-head { padding: 15px 18px 6px; }
   .dialog-head h3 { margin: 0; font-size: 14px; font-weight: 600; }
@@ -247,19 +289,21 @@
 
   <header class="masthead">
     <div>
-      <div class="eyebrow"><span class="issue-chip">#682</span><span>settings unification</span></div>
-      <h1>自動動作の設定を3機能で統一する</h1>
+      <div class="eyebrow"><span class="issue-chip">#682</span><span class="issue-chip">#684</span><span>settings &amp; queues</span></div>
+      <h1>自動動作とキュー表示を3機能で統一する</h1>
       <p class="lede">
         自動圧縮・Discord 自動送信・AI 自動タグ付けの<b>自動動作</b>を3分割セグメントに、
         <b>一括処理</b>を対象範囲2チップ＋実行ボタンに統一する。
-        一括処理は自動動作が「しない」でも使え、機能のマスタースイッチがオフのときだけ無効になる。
+        <b>キュー</b>は待機・実行待ち・実行中だけを同じ構成で表示し、履歴は持たない。
+        機能ごとの一時停止と、待機行の削除を追加する。
       </p>
     </div>
     <div class="meta-card">
-      <div class="meta-row"><span>対象</span><b>連携・自動 / 初回セットアップ</b></div>
+      <div class="meta-row"><span>対象</span><b>連携・自動 / ダッシュボード / 通知</b></div>
       <div class="meta-row"><span>自動動作</span><b>しない / 即時 / 待機</b></div>
-      <div class="meta-row"><span>一括処理</span><b>対象範囲 ＋ 実行ボタン</b></div>
-      <div class="meta-row"><span>表示順</span><b>ヘッダー → 機能固有 → 自動動作 → 一括処理 → 状態</b></div>
+      <div class="meta-row"><span>キュー</span><b>待機 / 実行待ち / 実行中</b></div>
+      <div class="meta-row"><span>履歴・失敗</span><b>履歴なし / 失敗は通知</b></div>
+      <div class="meta-row"><span>表示順</span><b>ヘッダー → 機能固有 → 自動動作 → 一括処理 → キュー</b></div>
     </div>
   </header>
 
@@ -287,6 +331,30 @@
       <h3>自動動作はセグメント、一括処理はラベルごと統一</h3>
       <p>「自動動作」は3分割セグメント。「対象範囲」ではなく「一括処理」と表示し、対象範囲とボタンを同じブロックに置く。</p>
       <span class="ok">表示順も統一</span>
+    </div>
+    <div class="decision">
+      <div class="q">Q14 / Q15</div>
+      <h3>一時停止は設定に保存</h3>
+      <p>再起動後も停止を維持する。停止中は新しいジョブを取得しないだけで、実行中は完了し、自動投入は続く。</p>
+      <span class="ok">開始だけ止める</span>
+    </div>
+    <div class="decision">
+      <div class="q">Q16 / Q19</div>
+      <h3>キューは処理中だけ、失敗は通知</h3>
+      <p>待機・実行待ち・実行中だけを表示する。失敗・完了・履歴は出さず、失敗は通知モーダルで最新5件と再試行を出す。</p>
+      <span class="ok">履歴なし</span>
+    </div>
+    <div class="decision">
+      <div class="q">Q17</div>
+      <h3>ダッシュボードは混合キュー</h3>
+      <p>3機能を混ぜた一覧に置き換える。一時停止／再開はダッシュボードには置かず、各機能詳細で操作する。</p>
+      <span class="ok">表示専用</span>
+    </div>
+    <div class="decision">
+      <div class="q">Q18</div>
+      <h3>待機だけ削除できる</h3>
+      <p>行単位と一括削除を用意する。実行待ち・実行中は削除しない。一括削除は件数付き確認を出す。</p>
+      <span class="ok">待機のみ</span>
     </div>
   </div>
 
@@ -346,7 +414,7 @@
   <div class="section-label"><h2>2. 連携・自動</h2><span>3カードの表示順を統一</span></div>
   <p class="section-note">
     すべてのカードで「ヘッダー＋マスタースイッチ → 機能固有の設定 → 自動動作 →
-    一括処理 → 状態・履歴」の順に並べる。タブはモック用の切り替えで、実画面では
+    一括処理 → キュー」の順に並べる。タブはモック用の切り替えで、実画面では
     左の一覧選択で切り替わる。
   </p>
 
@@ -429,6 +497,27 @@
                   <div class="control-hint">一括処理は、機能を有効にした後に追加された写真だけを対象にします。</div>
                   <button class="btn full">未圧縮画像を一括圧縮</button>
                 </div>
+                <div class="divider"></div>
+                <div class="queue-section">
+                  <div class="queue-head">
+                    <div class="title">キュー</div>
+                    <div class="queue-counts">
+                      <span class="badge amber">待機 2</span>
+                      <span class="badge accent">実行待ち 1</span>
+                      <span class="badge green">実行中 1</span>
+                    </div>
+                    <button class="btn small">一時停止</button>
+                  </div>
+                  <div class="queue-actions">
+                    <button class="btn small primary">待機をすべて開始</button>
+                    <button class="btn small">待機をすべて削除</button>
+                  </div>
+                  <div class="queue-list">
+                    <div class="queue-row"><span class="badge amber">待機</span><span class="name">vrc-photon-1042.png</span><span class="meta">自動圧縮</span><button class="btn small delete">削除</button></div>
+                    <div class="queue-row"><span class="badge accent">実行待ち</span><span class="name">vrc-photon-1041.png</span><span class="meta">自動圧縮</span></div>
+                    <div class="queue-row"><span class="badge green">実行中</span><span class="name">vrc-photon-1040.png</span><div class="queue-progress"><span style="width:62%"></span></div><span class="meta">62%</span></div>
+                  </div>
+                </div>
               </div>
             </div>
           </section>
@@ -437,7 +526,7 @@
           <section class="detail-panel" data-panel="discord">
             <div class="card">
               <div class="card-head">
-                <div class="title">Discord 連携<div class="subtitle">自動送信と送信履歴を管理します。</div></div>
+                <div class="title">Discord 連携<div class="subtitle">自動送信とキューを管理します。</div></div>
                 <span class="switch on"></span>
               </div>
               <div class="card-body">
@@ -478,9 +567,26 @@
                   <button class="btn full">未送信を一括送信</button>
                 </div>
                 <div class="divider"></div>
-                <div class="card-section-title small">送信履歴</div>
-                <div class="queue-row"><span class="badge amber">待機</span><span class="name">vrc-photon-1042.png</span><span class="meta">VRC PhotoN</span></div>
-                <div class="queue-row"><span class="badge green">送信済み</span><span class="name">vrc-photon-1041.png</span><span class="meta">VRC PhotoN</span></div>
+                <div class="queue-section">
+                  <div class="queue-head">
+                    <div class="title">キュー</div>
+                    <div class="queue-counts">
+                      <span class="badge amber">待機 1</span>
+                      <span class="badge accent">実行待ち 1</span>
+                      <span class="badge green">実行中 1</span>
+                    </div>
+                    <button class="btn small">一時停止</button>
+                  </div>
+                  <div class="queue-actions">
+                    <button class="btn small primary">待機をすべて開始</button>
+                    <button class="btn small">待機をすべて削除</button>
+                  </div>
+                  <div class="queue-list">
+                    <div class="queue-row"><span class="badge amber">待機</span><span class="name">vrc-photon-1042.png</span><span class="meta">VRC PhotoN</span><button class="btn small delete">削除</button></div>
+                    <div class="queue-row"><span class="badge accent">実行待ち</span><span class="name">vrc-photon-1041.png</span><span class="meta">VRC PhotoN</span></div>
+                    <div class="queue-row"><span class="badge green">実行中</span><span class="name">vrc-photon-1040.png</span><div class="queue-progress"><span style="width:38%"></span></div><span class="meta">38%</span></div>
+                  </div>
+                </div>
               </div>
             </div>
           </section>
@@ -521,13 +627,26 @@
                   <button class="btn full">未タグ付けのものを一括処理</button>
                 </div>
                 <div class="divider"></div>
-                <div class="stats">
-                  <span class="stat">待機 <b>3</b></span>
-                  <span class="stat">処理中 <b>1</b></span>
-                  <span class="stat">失敗 <b>0</b></span>
+                <div class="queue-section">
+                  <div class="queue-head">
+                    <div class="title">キュー</div>
+                    <div class="queue-counts">
+                      <span class="badge amber">待機 3</span>
+                      <span class="badge accent">実行待ち 1</span>
+                      <span class="badge green">実行中 1</span>
+                    </div>
+                    <button class="btn small">一時停止</button>
+                  </div>
+                  <div class="queue-actions">
+                    <button class="btn small primary">待機をすべて開始</button>
+                    <button class="btn small">待機をすべて削除</button>
+                  </div>
+                  <div class="queue-list">
+                    <div class="queue-row"><span class="badge amber">待機</span><span class="name">vrc-photon-1039.png</span><span class="meta">AI タグ付け</span><button class="btn small delete">削除</button></div>
+                    <div class="queue-row"><span class="badge accent">実行待ち</span><span class="name">vrc-photon-1038.png</span><span class="meta">AI タグ付け</span></div>
+                    <div class="queue-row"><span class="badge green">実行中</span><span class="name">vrc-photon-1037.png</span><div class="queue-progress"><span style="width:71%"></span></div><span class="meta">雰囲気タグを生成中</span></div>
+                  </div>
                 </div>
-                <div class="queue-row"><span class="badge accent">処理中</span><span class="name">vrc-photon-1038.png</span><span class="meta">雰囲気タグを生成中</span></div>
-                <button class="btn small">待機中のものを処理</button>
               </div>
             </div>
           </section>
@@ -536,7 +655,49 @@
     </main>
   </div>
 
-  <div class="section-label"><h2>3. 初回セットアップ</h2><span>自動動作だけ / 一括処理は表示しない</span></div>
+  <div class="section-label"><h2>3. ダッシュボード</h2><span>3機能の混合キュー / 一時停止は置かない</span></div>
+  <p class="section-note">
+    現行の圧縮専用キューパネルを、3機能を混合したキューに置き換える。
+    待機・実行待ち・実行中だけを出し、失敗・完了・履歴は出さない。
+    待機行はここからも削除できる。一時停止／再開は各機能詳細にだけ置く。
+  </p>
+
+  <div class="dash-shell">
+    <div class="dash-stats">
+      <div class="dash-stat"><div class="label">写真</div><div class="value">12,480</div></div>
+      <div class="dash-stat"><div class="label">未完了</div><div class="value">7</div></div>
+      <div class="dash-stat"><div class="label">ライブラリ</div><div class="value">84.2 GB</div></div>
+      <div class="dash-stat"><div class="label">デーモン</div><div class="value" style="font-size:14px">稼働中</div></div>
+    </div>
+    <div class="dash-main">
+      <div class="dash-queue">
+        <div class="dash-queue-head">
+          <div class="title">キュー</div>
+          <div class="queue-counts">
+            <span class="badge amber">待機 4</span>
+            <span class="badge accent">実行待ち 2</span>
+            <span class="badge green">実行中 1</span>
+          </div>
+        </div>
+        <div class="queue-list">
+          <div class="queue-row"><span class="badge accent">自動圧縮</span><span class="badge amber">待機</span><span class="name">vrc-photon-1042.png</span><span class="meta">自動圧縮</span><button class="btn small delete">削除</button></div>
+          <div class="queue-row"><span class="badge blue">Discord</span><span class="badge accent">実行待ち</span><span class="name">vrc-photon-1041.png</span><span class="meta">VRC PhotoN</span></div>
+          <div class="queue-row"><span class="badge green">AI タグ付け</span><span class="badge green">実行中</span><span class="name">vrc-photon-1038.png</span><div class="queue-progress"><span style="width:71%"></span></div><span class="meta">雰囲気タグを生成中</span></div>
+          <div class="queue-row"><span class="badge accent">自動圧縮</span><span class="badge amber">待機</span><span class="name">vrc-photon-1037.png</span><span class="meta">自動圧縮</span><button class="btn small delete">削除</button></div>
+          <div class="queue-row"><span class="badge blue">Discord</span><span class="badge amber">待機</span><span class="name">vrc-photon-1036.png</span><span class="meta">VRC PhotoN</span><button class="btn small delete">削除</button></div>
+          <div class="queue-row"><span class="badge green">AI タグ付け</span><span class="badge accent">実行待ち</span><span class="name">vrc-photon-1035.png</span><span class="meta">AI タグ付け</span></div>
+        </div>
+        <div class="queue-limit">先頭 100 件を表示 / 合計 7 件</div>
+      </div>
+      <div class="dash-side">
+        <div class="dash-card"><div class="title">デーモン</div><div class="line"><span>状態</span><b>稼働中</b></div><div class="line"><span>最終同期</span><b>12 秒前</b></div><div class="line"><span>監視</span><b>有効</b></div></div>
+        <div class="dash-card"><div class="title">セッション</div><div class="line"><span>ワールド</span><b>The Black Cat</b></div><div class="line"><span>同接</span><b>8 人</b></div></div>
+        <div class="dash-card"><div class="title">モニター</div><div class="line"><span>写真フォルダ</span><b>D:\VRChat</b></div><div class="line"><span>ログ</span><b>監視中</b></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-label"><h2>4. 初回セットアップ</h2><span>自動動作だけ / 一括処理は表示しない</span></div>
   <p class="section-note">
     セットアップでは自動動作のセグメントだけを置く。対象範囲と一括処理ボタンは
     「連携・自動」の詳細に集約し、初回の画面を複雑にしない。
@@ -629,11 +790,12 @@
     </div>
   </div>
 
-  <div class="section-label"><h2>4. Discord の一括送信確認</h2><span>対象件数と非公開インスタンスの注意</span></div>
+  <div class="section-label"><h2>5. 確認ダイアログ</h2><span>一括送信 / 待機の一括削除</span></div>
   <p class="section-note">
-    「未送信を一括送信」を押したときだけ出す。0件ならダイアログを出さず、
-    「送信対象の未送信写真はありません。」をトーストで出す。OK で既存の同意が
-    未記録なら記録し、pending で積む。自動動作が「しない」でも実行できる。
+    「未送信を一括送信」は対象件数を出す。0件ならダイアログを出さず、
+    「送信対象の未送信写真はありません。」をトーストで出す。
+    「待機をすべて削除」は待機だけを対象にし、件数付きで確認する。
+    実行待ち・実行中は削除されない。
   </p>
 
   <div class="dialog-stage">
@@ -649,9 +811,42 @@
         <button class="btn small primary">送信する</button>
       </div>
     </div>
+    <div class="dialog">
+      <div class="dialog-head"><h3>待機中の行を削除</h3></div>
+      <div class="dialog-body">
+        待機中の <b>4 件</b> を削除します。
+        実行待ち・実行中は削除されません。
+        <div class="dialog-note">削除した待機行は元に戻せません。</div>
+      </div>
+      <div class="dialog-actions">
+        <button class="btn small">キャンセル</button>
+        <button class="btn small primary">削除する</button>
+      </div>
+    </div>
   </div>
 
-  <div class="section-label"><h2>5. 判断と挙動の確認</h2><span>実装前に合意する範囲</span></div>
+  <div class="section-label"><h2>6. 失敗通知</h2><span>履歴の代わりに最新5件＋再試行</span></div>
+  <p class="section-note">
+    失敗行はキューに残さない。通知ベルを開くと「処理の失敗」セクションが出る。
+    機能バッジ、写真名、エラー概要、再試行を最新5件まで表示する。
+    機能ごとの件数と「すべて再試行」も出す。
+  </p>
+
+  <div class="dialog-stage">
+    <div class="dialog" style="width:520px">
+      <div class="dialog-head"><h3>処理の失敗</h3></div>
+      <div class="dialog-body">
+        <div class="failure-row"><span class="badge accent">自動圧縮</span><div style="flex:1;min-width:0"><div class="name">vrc-photon-1042.png</div><div class="error">圧縮に失敗しました（出力ファイルを書き込めません）</div></div><button class="btn small retry">再試行</button></div>
+        <div class="failure-row"><span class="badge blue">Discord</span><div style="flex:1;min-width:0"><div class="name">vrc-photon-1041.png</div><div class="error">Webhook が 401 を返しました</div></div><button class="btn small retry">再試行</button></div>
+        <div class="failure-row"><span class="badge green">AI タグ付け</span><div style="flex:1;min-width:0"><div class="name">vrc-photon-1038.png</div><div class="error">sidecar がタイムアウトしました</div></div><button class="btn small retry">再試行</button></div>
+        <div class="failure-row"><span class="badge accent">自動圧縮</span><div style="flex:1;min-width:0"><div class="name">vrc-photon-1035.png</div><div class="error">画像を読み込めません</div></div><button class="btn small retry">再試行</button></div>
+        <div class="failure-row"><span class="badge blue">Discord</span><div style="flex:1;min-width:0"><div class="name">vrc-photon-1034.png</div><div class="error">アップロードが 413 で拒否されました</div></div><button class="btn small retry">再試行</button></div>
+        <div class="failure-actions"><button class="btn small">すべて再試行</button></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-label"><h2>7. 判断と挙動の確認</h2><span>実装前に合意する範囲</span></div>
   <table class="review-table">
     <thead><tr><th>項目</th><th>決定</th><th>補足</th></tr></thead>
     <tbody>
@@ -659,15 +854,21 @@
       <tr><td>マスタースイッチ</td><td>機能ごとに残す</td><td>自動圧縮は `auto_compress_enabled`、Discord は `discord_enabled`、AI は `ai_tagging_enabled`。</td></tr>
       <tr><td>一括処理</td><td>対象範囲 ＋ 実行ボタン</td><td>「対象範囲」ではなく「一括処理」と表示し、ボタンと同じブロックに置く。</td></tr>
       <tr><td>「しない」の一括処理</td><td>有効</td><td>マスタースイッチがオンの間は使える。無効になるのはマスタースイッチがオフのときだけ。</td></tr>
-      <tr><td>表示順</td><td>ヘッダー → 機能固有 → 自動動作 → 一括処理 → 状態</td><td>3カードで同じ順にする。</td></tr>
+      <tr><td>表示順</td><td>ヘッダー → 機能固有 → 自動動作 → 一括処理 → キュー</td><td>3カードで同じ順にする。</td></tr>
       <tr><td>セットアップ</td><td>自動動作だけ</td><td>対象範囲・一括処理は表示しない。圧縮と Discord のマスタースイッチは残す。</td></tr>
       <tr><td>AI の設定導線</td><td>削除</td><td>AI カードの「設定を開く」ボタンと案内文を置かない。</td></tr>
       <tr><td>AI 即時</td><td>準備完了時のみ積む</td><td>未準備では積まない。待機は未準備でも waiting で積む。</td></tr>
       <tr><td>Discord の対象</td><td>未送信の全写真</td><td>送信成功なし・アクティブ送信なし・削除中でない。失敗・取消は含む。</td></tr>
+      <tr><td>キューの内容</td><td>待機・実行待ち・実行中だけ</td><td>失敗・完了・履歴は表示しない。失敗は通知へ。</td></tr>
+      <tr><td>ダッシュボード</td><td>3機能の混合キュー</td><td>圧縮専用パネルを置き換える。一時停止／再開は置かない。</td></tr>
+      <tr><td>一時停止</td><td>設定に保存 / 再起動後も維持</td><td>停止中は新規取得を止める。実行中は完了し、自動投入は続く。</td></tr>
+      <tr><td>待機の削除</td><td>行単位＋一括</td><td>待機だけ。実行待ち・実行中は削除しない。一括は件数確認。</td></tr>
+      <tr><td>履歴</td><td>表示しない</td><td>Discord の送信履歴カードと「履歴を消去」を廃止する。</td></tr>
+      <tr><td>失敗通知</td><td>最新5件＋再試行</td><td>機能バッジ・写真名・エラー・再試行。件数と一括再試行も出す。</td></tr>
     </tbody>
   </table>
 
-  <div class="section-label"><h2>6. 移行と挙動変化</h2><span>リリースノートに明記する</span></div>
+  <div class="section-label"><h2>8. 移行と挙動変化</h2><span>リリースノートに明記する</span></div>
   <table class="review-table">
     <thead><tr><th>旧設定</th><th>新設定</th><th>利用者に見える変化</th></tr></thead>
     <tbody>
@@ -676,6 +877,8 @@
       <tr><td>`auto_compress_backlog`</td><td>`auto_compress.scope`</td><td>true→既存も含める / false→新規のみ。初回スキャンでは自動投入しない。</td></tr>
       <tr><td>`discord_auto_mode`</td><td>`discord_auto.mode`</td><td>そのまま。`discord_auto_since` は `activated_at` に移り、自動投入の撮影時刻判定には使わない。</td></tr>
       <tr><td>`ai_tagging_auto` (bool)</td><td>`ai_tagging_auto.mode`</td><td>true→即時 / false→しない。待機が新設され、未準備でも waiting で積める。</td></tr>
+      <tr><td>—</td><td>`auto_compress_queue_paused` / `discord_queue_paused` / `ai_tagging_queue_paused`</td><td>新規。既定 false。再起動後も停止状態を維持する。</td></tr>
+      <tr><td>Discord 送信履歴</td><td>なし</td><td>履歴カードと「履歴を消去」を削除する。terminal 行は通知とテスト送信の結果解決にだけ使う。</td></tr>
     </tbody>
   </table>
 
@@ -684,10 +887,14 @@
     <ul>
       <li>マスタースイッチがオンのまま自動動作を「しない」にしても、一括処理が使えるか。</li>
       <li>自動動作が3分割セグメントになっているか。対象範囲チップと見た目が分かれているか。</li>
-      <li>3カードの表示順が「ヘッダー → 機能固有 → 自動動作 → 一括処理 → 状態」で揃っているか。</li>
+      <li>3カードの表示順が「ヘッダー → 機能固有 → 自動動作 → 一括処理 → キュー」で揃っているか。</li>
       <li>「一括処理」ブロックに対象範囲と実行ボタンがまとまり、対象が分かりやすいか。</li>
       <li>AI カードから「設定を開く」ボタンと案内文が消えているか。</li>
       <li>セットアップ3ページに一括処理がなく、自動動作だけがあるか。</li>
+      <li>ダッシュボードが3機能の混合キューになり、機能バッジと待機行の削除があるか。</li>
+      <li>機能詳細のキューに一時停止／再開、待機をすべて開始／削除、待機行の削除があるか。</li>
+      <li>キューに失敗・完了・履歴が出ず、失敗が通知モーダルに最新5件で出るか。</li>
+      <li>Discord の送信履歴カードと「履歴を消去」が消えているか。</li>
       <li>旧設定の移行と、`discord_auto_since` 廃止の挙動変化に納得できるか。</li>
     </ul>
   </div>
