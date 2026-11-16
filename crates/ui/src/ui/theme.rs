@@ -319,10 +319,9 @@ pub(crate) fn inspector_preview_height(window_height: f32) -> f32 {
     }
 }
 
-/// Width available to cards in the library gallery: the window minus the shell
-/// padding/gap, sidebar, inspector column and card gap, then minus the
-/// gallery's own padding and the year-rail gutter.
-pub(crate) fn grid_available_width(
+/// Width of the library gallery card after the shell padding, sidebar,
+/// inspector column, and card gap.
+fn library_gallery_width(
     window_width: f32,
     sidebar_collapsed: bool,
     inspector_collapsed: bool,
@@ -337,13 +336,38 @@ pub(crate) fn grid_available_width(
     } else {
         INSPECTOR_GAP
     };
-    let gallery = window_width
+    window_width
         - WORKSPACE_PAD * 2.0
         - sidebar_width(sidebar_collapsed)
         - WORKSPACE_GAP
         - inspector
-        - card_gap;
-    (gallery - GALLERY_PAD_X * 2.0 - RAIL_WIDTH).max(0.0)
+        - card_gap
+}
+
+/// Width available to the gallery header content. Unlike the grid, the year
+/// rail gutter is part of the header row.
+pub(crate) fn gallery_header_width(
+    window_width: f32,
+    sidebar_collapsed: bool,
+    inspector_collapsed: bool,
+) -> f32 {
+    (library_gallery_width(window_width, sidebar_collapsed, inspector_collapsed)
+        - GALLERY_PAD_X * 2.0)
+        .max(0.0)
+}
+
+/// Width available to cards in the library gallery: the window minus the shell
+/// padding/gap, sidebar, inspector column and card gap, then minus the
+/// gallery's own padding and the year-rail gutter.
+pub(crate) fn grid_available_width(
+    window_width: f32,
+    sidebar_collapsed: bool,
+    inspector_collapsed: bool,
+) -> f32 {
+    (library_gallery_width(window_width, sidebar_collapsed, inspector_collapsed)
+        - GALLERY_PAD_X * 2.0
+        - RAIL_WIDTH)
+        .max(0.0)
 }
 
 /// Width left for the search grid after the filter card, the card gap, the
@@ -1003,6 +1027,14 @@ mod tests {
         assert_eq!(grid_available_width(1440.0, true, false), 974.0);
         assert_eq!(search_available_width(1280.0, false), 658.0);
         assert_eq!(grid_columns(0.0, MIN_CARD_WIDTH, GRID_GAP), 1);
+    }
+
+    #[test]
+    fn gallery_header_width_keeps_bulk_actions_before_the_sort_label() {
+        assert_eq!(gallery_header_width(1280.0, false, false), 696.0);
+        assert_eq!(gallery_header_width(1080.0, false, false), 518.0);
+        assert!(gallery_header_width(1080.0, false, false) < 640.0);
+        assert!(gallery_header_width(1280.0, false, false) >= 640.0);
     }
 
     #[test]
