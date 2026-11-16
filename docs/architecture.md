@@ -403,8 +403,9 @@ crates/ui/src/
 ### 4.9 Discord 送信
 
 1. UIの手動送信・テスト送信、またはデーモンの自動検出が `send_outbox` に積む。
-   UIは書き込み後に `wake_sends` を送り、デーモンを起こす。自動検出は
-   写真の索引・紐付けが終わってから enqueue する。
+   同じ写真に `waiting` の送信行がある場合、UIの手動送信は新規行を作らず、
+   その行を `pending` に移して開始する。UIは書き込み後に `wake_sends` を送り、
+   デーモンを起こす。自動検出は写真の索引・紐付けが終わってから enqueue する。
 2. `discord-send` ワーカーは設定と Webhook URL を読み、機能オフ／URL未設定／
    URL不正なら1件も取得しない。
 3. `pending` かつ `next_attempt_at` が到来した行を1件、単一の UPDATE で
@@ -472,8 +473,9 @@ crates/ui/src/
    SHA-256 を検証し、`<data_dir>/plugins/<plugin_id>/models/<revision>/` に置く。
    M2 はダウンロード再開と分割パートに対応しない。
 3. タグ付けジョブは `tagging_jobs` に積む。手動実行と自動投入は `pending`、
-   バックログは `waiting` で積み、利用者の「待機中のものを処理」で `pending` に
-   移す。active なジョブが同じ写真にある場合は partial unique index で重複しない。
+   バックログは `waiting` で積み、利用者の「待機中のものを処理」か、対象写真の
+   手動タグ付けで `pending` に移す。active なジョブが同じ写真にある場合は
+   partial unique index で重複しない。
    `--once` のメンテナンス実行ではタグ付けワーカーを起動しない。
 4. `TaggingWorker` は `pending` を1件ずつ原子的に取得し、`variant` を確定する。
    写真の表示用パスから長辺 1024px の一時 JPEG を作り、sidecar を遅延起動して
