@@ -1014,34 +1014,6 @@ impl App {
                             .text_color(rgb(p.text))
                             .child(tr!("compression.queue.title")),
                     )
-                    .when(self.active_job_count > 0, |this| {
-                        this.child(self.badge(
-                            tr_args!("compression.queue.active", count = self.active_job_count),
-                            p.accent,
-                            p.accent_soft,
-                        ))
-                    })
-                    .when(self.waiting_job_count > 0, |this| {
-                        this.child(self.badge(
-                            tr_args!("compression.queue.waiting", count = self.waiting_job_count),
-                            p.amber,
-                            p.amber_soft,
-                        ))
-                    })
-                    .when(self.waiting_job_count > 0, |this| {
-                        this.child(if self.settings.auto_compress_keep_original {
-                            self.badge(tr!("compression.queue.auto_keep"), p.green, p.green_soft)
-                        } else {
-                            self.badge(tr!("compression.queue.auto_replace"), p.red, p.red_soft)
-                        })
-                    })
-                    .when(self.failed_job_count > 0, |this| {
-                        this.child(self.badge(
-                            tr_args!("compression.queue.failed", count = self.failed_job_count),
-                            p.red,
-                            p.red_soft,
-                        ))
-                    })
                     .child(div().flex_1())
                     .when(self.waiting_job_count > 0, |this| {
                         this.child(
