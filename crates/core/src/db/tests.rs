@@ -5682,6 +5682,52 @@ fn enqueue_send_dedupes_active_rows_and_allows_resend_after_terminal() {
 }
 
 #[test]
+fn start_waiting_send_promotes_the_photo_row_and_keeps_its_origin() {
+    let db = Db::open_in_memory().unwrap();
+    let photo = seed_photo(&db);
+    let id = db
+        .enqueue_send(photo, SendKind::Photo, SendOrigin::Auto, SendStatus::Waiting)
+        .unwrap()
+        .unwrap();
+
+    assert!(db.start_waiting_send(photo).unwrap());
+    let entry = db.send_entry_by_id(id).unwrap().unwrap();
+    assert_eq!(entry.status, SendStatus::Pending);
+    assert_eq!(entry.origin, SendOrigin::Auto);
+    assert!(!db.start_waiting_send(photo).unwrap());
+}
+
+#[test]
+fn start_waiting_send_ignores_pending_rows_and_other_photos() {
+    let db = Db::open_in_memory().unwrap();
+    let photo = seed_photo(&db);
+    let other = seed_other_photo(&db);
+    let pending = db
+        .enqueue_send(
+            photo,
+            SendKind::Photo,
+            SendOrigin::Manual,
+            SendStatus::Pending,
+        )
+        .unwrap()
+        .unwrap();
+    let waiting = db
+        .enqueue_send(other, SendKind::Photo, SendOrigin::Auto, SendStatus::Waiting)
+        .unwrap()
+        .unwrap();
+
+    assert!(!db.start_waiting_send(photo).unwrap());
+    assert_eq!(
+        db.send_entry_by_id(pending).unwrap().unwrap().status,
+        SendStatus::Pending
+    );
+    assert_eq!(
+        db.send_entry_by_id(waiting).unwrap().unwrap().status,
+        SendStatus::Waiting
+    );
+}
+
+#[test]
 fn enqueue_send_rejects_a_deleting_photo() {
     let db = Db::open_in_memory().unwrap();
     let photo = seed_photo(&db);

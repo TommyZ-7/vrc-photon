@@ -307,6 +307,17 @@ impl Db {
         Ok(changed)
     }
 
+    /// Promotes the photo's waiting send so the worker can pick it up.
+    /// Only `waiting` rows change; pending and processing rows are untouched.
+    pub fn start_waiting_send(&self, photo_id: i64) -> Result<bool> {
+        let changed = self.conn.execute(
+            "UPDATE send_outbox SET status = 'pending' \
+             WHERE photo_id = ?1 AND status = 'waiting'",
+            params![photo_id],
+        )?;
+        Ok(changed == 1)
+    }
+
     /// Promotes every waiting send to pending so workers can pick it up.
     pub fn release_waiting_sends(&self) -> Result<usize> {
         let changed = self.conn.execute(
