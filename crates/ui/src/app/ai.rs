@@ -1105,8 +1105,10 @@ pub(crate) fn enqueue_manual_retag(
     if !ready {
         return Ok(ManualRetagOutcome::NotReady);
     }
-    db.enqueue_tagging_jobs(photo_ids, AI_PLUGIN_ID, TaggingJobStatus::Pending)
-        .map(ManualRetagOutcome::Queued)
+    let started = db.start_waiting_tagging_jobs(photo_ids, AI_PLUGIN_ID)?;
+    let inserted =
+        db.enqueue_tagging_jobs(photo_ids, AI_PLUGIN_ID, TaggingJobStatus::Pending)?;
+    Ok(ManualRetagOutcome::Queued(started + inserted))
 }
 
 /// Whether the license modal must be shown before starting a model download.
@@ -2029,6 +2031,25 @@ mod tests {
         .unwrap()
     }
 
+    fn seed_other_photo(db: &Db) -> i64 {
+        let root = db.add_root("/photos-b", "reference").unwrap();
+        db.upsert_photo(&NewPhoto {
+            root_id: root,
+            rel_path: "b.png".to_string(),
+            abs_path: "/photos-b/b.png".to_string(),
+            file_name: "b.png".to_string(),
+            captured_at_utc: 1_700_000_001,
+            captured_at_local: "2023-11-14 22:13:21.000".to_string(),
+            tz_offset_sec: 0,
+            width: 1920,
+            height: 1080,
+            file_size: 1234,
+            mtime: 1_700_000_001,
+            blake3: None,
+        })
+        .unwrap()
+    }
+
     fn test_catalog() -> Catalog {
         Catalog {
             version: "2026-11-03.1".to_string(),
@@ -2930,6 +2951,53 @@ mod tests {
         assert_eq!(jobs.len(), 1);
         assert_eq!(jobs[0].status, TaggingJobStatus::Pending);
         assert_eq!(jobs[0].plugin_id, AI_PLUGIN_ID);
+    }
+
+    #[test]
+    fn manual_retag_starts_a_waiting_job_without_creating_another() {
+        let db = Db::open_in_memory().unwrap();
+        let photo = seed_photo(&db);
+        db.enqueue_tagging_jobs(&[photo], AI_PLUGIN_ID, TaggingJobStatus::Waiting)
+            .unwrap();
+
+        let outcome = enqueue_manual_retag(&db, true, true, &[photo]).unwrap();
+        assert_eq!(outcome, ManualRetagOutcome::Queued(1));
+
+        let jobs = db.tagging_jobs_for_photo(photo).unwrap();
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].status, TaggingJobStatus::Pending);
+    }
+
+    #[test]
+    fn manual_retag_counts_started_and_new_jobs_together() {
+        let db = Db::open_in_memory().unwrap();
+        let waiting = seed_photo(&db);
+        let fresh = seed_other_photo(&db);
+        db.enqueue_tagging_jobs(&[waiting], AI_PLUGIN_ID, TaggingJobStatus::Waiting)
+            .unwrap();
+
+        let outcome = enqueue_manual_retag(&db, true, true, &[waiting, fresh]).unwrap();
+        assert_eq!(outcome, ManualRetagOutcome::Queued(2));
+        assert_eq!(
+            db.tagging_jobs_for_photo(waiting).unwrap()[0].status,
+            TaggingJobStatus::Pending
+        );
+        assert_eq!(
+            db.tagging_jobs_for_photo(fresh).unwrap()[0].status,
+            TaggingJobStatus::Pending
+        );
+    }
+
+    #[test]
+    fn manual_retag_reports_none_when_every_photo_is_already_active() {
+        let db = Db::open_in_memory().unwrap();
+        let photo = seed_photo(&db);
+        db.enqueue_tagging_jobs(&[photo], AI_PLUGIN_ID, TaggingJobStatus::Pending)
+            .unwrap();
+
+        let outcome = enqueue_manual_retag(&db, true, true, &[photo]).unwrap();
+        assert_eq!(outcome, ManualRetagOutcome::Queued(0));
+        assert!(!outcome.wakes());
     }
 
     #[test]
