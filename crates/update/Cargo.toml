@@ -14,6 +14,9 @@ path = "src/lib.rs"
 name = "vrc-photon-updater"
 path = "src/bin/vrc-photon-updater.rs"
 
+[build-dependencies]
+embed-resource.workspace = true
+
 [dependencies]
 base64.workspace = true
 chrono.workspace = true

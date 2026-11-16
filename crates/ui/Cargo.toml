@@ -10,6 +10,9 @@ authors.workspace = true
 name = "vrc-photon"
 path = "src/main.rs"
 
+[build-dependencies]
+embed-resource.workspace = true
+
 [dependencies]
 anyhow.workspace = true
 async-channel = "2.5"
