@@ -504,6 +504,25 @@ mod tests {
     }
 
     #[test]
+    fn bulk_anchor_resolves_a_photo_row_to_its_session_header() {
+        let entries = vec![
+            session_entry(4, 20261109, Some(7)),
+            session_entry(3, 20261109, Some(7)),
+            session_entry(2, 20261108, Some(8)),
+            session_entry(1, 20261108, Some(8)),
+        ];
+        let rows = rows_for(&entries);
+        let heights = rows.heights().to_vec();
+
+        // Session 8's photo row starts at 384 px; this scroll top is inside
+        // that row, so the anchor must still resolve to session 8's header.
+        assert_eq!(
+            bulk_anchor_for_scroll(&rows, &entries, 450.0, &heights, 700.0),
+            Some((8, 0.0))
+        );
+    }
+
+    #[test]
     fn bulk_anchor_is_none_for_unlinked_photos() {
         let entries = vec![
             session_entry(2, 20261109, None),
