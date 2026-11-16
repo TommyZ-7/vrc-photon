@@ -160,6 +160,10 @@ crates/
     assets/               # Noto Sans JP、ライセンス
 ```
 
+Windows の4実行ファイル（ui / daemon / update / mcp）は、各クレートの
+`build.rs` から `build-support/windows_icon.rs` を共有し、
+`packaging/icons/icon.ico` をリソースID 1 で埋め込む。
+
 ### 依存方向
 
 ```text

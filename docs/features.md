@@ -259,6 +259,10 @@
 - デーモンがトレイアイコンを持つ。
   - Windows: `tray-icon` + Win32メッセージポンプ
   - Linux: `tray-icon` の `ksni` バックエンド（StatusNotifierItem / D-Bus）
+  - 図柄はアプリアイコン（`packaging/icons/icon.png`）と同じ。Windows は
+    実行ファイルに埋め込んだ ICO、Linux は 32px に縮小した PNG を使う。
+- Windows の UI・デーモン・更新ヘルパー・MCPサーバーの実行ファイルには
+  アプリアイコンを埋め込み、エクスプローラー・タスクバー・ウィンドウに表示する。
 - メニュー: UIを開く、監視の一時停止/再開、状態表示、終了。
 - UIが起動していない間も監視と自動圧縮を継続する。
 - OSログイン時の自動起動を設定できる。

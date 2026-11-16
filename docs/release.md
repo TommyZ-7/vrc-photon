@@ -69,12 +69,18 @@ AppImage に同梱した MCP サーバーを MCP クライアントから使う�
 - `beforePackagingCommand = "cargo build --release -p vrc-photon-ui -p vrc-photon-daemon -p vrc-photon-update -p vrc-photon-mcp"`
 - `[[binaries]]`: `vrc-photon`（main）、`vrc-photon-daemon`、`vrc-photon-updater`、`vrc-photon-mcp`
 - `binariesDir = "target/release"` / `outDir = "dist"`
-- アイコン: `packaging/icons/icon.png`（512px）
+- アイコン: `packaging/icons/icon.png`（512px、Linuxパッケージ）/ `packaging/icons/icon.ico`（Windows実行ファイルに埋め込み）
 - `resources = ["LICENSE", "packaging/licenses/LICENSE-LUCIDE"]`
 - deb依存: `libxkbcommon0`, `libxkbcommon-x11-0`, `libwayland-client0`, `libvulkan1`, `libx11-6`, `libxcb1`, `libfontconfig1`, `libfreetype6`
 - pacman依存: `libxkbcommon`, `wayland`, `vulkan-icd-loader`, `libx11`, `libxcb`, `fontconfig`, `freetype2`
 - `[deb.files]` / `[pacman.files]`: `packaging/systemd/vrc-photon-daemon.service` を `usr/lib/systemd/user/vrc-photon-daemon.service` に配置
 - `[deb.files]` / `[pacman.files]`: `packaging/polkit/com.tommyz.vrc-photon.update.policy` を `usr/share/polkit-1/actions/com.tommyz.vrc-photon.update.policy` に配置
+
+Windows の4実行ファイル（UI・デーモン・更新ヘルパー・MCPサーバー）は、
+各クレートの `build.rs` が `build-support/windows_icon.rs` を共有して
+`packaging/icons/icon.ico` をリソースID 1 で埋め込む。GPUI は同じIDを
+ウィンドウアイコンとして読み込む。ICOの再生成手順は
+[packaging/README.md](../packaging/README.md) を参照。
 
 `resources` のライセンス通知は、Linux（deb / AppImage / pacman）では
 `/usr/lib/vrc-photon/`、Windows（NSIS）では実行ファイルと同じディレクトリに配置される。

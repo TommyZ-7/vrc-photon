@@ -25,6 +25,23 @@ The AppImage stores them inside the image. To use the MCP server with an
 AppImage, extract it first with `--appimage-extract` and point the MCP
 client at `squashfs-root/usr/bin/vrc-photon-mcp`.
 
+## Icons
+
+- `packaging/icons/icon.png` (512x512) is the application icon used by the
+  Linux packages.
+- `packaging/icons/icon.ico` is generated from the same artwork and embedded
+  into the Windows executables (`vrc-photon.exe`, `vrc-photon-daemon.exe`,
+  `vrc-photon-updater.exe`, `vrc-photon-mcp.exe`) by each crate's `build.rs`.
+  The resource ID is 1 because GPUI loads that ID for the window icon.
+
+Regenerate the ICO after changing the PNG:
+
+```bash
+magick packaging/icons/icon.png \
+  -define icon:auto-resize=256,128,64,48,32,24,16 \
+  packaging/icons/icon.ico
+```
+
 ## License notices
 
 `Packager.toml` bundles these files through `resources`:
