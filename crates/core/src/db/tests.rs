@@ -4754,6 +4754,50 @@ fn release_waiting_moves_only_waiting_jobs_for_the_plugin() {
 }
 
 #[test]
+fn start_waiting_tagging_jobs_promotes_only_the_requested_photos() {
+    let db = Db::open_in_memory().unwrap();
+    let waiting = seed_photo(&db);
+    let other_waiting = seed_other_photo(&db);
+    let other_plugin = seed_photos(&db, 4)[2];
+    let pending = seed_photos(&db, 5)[4];
+    db.enqueue_tagging_jobs(&[waiting], AI_PLUGIN, TaggingJobStatus::Waiting)
+        .unwrap();
+    db.enqueue_tagging_jobs(&[other_waiting], AI_PLUGIN, TaggingJobStatus::Waiting)
+        .unwrap();
+    db.enqueue_tagging_jobs(&[other_plugin], "other-plugin", TaggingJobStatus::Waiting)
+        .unwrap();
+    db.enqueue_tagging_jobs(&[pending], AI_PLUGIN, TaggingJobStatus::Pending)
+        .unwrap();
+
+    assert_eq!(
+        db.start_waiting_tagging_jobs(&[waiting, pending], AI_PLUGIN)
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        db.tagging_jobs_for_photo(waiting).unwrap()[0].status,
+        TaggingJobStatus::Pending
+    );
+    assert_eq!(
+        db.tagging_jobs_for_photo(other_waiting).unwrap()[0].status,
+        TaggingJobStatus::Waiting
+    );
+    assert_eq!(
+        db.tagging_jobs_for_photo(other_plugin).unwrap()[0].status,
+        TaggingJobStatus::Waiting
+    );
+    assert_eq!(
+        db.tagging_jobs_for_photo(pending).unwrap()[0].status,
+        TaggingJobStatus::Pending
+    );
+    assert_eq!(
+        db.start_waiting_tagging_jobs(&[waiting], AI_PLUGIN)
+            .unwrap(),
+        0
+    );
+}
+
+#[test]
 fn ui_active_jobs_prioritize_processing_over_the_ready_queue() {
     let db = Db::open_in_memory().unwrap();
     let photos = seed_photos(&db, 25);

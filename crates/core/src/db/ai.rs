@@ -568,6 +568,27 @@ impl Db {
         Ok(changed)
     }
 
+    /// Promotes `waiting` jobs for the given photos and plugin to `pending`.
+    /// Other photos, other plugins, and terminal jobs are left untouched.
+    pub fn start_waiting_tagging_jobs(
+        &self,
+        photo_ids: &[i64],
+        plugin_id: &str,
+    ) -> Result<usize> {
+        let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
+        let mut changed = 0;
+        for photo_id in photo_ids {
+            changed += tx.execute(
+                "UPDATE tagging_jobs SET status = 'pending', progress = 0, stage = NULL, \
+                    error = NULL, started_at = NULL, finished_at = NULL \
+                 WHERE photo_id = ?1 AND plugin_id = ?2 AND status = 'waiting'",
+                params![photo_id, plugin_id],
+            )?;
+        }
+        tx.commit()?;
+        Ok(changed)
+    }
+
     /// Atomically claims the oldest pending job, records its start time, and
     /// stamps the active installation's variant when one exists.
     pub fn next_pending_tagging_job(&self) -> Result<Option<TaggingJob>> {
