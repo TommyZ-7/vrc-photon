@@ -518,8 +518,23 @@ impl App {
                 self.send_wake_sends(cx);
                 self.toast_success(manual_send_toast(Ok(true)), cx);
             }
-            // An active row for this photo already exists; the worker owns it.
-            Ok(None) => self.toast_info(manual_send_toast(Ok(false)), cx),
+            // An active row for this photo already exists; start it when it is
+            // still waiting, otherwise the worker already owns it.
+            Ok(None) => match self.db.start_waiting_send(photo_id) {
+                Ok(true) => {
+                    self.reload_send_history(cx);
+                    self.send_wake_sends(cx);
+                    self.toast_success(manual_send_toast(Ok(true)), cx);
+                }
+                Ok(false) => self.toast_info(manual_send_toast(Ok(false)), cx),
+                Err(error) => {
+                    tracing::warn!(%error, photo_id, "cannot start a waiting Discord send");
+                    self.toast_error(
+                        format!("{}: {error}", tr!("photos.action.discord_error")),
+                        cx,
+                    );
+                }
+            },
             Err(error) => {
                 tracing::warn!(%error, photo_id, "cannot enqueue a Discord photo send");
                 self.toast_error(
