@@ -12,7 +12,9 @@
 
 **Mock:** `docs/ui-666-667-header-badges-mockup.html`
 
-**Status:** Phase 0 進行中（モック承認待ち）
+**Status:** 実装完了（2026-11-16）。docs PR #670、実装 PR #671。
+
+**検証:** `fmt` / `clippy` / UI 587件 / i18n テスト green。workspace 全体は既知の並列実行フレーク #647（ETXTBSY）が1件発生し、単体再実行で成功。1080×700 + サイドバー展開で両画面を目視確認済み。
 
 ## Global Constraints
 
@@ -76,7 +78,7 @@ After ヘッダーも示し、ボタンだけが右に残ることを確認で�
 - Modify: `crates/i18n/locales/en.yml`
 - Modify: `crates/i18n/tests/placeholders.rs`
 
-- [ ] **Step 1: 圧縮キューのヘッダーバッジを削除する**
+- [x] **Step 1: 圧縮キューのヘッダーバッジを削除する**
 
 `queue_panel` のヘッダーから次の 4 ブロックを削除する。
 
@@ -89,18 +91,18 @@ After ヘッダーも示し、ボタンだけが右に残ることを確認で�
 
 タイトル、`div().flex_1()`、`release-waiting-jobs`、`retry-all-failed-jobs` は残す。
 
-- [ ] **Step 2: 圧縮キューの翻訳キーを削除する**
+- [x] **Step 2: 圧縮キューの翻訳キーを削除する**
 
 `ja.yml` と `en.yml` から `compression.queue.active` / `.waiting` / `.auto_keep` /
 `.auto_replace` / `.failed` を削除する。`placeholders.rs` の `CALL_SITES` から
 `compression.queue.active` / `.failed` / `.waiting` を削除する。
 
-- [ ] **Step 3: 送信履歴のヘッダーバッジを削除する**
+- [x] **Step 3: 送信履歴のヘッダーバッジを削除する**
 
 `send_history_card` のヘッダーから `when(waiting > 0, ...)` のバッジブロックを削除する。
 `waiting` は「待機をすべて送信」の無効判定で使い続けるため、変数は残す。
 
-- [ ] **Step 4: ローカル検証**
+- [x] **Step 4: ローカル検証**
 
 ```bash
 cargo fmt --all -- --check
@@ -108,12 +110,12 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-- [ ] **Step 5: 目視確認**
+- [x] **Step 5: 目視確認**
 
 `gnome-wayland-visual-qa` の手順でアプリを起動し、1080×700 + サイドバー展開で
 圧縮キューと送信履歴のヘッダーを確認する。待機あり・失敗あり・待機 0 件の各状態を見る。
 
-- [ ] **Step 6: 実装 PR を作る**
+- [x] **Step 6: 実装 PR を作る**
 
 `feat(ui): remove the compression queue and send history header badges (#666, #667)`。
 本文に `Closes #666` と `Closes #667` を書く。ラベルは `enhancement`。
@@ -123,8 +125,8 @@ CI green を確認して merge し、`main` を pull する。
 
 ## 完了条件
 
-- [ ] 圧縮キューのヘッダーがタイトルと一括操作ボタンだけになる。
-- [ ] 送信履歴のヘッダーがタイトルと 2 ボタンだけになる。
-- [ ] 行内の状態バッジ・失敗理由・再試行・日時が変わらない。
-- [ ] i18n のカタログ・placeholder テストを含む全テストが通る。
-- [ ] 実装 PR が merge され、#666 と #667 が閉じる。
+- [x] 圧縮キューのヘッダーがタイトルと一括操作ボタンだけになる。
+- [x] 送信履歴のヘッダーがタイトルと 2 ボタンだけになる。
+- [x] 行内の状態バッジ・失敗理由・再試行・日時が変わらない。
+- [x] i18n のカタログ・placeholder テストを含む全テストが通る。
+- [x] 実装 PR が merge され、#666 と #667 が閉じる。
