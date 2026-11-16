@@ -21,10 +21,13 @@ pub fn embed() {
     println!("cargo:rerun-if-changed=../../build-support/windows_icon.rs");
 
     // Keep the resource script in OUT_DIR so it can reference the icon by an
-    // absolute path outside the crate.
+    // absolute path outside the crate. RC.EXE treats backslashes in the quoted
+    // path as escape sequences (`D:\a\...` loses the `\a`), so hand it forward
+    // slashes; Windows resolves them like any other path separator.
     let rc = PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR is set by Cargo"))
         .join("app-icon.rc");
-    std::fs::write(&rc, format!("1 ICON \"{}\"\n", icon.display()))
+    let icon_path = icon.display().to_string().replace('\\', "/");
+    std::fs::write(&rc, format!("1 ICON \"{icon_path}\"\n"))
         .expect("cannot write the Windows resource script");
 
     // gpui-pre links the RT_MANIFEST resource, so this script only contributes
