@@ -32,6 +32,7 @@ blake3 = "1"
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4", features = ["derive"] }
 dirs = "7"
+embed-resource = "3"
 hex = "0.4"
 interprocess = "2.4"
 libc = "0.2"
