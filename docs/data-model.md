@@ -382,7 +382,7 @@ AI タグ付けの耐久キュー。デーモン再起動後も `pending` を再
 
 | status | 意味 | claim 対象 |
 |---|---|---|
-| `waiting` | バックログ専用。利用者が「待機中のものを処理」するまで実行しない | いいえ |
+| `waiting` | バックログ専用。利用者が「待機中のものを処理」するか、その写真を手動でタグ付けするまで実行しない | いいえ |
 | `pending` | 実行可能。ワーカーが取得する | はい |
 | `processing` | 実行中 | いいえ |
 | `completed` | 正常終了 | いいえ |
@@ -390,7 +390,7 @@ AI タグ付けの耐久キュー。デーモン再起動後も `pending` を再
 | `cancelled` | 利用者キャンセル、写真消失、強制削除 | いいえ |
 
 - 新規写真の自動投入と手動実行は `pending` で積む。バックログは `waiting` で
-  積み、解放操作で一括して `pending` へ移す。
+  積み、一括解放操作か、対象写真の手動タグ付けで `pending` へ移す。
 - active なジョブ（`waiting` / `pending` / `processing`）は partial unique
   index により写真・プラグイン単位で重複しない。
 - デーモン起動時に `processing` が残っていれば `pending` に戻す。
@@ -550,7 +550,8 @@ CREATE INDEX idx_send_outbox_photo
   `NULL` のためこの制約を受けない。未知の `status` は新しい版が書いた値として
   `unknown` で読み、terminal として扱わない。
 - 取得は `pending` かつ `next_attempt_at` が到来した行を 1 件、単一 UPDATE で
-  `processing` にする。`waiting` は取得しない。
+  `processing` にする。`waiting` は取得しない。`waiting` は自動送信の待機
+  モード専用で、一括解放操作か、同じ写真の手動送信で `pending` に移す。
 - `attempts` は 5xx／ネットワークの失敗で増える。429 は `retry_after` 後に
   再送し、`attempts` を据え置く。`error_code` は `network`、`rate_limited`、
   `http_400` / `http_401` / `http_403` / `http_404` / `http_413`、`http_5xx`、
@@ -753,7 +754,7 @@ Discord 関連の既定値:
 18. `world_name_lookups` は1ワールドにつき1行。`resolved` / `failed` は再取得しない。`not_found` は24時間後にだけ再試行する。API 名は `worlds.name` が NULL のときだけ保存し、ログ/XMP/手動エイリアスを上書きしない。
 19. AI タグ（`photo_ai` / `photo_ai_tags`）は手動タグ（`tags` / `photo_tags`）と独立する。AI の再計算・削除・アンインストールが手動タグを変更しない。
 20. 同じ `plugin_id` の `plugin_installations.active = 1` は1行だけ。variant / version は共存でき、モデルは `plugin_id` 単位で共有する。
-21. `tagging_jobs` の active（`waiting` / `pending` / `processing`）は写真・プラグイン単位で1件だけ。`waiting` はバックログ専用で、明示的な解放だけが `pending` に移す。
+21. `tagging_jobs` の active（`waiting` / `pending` / `processing`）は写真・プラグイン単位で1件だけ。`waiting` はバックログ専用で、一括解放または対象写真の手動タグ付けだけが `pending` に移す。
 22. active な `tagging_jobs` は削除をブロックする。`failed` のタグ付けジョブは `force=0` の削除をブロックし、強制削除は active なジョブをキャンセルしてから実行する。
 23. プラグインのアンインストールで `delete_ai_tags=true` を選んだ場合だけ、`photo_ai` / `photo_ai_tags` / `ai_tag_definitions` / `ai_tag_thresholds` を削除する。既定は AI タグを残す。
 24. モデルの readiness 判定はファイルの存在とサイズだけを見る。SHA-256 はダウンロード / オフライン取込のときだけ検証する。
