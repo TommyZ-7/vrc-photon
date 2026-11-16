@@ -325,13 +325,6 @@ impl App {
                                 .child(tr!("integrations.discord.history.title")),
                         ),
                     )
-                    .when(waiting > 0, |this| {
-                        this.child(self.badge(
-                            format!("{} {waiting}", tr!("send.status.waiting")),
-                            p.amber,
-                            p.amber_soft,
-                        ))
-                    })
                     .child(
                         Button::new("discord-history-release")
                             .label(tr!("integrations.discord.history.release"))
