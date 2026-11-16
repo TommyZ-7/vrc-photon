@@ -125,6 +125,9 @@ OSウィンドウ（背景ブラー要求）
 ### 2.4.2 セッション表示
 
 - ギャラリーヘッダーに「時系列 / セッション」のセグメントを置く。検索結果は時系列のまま。
+- セッション表示のヘッダー右側、表示モード切替の左隣に「すべて格納」「すべて展開」を置く。表示中の全セッションを一括で格納・展開し、全セッション格納済みなら「すべて格納」、格納済みが0件なら「すべて展開」を無効化する。未紐付け写真の日付ラベル行は対象外。タイムライン表示と検索結果では表示しない。
+- 一括操作はビューポート先頭のセッション見出しをスクロール基準に保ち、新たに状態が変わるセッションだけをアニメーションする。reduce motion では即時反映する。
+- セッション表示でヘッダーが1行に収まらない場合（内容幅640 px未満）は「並び: 新しい順」を隠し、一括操作と表示モード切替を残す。
 - 既定は時系列。選択は `ui_photos_view_mode` に保存し、再起動後も復元する。
 - セッションモードは `v_virtual_list` を使い、セッション見出し行、写真行、未紐付け写真の日付ラベル行を混在させる。時系列モードは従来の `uniform_list` を維持する。
 - 見出し行は固定高で、カバー写真、ワールド名、滞在時刻（日付またぎ・滞在中を含む）、写真枚数、同席プレイヤー（先頭3名＋「他n名」）、折りたたみボタンを1行にまとめる。見出し自体は選択・ダブルクリック・右クリックの対象外。
@@ -461,6 +464,7 @@ AI タグ付けカードは、ヘッダーの有効化スイッチ、新規画�
 - 実装計画: [2026-10-27-glass-ribbon-ui.md](superpowers/plans/2026-10-27-glass-ribbon-ui.md)
 - モック: [ui-glass-ribbon-mockup.html](ui-glass-ribbon-mockup.html)
 - セッション表示の設計・モック: [2026-11-09-session-groups-design.md](superpowers/specs/2026-11-09-session-groups-design.md) / [ui-session-groups-mockup.html](ui-session-groups-mockup.html)
+- セッションの一括格納 #660: [2026-11-16-issue-660-collapse-all-design.md](superpowers/specs/2026-11-16-issue-660-collapse-all-design.md) / [2026-11-16-issue-660-collapse-all.md](superpowers/plans/2026-11-16-issue-660-collapse-all.md) / [ui-660-collapse-all-mockup.html](ui-660-collapse-all-mockup.html)
 - セッション表示フォローアップ #492–#501: [2026-11-10-issue-492-501-followups.md](superpowers/plans/2026-11-10-issue-492-501-followups.md) / [ui-492-495-499-mockup.html](ui-492-495-499-mockup.html)
 - 余計な表記の削除 #490: [2026-11-10-issue-490-remove-labels-design.md](superpowers/specs/2026-11-10-issue-490-remove-labels-design.md) / [2026-11-10-issue-490-remove-labels.md](superpowers/plans/2026-11-10-issue-490-remove-labels.md) / [ui-490-remove-labels-mockup.html](ui-490-remove-labels-mockup.html)
 - 連携一覧の背景・セッション折りたたみのモック: [ui-477-478-followup-mockup.html](ui-477-478-followup-mockup.html)
