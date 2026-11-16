@@ -1,0 +1,428 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VRC PhotoN — ヘッダーバッジの削除モック (#666 / #667)</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%230d1420'/%3E%3Ccircle cx='16' cy='16' r='7' fill='none' stroke='%238bcbff' stroke-width='2'/%3E%3C/svg%3E">
+<style>
+  :root {
+    color-scheme: dark;
+    --font: "Inter", "Noto Sans JP", "Hiragino Sans", "Yu Gothic UI", system-ui, -apple-system, sans-serif;
+    --text: #eef4ff;
+    --muted: #a8b4ca;
+    --dim: #7f8ba3;
+    --faint: #5e6a81;
+    --accent: #8bcbff;
+    --blue: #5aa9ff;
+    --green: #7ee2b8;
+    --rose: #ff94a8;
+    --amber: #f4c878;
+    --line: rgba(255, 255, 255, 0.105);
+    --line-strong: rgba(255, 255, 255, 0.17);
+    --line-soft: rgba(255, 255, 255, 0.065);
+    --panel: #0d1420;
+    --panel-deep: #080d15;
+    --panel-inner: #111927;
+    --r-card: 22px;
+    --r-inner: 16px;
+  }
+
+  * { box-sizing: border-box; }
+  html { overflow-x: hidden; }
+  body {
+    margin: 0;
+    min-width: 320px;
+    background: #05070d;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -2;
+    background:
+      radial-gradient(ellipse 58% 54% at 10% 2%, rgba(54, 107, 255, 0.28), transparent 66%),
+      radial-gradient(ellipse 46% 52% at 92% 6%, rgba(255, 86, 181, 0.12), transparent 68%),
+      radial-gradient(ellipse 52% 48% at 64% 104%, rgba(30, 202, 178, 0.10), transparent 68%),
+      linear-gradient(140deg, #04060c 0%, #0a0f1e 44%, #060811 100%);
+  }
+
+  .page { width: min(1400px, calc(100% - 48px)); margin: 0 auto; padding: 44px 0 80px; }
+  .masthead { display: flex; align-items: flex-start; justify-content: space-between; gap: 28px; margin-bottom: 28px; }
+  .eyebrow { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; }
+  .issue-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border: 1px solid rgba(139,203,255,.24); border-radius: 999px; background: rgba(139,203,255,.08); color: var(--accent); font-size: 10px; letter-spacing: .08em; }
+  h1 { margin: 11px 0 9px; font-size: clamp(25px, 3vw, 36px); line-height: 1.22; letter-spacing: -.035em; font-weight: 620; }
+  .lede { max-width: 850px; margin: 0; color: var(--muted); font-size: 13px; }
+  .lede b { color: var(--text); font-weight: 560; }
+  .meta-card { flex: none; min-width: 280px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 16px; background: rgba(13,20,32,.72); }
+  .meta-row { display: flex; justify-content: space-between; gap: 18px; padding: 4px 0; color: var(--dim); font-size: 11px; }
+  .meta-row b { color: var(--text); font-weight: 550; }
+  .meta-row + .meta-row { border-top: 1px solid var(--line-soft); }
+
+  .section-label { display: flex; align-items: baseline; gap: 12px; margin: 42px 0 14px; }
+  .section-label h2 { margin: 0; font-size: 15px; font-weight: 580; letter-spacing: -.01em; }
+  .section-label span { color: var(--dim); font-size: 11px; }
+  .section-note { max-width: 920px; margin: -4px 0 16px; color: var(--dim); font-size: 11.5px; }
+
+  .decision-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 18px 0 6px; }
+  .decision { padding: 13px 14px; border: 1px solid var(--line); border-radius: 14px; background: rgba(14,21,34,.72); }
+  .decision .q { color: var(--accent); font-size: 10px; letter-spacing: .08em; }
+  .decision h3 { margin: 5px 0 6px; font-size: 12px; font-weight: 580; }
+  .decision p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
+  .decision .ok { display: inline-block; margin-top: 8px; padding: 2px 7px; border-radius: 999px; color: var(--green); background: rgba(126,226,184,.07); border: 1px solid rgba(126,226,184,.18); font-size: 9.5px; }
+
+  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 10px; }
+  .compare.wide-before { grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr); }
+  .panel { border: 1px solid var(--line); border-radius: var(--r-card); background: linear-gradient(180deg, rgba(17,25,39,.78), rgba(9,14,23,.9)); padding: 16px; box-shadow: 0 20px 60px rgba(0,0,0,.22); }
+  .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 2px 4px 13px; }
+  .panel-title { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 560; }
+  .panel-note { color: var(--dim); font-size: 10.5px; }
+  .tag { padding: 2px 7px; border-radius: 999px; font-size: 9.5px; letter-spacing: .04em; }
+  .tag.before { color: var(--dim); background: rgba(255,255,255,.04); border: 1px solid var(--line-soft); }
+  .tag.after { color: var(--green); background: rgba(126,226,184,.07); border: 1px solid rgba(126,226,184,.18); }
+  .state-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
+  .state-dot.after { background: var(--green); box-shadow: 0 0 0 4px rgba(126,226,184,.09); }
+
+  .stage { border: 1px solid var(--line-soft); border-radius: var(--r-inner); background: var(--panel-deep); padding: 16px; }
+  .panel.tight .stage { padding: 12px; }
+
+  /* Compression queue card */
+  .queue-card { border: 1px solid rgba(255,255,255,.09); border-radius: 17px; background: linear-gradient(180deg, #101827, #0a101a); overflow: hidden; box-shadow: inset 0 1px 0 rgba(255,255,255,.035); }
+  .queue-head { display: flex; align-items: center; gap: 6px; min-height: 42px; padding: 8px 14px; border-bottom: 1px solid rgba(139,203,255,.09); }
+  .queue-title { font-size: 12.5px; font-weight: 600; flex: none; white-space: nowrap; }
+  .spacer { flex: 1; }
+  .hb { display: inline-flex; align-items: center; padding: 2px 6px; border-radius: 999px; border: 1px solid transparent; font-size: 9px; white-space: nowrap; }
+  .hb.accent { color: var(--accent); background: rgba(139,203,255,.08); border-color: rgba(139,203,255,.2); }
+  .hb.amber { color: var(--amber); background: rgba(244,200,120,.07); border-color: rgba(244,200,120,.18); }
+  .hb.green { color: var(--green); background: rgba(126,226,184,.07); border-color: rgba(126,226,184,.18); }
+  .hb.rose { color: var(--rose); background: rgba(255,148,168,.07); border-color: rgba(255,148,168,.18); }
+  .hb.drop { color: var(--rose); background: rgba(255,148,168,.06); border: 1px dashed rgba(255,148,168,.42); text-decoration: line-through; text-decoration-thickness: 1px; text-decoration-color: rgba(255,148,168,.6); }
+
+  .ui-btn { display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-height: 22px; padding: 2px 7px; border-radius: 7px; border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.04); color: var(--muted); font-size: 9px; white-space: nowrap; }
+  .ui-btn.primary { border-color: rgba(139,203,255,.28); background: rgba(139,203,255,.1); color: var(--accent); }
+  .ui-btn.ghost { background: transparent; }
+  .ui-btn.disabled { opacity: .45; }
+
+  .job-row { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 8px 16px; border-bottom: 1px solid rgba(255,255,255,.06); }
+  .job-row:last-child { border-bottom: 0; }
+  .job-name { flex: 1; min-width: 0; font-size: 12px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .job-meta { color: var(--faint); font-size: 10px; white-space: nowrap; }
+  .job-failed { display: flex; flex-direction: column; gap: 5px; padding: 9px 16px; border-bottom: 1px solid rgba(255,255,255,.06); }
+  .job-failed:last-child { border-bottom: 0; }
+  .job-failed .top { display: flex; align-items: center; gap: 8px; }
+  .job-failed .reason { color: var(--dim); font-size: 10px; }
+  .job-failed .actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+
+  /* Discord history card */
+  .d-card { padding: 14px; border: 1px solid rgba(255,255,255,.09); border-radius: 17px; background: linear-gradient(180deg, #101827, #0a101a); box-shadow: inset 0 1px 0 rgba(255,255,255,.035); }
+  .d-head { display: flex; align-items: center; gap: 12px; }
+  .d-title { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; }
+  .d-row { display: flex; align-items: center; gap: 8px; padding: 9px 4px; border-bottom: 1px solid rgba(255,255,255,.06); }
+  .d-row:last-child { border-bottom: 0; }
+  .d-name { flex: 1; min-width: 0; font-size: 12px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .d-meta { color: var(--faint); font-size: 10px; white-space: nowrap; }
+  .divider { height: 1px; margin: 10px 0; background: rgba(255,255,255,.06); }
+
+  .removed-block { border: 1px dashed rgba(255,148,168,.42); background: rgba(255,148,168,.045); border-radius: 8px; padding: 7px 8px; color: var(--rose); }
+  .annotation { display: block; margin-top: 10px; color: var(--dim); font-size: 10px; line-height: 1.55; }
+  .annotation p { margin: 0 0 3px; }
+  .annotation p:last-child { margin-bottom: 0; }
+  .annotation b { color: var(--muted); font-weight: 560; }
+  .annotation .del { color: var(--rose); }
+  .annotation .keep { color: var(--green); }
+
+  .keep-list { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 22px; margin: 4px 0 10px; padding: 0; list-style: none; color: var(--muted); font-size: 11px; }
+  .keep-list li { position: relative; padding-left: 13px; }
+  .keep-list li::before { content: ""; position: absolute; left: 0; top: 8px; width: 5px; height: 5px; border-radius: 50%; background: var(--green); }
+  .keep-list li.warn::before { background: var(--amber); }
+
+  .narrow-wrap { margin-top: 12px; padding: 12px 14px; border: 1px dashed var(--line-soft); border-radius: 12px; background: rgba(255,255,255,.012); }
+  .narrow-label { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; color: var(--muted); font-size: 10px; }
+  .narrow { width: min(450px, 100%); border: 1px solid rgba(255,255,255,.08); border-radius: 12px; overflow: hidden; background: #0b111b; }
+
+  .footer-note { margin-top: 40px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 16px; background: rgba(13,20,32,.7); color: var(--muted); font-size: 11.5px; }
+  .footer-note b { color: var(--text); }
+  .footer-note ul { margin: 8px 0 0; padding-left: 18px; }
+  .footer-note li { margin: 3px 0; }
+
+  @media (max-width: 1100px) {
+    .decision-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 880px) {
+    .masthead { flex-direction: column; }
+    .meta-card { width: 100%; }
+    .compare { grid-template-columns: 1fr; }
+    .decision-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="masthead">
+    <div>
+      <div class="eyebrow"><span class="issue-chip">#666</span><span class="issue-chip">#667</span><span>UI cleanup · removal only</span></div>
+      <h1>圧縮キュー / 送信履歴ヘッダーのバッジ削除</h1>
+      <p class="lede">
+        ダッシュボードの<b>圧縮キュー</b>と「連携・自動」の<b>送信履歴</b>から、ヘッダーの件数・方針バッジだけを削除する。
+        タイトル、一括操作ボタン、各行の状態バッジと操作は変更しない。新しい文言・代替バッジ・設定は追加しない。
+      </p>
+    </div>
+    <div class="meta-card">
+      <div class="meta-row"><span>対象</span><b>ダッシュボード / 連携・自動</b></div>
+      <div class="meta-row"><span>変更</span><b>ヘッダーバッジの削除のみ</b></div>
+      <div class="meta-row"><span>PR</span><b>docs 1 + 実装 1</b></div>
+      <div class="meta-row"><span>状態</span><b>承認待ち</b></div>
+    </div>
+  </header>
+
+  <div class="section-label"><h2>承認ポイント</h2><span>削除後に判断が必要な点</span></div>
+  <div class="decision-grid">
+    <div class="decision">
+      <div class="q">Q1 · 件数の代替表示</div>
+      <h3>ヘッダーには何も足さない</h3>
+      <p>未完了ジョブ数はダッシュボードの統計カードとサイドバーの圧縮バッジ、待機・失敗はキューの各行で確認できる。ヘッダーには件数も説明文も追加しない。</p>
+      <span class="ok">Issue 指定どおり</span>
+    </div>
+    <div class="decision">
+      <div class="q">Q2 · 翻訳キー</div>
+      <h3>未使用キーを削除する</h3>
+      <p><code>compression.queue.active / waiting / auto_keep / auto_replace / failed</code> は他の画面で使っていないため、ja / en と placeholder テスト台帳から削除する。Discord の <code>send.status.waiting</code> は行の状態ラベルで使うため残す。</p>
+      <span class="ok">推奨</span>
+    </div>
+    <div class="decision">
+      <div class="q">Q3 · レイアウト</div>
+      <h3>スペーサーとボタン配置は維持</h3>
+      <p>バッジを消した分だけタイトルとボタンの間が広がる。ヘッダーの高さ・余白・ボタンの表示条件（待機 0 件、再試行可能 0 件）は変えない。</p>
+      <span class="ok">推奨</span>
+    </div>
+  </div>
+
+  <div class="section-label"><h2>1. ダッシュボード / 圧縮キュー</h2><span>Issue #666 · 4 バッジを削除</span></div>
+  <p class="section-note">
+    削除するのは「未完了 N」「未実行 N」「自動: 元画像を保持 / 置換」「失敗 N」。
+    行内の状態バッジ・写真 ID・プロファイル・進捗・失敗理由・再試行はそのまま残す。
+  </p>
+  <div class="compare wide-before">
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title"><span class="state-dot"></span>変更前</div><span class="tag before">BEFORE</span></div>
+      <div class="stage">
+        <div class="queue-card">
+          <div class="queue-head">
+            <span class="queue-title">圧縮キュー</span>
+            <span class="hb accent">未完了 4</span>
+            <span class="hb amber">未実行 3</span>
+            <span class="hb green">自動: 元画像を保持</span>
+            <span class="hb rose">失敗 2</span>
+            <span class="spacer"></span>
+            <span class="ui-btn primary">待機をすべて圧縮</span>
+            <span class="ui-btn ghost">失敗をすべて再試行</span>
+          </div>
+          <div class="job-row">
+            <span class="hb amber">実行待ち</span>
+            <span class="job-name">写真 #1042</span>
+            <span class="job-meta">自動圧縮</span>
+            <span class="job-meta">0%</span>
+          </div>
+          <div class="job-row">
+            <span class="hb accent">処理中</span>
+            <span class="job-name">写真 #1039</span>
+            <span class="job-meta">高画質</span>
+            <span class="job-meta">58%</span>
+          </div>
+          <div class="job-failed">
+            <div class="top">
+              <span class="hb rose">失敗</span>
+              <span class="job-name">photo_0031.webp</span>
+              <span class="job-meta">高画質</span>
+              <span class="actions"><span class="job-meta">再試行 1/3</span><span class="ui-btn ghost">再試行</span></span>
+            </div>
+            <div class="reason">書き込みに失敗しました: ディスク容量不足</div>
+          </div>
+        </div>
+      </div>
+      <div class="annotation"><b>現状:</b> ヘッダーにタイトル、4 バッジ、一括操作ボタン。1080×700 + サイドバー展開（キュー幅 約 450 px）では折り返す。</div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title"><span class="state-dot after"></span>変更後</div><span class="tag after">AFTER</span></div>
+      <div class="stage">
+        <div class="queue-card">
+          <div class="queue-head">
+            <span class="queue-title">圧縮キュー</span>
+            <span class="spacer"></span>
+            <span class="ui-btn primary">待機をすべて圧縮</span>
+            <span class="ui-btn ghost">失敗をすべて再試行</span>
+          </div>
+          <div class="job-row">
+            <span class="hb amber">実行待ち</span>
+            <span class="job-name">写真 #1042</span>
+            <span class="job-meta">自動圧縮</span>
+            <span class="job-meta">0%</span>
+          </div>
+          <div class="job-row">
+            <span class="hb accent">処理中</span>
+            <span class="job-name">写真 #1039</span>
+            <span class="job-meta">高画質</span>
+            <span class="job-meta">58%</span>
+          </div>
+          <div class="job-failed">
+            <div class="top">
+              <span class="hb rose">失敗</span>
+              <span class="job-name">photo_0031.webp</span>
+              <span class="job-meta">高画質</span>
+              <span class="actions"><span class="job-meta">再試行 1/3</span><span class="ui-btn ghost">再試行</span></span>
+            </div>
+            <div class="reason">書き込みに失敗しました: ディスク容量不足</div>
+          </div>
+        </div>
+      </div>
+      <div class="annotation">
+        <p><b class="del">削除:</b> 未完了 N / 未実行 N / 自動: 元画像を保持・置換 / 失敗 N。</p>
+        <p><b class="keep">残す:</b> タイトル、一括操作、行内の状態バッジ・理由・再試行。</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="narrow-wrap">
+    <div class="narrow-label"><span class="tag after">AFTER</span> 1080×700 + サイドバー展開時（キュー幅 約 450 px）</div>
+    <div class="narrow">
+      <div class="queue-head" style="min-height:38px;padding:7px 12px;">
+        <span class="queue-title">圧縮キュー</span>
+        <span class="spacer"></span>
+        <span class="ui-btn primary">待機をすべて圧縮</span>
+        <span class="ui-btn ghost">失敗をすべて再試行</span>
+      </div>
+    </div>
+    <div class="annotation"><b>幅:</b> バッジ削除後は 450 px 幅でも 1 行に収まる。</div>
+  </div>
+
+  <div class="section-label"><h2>2. 連携・自動 / 送信履歴</h2><span>Issue #667 · 「待機 N」を削除</span></div>
+  <p class="section-note">
+    削除するのはヘッダーの「待機 N」だけ。タイトル、待機の一括送信、履歴の消去、行内の状態バッジはそのまま残す。
+  </p>
+  <div class="compare">
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title"><span class="state-dot"></span>変更前</div><span class="tag before">BEFORE</span></div>
+      <div class="stage">
+        <div class="d-card">
+          <div class="d-head">
+            <span class="d-title">送信履歴</span>
+            <span class="hb amber">待機 2</span>
+            <span class="ui-btn primary">待機をすべて送信</span>
+            <span class="ui-btn ghost">履歴を消去</span>
+          </div>
+          <div class="divider"></div>
+          <div class="d-row">
+            <span class="hb amber">待機</span>
+            <span class="d-name">photo_0042.png</span>
+            <span class="d-meta">海辺のワールド</span>
+            <span class="d-meta">メイン</span>
+            <span class="d-meta">11/16 12:04</span>
+          </div>
+          <div class="d-row">
+            <span class="hb accent">送信中</span>
+            <span class="d-name">photo_0039.png</span>
+            <span class="d-meta">夜景のワールド</span>
+            <span class="d-meta">メイン</span>
+            <span class="d-meta">11/16 12:01</span>
+          </div>
+          <div class="d-row">
+            <span class="hb green">送信済み</span>
+            <span class="d-name">photo_0036.png</span>
+            <span class="d-meta">森のワールド</span>
+            <span class="d-meta">ログ</span>
+            <span class="d-meta">11/16 11:58</span>
+          </div>
+          <div class="d-row">
+            <span class="hb rose">失敗</span>
+            <span class="d-name">テスト送信</span>
+            <span class="d-meta">—</span>
+            <span class="d-meta">メイン</span>
+            <span class="d-meta">11/16 11:52</span>
+          </div>
+        </div>
+      </div>
+      <div class="annotation"><b>現状:</b> ヘッダーにタイトル、「待機 N」バッジ、一括送信、履歴消去。待機 0 件のときはバッジを出さず、一括送信を無効にする。</div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title"><span class="state-dot after"></span>変更後</div><span class="tag after">AFTER</span></div>
+      <div class="stage">
+        <div class="d-card">
+          <div class="d-head">
+            <span class="d-title">送信履歴</span>
+            <span class="ui-btn primary">待機をすべて送信</span>
+            <span class="ui-btn ghost">履歴を消去</span>
+          </div>
+          <div class="divider"></div>
+          <div class="d-row">
+            <span class="hb amber">待機</span>
+            <span class="d-name">photo_0042.png</span>
+            <span class="d-meta">海辺のワールド</span>
+            <span class="d-meta">メイン</span>
+            <span class="d-meta">11/16 12:04</span>
+          </div>
+          <div class="d-row">
+            <span class="hb accent">送信中</span>
+            <span class="d-name">photo_0039.png</span>
+            <span class="d-meta">夜景のワールド</span>
+            <span class="d-meta">メイン</span>
+            <span class="d-meta">11/16 12:01</span>
+          </div>
+          <div class="d-row">
+            <span class="hb green">送信済み</span>
+            <span class="d-name">photo_0036.png</span>
+            <span class="d-meta">森のワールド</span>
+            <span class="d-meta">ログ</span>
+            <span class="d-meta">11/16 11:58</span>
+          </div>
+          <div class="d-row">
+            <span class="hb rose">失敗</span>
+            <span class="d-name">テスト送信</span>
+            <span class="d-meta">—</span>
+            <span class="d-meta">メイン</span>
+            <span class="d-meta">11/16 11:52</span>
+          </div>
+        </div>
+      </div>
+      <div class="annotation">
+        <p><b class="del">削除:</b> 待機 N。</p>
+        <p><b class="keep">残す:</b> タイトル、一括送信（待機 0 件なら無効）、履歴消去、行内の状態バッジと試行・再試行。</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-label"><h2>3. 変更しないもの</h2><span>回帰確認の対象</span></div>
+  <div class="panel" style="padding:18px 20px;">
+    <ul class="keep-list">
+      <li>圧縮キュー: 行の状態バッジ（実行待ち / 処理中 / 完了 / 失敗 / 取消 / 不明）</li>
+      <li>圧縮キュー: 失敗理由・再試行 n/3・再試行</li>
+      <li>圧縮キュー: 「待機をすべて圧縮」「失敗をすべて再試行」</li>
+      <li>送信履歴: 行の状態バッジ（待機 / 送信中 / 送信済み / 失敗 / 取消）</li>
+      <li>送信履歴: 「待機をすべて送信」「履歴を消去」</li>
+      <li class="warn">行の並び・最大件数・ポーリング・DB スキーマ</li>
+    </ul>
+    <div class="annotation">
+      <p><b>翻訳:</b> 圧縮キューの 5 キーだけを ja / en と placeholder テストから削除する。<code>send.status.waiting</code> は残す。</p>
+      <p><b>影響なし:</b> ジョブ処理、送信処理、キュー行の仮想リスト、ヘッダーのボタン条件。</p>
+    </div>
+  </div>
+
+  <div class="footer-note">
+    <b>承認時にお願いしたいこと</b>
+    <ul>
+      <li>Q1〜Q3 の推奨案で進めてよいか（件数の代替表示を追加しない、未使用キーを削除する、ヘッダー配置は変えない）。</li>
+      <li>圧縮キューの 4 バッジと送信履歴の「待機 N」を、指定どおり全て削除してよいか。</li>
+      <li>この docs PR で <code>docs/ui.md</code> の該当記述も現行実装に合わせて更新してよいか。</li>
+    </ul>
+    実装は、このモック・設計・計画の承認後に開始し、1 つの実装 PR で #666 と #667 を閉じます。
+  </div>
+
+</div>
+</body>
+</html>
