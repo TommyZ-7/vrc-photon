@@ -1855,7 +1855,7 @@ mod tests {
 
     use super::{PluginError, PluginService};
     use crate::ipc_server::EventBus;
-    use crate::test_support::mock_sidecar;
+    use crate::test_support::{mock_sidecar, process_lock};
 
     const PLUGIN: &str = TEST_PLUGIN_ID;
     const CATALOG_VERSION: &str = "2026-11-07.1";
@@ -2907,7 +2907,10 @@ mod tests {
             .unwrap()
             .unwrap();
         let executable = Path::new(&install.path).join(TEST_ENTRYPOINT);
-        fs::write(&executable, b"#!/bin/sh\nsleep 2\nexit 1\n").unwrap();
+        {
+            let _process_guard = process_lock();
+            fs::write(&executable, b"#!/bin/sh\nsleep 2\nexit 1\n").unwrap();
+        }
 
         ctx.service.probe_async(PLUGIN).unwrap();
         let error = ctx.service.probe_async(PLUGIN).unwrap_err();
@@ -3309,6 +3312,9 @@ mod tests {
             .unwrap()
             .unwrap();
         let executable = Path::new(&install.path).join(TEST_ENTRYPOINT);
+        // The probe execs this file; keep the write from racing a fork in
+        // another test (#647).
+        let _process_guard = process_lock();
         fs::write(executable, script).expect("replace the sidecar entrypoint");
     }
 

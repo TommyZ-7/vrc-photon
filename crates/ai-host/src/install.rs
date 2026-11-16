@@ -692,6 +692,10 @@ fn extract_entry<R: Read + Seek>(
     file: &crate::manifest::ManifestFile,
     is_entrypoint: bool,
 ) -> Result<()> {
+    // Serialize executable writes with test process spawns; a concurrent fork
+    // that inherits this write descriptor makes the later exec fail ETXTBSY.
+    #[cfg(any(test, feature = "test-support"))]
+    let _process_guard = crate::test_support::process_lock();
     let mut entry = archive.by_index(info.index)?;
     let destination = staging.join(&file.path);
     if let Some(parent) = destination.parent() {

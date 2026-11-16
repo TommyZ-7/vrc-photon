@@ -113,6 +113,10 @@ pub fn open_ui() {
         .unwrap_or_else(|| std::path::Path::new("."))
         .join(name);
     if candidate.exists() {
+        // Keep test-build forks out of another test's executable write
+        // (#647). Production builds do not take this lock.
+        #[cfg(test)]
+        let _process_guard = crate::test_support::process_lock();
         if let Err(error) = std::process::Command::new(&candidate).spawn() {
             tracing::warn!(path = %candidate.display(), %error, "cannot open UI");
         }

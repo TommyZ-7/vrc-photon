@@ -6,6 +6,7 @@
 
 use std::io::{Cursor, Write};
 use std::path::Path;
+use std::sync::{Mutex, MutexGuard};
 
 use minisign::KeyPair;
 use tempfile::NamedTempFile;
@@ -26,6 +27,23 @@ pub const TEST_HOST_VERSION_MIN: &str = "0.10.0";
 pub const TEST_HOST_VERSION_MAX: &str = "0.99.99";
 pub const TEST_CATALOG_VERSION: &str = "2026-11-07.1";
 pub const TEST_ENTRYPOINT: &str = "d1-sidecar";
+
+/// Serializes executable-file writes with process spawns in the test process.
+///
+/// `fork` inherits open write descriptors from every thread. If another thread
+/// forks while this test is writing an executable, the child briefly holds the
+/// write descriptor after the writer closes its own copy, and `exec` of that
+/// file fails with `ETXTBSY` ("Text file busy"). Holding this lock around both
+/// executable writes and `Command::spawn` keeps those operations from
+/// overlapping. See #552 and #647.
+///
+/// The lock lives in this shared crate so the daemon tests and the AI host's
+/// own tests use the same mutex in one test process. Production builds compile
+/// it only when the `test-support` feature is enabled.
+pub fn process_lock() -> MutexGuard<'static, ()> {
+    static LOCK: Mutex<()> = Mutex::new(());
+    LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 
 /// A throwaway minisign key pair for signing test packages.
 #[derive(Clone, Debug)]
