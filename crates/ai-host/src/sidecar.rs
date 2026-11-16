@@ -396,7 +396,14 @@ impl SidecarClient {
             .stderr(Stdio::piped());
 
         let log = open_shared_log(&config.log_path, MAX_LOG_BYTES)?;
-        let mut child = command.spawn()?;
+        let mut child = {
+            // Do not fork while another test thread writes an executable
+            // (#647); `spawn` returns after the child exec'd, so the inherited
+            // write descriptors are gone once the lock is released.
+            #[cfg(any(test, feature = "test-support"))]
+            let _process_guard = crate::test_support::process_lock();
+            command.spawn()?
+        };
         let stdin = match child.stdin.take() {
             Some(stdin) => stdin,
             None => {
@@ -708,7 +715,13 @@ impl SidecarClient {
             .stderr(Stdio::piped());
 
         let log = open_shared_log(log_path, MAX_LOG_BYTES)?;
-        let mut child = command.spawn()?;
+        let mut child = {
+            // Probe execs a file the installer just wrote; keep the fork away
+            // from any in-flight executable write (#647).
+            #[cfg(any(test, feature = "test-support"))]
+            let _process_guard = crate::test_support::process_lock();
+            command.spawn()?
+        };
         let stdout = match child.stdout.take() {
             Some(stdout) => stdout,
             None => {
@@ -1424,7 +1437,10 @@ mod tests {
             let mut command = Command::new("/bin/sleep");
             command.arg("30");
             configure_parent_death_signal(&mut command);
-            let child = command.spawn().expect("spawn the stand-in sidecar");
+            let child = {
+                let _process_guard = crate::test_support::process_lock();
+                command.spawn().expect("spawn the stand-in sidecar")
+            };
             sender
                 .send(child)
                 .expect("hand the child to the test thread");
@@ -1463,7 +1479,10 @@ mod tests {
         let executable = dir.path().join("sidecar.sh");
         // `exec` keeps the direct child (and its parent-death signal) intact
         // instead of forking a grandchild whose signal would be cleared.
-        std::fs::write(&executable, "#!/bin/sh\nexec sleep 30\n").unwrap();
+        {
+            let _process_guard = crate::test_support::process_lock();
+            std::fs::write(&executable, "#!/bin/sh\nexec sleep 30\n").unwrap();
+        }
         std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700)).unwrap();
 
         let mut config = sample_config();
@@ -1474,9 +1493,12 @@ mod tests {
 
         let (sender, receiver) = mpsc::channel();
         let spawning_thread = thread::spawn(move || {
-            let child = sidecar_command(&config)
-                .spawn()
-                .expect("spawn the stand-in sidecar");
+            let child = {
+                let _process_guard = crate::test_support::process_lock();
+                sidecar_command(&config)
+                    .spawn()
+                    .expect("spawn the stand-in sidecar")
+            };
             sender
                 .send(child)
                 .expect("hand the child to the test thread");

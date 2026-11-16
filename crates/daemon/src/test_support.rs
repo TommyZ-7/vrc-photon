@@ -6,10 +6,19 @@
 //! binary, which fails with `ETXTBSY` ("Text file busy") on Linux.
 
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Mutex, MutexGuard, OnceLock};
 
 static MOCK_SIDECAR_BUILD: Mutex<()> = Mutex::new(());
 static MOCK_SIDECAR: OnceLock<PathBuf> = OnceLock::new();
+
+/// Serializes executable writes with process spawns across the daemon tests.
+///
+/// The plugin installer and the daemon's test helpers share one process-wide
+/// mutex so a `fork` cannot inherit an in-flight executable write and turn a
+/// later `exec` into ETXTBSY. See #552 and #647.
+pub(crate) fn process_lock() -> MutexGuard<'static, ()> {
+    vrc_photon_ai_host::test_support::process_lock()
+}
 
 /// Initializes `cell` exactly once, serializing concurrent builders with
 /// `lock`.
@@ -32,15 +41,21 @@ pub(crate) fn init_once<T: Clone>(
 /// Returns the mock sidecar binary, building it once per test process.
 ///
 /// The build is guarded by [`MOCK_SIDECAR_BUILD`] so no test can execute the
-/// binary while a concurrent build is rewriting it.
+/// binary while a concurrent build is rewriting it, and by [`process_lock`]
+/// so the forked cargo process cannot inherit another test's executable write.
 pub(crate) fn mock_sidecar() -> PathBuf {
     init_once(&MOCK_SIDECAR_BUILD, &MOCK_SIDECAR, || {
         let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
-        let status = std::process::Command::new(cargo)
-            .args(["build", "--package", "vrc-photon-ai-mock-sidecar"])
-            .current_dir(env!("CARGO_MANIFEST_DIR"))
-            .status()
-            .expect("build the mock sidecar");
+        let status = {
+            // The forked cargo child must not inherit a plugin entrypoint that
+            // another test is still writing (#647).
+            let _process_guard = process_lock();
+            std::process::Command::new(cargo)
+                .args(["build", "--package", "vrc-photon-ai-mock-sidecar"])
+                .current_dir(env!("CARGO_MANIFEST_DIR"))
+                .status()
+                .expect("build the mock sidecar")
+        };
         assert!(status.success(), "cargo build failed for the mock sidecar");
         // `cargo_bin` only resolves binaries from the package under test.
         // The daemon unit tests run in this package, so locate the workspace
