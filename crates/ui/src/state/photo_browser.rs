@@ -464,6 +464,25 @@ pub(crate) struct SessionLayout {
     pub(crate) driver_epoch: u64,
 }
 
+/// Displayed session count and how many of them are collapsed. Unlinked
+/// photos are not sessions, and IDs retained outside the current index are
+/// ignored so header actions only reflect what is on screen.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct SessionCollapseSummary {
+    pub(crate) total: usize,
+    pub(crate) collapsed: usize,
+}
+
+impl SessionCollapseSummary {
+    pub(crate) fn can_collapse(&self) -> bool {
+        self.total > 0 && self.collapsed < self.total
+    }
+
+    pub(crate) fn can_expand(&self) -> bool {
+        self.collapsed > 0
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct SessionScrollAnchor {
     pub(crate) session_id: i64,
@@ -508,6 +527,9 @@ pub(crate) struct PhotoBrowser {
     /// these instead of the settled origins while rows are moving.
     session_last_heights: Vec<f32>,
     pub(crate) collapsed_sessions: HashSet<i64>,
+    /// Distinct session IDs in the current index. Rebuilt with the index so
+    /// the header can summarize without scanning every photo row per frame.
+    displayed_session_ids: HashSet<i64>,
     pub(crate) session_collapse_motions: SessionCollapseMotions,
     /// Header kept at a fixed viewport position while collapse motions settle.
     session_scroll_anchor: Option<SessionScrollAnchor>,
@@ -528,6 +550,11 @@ impl PhotoBrowser {
     /// replaces it with the current layout's row height; the caller (the
     /// app layer) computes it so this module stays free of theme types.
     pub(crate) fn new(index: Arc<PhotoIndex>, initial_row_height: f32) -> Self {
+        let displayed_session_ids = index
+            .entries
+            .iter()
+            .filter_map(|entry| entry.session_id)
+            .collect();
         Self {
             index,
             pages: PhotoPageCache::new(),
@@ -545,6 +572,7 @@ impl PhotoBrowser {
             session_rows_key: None,
             session_last_heights: Vec::new(),
             collapsed_sessions: HashSet::new(),
+            displayed_session_ids,
             session_collapse_motions: SessionCollapseMotions::default(),
             session_scroll_anchor: None,
             session_layout_params: None,
@@ -571,14 +599,14 @@ impl PhotoBrowser {
 
     pub(crate) fn replace_index(&mut self, index: Arc<PhotoIndex>) {
         self.index = index;
-        let surviving_sessions: HashSet<i64> = self
+        self.displayed_session_ids = self
             .index
             .entries
             .iter()
             .filter_map(|entry| entry.session_id)
             .collect();
         self.collapsed_sessions
-            .retain(|session_id| surviving_sessions.contains(session_id));
+            .retain(|session_id| self.displayed_session_ids.contains(session_id));
         self.generation = self.generation.wrapping_add(1);
         self.pages.clear_pages();
         self.labels = None;
@@ -954,6 +982,54 @@ impl PhotoBrowser {
         self.session_rows = None;
         self.session_rows_key = None;
         collapsed
+    }
+
+    /// Counts the sessions in the current index and how many are collapsed.
+    /// Iterates the (small) collapsed set, never the full photo index.
+    pub(crate) fn session_collapse_summary(&self) -> SessionCollapseSummary {
+        SessionCollapseSummary {
+            total: self.displayed_session_ids.len(),
+            collapsed: self
+                .collapsed_sessions
+                .iter()
+                .filter(|id| self.displayed_session_ids.contains(id))
+                .count(),
+        }
+    }
+
+    /// Collapses or expands every session in the current index. Returns the
+    /// IDs whose state changed, sorted for deterministic callers and tests.
+    /// IDs outside the index keep their state so a filtered reload cannot
+    /// silently expand a session the user collapsed.
+    pub(crate) fn set_displayed_sessions_collapsed(&mut self, collapsed: bool) -> Vec<i64> {
+        let mut changed: Vec<i64> = if collapsed {
+            self.displayed_session_ids
+                .difference(&self.collapsed_sessions)
+                .copied()
+                .collect()
+        } else {
+            self.displayed_session_ids
+                .intersection(&self.collapsed_sessions)
+                .copied()
+                .collect()
+        };
+        changed.sort_unstable();
+        if changed.is_empty() {
+            return changed;
+        }
+        for id in &changed {
+            if collapsed {
+                self.collapsed_sessions.insert(*id);
+            } else {
+                self.collapsed_sessions.remove(id);
+            }
+        }
+        self.session_scroll_anchor = None;
+        self.pending_photo_anchor = None;
+        self.pending_photo_expected_offset = None;
+        self.session_rows = None;
+        self.session_rows_key = None;
+        changed
     }
 
     /// Drops the shaped year-rail labels so the next render rebuilds them in
@@ -2234,6 +2310,76 @@ mod tests {
         assert!(browser.session_summaries.is_empty());
         assert!(browser.session_summary_pending.is_empty());
         assert!(browser.session_summary_failed.is_empty());
+    }
+
+    #[test]
+    fn session_collapse_summary_counts_only_displayed_sessions() {
+        let mut browser = PhotoBrowser::new(session_index(), TEST_ROW_HEIGHT);
+        browser.collapsed_sessions.insert(7);
+        browser.collapsed_sessions.insert(99);
+
+        let summary = browser.session_collapse_summary();
+
+        assert_eq!(summary.total, 2);
+        assert_eq!(summary.collapsed, 1);
+        assert!(summary.can_collapse());
+        assert!(summary.can_expand());
+    }
+
+    #[test]
+    fn collapsing_all_sessions_changes_only_displayed_ones() {
+        let mut browser = PhotoBrowser::new(session_index(), TEST_ROW_HEIGHT);
+        browser.collapsed_sessions.insert(8);
+        browser.collapsed_sessions.insert(99);
+        browser.ensure_session_rows(4, 200.0, 92.0, 46.0, 44.0);
+
+        let changed = browser.set_displayed_sessions_collapsed(true);
+
+        assert_eq!(changed, vec![7]);
+        assert!(browser.collapsed_sessions.contains(&7));
+        assert!(browser.collapsed_sessions.contains(&8));
+        assert!(browser.collapsed_sessions.contains(&99));
+        assert!(browser.session_rows.is_none());
+        assert_eq!(
+            browser.set_displayed_sessions_collapsed(true),
+            Vec::<i64>::new()
+        );
+        assert!(!browser.session_collapse_summary().can_collapse());
+        assert!(browser.session_collapse_summary().can_expand());
+    }
+
+    #[test]
+    fn expanding_all_sessions_changes_only_displayed_ones() {
+        let mut browser = PhotoBrowser::new(session_index(), TEST_ROW_HEIGHT);
+        browser.collapsed_sessions.extend([7, 8, 99]);
+
+        let changed = browser.set_displayed_sessions_collapsed(false);
+
+        assert_eq!(changed, vec![7, 8]);
+        assert!(!browser.collapsed_sessions.contains(&7));
+        assert!(!browser.collapsed_sessions.contains(&8));
+        assert!(browser.collapsed_sessions.contains(&99));
+        assert_eq!(
+            browser.set_displayed_sessions_collapsed(false),
+            Vec::<i64>::new()
+        );
+        assert_eq!(browser.session_collapse_summary().collapsed, 0);
+    }
+
+    #[test]
+    fn replace_index_refreshes_displayed_session_ids() {
+        let mut browser = PhotoBrowser::new(session_index(), TEST_ROW_HEIGHT);
+        browser.collapsed_sessions.insert(9);
+
+        browser.replace_index(Arc::new(PhotoIndex::new(vec![index_entry_with_session(
+            1,
+            202601,
+            Some(9),
+        )])));
+
+        let summary = browser.session_collapse_summary();
+        assert_eq!(summary.total, 1);
+        assert_eq!(summary.collapsed, 1);
     }
 
     fn index_entry_with_session(id: i64, month: i32, session_id: Option<i64>) -> PhotoIndexEntry {

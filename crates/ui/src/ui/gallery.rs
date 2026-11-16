@@ -29,8 +29,9 @@ use vrc_photon_i18n::{tr, tr_args};
 
 use crate::app::{App, CardBoundsMap, Screen, effective_motion_fps, retain_recent_bounds};
 use crate::state::photo_browser::{
-    FailedPage, PAGE_SIZE, PageFailure, PhotoBrowser, anchor_photo_id, first_visible_photo,
-    list_scroll_top, row_for_photo, session_scroll_top, set_session_scroll_offset, visible_month,
+    FailedPage, PAGE_SIZE, PageFailure, PhotoBrowser, SessionCollapseSummary, anchor_photo_id,
+    first_visible_photo, list_scroll_top, row_for_photo, session_scroll_top,
+    set_session_scroll_offset, visible_month,
 };
 use crate::state::session_rows::{SessionRow, SessionRowKind};
 use crate::state::thumbnail::ThumbnailCache;
@@ -337,6 +338,68 @@ fn view_mode_button(
     })
 }
 
+/// Minimum header content width that still fits the bulk actions, the mode
+/// toggle, and the sort label. Below it, the sort label yields first.
+const SESSION_BULK_HEADER_MIN_WIDTH: f32 = 640.0;
+
+fn shows_session_bulk_actions(mode: PhotosViewMode) -> bool {
+    mode == PhotosViewMode::Sessions
+}
+
+fn shows_sort_label(mode: PhotosViewMode, header_width: f32) -> bool {
+    mode != PhotosViewMode::Sessions || header_width >= SESSION_BULK_HEADER_MIN_WIDTH
+}
+
+fn session_bulk_actions(
+    summary: SessionCollapseSummary,
+    app_entity: WeakEntity<App>,
+    viewport_height: f32,
+) -> AnyElement {
+    h_flex()
+        .flex_shrink_0()
+        .items_center()
+        .gap(px(2.))
+        .child(bulk_button(
+            "photos-collapse-all",
+            tr!("session.collapse_all"),
+            !summary.can_collapse(),
+            true,
+            viewport_height,
+            app_entity.clone(),
+        ))
+        .child(bulk_button(
+            "photos-expand-all",
+            tr!("session.expand_all"),
+            !summary.can_expand(),
+            false,
+            viewport_height,
+            app_entity,
+        ))
+        .into_any_element()
+}
+
+fn bulk_button(
+    id: &'static str,
+    label: String,
+    disabled: bool,
+    collapsed: bool,
+    viewport_height: f32,
+    app_entity: WeakEntity<App>,
+) -> Button {
+    Button::new(SharedString::from(id))
+        .label(label)
+        .small()
+        .ghost()
+        .disabled(disabled)
+        .on_click(move |_, _, cx| {
+            if let Some(app_entity) = app_entity.upgrade() {
+                app_entity.update(cx, |app, cx| {
+                    app.set_all_sessions_collapsed(collapsed, viewport_height, cx);
+                });
+            }
+        })
+}
+
 fn render_header(app: &App, shared: &Rc<GalleryShared>, window: &Window) -> AnyElement {
     let p = app.palette;
     let browser = shared.browser.borrow();
@@ -370,6 +433,9 @@ fn render_header(app: &App, shared: &Rc<GalleryShared>, window: &Window) -> AnyE
         let (month, count) = visible_month(&browser.index, first_visible);
         (format_captured_month(month), count)
     };
+    let mode = app.settings.ui_photos_view_mode;
+    let header_width = gallery_header_width(width, app.sidebar_collapsed, app.inspector_collapsed);
+    let summary = browser.session_collapse_summary();
 
     card_header(&p)
         .child(
@@ -399,15 +465,24 @@ fn render_header(app: &App, shared: &Rc<GalleryShared>, window: &Window) -> AnyE
                 ),
         )
         .child(div().flex_1())
+        .when(shows_session_bulk_actions(mode), |this| {
+            this.child(session_bulk_actions(
+                summary,
+                shared.app.clone(),
+                session_grid_viewport_height(window),
+            ))
+        })
         .child(view_mode_toggle(app, shared.app.clone()))
-        .child(
-            div()
-                .flex_shrink_0()
-                .whitespace_nowrap()
-                .text_size(px(10.))
-                .text_color(rgb(p.muted_2))
-                .child(tr!("gallery.sort_newest")),
-        )
+        .when(shows_sort_label(mode, header_width), |this| {
+            this.child(
+                div()
+                    .flex_shrink_0()
+                    .whitespace_nowrap()
+                    .text_size(px(10.))
+                    .text_color(rgb(p.muted_2))
+                    .child(tr!("gallery.sort_newest")),
+            )
+        })
         .into_any_element()
 }
 
@@ -1972,12 +2047,14 @@ mod tests {
     use super::{
         CardStringsCache, CardStringsKey, FailedPage, PAGE_SIZE, PageFailure, error_span,
         page_error_panels, session_error_panels, session_player_summary, session_time_label,
+        shows_session_bulk_actions, shows_sort_label,
     };
     use crate::state::session_rows::SessionRows;
     use crate::state::test_support::test_photo;
     use chrono::{FixedOffset, TimeZone};
     use std::collections::HashSet;
     use vrc_photon_core::model::PhotoIndexEntry;
+    use vrc_photon_core::settings::PhotosViewMode;
 
     fn ts(year: i32, month: u32, day: u32, hour: u32, minute: u32) -> i64 {
         FixedOffset::east_opt(9 * 3600)
@@ -1996,6 +2073,19 @@ mod tests {
             captured_day: day,
             session_id: session,
         }
+    }
+
+    #[test]
+    fn session_bulk_actions_are_only_shown_in_session_mode() {
+        assert!(!shows_session_bulk_actions(PhotosViewMode::Timeline));
+        assert!(shows_session_bulk_actions(PhotosViewMode::Sessions));
+    }
+
+    #[test]
+    fn the_sort_label_yields_before_bulk_actions_in_a_narrow_session_header() {
+        assert!(shows_sort_label(PhotosViewMode::Timeline, 400.0));
+        assert!(!shows_sort_label(PhotosViewMode::Sessions, 600.0));
+        assert!(shows_sort_label(PhotosViewMode::Sessions, 700.0));
     }
 
     #[test]

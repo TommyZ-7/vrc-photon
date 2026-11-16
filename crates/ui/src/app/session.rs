@@ -5,13 +5,14 @@ use std::time::{Duration, Instant};
 
 use gpui_kit::*;
 use vrc_photon_core::error::CoreError;
-use vrc_photon_core::model::SessionSummary;
+use vrc_photon_core::model::{PhotoIndexEntry, SessionSummary};
 use vrc_photon_core::settings::PhotosViewMode;
 
 use crate::app::App;
 use crate::state::photo_browser::{
     anchor_photo_id, list_scroll_top, session_scroll_top, set_session_scroll_offset,
 };
+use crate::state::session_rows::SessionRows;
 use crate::ui::theme::{
     MOTION_BASE, SESSION_CONTINUATION_ROW_HEIGHT, SESSION_DATE_LABEL_ROW_HEIGHT,
     SESSION_HEADER_ROW_HEIGHT,
@@ -43,6 +44,27 @@ fn keep_header_viewport_y(y: f32, header_height: f32, viewport_height: f32) -> f
 
 fn header_scroll_offset(header_offset: f32, viewport_y: f32) -> f32 {
     (header_offset - viewport_y).max(0.0)
+}
+
+/// Scroll anchor for a bulk collapse/expand: the header of the session that
+/// owns the top visible photo. Unlinked photos have no session header, so
+/// they keep the current offset.
+fn bulk_anchor_for_scroll(
+    rows: &SessionRows,
+    entries: &[PhotoIndexEntry],
+    scroll_top: f32,
+    heights: &[f32],
+    viewport_height: f32,
+) -> Option<(i64, f32)> {
+    let photo_index = rows.top_photo_index_with_heights(scroll_top, heights)?;
+    let session_id = entries.get(photo_index)?.session_id?;
+    let header_offset = rows.offset_for_session_with_heights(session_id, heights)?;
+    let viewport_y = keep_header_viewport_y(
+        header_offset - scroll_top,
+        SESSION_HEADER_ROW_HEIGHT,
+        viewport_height,
+    );
+    Some((session_id, viewport_y))
 }
 
 impl App {
@@ -266,6 +288,79 @@ impl App {
         cx.notify();
     }
 
+    /// Collapses or expands every session in the current library index. The
+    /// top visible session header stays at the top of the viewport; unlinked
+    /// photos leave the scroll offset untouched.
+    pub(crate) fn set_all_sessions_collapsed(
+        &mut self,
+        collapsed: bool,
+        viewport_height: f32,
+        cx: &mut Context<Self>,
+    ) {
+        let now = Instant::now();
+        let (columns, row_height) = {
+            let browser = self.library.borrow();
+            (browser.columns.max(1), browser.row_height)
+        };
+        let mut browser = self.library.borrow_mut();
+        let before = browser.session_layout(
+            columns,
+            row_height,
+            SESSION_HEADER_ROW_HEIGHT + self.grid_gap(),
+            SESSION_DATE_LABEL_ROW_HEIGHT + self.grid_gap(),
+            SESSION_CONTINUATION_ROW_HEIGHT + self.grid_gap(),
+            now,
+        );
+        let anchor = bulk_anchor_for_scroll(
+            &before.rows,
+            &browser.index.entries,
+            session_scroll_top(&browser.session_scroll),
+            &before.heights,
+            viewport_height,
+        );
+
+        let changed = browser.set_displayed_sessions_collapsed(collapsed);
+        if changed.is_empty() {
+            return;
+        }
+        let animating = if let Some(duration) = collapse_motion_duration(cx.reduce_motion()) {
+            for id in &changed {
+                browser.animate_session_collapse(*id, collapsed, duration, now);
+            }
+            true
+        } else {
+            for id in &changed {
+                browser.settle_session_collapse(*id);
+            }
+            false
+        };
+
+        let after = browser.session_layout(
+            columns,
+            row_height,
+            SESSION_HEADER_ROW_HEIGHT + self.grid_gap(),
+            SESSION_DATE_LABEL_ROW_HEIGHT + self.grid_gap(),
+            SESSION_CONTINUATION_ROW_HEIGHT + self.grid_gap(),
+            now,
+        );
+        if let Some((session_id, viewport_y)) = anchor {
+            let header_offset = after
+                .rows
+                .offset_for_session_with_heights(session_id, &after.heights)
+                .unwrap_or(0.0);
+            set_session_scroll_offset(&browser, header_scroll_offset(header_offset, viewport_y));
+            if animating {
+                browser.set_session_scroll_anchor(session_id, viewport_y);
+            } else {
+                browser.cancel_session_scroll_anchor();
+            }
+        } else if animating {
+            browser.cancel_session_scroll_anchor();
+        }
+        drop(browser);
+        cx.notify();
+    }
+
     /// Loads session metadata for the visible header rows. The browser has
     /// already marked these IDs pending, so a duplicate frame cannot plan the
     /// same set again.
@@ -340,10 +435,106 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::{
-        collapse_motion_duration, header_scroll_offset, keep_header_viewport_y, next_view_mode,
+        bulk_anchor_for_scroll, collapse_motion_duration, header_scroll_offset,
+        keep_header_viewport_y, next_view_mode,
     };
+    use crate::state::session_rows::SessionRows;
     use crate::ui::theme::MOTION_BASE;
+    use std::collections::HashSet;
+    use vrc_photon_core::model::PhotoIndexEntry;
     use vrc_photon_core::settings::PhotosViewMode;
+
+    fn session_entry(id: i64, day: i32, session: Option<i64>) -> PhotoIndexEntry {
+        PhotoIndexEntry {
+            id,
+            captured_at_utc: id,
+            captured_month: day / 100,
+            captured_day: day,
+            session_id: session,
+        }
+    }
+
+    fn rows_for(entries: &[PhotoIndexEntry]) -> SessionRows {
+        SessionRows::build(
+            entries,
+            2,
+            200.0,
+            92.0,
+            46.0,
+            44.0,
+            &HashSet::new(),
+            &HashSet::new(),
+        )
+    }
+
+    #[test]
+    fn bulk_anchor_uses_the_top_visible_session_header() {
+        let entries = vec![
+            session_entry(4, 20261109, Some(7)),
+            session_entry(3, 20261109, Some(7)),
+            session_entry(2, 20261108, Some(8)),
+            session_entry(1, 20261108, Some(8)),
+        ];
+        let rows = rows_for(&entries);
+        let heights = rows.heights().to_vec();
+
+        assert_eq!(
+            bulk_anchor_for_scroll(&rows, &entries, 320.0, &heights, 700.0),
+            Some((8, 0.0))
+        );
+    }
+
+    #[test]
+    fn bulk_anchor_clamps_a_partially_hidden_header_into_view() {
+        let entries = vec![
+            session_entry(4, 20261109, Some(7)),
+            session_entry(3, 20261109, Some(7)),
+            session_entry(2, 20261108, Some(8)),
+            session_entry(1, 20261108, Some(8)),
+        ];
+        let rows = rows_for(&entries);
+        let heights = rows.heights().to_vec();
+
+        // The session 8 header starts at 292 px; this scroll top hides it by
+        // 8 px, so the anchor clamps it back to the top of the viewport.
+        assert_eq!(
+            bulk_anchor_for_scroll(&rows, &entries, 300.0, &heights, 700.0),
+            Some((8, 0.0))
+        );
+    }
+
+    #[test]
+    fn bulk_anchor_resolves_a_photo_row_to_its_session_header() {
+        let entries = vec![
+            session_entry(4, 20261109, Some(7)),
+            session_entry(3, 20261109, Some(7)),
+            session_entry(2, 20261108, Some(8)),
+            session_entry(1, 20261108, Some(8)),
+        ];
+        let rows = rows_for(&entries);
+        let heights = rows.heights().to_vec();
+
+        // Session 8's photo row starts at 384 px; this scroll top is inside
+        // that row, so the anchor must still resolve to session 8's header.
+        assert_eq!(
+            bulk_anchor_for_scroll(&rows, &entries, 450.0, &heights, 700.0),
+            Some((8, 0.0))
+        );
+    }
+
+    #[test]
+    fn bulk_anchor_is_none_for_unlinked_photos() {
+        let entries = vec![
+            session_entry(2, 20261109, None),
+            session_entry(1, 20261109, None),
+        ];
+        let rows = rows_for(&entries);
+
+        assert_eq!(
+            bulk_anchor_for_scroll(&rows, &entries, 100.0, rows.heights(), 700.0),
+            None
+        );
+    }
 
     #[test]
     fn a_visible_session_header_keeps_its_viewport_position() {
