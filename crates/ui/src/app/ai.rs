@@ -1106,8 +1106,7 @@ pub(crate) fn enqueue_manual_retag(
         return Ok(ManualRetagOutcome::NotReady);
     }
     let started = db.start_waiting_tagging_jobs(photo_ids, AI_PLUGIN_ID)?;
-    let inserted =
-        db.enqueue_tagging_jobs(photo_ids, AI_PLUGIN_ID, TaggingJobStatus::Pending)?;
+    let inserted = db.enqueue_tagging_jobs(photo_ids, AI_PLUGIN_ID, TaggingJobStatus::Pending)?;
     Ok(ManualRetagOutcome::Queued(started + inserted))
 }
 

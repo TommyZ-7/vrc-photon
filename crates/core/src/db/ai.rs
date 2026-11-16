@@ -570,11 +570,7 @@ impl Db {
 
     /// Promotes `waiting` jobs for the given photos and plugin to `pending`.
     /// Other photos, other plugins, and terminal jobs are left untouched.
-    pub fn start_waiting_tagging_jobs(
-        &self,
-        photo_ids: &[i64],
-        plugin_id: &str,
-    ) -> Result<usize> {
+    pub fn start_waiting_tagging_jobs(&self, photo_ids: &[i64], plugin_id: &str) -> Result<usize> {
         let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
         let mut changed = 0;
         for photo_id in photo_ids {

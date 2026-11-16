@@ -5730,7 +5730,12 @@ fn start_waiting_send_promotes_the_photo_row_and_keeps_its_origin() {
     let db = Db::open_in_memory().unwrap();
     let photo = seed_photo(&db);
     let id = db
-        .enqueue_send(photo, SendKind::Photo, SendOrigin::Auto, SendStatus::Waiting)
+        .enqueue_send(
+            photo,
+            SendKind::Photo,
+            SendOrigin::Auto,
+            SendStatus::Waiting,
+        )
         .unwrap()
         .unwrap();
 
@@ -5756,7 +5761,12 @@ fn start_waiting_send_ignores_pending_rows_and_other_photos() {
         .unwrap()
         .unwrap();
     let waiting = db
-        .enqueue_send(other, SendKind::Photo, SendOrigin::Auto, SendStatus::Waiting)
+        .enqueue_send(
+            other,
+            SendKind::Photo,
+            SendOrigin::Auto,
+            SendStatus::Waiting,
+        )
         .unwrap()
         .unwrap();
 
