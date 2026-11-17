@@ -82,16 +82,17 @@ pub fn parse_path(path: &Path) -> Option<ParsedPhotoName> {
     parse_photo_filename(path.file_name()?.to_str()?)
 }
 
-/// Returns true when the file extension is a source photo format produced by
-/// VRChat. Compressed outputs are indexed as derivatives instead.
+/// The only file extension accepted as a source photo.
+pub const SOURCE_PHOTO_EXTENSION: &str = "png";
+
+/// Returns true when the file extension is the PNG format VRChat produces.
+///
+/// JPG/JPEG files are not VRChat photos (for example Steam screenshots) and
+/// are outside scanning, watching, and importing.
 pub fn is_source_photo(path: &Path) -> bool {
-    matches!(
-        path.extension()
-            .and_then(|ext| ext.to_str())
-            .map(|ext| ext.to_ascii_lowercase())
-            .as_deref(),
-        Some("png" | "jpg" | "jpeg")
-    )
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case(SOURCE_PHOTO_EXTENSION))
 }
 
 #[cfg(test)]
@@ -119,9 +120,12 @@ mod tests {
     }
 
     #[test]
-    fn extension_detection_is_case_insensitive() {
+    fn extension_detection_accepts_only_png() {
+        assert!(is_source_photo(Path::new("a.png")));
         assert!(is_source_photo(Path::new("a.PNG")));
-        assert!(is_source_photo(Path::new("a.jpeg")));
+        assert!(!is_source_photo(Path::new("a.jpg")));
+        assert!(!is_source_photo(Path::new("a.JPEG")));
         assert!(!is_source_photo(Path::new("a.webp")));
+        assert!(!is_source_photo(Path::new("a")));
     }
 }

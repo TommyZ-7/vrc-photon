@@ -94,7 +94,7 @@ pub struct ScanProgress {
 
 /// Recursively scans a VRChat photo root.
 ///
-/// Only source PNG/JPEG files are returned. The `compressed` subdirectory is
+/// Only source PNG files are returned. The `compressed` subdirectory is
 /// skipped so that generated derivatives are not indexed as new photos.
 /// Failures are dropped; use [`scan_root_report`] to inspect them.
 pub fn scan_root(root: &Path) -> Result<Vec<ScannedPhoto>> {
@@ -1017,6 +1017,11 @@ mod tests {
         let dir = tempdir().unwrap();
         let root = dir.path();
         write_png(&root.join("VRChat_2026-10-21_21-14-03.221_4x3.png"));
+        crate::image_decode::test_support::write_jpeg_with_orientation(
+            &root.join("Steam_2026-10-21_21-14-04.221_4x3.jpg"),
+            &RgbaImage::from_pixel(4, 3, Rgba([10, 20, 30, 255])),
+            1,
+        );
         std::fs::create_dir(root.join("compressed")).unwrap();
         write_png(
             &root
@@ -1034,7 +1039,32 @@ mod tests {
         let report = scan_and_index(&db, root_id, root).unwrap();
         assert_eq!(report.found, 1);
         assert_eq!(report.indexed, 1);
+        assert!(report.failures.is_empty());
         assert_eq!(db.count_photos().unwrap(), 1);
+    }
+
+    #[test]
+    fn scan_root_ignores_jpeg_sources() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        write_png(&root.join("VRChat_2026-10-21_21-14-03.221_4x3.png"));
+        for name in [
+            "Steam_2026-10-21_21-14-04.221_4x3.jpg",
+            "Steam_2026-10-21_21-14-05.221_4x3.jpeg",
+        ] {
+            crate::image_decode::test_support::write_jpeg_with_orientation(
+                &root.join(name),
+                &RgbaImage::from_pixel(4, 3, Rgba([10, 20, 30, 255])),
+                1,
+            );
+        }
+
+        let photos = scan_root(root).unwrap();
+        assert_eq!(photos.len(), 1);
+        assert_eq!(
+            photos[0].file_name,
+            "VRChat_2026-10-21_21-14-03.221_4x3.png"
+        );
     }
 
     #[test]
@@ -1049,27 +1079,17 @@ mod tests {
     }
 
     #[test]
-    fn scan_one_reports_orientation_aware_dimensions() {
+    fn scan_one_ignores_jpeg_sources() {
         let dir = tempdir().unwrap();
-        let source = RgbaImage::from_pixel(200, 100, Rgba([10, 20, 30, 255]));
-        for (orientation, minute) in [(6, "03"), (8, "04")] {
-            let path = dir
-                .path()
-                .join(format!("VRChat_2026-10-21_21-14-{minute}.221_200x100.jpg"));
-            crate::image_decode::test_support::write_jpeg_with_orientation(
-                &path,
-                &source,
-                orientation,
-            );
+        let path = dir.path().join("Steam_2026-10-21_21-14-03.221_200x100.jpg");
+        crate::image_decode::test_support::write_jpeg_with_orientation(
+            &path,
+            &RgbaImage::from_pixel(200, 100, Rgba([10, 20, 30, 255])),
+            6,
+        );
 
-            let photo = scan_one(dir.path(), &path).expect("photo");
-
-            assert_eq!(
-                (photo.width, photo.height),
-                (100, 200),
-                "orientation {orientation}"
-            );
-        }
+        assert!(scan_one(dir.path(), &path).is_none());
+        assert!(scan_one_detailed(dir.path(), &path).is_none());
     }
 
     #[test]

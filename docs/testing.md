@@ -36,8 +36,8 @@ doc-test は含めない。`--list` で総数を確認する場合は
 | ファイル | 内容 |
 |---|---|
 | `db/` | schema 初期化、写真UPSERT、文脈/プレイヤー、検索、セッション要約、ランダム抽選、キューの原子的取得、写真単位のバッチ取得、強制削除判定、アクティブジョブのみのfailed化、`retry_count` と再試行上限、`daemon_errors` のUPSERT/削除、`daemon_commands` の重複排除と取り出し、`scan_root` payloadの往復、パス集合の一括状態取得 |
-| `scanner.rs` | フォルダ走査、単一ファイル索引、compressed除外、読めないファイル・ディレクトリの失敗記録、walking/indexing進捗コールバック、無変更写真のスキップ（再ハッシュなし）、変更ファイルの再索引、missingからの復帰、ネストルートのスキップ |
-| `photo_filename.rs` | VRChatファイル名、無効名、拡張子 |
+| `scanner.rs` | フォルダ走査、単一ファイル索引、PNGのみの対象判定（JPG/JPEG除外）、compressed除外、読めないファイル・ディレクトリの失敗記録、walking/indexing進捗コールバック、無変更写真のスキップ（再ハッシュなし）、変更ファイルの再索引、missingからの復帰、ネストルートのスキップ |
+| `photo_filename.rs` | VRChatファイル名、無効名、PNGのみの拡張子判定 |
 | `log_parser.rs` | イベント解析、セッション、入退室 |
 | `linker.rs` | ログ紐付け、XMPのみの紐付け |
 | `world_name.rs` | ステータス、指数バックオフ、`Retry-After` の clamp、レスポンスの `name` 検証（空・長すぎ・制御文字・ID不一致） |
@@ -46,7 +46,7 @@ doc-test は含めない。`--list` で総数を確認する場合は
 | `thumbnail.rs` | BC7サムネイル生成、キャッシュ、`.meta` の mtime+size 検証、旧WebPの削除、存在しない元ファイル |
 | `bc7.rs` | BC7 エンコード、寸法ごとのバイト数 |
 | `image_decode.rs` | PNG/JPEG/WebP/JXL のデコード、EXIF 回転、画素上限 |
-| `importer.rs` | コピー、移動、衝突連番、非画像スキップ、ファイル単位の失敗継続、部分移動（コピー成功・元削除失敗） |
+| `importer.rs` | PNG取り込み、JPG/JPEGスキップ、コピー、移動、衝突連番、非画像スキップ、ファイル単位の失敗継続、部分移動（コピー成功・元削除失敗） |
 | `settings.rs` | 設定JSONの往復、パス検出 |
 | `logging.rs` | ログファイルの作成・追記・サイズ超過時のローテーション |
 
