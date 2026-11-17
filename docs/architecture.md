@@ -340,8 +340,8 @@ crates/ui/src/
 
 ### 4.6 取り込み
 
-- UIの「コピー取込」「移動取込」が `rfd` でファイルまたはフォルダを選ぶ。
-- `importer::import_files` が管理フォルダへコピー/移動する。名前衝突は連番。
+- UIの「コピー取込」「移動取込」が `rfd` でファイルまたはフォルダを選ぶ。対象は PNG のみで、選択フィルタとフォルダ走査の両方で JPG/JPEG を除外する。
+- `importer::import_files` が PNG を管理フォルダへコピー/移動する。名前衝突は連番。
 - フォルダ取り込みは `ImportOptions` に従う。`preserve_structure=false`（既定）はフラット、`true` はサブフォルダを再現する。`include_root` は `preserve_structure=true` のときだけ、選択したフォルダ名を先頭に含める。
 - 取り込み先を `library_roots` に `managed` として登録し、`daemon_commands` の
   `scan_root`（payload=取り込み先パス）で**そのルートだけ**を再スキャンする。

@@ -1,6 +1,6 @@
 # 取り込み対象を PNG のみに絞る (#681) 実装計画
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 写真の索引・監視・手動取り込みの対象を PNG のみにし、JPG/JPEG を取り込まない（#681）。
 
@@ -34,12 +34,12 @@
 
 ### Task 0: 実装用 worktree
 
-- [ ] `main` を最新化し、`origin/main` から実装 worktree を作る。
+- [x] `main` を最新化し、`origin/main` から実装 worktree を作る。
   ```bash
   git fetch origin
   git worktree add ../vrc-photo-manager-681-impl -b feat/681-png-only-import origin/main
   ```
-- [ ] main ワークツリーと docs 用ワークツリーの未コミット変更には触れない。
+- [x] main ワークツリーと docs 用ワークツリーの未コミット変更には触れない。
 
 ---
 
@@ -52,7 +52,7 @@
 **Interfaces:**
 - `pub fn is_source_photo(path: &Path) -> bool` の意味を「PNG の原本写真」に変更する。シグネチャは変えない。
 
-- [ ] **Step 1: 失敗するテストへ更新する**
+- [x] **Step 1: 失敗するテストへ更新する**
 
 既存の `extension_detection_is_case_insensitive` を次の内容に置き換える。
 
@@ -68,12 +68,12 @@ fn extension_detection_accepts_only_png() {
 }
 ```
 
-- [ ] **Step 2: テストが失敗することを確認する**
+- [x] **Step 2: テストが失敗することを確認する**
 
 Run: `cargo test -p vrc-photon-core photo_filename::tests::extension_detection_accepts_only_png`
 Expected: FAIL（`a.jpg` が true になる）
 
-- [ ] **Step 3: `is_source_photo` と doc コメントを変更する**
+- [x] **Step 3: `is_source_photo` と doc コメントを変更する**
 
 ```rust
 /// Returns true when the file extension is the PNG format VRChat produces.
@@ -91,7 +91,7 @@ pub fn is_source_photo(path: &Path) -> bool {
 }
 ```
 
-- [ ] **Step 4: テストが通ることを確認する**
+- [x] **Step 4: テストが通ることを確認する**
 
 Run: `cargo test -p vrc-photon-core photo_filename::tests`
 Expected: PASS
@@ -107,7 +107,7 @@ Expected: PASS
 **Interfaces:**
 - 本番コードは変更しない。`walk` と `scan_one_detailed` は Task 1 の判定に従う。
 
-- [ ] **Step 1: `scans_and_indexes_vrchat_photos` に JPG を混ぜる**
+- [x] **Step 1: `scans_and_indexes_vrchat_photos` に JPG を混ぜる**
 
 ルート直下と `compressed/` の PNG に加えて、ルート直下に JPG を作る。
 
@@ -122,7 +122,7 @@ crate::image_decode::test_support::write_jpeg_with_orientation(
 既存の `photos.len() == 1`、`report.found == 1`、`report.indexed == 1`、
 `db.count_photos() == 1` はそのまま維持する。
 
-- [ ] **Step 2: JPG 専用の走査テストを追加する**
+- [x] **Step 2: JPG 専用の走査テストを追加する**
 
 ```rust
 #[test]
@@ -147,7 +147,7 @@ fn scan_root_ignores_jpeg_sources() {
 }
 ```
 
-- [ ] **Step 3: `scan_one_reports_orientation_aware_dimensions` を JPG 非対象のテストへ置き換える**
+- [x] **Step 3: `scan_one_reports_orientation_aware_dimensions` を JPG 非対象のテストへ置き換える**
 
 ```rust
 #[test]
@@ -169,7 +169,7 @@ EXIF 回転を含む寸法の検証は `crates/core/src/image_decode.rs` の
 `image_info_reports_oriented_dimensions_and_orientation` が既に担っているため、
 走査側のテストは削除してよい。
 
-- [ ] **Step 4: 走査テストが通ることを確認する**
+- [x] **Step 4: 走査テストが通ることを確認する**
 
 Run: `cargo test -p vrc-photon-core scanner::tests`
 Expected: PASS
@@ -185,7 +185,7 @@ Expected: PASS
 **Interfaces:**
 - 本番コードは変更しない。`collect_folder_sources` と `import_one` は Task 1 の判定に従う。
 
-- [ ] **Step 1: 直接指定された JPG/JPEG がスキップされるテストを追加する**
+- [x] **Step 1: 直接指定された JPG/JPEG がスキップされるテストを追加する**
 
 ```rust
 #[test]
@@ -235,7 +235,7 @@ fn folder_scan_ignores_jpeg_sources() {
 }
 ```
 
-- [ ] **Step 2: 取り込みテストが通ることを確認する**
+- [x] **Step 2: 取り込みテストが通ることを確認する**
 
 Run: `cargo test -p vrc-photon-core importer::tests`
 Expected: PASS
@@ -248,7 +248,7 @@ Expected: PASS
 - Modify: `crates/daemon/src/tests.rs`
 - Test: `poll_watchers_queues_removals_and_ignores_derivative_creates` を拡張する
 
-- [ ] **Step 1: 監視テストに JPG の作成イベントを追加する**
+- [x] **Step 1: 監視テストに JPG の作成イベントを追加する**
 
 `photo_dir` に次のパスを足し、作成イベントを送る。
 
@@ -269,7 +269,7 @@ assert!(!daemon.dirty_paths.contains(&jpeg));
 
 既存の削除イベント（`removed` / `old`）が `dirty_paths` に入ることは維持する。
 
-- [ ] **Step 2: 監視テストが通ることを確認する**
+- [x] **Step 2: 監視テストが通ることを確認する**
 
 Run: `cargo test -p vrc-photon-daemon poll_watchers_queues_removals_and_ignores_derivative_creates`
 Expected: PASS
@@ -287,7 +287,7 @@ Expected: PASS
 **Interfaces:**
 - Produces: `fn import_dialog_filters() -> Vec<(String, Vec<String>)>`
 
-- [ ] **Step 1: フィルタを組み立てる関数を追加し、`pick_import_files` から使う**
+- [x] **Step 1: フィルタを組み立てる関数を追加し、`pick_import_files` から使う**
 
 ```rust
 fn import_dialog_filters() -> Vec<(String, Vec<String>)> {
@@ -297,7 +297,7 @@ fn import_dialog_filters() -> Vec<(String, Vec<String>)> {
 
 `pick_import_files` の `filters:` は `import_dialog_filters(),` に置き換える。
 
-- [ ] **Step 2: フィルタの拡張子を固定するテストを追加する**
+- [x] **Step 2: フィルタの拡張子を固定するテストを追加する**
 
 ```rust
 #[test]
@@ -310,7 +310,7 @@ fn import_filter_accepts_only_png() {
 
 テストモジュールの `use super::{...}` に `import_dialog_filters` を追加する。
 
-- [ ] **Step 3: 翻訳キーを改名する**
+- [x] **Step 3: 翻訳キーを改名する**
 
 `crates/i18n/locales/ja.yml`:
 
@@ -327,7 +327,7 @@ import.dialog.filter.png: "PNG images"
 古い `import.dialog.filter.images` は両方から削除する。`tr_args!` を使わないため
 `crates/i18n/tests/placeholders.rs` の変更は不要。
 
-- [ ] **Step 4: UI テストが通ることを確認する**
+- [x] **Step 4: UI テストが通ることを確認する**
 
 Run: `cargo test -p vrc-photon-ui import_filter_accepts_only_png`
 Expected: PASS
@@ -336,22 +336,22 @@ Expected: PASS
 
 ### Task 6: 全体検証
 
-- [ ] **Step 1: フォーマット**
+- [x] **Step 1: フォーマット**
 
 Run: `cargo fmt --all -- --check`
 Expected: 差分なし
 
-- [ ] **Step 2: Clippy**
+- [x] **Step 2: Clippy**
 
 Run: `cargo clippy --workspace --all-targets -- -D warnings`
 Expected: 警告なし
 
-- [ ] **Step 3: テスト**
+- [x] **Step 3: テスト**
 
 Run: `cargo test --workspace`
 Expected: 全件 PASS
 
-- [ ] **Step 4: 差分を確認する**
+- [x] **Step 4: 差分を確認する**
 
 Run: `git diff --stat`
 Expected: `photo_filename.rs`、`scanner.rs`、`importer.rs`、`daemon/tests.rs`、
@@ -361,7 +361,7 @@ Expected: `photo_filename.rs`、`scanner.rs`、`importer.rs`、`daemon/tests.rs`
 
 ### Task 7: PR と CI
 
-- [ ] **Step 1: ブランチを push し、`enhancement` ラベル付きの PR を作る**
+- [x] **Step 1: ブランチを push し、`enhancement` ラベル付きの PR を作る**
 
 ```bash
 git push -u origin feat/681-png-only-import
@@ -377,11 +377,11 @@ PR 本文には次を書く。
 - 圧縮生成物の derivative 除外は今回の対象外であること
 - 検証コマンドと結果
 
-- [ ] **Step 2: `ci-watch` スキルに従って CI を監視する**
+- [x] **Step 2: `ci-watch` スキルに従って CI を監視する**
 
-- [ ] **Step 3: 全チェックが green になったら merge し、`main` に戻って pull する**
+- [x] **Step 3: 全チェックが green になったら merge し、`main` に戻って pull する**
 
-- [ ] **Step 4: マージ済みブランチと worktree を片付ける**
+- [x] **Step 4: マージ済みブランチと worktree を片付ける**
 
 ---
 
@@ -394,27 +394,27 @@ PR 本文には次を書く。
 - Modify: `docs/testing.md`
 - Modify: この計画ファイル（完了時にチェックボックスを `- [x]` にする）
 
-- [ ] **Step 1: `docs/features.md` を更新する**
+- [x] **Step 1: `docs/features.md` を更新する**
 
 - §1 の対象を `.png` のみに変更し、JPG/JPEG は走査・監視・取り込みの対象外
   （Steam のスクリーンショットなど）であることを書く。
 - §4 に「取り込み対象は PNG のみ。ファイル選択フィルタも PNG に限定し、
   JPG/JPEG はスキップする」を追加する。
 
-- [ ] **Step 2: `docs/troubleshooting.md` を更新する**
+- [x] **Step 2: `docs/troubleshooting.md` を更新する**
 
 §2 の「対応拡張子は `.png` / `.jpg` / `.jpeg` のみ」を
 「対応拡張子は `.png` のみ。JPG/JPEG は対象外」に変更する。
 
-- [ ] **Step 3: `docs/architecture.md` を更新する**
+- [x] **Step 3: `docs/architecture.md` を更新する**
 
 §4.6 に、ファイル選択とフォルダ走査の対象が PNG のみであることを追加する。
 
-- [ ] **Step 4: `docs/testing.md` を更新する**
+- [x] **Step 4: `docs/testing.md` を更新する**
 
 `scanner.rs`、`photo_filename.rs`、`importer.rs` の説明を
 「PNG のみ」「JPG/JPEG 除外」を含む内容に合わせる。
 
-- [ ] **Step 5: docs PR を作り、CI green を確認して merge する**
+- [x] **Step 5: docs PR を作り、CI green を確認して merge する**
 
 タイトル例: `docs: document PNG-only import (#681)`。
