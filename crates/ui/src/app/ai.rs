@@ -1720,6 +1720,50 @@ impl App {
         );
     }
 
+    pub(crate) fn retry_failed_tagging_job(&mut self, job_id: &str, cx: &mut Context<Self>) {
+        match self.db.retry_tagging_job(job_id) {
+            Ok(true) => {
+                self.wake_daemon(IpcRequest::WakeTagging, cx);
+                self.toast_success(
+                    tr_args!("notifications.job_failures.retry_queued", count = 1),
+                    cx,
+                );
+            }
+            Ok(false) => self.toast_warning(tr!("notifications.job_failures.retry_none"), cx),
+            Err(error) => {
+                tracing::warn!(%error, job_id, "cannot retry a tagging job");
+                self.toast_error(
+                    tr_args!("notifications.job_failures.error", error = error),
+                    cx,
+                );
+            }
+        }
+        self.refresh_ai_state(cx);
+        self.refresh_queue(cx);
+    }
+
+    pub(crate) fn retry_all_failed_tagging_jobs(&mut self, cx: &mut Context<Self>) {
+        match self.db.retry_all_failed_tagging_jobs(AI_PLUGIN_ID) {
+            Ok(0) => self.toast_info(tr!("notifications.job_failures.retry_none"), cx),
+            Ok(count) => {
+                self.wake_daemon(IpcRequest::WakeTagging, cx);
+                self.toast_success(
+                    tr_args!("notifications.job_failures.retry_queued", count = count),
+                    cx,
+                );
+            }
+            Err(error) => {
+                tracing::warn!(%error, "cannot retry failed tagging jobs");
+                self.toast_error(
+                    tr_args!("notifications.job_failures.error", error = error),
+                    cx,
+                );
+            }
+        }
+        self.refresh_ai_state(cx);
+        self.refresh_queue(cx);
+    }
+
     pub(crate) fn process_untagged_ai_action(
         &mut self,
         _window: &mut Window,

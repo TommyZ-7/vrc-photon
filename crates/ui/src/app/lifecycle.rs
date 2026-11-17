@@ -709,8 +709,7 @@ impl App {
 
     pub(crate) fn reload_job_state(&mut self, cx: &mut Context<Self>) {
         let job_apply = self.apply_job_snapshot(collect_jobs(&self.db));
-        let notified =
-            self.apply_failure_transition(job_apply.failed_count, job_apply.daemon_count, cx);
+        let notified = self.apply_failure_transition(job_apply.failure_counts, cx);
         if job_apply.changed || notified {
             cx.notify();
         }

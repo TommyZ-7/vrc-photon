@@ -13,7 +13,7 @@ use std::time::Duration;
 use chrono::Utc;
 use gpui_kit::component::notification::NotificationType;
 use gpui_kit::*;
-use vrc_photon_core::ai::{PhotoAi, PhotoAiTagView};
+use vrc_photon_core::ai::{AI_PLUGIN_ID, PhotoAi, PhotoAiTagView};
 use vrc_photon_core::db::Db;
 use vrc_photon_core::error::CoreError;
 use vrc_photon_core::model::{
@@ -28,7 +28,10 @@ use crate::app::App;
 use crate::app::ai::{AiLiveSnapshot, collect_ai_live_snapshot, load_photo_ai};
 use crate::app::daemon::daemon_liveness;
 use crate::state::photo_browser::PhotoIndex;
-use crate::ui::notifications::{FailureNotice, deletion_blocked_transition, failure_transition};
+use crate::ui::notifications::{
+    FailureCounts, FailureNotice, NotificationSnapshot, deletion_blocked_transition,
+    failure_transition, latest_failed_entries,
+};
 
 const POLL_INTERVAL: Duration = Duration::from_secs(3);
 /// While the IPC connection is alive it pushes change events, so the poller
@@ -160,14 +163,14 @@ pub(crate) struct JobSnapshot {
     discord_queue_counts: Option<QueueCounts>,
     tagging_queue_counts: Option<QueueCounts>,
     mixed_queue_counts: Option<QueueCounts>,
+    job_failures: Option<NotificationSnapshot>,
     daemon_errors: Option<Vec<DaemonError>>,
 }
 
 /// Result of applying a [`JobSnapshot`] to the retained UI state.
 pub(crate) struct JobApply {
     pub(crate) changed: bool,
-    pub(crate) failed_count: Option<i64>,
-    pub(crate) daemon_count: Option<usize>,
+    pub(crate) failure_counts: Option<FailureCounts>,
 }
 
 #[derive(Default)]
@@ -322,7 +325,10 @@ impl App {
     /// needs.
     pub(crate) fn apply_job_snapshot(&mut self, snapshot: JobSnapshot) -> JobApply {
         let failed_count = snapshot.failed_job_count;
-        let daemon_count = snapshot.daemon_errors.as_ref().map(Vec::len);
+        let failure_counts = match (&snapshot.job_failures, &snapshot.daemon_errors) {
+            (Some(failures), Some(errors)) => Some(failures.failure_counts(errors.len())),
+            _ => None,
+        };
         let changed = snapshot
             .jobs
             .as_ref()
@@ -377,6 +383,12 @@ impl App {
             || snapshot
                 .mixed_queue_counts
                 .is_some_and(|counts| counts != self.mixed_queue_counts)
+            || snapshot.job_failures.as_ref().is_some_and(|failures| {
+                failures.compression_failed != self.job_failures.compression_failed
+                    || failures.discord_failed != self.job_failures.discord_failed
+                    || failures.tagging_failed != self.job_failures.tagging_failed
+                    || failures.entries != self.job_failures.entries
+            })
             || snapshot
                 .daemon_errors
                 .as_ref()
@@ -430,14 +442,16 @@ impl App {
             if let Some(counts) = snapshot.mixed_queue_counts {
                 self.mixed_queue_counts = counts;
             }
+            if let Some(failures) = snapshot.job_failures {
+                self.job_failures = failures;
+            }
             if let Some(errors) = snapshot.daemon_errors {
                 self.daemon_errors = errors;
             }
         }
         JobApply {
             changed,
-            failed_count,
-            daemon_count,
+            failure_counts,
         }
     }
 
@@ -446,20 +460,28 @@ impl App {
     /// would otherwise make pre-existing failures look new later.
     pub(crate) fn apply_failure_transition(
         &mut self,
-        failed: Option<i64>,
-        daemon: Option<usize>,
+        counts: Option<FailureCounts>,
         cx: &mut Context<Self>,
     ) -> bool {
-        let (Some(failed), Some(daemon)) = (failed, daemon) else {
+        let Some(next) = counts else {
             return false;
         };
-        let next = (failed, daemon);
         let mut notified = false;
         for notice in failure_transition(self.failure_baseline, next) {
             match notice {
                 FailureNotice::Compression { count } => self.toast_actionable(
                     NotificationType::Error,
                     tr_args!("daemon.compression.failures", count = count),
+                    cx,
+                ),
+                FailureNotice::Discord { count } => self.toast_actionable(
+                    NotificationType::Error,
+                    tr_args!("daemon.discord.failures", count = count),
+                    cx,
+                ),
+                FailureNotice::Tagging { count } => self.toast_actionable(
+                    NotificationType::Error,
+                    tr_args!("daemon.tagging.failures", count = count),
                     cx,
                 ),
                 FailureNotice::Daemon { count } => self.toast_actionable(
@@ -542,7 +564,7 @@ impl App {
             }
         }
 
-        if self.apply_failure_transition(job_apply.failed_count, job_apply.daemon_count, cx) {
+        if self.apply_failure_transition(job_apply.failure_counts, cx) {
             notify = true;
         }
 
@@ -758,6 +780,25 @@ pub(crate) fn collect_jobs(db: &Db) -> JobSnapshot {
     let compression_queue_counts = db.queue_counts(QueueFeature::Compression).ok();
     let discord_queue_counts = db.queue_counts(QueueFeature::Discord).ok();
     let tagging_queue_counts = db.queue_counts(QueueFeature::Tagging).ok();
+    let compression_failed = db.count_jobs(QueueStatus::Failed).ok().unwrap_or(0);
+    let discord_failed = db.count_failed_sends().ok().unwrap_or(0);
+    let tagging_failed = db.failed_tagging_job_count(AI_PLUGIN_ID).ok().unwrap_or(0);
+    let mut failed_entries = Vec::new();
+    if let Ok(mut rows) = db.recent_failed_compression_jobs(5) {
+        failed_entries.append(&mut rows);
+    }
+    if let Ok(mut rows) = db.recent_failed_sends(5) {
+        failed_entries.append(&mut rows);
+    }
+    if let Ok(mut rows) = db.recent_failed_tagging_jobs(AI_PLUGIN_ID, 5) {
+        failed_entries.append(&mut rows);
+    }
+    let job_failures = NotificationSnapshot {
+        compression_failed,
+        discord_failed,
+        tagging_failed,
+        entries: latest_failed_entries(failed_entries, 5),
+    };
     let mixed_queue_counts = match (
         compression_queue_counts,
         discord_queue_counts,
@@ -787,6 +828,7 @@ pub(crate) fn collect_jobs(db: &Db) -> JobSnapshot {
         discord_queue_counts,
         tagging_queue_counts,
         mixed_queue_counts,
+        job_failures: Some(job_failures),
         daemon_errors: db.daemon_errors().ok(),
     }
 }

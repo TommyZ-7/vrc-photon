@@ -8347,3 +8347,96 @@ fn recent_failed_jobs_cover_all_three_features() {
     assert_eq!(tagging[0].error, "sidecar_timeout");
     assert_eq!(db.failed_tagging_job_count(AI_PLUGIN).unwrap(), 1);
 }
+
+#[test]
+fn retry_all_failed_sends_skips_rows_with_an_active_send() {
+    let db = Db::open_in_memory().unwrap();
+    let eligible_photo = seed_photo(&db);
+    let blocked_photo = seed_other_photo(&db);
+
+    let eligible = db
+        .enqueue_send(
+            eligible_photo,
+            SendKind::Photo,
+            SendOrigin::Auto,
+            SendStatus::Pending,
+        )
+        .unwrap()
+        .unwrap();
+    db.fail_send(
+        eligible,
+        SendErrorCode::Http401,
+        Some("eligible"),
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    let blocked = db
+        .enqueue_send(
+            blocked_photo,
+            SendKind::Photo,
+            SendOrigin::Auto,
+            SendStatus::Pending,
+        )
+        .unwrap()
+        .unwrap();
+    db.fail_send(
+        blocked,
+        SendErrorCode::Http401,
+        Some("blocked"),
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+    db.enqueue_send(
+        blocked_photo,
+        SendKind::Photo,
+        SendOrigin::Auto,
+        SendStatus::Pending,
+    )
+    .unwrap();
+
+    assert_eq!(db.retry_all_failed_sends().unwrap(), 1);
+    assert_eq!(
+        db.send_entry_by_id(eligible).unwrap().unwrap().status,
+        SendStatus::Pending
+    );
+    assert_eq!(
+        db.send_entry_by_id(blocked).unwrap().unwrap().status,
+        SendStatus::Failed
+    );
+}
+
+#[test]
+fn retry_all_failed_tagging_jobs_skips_rows_with_an_active_job() {
+    let db = Db::open_in_memory().unwrap();
+    let eligible_photo = seed_photo(&db);
+    let blocked_photo = seed_other_photo(&db);
+
+    db.enqueue_tagging_jobs(&[eligible_photo], AI_PLUGIN, TaggingJobStatus::Pending)
+        .unwrap();
+    let eligible = db.next_pending_tagging_job().unwrap().unwrap();
+    db.fail_tagging_job(&eligible.id, TaggingErrorCode::SidecarTimeout)
+        .unwrap();
+
+    db.enqueue_tagging_jobs(&[blocked_photo], AI_PLUGIN, TaggingJobStatus::Pending)
+        .unwrap();
+    let blocked = db.next_pending_tagging_job().unwrap().unwrap();
+    db.fail_tagging_job(&blocked.id, TaggingErrorCode::SidecarTimeout)
+        .unwrap();
+    db.enqueue_tagging_jobs(&[blocked_photo], AI_PLUGIN, TaggingJobStatus::Pending)
+        .unwrap();
+
+    assert_eq!(db.retry_all_failed_tagging_jobs(AI_PLUGIN).unwrap(), 1);
+    assert_eq!(
+        db.tagging_job(&eligible.id).unwrap().unwrap().status,
+        TaggingJobStatus::Pending
+    );
+    assert_eq!(
+        db.tagging_job(&blocked.id).unwrap().unwrap().status,
+        TaggingJobStatus::Failed
+    );
+}

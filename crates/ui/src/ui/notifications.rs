@@ -14,6 +14,7 @@ use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::*;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
+use vrc_photon_core::queue::{FailedJobEntry, QueueFeature};
 use vrc_photon_i18n::{tr, tr_args};
 
 use crate::app::App;
@@ -30,30 +31,99 @@ pub(crate) struct ToastSpec {
     pub(crate) opens_notifications: bool,
 }
 
+/// Counts used to decide which failures crossed their last-seen values.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct FailureCounts {
+    pub(crate) compression: i64,
+    pub(crate) discord: i64,
+    pub(crate) tagging: i64,
+    pub(crate) daemon: usize,
+}
+
+/// The failed rows and counts shown by the notification modal.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct NotificationSnapshot {
+    pub(crate) compression_failed: i64,
+    pub(crate) discord_failed: i64,
+    pub(crate) tagging_failed: i64,
+    pub(crate) entries: Vec<FailedJobEntry>,
+}
+
+impl NotificationSnapshot {
+    pub(crate) fn total_jobs(&self) -> i64 {
+        self.compression_failed + self.discord_failed + self.tagging_failed
+    }
+
+    pub(crate) fn failure_counts(&self, daemon: usize) -> FailureCounts {
+        FailureCounts {
+            compression: self.compression_failed,
+            discord: self.discord_failed,
+            tagging: self.tagging_failed,
+            daemon,
+        }
+    }
+}
+
 /// One failure domain that crossed its last-seen count.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum FailureNotice {
     Compression { count: i64 },
+    Discord { count: i64 },
+    Tagging { count: i64 },
     Daemon { count: usize },
 }
 
 /// Returns the failures that appeared since `previous`. `None` means the
 /// baseline has not been seeded yet, so existing failures stay silent.
 pub(crate) fn failure_transition(
-    previous: Option<(i64, usize)>,
-    next: (i64, usize),
+    previous: Option<FailureCounts>,
+    next: FailureCounts,
 ) -> Vec<FailureNotice> {
-    let Some((previous_compression, previous_daemon)) = previous else {
+    let Some(previous) = previous else {
         return Vec::new();
     };
     let mut notices = Vec::new();
-    if next.0 > previous_compression {
-        notices.push(FailureNotice::Compression { count: next.0 });
+    if next.compression > previous.compression {
+        notices.push(FailureNotice::Compression {
+            count: next.compression,
+        });
     }
-    if next.1 > previous_daemon {
-        notices.push(FailureNotice::Daemon { count: next.1 });
+    if next.discord > previous.discord {
+        notices.push(FailureNotice::Discord {
+            count: next.discord,
+        });
+    }
+    if next.tagging > previous.tagging {
+        notices.push(FailureNotice::Tagging {
+            count: next.tagging,
+        });
+    }
+    if next.daemon > previous.daemon {
+        notices.push(FailureNotice::Daemon { count: next.daemon });
     }
     notices
+}
+
+fn job_feature_label(feature: QueueFeature) -> String {
+    match feature {
+        QueueFeature::Compression => tr!("queue.feature.compression"),
+        QueueFeature::Discord => tr!("queue.feature.discord"),
+        QueueFeature::Tagging => tr!("queue.feature.tagging"),
+    }
+}
+
+/// Newest failed rows, capped at `limit`.
+pub(crate) fn latest_failed_entries(
+    mut entries: Vec<FailedJobEntry>,
+    limit: usize,
+) -> Vec<FailedJobEntry> {
+    entries.sort_by(|a, b| {
+        b.created_at
+            .cmp(&a.created_at)
+            .then_with(|| b.job_id.cmp(&a.job_id))
+    });
+    entries.truncate(limit);
+    entries
 }
 
 /// Returns the blocked-deletion count when it grew since `previous`. The
@@ -72,14 +142,16 @@ pub(crate) fn deletion_blocked_transition(
 pub(crate) enum NotificationSection {
     Import,
     Library,
-    Compression,
+    JobFailures,
     Daemon,
 }
 
 pub(crate) fn notification_sections(
     import: bool,
     library_error: bool,
-    failed_jobs: i64,
+    compression_failed: i64,
+    discord_failed: i64,
+    tagging_failed: i64,
     daemon_errors: usize,
 ) -> Vec<NotificationSection> {
     let mut sections = Vec::new();
@@ -89,8 +161,8 @@ pub(crate) fn notification_sections(
     if library_error {
         sections.push(NotificationSection::Library);
     }
-    if failed_jobs > 0 {
-        sections.push(NotificationSection::Compression);
+    if compression_failed > 0 || discord_failed > 0 || tagging_failed > 0 {
+        sections.push(NotificationSection::JobFailures);
     }
     if daemon_errors > 0 {
         sections.push(NotificationSection::Daemon);
@@ -103,10 +175,20 @@ pub(crate) fn notification_modal_should_close(
     open: bool,
     import: bool,
     library_error: bool,
-    failed_jobs: i64,
+    compression_failed: i64,
+    discord_failed: i64,
+    tagging_failed: i64,
     daemon_errors: usize,
 ) -> bool {
-    open && notification_sections(import, library_error, failed_jobs, daemon_errors).is_empty()
+    open && notification_sections(
+        import,
+        library_error,
+        compression_failed,
+        discord_failed,
+        tagging_failed,
+        daemon_errors,
+    )
+    .is_empty()
 }
 
 /// Whether a render should schedule the deferred toast flush.
@@ -216,7 +298,7 @@ impl App {
     pub(crate) fn notification_attention(&self) -> bool {
         self.import_report.is_some()
             || self.library_error.is_some()
-            || self.failed_job_count > 0
+            || self.job_failures.total_jobs() > 0
             || !self.daemon_errors.is_empty()
     }
 
@@ -315,7 +397,9 @@ impl App {
             self.notification_modal_open,
             self.import_report.is_some(),
             self.library_error.is_some(),
-            self.failed_job_count,
+            self.job_failures.compression_failed,
+            self.job_failures.discord_failed,
+            self.job_failures.tagging_failed,
             self.daemon_errors.len(),
         ) {
             cx.defer_in(window, |this, window, cx| {
@@ -328,7 +412,9 @@ impl App {
         let sections = notification_sections(
             self.import_report.is_some(),
             self.library_error.is_some(),
-            self.failed_job_count,
+            self.job_failures.compression_failed,
+            self.job_failures.discord_failed,
+            self.job_failures.tagging_failed,
             self.daemon_errors.len(),
         );
         // `App` stores the report behind an Rc so this is a pointer clone, not
@@ -336,7 +422,7 @@ impl App {
         // while it builds the sections.
         let import_report = self.import_report.clone();
         let library_error = self.library_error;
-        let failed_jobs = self.failed_job_count;
+        let job_failures = self.job_failures.clone();
         let daemon_errors = self.daemon_errors.len();
 
         let mut items = Vec::new();
@@ -348,8 +434,8 @@ impl App {
                 NotificationSection::Library => library_error
                     .as_ref()
                     .map(|error| self.library_notification(error, cx)),
-                NotificationSection::Compression => {
-                    Some(self.compression_notification(failed_jobs, cx))
+                NotificationSection::JobFailures => {
+                    Some(self.job_failures_notification(&job_failures, cx))
                 }
                 NotificationSection::Daemon => Some(self.daemon_notification(daemon_errors, cx)),
             };
@@ -650,8 +736,116 @@ impl App {
             .into_any_element()
     }
 
-    fn compression_notification(&self, count: i64, cx: &mut Context<Self>) -> AnyElement {
+    fn job_failures_notification(
+        &self,
+        snapshot: &NotificationSnapshot,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let p = self.palette;
+        let mut counts = h_flex().flex_wrap().gap(px(5.));
+        if snapshot.compression_failed > 0 {
+            counts = counts.child(self.badge(
+                tr_args!(
+                    "notifications.job_failures.count_feature",
+                    feature = job_feature_label(QueueFeature::Compression),
+                    count = snapshot.compression_failed
+                ),
+                p.accent,
+                p.accent_soft,
+            ));
+        }
+        if snapshot.discord_failed > 0 {
+            counts = counts.child(self.badge(
+                tr_args!(
+                    "notifications.job_failures.count_feature",
+                    feature = job_feature_label(QueueFeature::Discord),
+                    count = snapshot.discord_failed
+                ),
+                p.green,
+                p.green_soft,
+            ));
+        }
+        if snapshot.tagging_failed > 0 {
+            counts = counts.child(self.badge(
+                tr_args!(
+                    "notifications.job_failures.count_feature",
+                    feature = job_feature_label(QueueFeature::Tagging),
+                    count = snapshot.tagging_failed
+                ),
+                p.amber,
+                p.amber_soft,
+            ));
+        }
+
+        let entries = latest_failed_entries(snapshot.entries.clone(), 5);
+        let rows =
+            entries.into_iter().map(|entry| {
+                let feature = entry.feature;
+                let job_id = entry.job_id.clone();
+                let name = entry
+                    .photo_name
+                    .clone()
+                    .or_else(|| entry.photo_id.map(|id| format!("photo #{id}")))
+                    .unwrap_or_else(|| "—".to_string());
+                let error = if entry.error.trim().is_empty() {
+                    tr!("notifications.job_failures.error_generic")
+                } else {
+                    entry.error
+                };
+                let (feature_fg, feature_bg) = match feature {
+                    QueueFeature::Compression => (p.accent, p.accent_soft),
+                    QueueFeature::Discord => (p.green, p.green_soft),
+                    QueueFeature::Tagging => (p.amber, p.amber_soft),
+                };
+                h_flex()
+                    .gap(px(7.))
+                    .p(px(7.))
+                    .rounded(px(8.))
+                    .bg(rgb(p.panel_2))
+                    .child(self.badge(job_feature_label(feature), feature_fg, feature_bg))
+                    .child(
+                        v_flex()
+                            .flex_1()
+                            .min_w_0()
+                            .gap(px(1.))
+                            .child(
+                                div()
+                                    .truncate()
+                                    .text_size(px(10.))
+                                    .text_color(rgb(p.text))
+                                    .child(name),
+                            )
+                            .child(
+                                div()
+                                    .truncate()
+                                    .text_size(px(9.))
+                                    .text_color(rgb(p.muted_2))
+                                    .child(error),
+                            ),
+                    )
+                    .child(
+                        Button::new(SharedString::from(format!(
+                            "notification-job-retry-{}-{job_id}",
+                            feature.as_str()
+                        )))
+                        .label(tr!("notifications.job_failures.retry"))
+                        .small()
+                        .ghost()
+                        .on_click(cx.listener(move |this, _, _, cx| match feature {
+                            QueueFeature::Compression => this.retry_job(job_id.clone(), cx),
+                            QueueFeature::Discord => {
+                                if let Ok(id) = job_id.parse::<i64>() {
+                                    this.retry_failed_send(id, cx);
+                                }
+                            }
+                            QueueFeature::Tagging => {
+                                this.retry_failed_tagging_job(&job_id, cx);
+                            }
+                        })),
+                    )
+                    .into_any_element()
+            });
+
         v_flex()
             .p(px(14.))
             .gap(px(10.))
@@ -664,39 +858,56 @@ impl App {
                     .text_size(px(12.))
                     .font_semibold()
                     .text_color(rgb(p.text))
-                    .child(tr!("notifications.section.compression")),
+                    .child(tr!("notifications.job_failures.title")),
             )
-            .child(
-                div()
-                    .text_size(px(11.))
-                    .text_color(rgb(p.amber))
-                    .child(tr_args!(
-                        "notifications.compression.failures",
-                        count = count
-                    )),
-            )
+            .child(counts)
+            .child(v_flex().gap(px(4.)).children(rows))
             .child(
                 h_flex()
-                    .gap(px(6.))
-                    .child(
-                        Button::new("notification-compression-dashboard")
-                            .label(tr!("notifications.open_dashboard"))
-                            .small()
-                            .primary()
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.close_notification_modal(window, cx);
-                                this.switch_screen(Screen::Dashboard, cx);
-                            })),
-                    )
-                    .child(
-                        Button::new("notification-compression-retry")
-                            .label(tr!("notifications.retry_failures"))
-                            .small()
-                            .ghost()
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.retry_all_failed_jobs(cx);
-                            })),
-                    ),
+                    .flex_wrap()
+                    .gap(px(5.))
+                    .when(snapshot.compression_failed > 0, |this| {
+                        this.child(
+                            Button::new("notification-job-retry-all-compression")
+                                .label(tr_args!(
+                                    "notifications.job_failures.retry_all_feature",
+                                    feature = job_feature_label(QueueFeature::Compression)
+                                ))
+                                .small()
+                                .ghost()
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.retry_all_failed_jobs(cx);
+                                })),
+                        )
+                    })
+                    .when(snapshot.discord_failed > 0, |this| {
+                        this.child(
+                            Button::new("notification-job-retry-all-discord")
+                                .label(tr_args!(
+                                    "notifications.job_failures.retry_all_feature",
+                                    feature = job_feature_label(QueueFeature::Discord)
+                                ))
+                                .small()
+                                .ghost()
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.retry_all_failed_sends(cx);
+                                })),
+                        )
+                    })
+                    .when(snapshot.tagging_failed > 0, |this| {
+                        this.child(
+                            Button::new("notification-job-retry-all-tagging")
+                                .label(tr_args!(
+                                    "notifications.job_failures.retry_all_feature",
+                                    feature = job_feature_label(QueueFeature::Tagging)
+                                ))
+                                .small()
+                                .ghost()
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.retry_all_failed_tagging_jobs(cx);
+                                })),
+                        )
+                    }),
             )
             .into_any_element()
     }
@@ -740,9 +951,9 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::{
-        NotificationSection, auto_compress_badge_label, deletion_blocked_transition,
-        notification_modal_allowed, notification_modal_should_close, notification_sections,
-        toast_flush_needed,
+        FailedJobEntry, NotificationSection, QueueFeature, auto_compress_badge_label,
+        deletion_blocked_transition, latest_failed_entries, notification_modal_allowed,
+        notification_modal_should_close, notification_sections, toast_flush_needed,
     };
 
     #[test]
@@ -762,15 +973,46 @@ mod tests {
     #[test]
     fn notification_sections_follow_the_action_order() {
         assert_eq!(
-            notification_sections(true, true, 2, 3),
+            notification_sections(true, true, 2, 1, 1, 3),
             vec![
                 NotificationSection::Import,
                 NotificationSection::Library,
-                NotificationSection::Compression,
+                NotificationSection::JobFailures,
                 NotificationSection::Daemon,
             ]
         );
-        assert!(notification_sections(false, false, 0, 0).is_empty());
+        assert!(notification_sections(false, false, 0, 0, 0, 0).is_empty());
+    }
+
+    #[test]
+    fn job_failures_section_appears_only_when_a_feature_has_failures() {
+        assert!(
+            !notification_sections(false, false, 0, 0, 0, 0)
+                .contains(&NotificationSection::JobFailures)
+        );
+        assert!(
+            notification_sections(false, false, 0, 0, 1, 0)
+                .contains(&NotificationSection::JobFailures)
+        );
+    }
+
+    #[test]
+    fn failed_job_entries_are_newest_first_and_capped_at_five() {
+        let entries = (0..7)
+            .map(|index| FailedJobEntry {
+                feature: QueueFeature::Compression,
+                job_id: index.to_string(),
+                photo_id: Some(index),
+                photo_name: Some(format!("photo-{index}.png")),
+                error: "boom".to_string(),
+                created_at: index.to_string(),
+            })
+            .collect();
+        let shown = latest_failed_entries(entries, 5);
+        assert_eq!(shown.len(), 5);
+        assert!(shown.windows(2).all(|w| w[0].created_at >= w[1].created_at));
+        assert_eq!(shown[0].created_at, "6");
+        assert_eq!(shown[4].created_at, "2");
     }
 
     #[test]
@@ -789,10 +1031,20 @@ mod tests {
 
     #[test]
     fn notification_modal_closes_when_the_last_section_disappears() {
-        assert!(notification_modal_should_close(true, false, false, 0, 0));
-        assert!(!notification_modal_should_close(false, false, false, 0, 0));
-        assert!(!notification_modal_should_close(true, true, false, 0, 0));
-        assert!(!notification_modal_should_close(true, false, false, 1, 0));
-        assert!(!notification_modal_should_close(true, false, false, 0, 1));
+        assert!(notification_modal_should_close(
+            true, false, false, 0, 0, 0, 0
+        ));
+        assert!(!notification_modal_should_close(
+            false, false, false, 0, 0, 0, 0
+        ));
+        assert!(!notification_modal_should_close(
+            true, true, false, 0, 0, 0, 0
+        ));
+        assert!(!notification_modal_should_close(
+            true, false, false, 1, 0, 0, 0
+        ));
+        assert!(!notification_modal_should_close(
+            true, false, false, 0, 0, 0, 1
+        ));
     }
 }

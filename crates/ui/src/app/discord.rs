@@ -619,32 +619,54 @@ impl App {
         false
     }
 
+    pub(crate) fn retry_failed_send(&mut self, id: i64, cx: &mut Context<Self>) {
+        self.retry_send(id, cx);
+    }
+
     /// Returns a failed row to the queue. The database rejects the retry when
     /// the photo already has an active send, which the warning toast covers.
-    #[allow(dead_code)] // Used by the notification failure rows (Task 10).
-    pub(crate) fn retry_send(&mut self, id: i64, cx: &mut Context<Self>) {
+    fn retry_send(&mut self, id: i64, cx: &mut Context<Self>) {
         match self.db.retry_send(id) {
             Ok(true) => {
-                self.reload_send_history(cx);
                 self.send_wake_sends(cx);
-                self.toast_success(tr!("integrations.discord.history.retry.queued"), cx);
+                self.toast_success(
+                    tr_args!("notifications.job_failures.retry_queued", count = 1),
+                    cx,
+                );
             }
             Ok(false) => {
-                self.reload_send_history(cx);
-                self.toast_warning(tr!("integrations.discord.history.retry.unavailable"), cx);
+                self.toast_warning(tr!("notifications.job_failures.retry_none"), cx);
             }
             Err(error) => {
                 tracing::warn!(%error, id, "cannot retry a Discord send");
                 self.toast_error(
-                    format!(
-                        "{}: {error}",
-                        tr!("integrations.discord.history.retry.error")
-                    ),
+                    tr_args!("notifications.job_failures.error", error = error),
                     cx,
                 );
             }
         }
-        cx.notify();
+        self.refresh_queue(cx);
+    }
+
+    pub(crate) fn retry_all_failed_sends(&mut self, cx: &mut Context<Self>) {
+        match self.db.retry_all_failed_sends() {
+            Ok(0) => self.toast_info(tr!("notifications.job_failures.retry_none"), cx),
+            Ok(count) => {
+                self.send_wake_sends(cx);
+                self.toast_success(
+                    tr_args!("notifications.job_failures.retry_queued", count = count),
+                    cx,
+                );
+            }
+            Err(error) => {
+                tracing::warn!(%error, "cannot retry failed Discord sends");
+                self.toast_error(
+                    tr_args!("notifications.job_failures.error", error = error),
+                    cx,
+                );
+            }
+        }
+        self.refresh_queue(cx);
     }
 }
 

@@ -83,7 +83,9 @@ use crate::ui::actions::{
 };
 use crate::ui::chrome::{ChromeLayout, chrome_layout};
 use crate::ui::gallery::GalleryView;
-use crate::ui::notifications::{ToastSpec, toast_flush_needed};
+use crate::ui::notifications::{
+    FailureCounts, NotificationSnapshot, ToastSpec, toast_flush_needed,
+};
 use crate::ui::palette::{accent_colors, main_colors, resolve};
 use crate::ui::settings::ThemeAxis;
 use crate::ui::theme::{
@@ -404,6 +406,7 @@ pub struct App {
     pub(crate) retryable_failed_count: i64,
     pub(crate) failed_jobs: Vec<CompressionJob>,
     pub(crate) failed_job_names: HashMap<i64, String>,
+    pub(crate) job_failures: NotificationSnapshot,
     pub(crate) deletion_requests: Vec<DeletionRequest>,
     pub(crate) deletion_counts: DeletionCounts,
     pub(crate) deletion_baseline: Option<(i64, i64)>,
@@ -513,7 +516,7 @@ pub struct App {
     pub(crate) _theme_focus_subscriptions: Vec<Subscription>,
     pub(crate) _context_menu_activation: Subscription,
     pub(crate) _context_menu_bounds: Subscription,
-    pub(crate) failure_baseline: Option<(i64, usize)>,
+    pub(crate) failure_baseline: Option<FailureCounts>,
     pub(crate) demo: bool,
     pub(crate) demo_assets: Option<DemoAssets>,
 }
@@ -1331,6 +1334,7 @@ impl App {
             retryable_failed_count: 0,
             failed_jobs: Vec::new(),
             failed_job_names: HashMap::new(),
+            job_failures: NotificationSnapshot::default(),
             import_report: None,
             import_scan_target: None,
             import_auto_compress_enqueued: 0,
@@ -1772,7 +1776,7 @@ mod tests {
         global_shortcut_blocked, retain_recent_bounds, should_notify_library_error,
         should_render_shell,
     };
-    use crate::ui::notifications::{FailureNotice, failure_transition};
+    use crate::ui::notifications::{FailureCounts, FailureNotice, failure_transition};
     use gpui_kit::{Bounds, point, px, size};
     use std::time::Duration;
 
@@ -1964,15 +1968,53 @@ mod tests {
 
     #[test]
     fn failure_transition_only_reports_new_failures_after_the_baseline() {
-        assert!(failure_transition(None, (3, 2)).is_empty());
+        let initial = FailureCounts {
+            compression: 3,
+            discord: 1,
+            tagging: 0,
+            daemon: 2,
+        };
+        assert!(failure_transition(None, initial).is_empty());
         assert_eq!(
-            failure_transition(Some((3, 2)), (5, 2)),
+            failure_transition(
+                Some(initial),
+                FailureCounts {
+                    compression: 5,
+                    ..initial
+                }
+            ),
             vec![FailureNotice::Compression { count: 5 }]
         );
         assert_eq!(
-            failure_transition(Some((3, 2)), (3, 4)),
+            failure_transition(
+                Some(initial),
+                FailureCounts {
+                    discord: 2,
+                    ..initial
+                }
+            ),
+            vec![FailureNotice::Discord { count: 2 }]
+        );
+        assert_eq!(
+            failure_transition(
+                Some(initial),
+                FailureCounts {
+                    tagging: 1,
+                    ..initial
+                }
+            ),
+            vec![FailureNotice::Tagging { count: 1 }]
+        );
+        assert_eq!(
+            failure_transition(
+                Some(initial),
+                FailureCounts {
+                    daemon: 4,
+                    ..initial
+                }
+            ),
             vec![FailureNotice::Daemon { count: 4 }]
         );
-        assert!(failure_transition(Some((5, 4)), (5, 4)).is_empty());
+        assert!(failure_transition(Some(initial), initial).is_empty());
     }
 }
