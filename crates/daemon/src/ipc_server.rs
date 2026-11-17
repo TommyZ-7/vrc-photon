@@ -1017,12 +1017,6 @@ mod tests {
             .expect("the test package has an entrypoint");
         entry.data = entrypoint;
         entry.unix_mode = Some(0o755);
-        let catalog = package
-            .entries_mut()
-            .iter_mut()
-            .find(|entry| entry.path == "catalog.json")
-            .expect("the test package has a catalog");
-        catalog.data = br#"{"version":"2026-11-07.1","outdoor":[],"indoor":[]}"#.to_vec();
         let files = package
             .entries()
             .iter()

@@ -16,17 +16,15 @@
 //!   people count and `[p10, p90]` interval (`"2,4"` syntax for the interval).
 //! - `MOCK_SIDECAR_PLACE_BRANCH`: override the `place_class` branch
 //!   (`indoor`, `outdoor`, or `other`).
-//! - `MOCK_SIDECAR_CATALOG`: fallback path to a `Catalog` JSON file when
-//!   `--catalog` is absent. A real sidecar always receives `--catalog`, so
-//!   the flag takes precedence. When neither is usable, the built-in catalog
-//!   is used.
+//! - `MOCK_SIDECAR_CATALOG`: path to a `Catalog` JSON file. When it is unset
+//!   or unreadable, the built-in catalog is used.
 //! - `MOCK_SIDECAR_NO_ATMOSPHERE=1`: behave like a pre-0.4 sidecar by
 //!   omitting the `atmosphere_tags` capability and atmosphere catalog.
 
 use std::collections::VecDeque;
 use std::fs;
 use std::io::{self, BufRead, BufReader, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
@@ -42,7 +40,7 @@ const PLUGIN_ID: &str = "vrc-photon-autotag";
 const OTHER_PLUGIN_ID: &str = "vrc-photon-other";
 const OTHER_VARIANT: &str = "linux-cpu";
 const SIDECAR_VERSION: &str = "1.0.0-mock";
-const DEFAULT_CATALOG_VERSION: &str = "2026-11-03.1";
+const DEFAULT_CATALOG_VERSION: &str = "2026-11-07.1";
 const OTHER_CATALOG_VERSION: &str = "2099-01-01.0";
 const SLOW_DELAY: Duration = Duration::from_secs(2);
 /// Longer than the default 2 s cancel-ack timeout so the host reaches its kill
@@ -141,7 +139,6 @@ struct Args {
     probe: bool,
     backend: String,
     variant: String,
-    catalog: Option<PathBuf>,
 }
 
 impl Args {
@@ -151,7 +148,6 @@ impl Args {
             probe: false,
             backend: "vulkan".to_string(),
             variant: "linux-vulkan".to_string(),
-            catalog: None,
         };
 
         while let Some(argument) = args.next() {
@@ -159,12 +155,9 @@ impl Args {
                 "--probe" => parsed.probe = true,
                 "--backend" => parsed.backend = take_value(&mut args, "--backend")?,
                 "--variant" => parsed.variant = take_value(&mut args, "--variant")?,
-                "--catalog" => {
-                    parsed.catalog = Some(PathBuf::from(take_value(&mut args, "--catalog")?));
-                }
                 // The mock does not load a model. Accept the documented flags
                 // so the host's command line is exercised unchanged.
-                "--model" | "--mmproj" | "--calibration" => {
+                "--model" | "--mmproj" => {
                     let _ = take_value(&mut args, &argument)?;
                 }
                 other => return Err(format!("unknown argument: {other}")),
@@ -190,7 +183,7 @@ fn main() -> ExitCode {
     };
     let mode = Mode::from_env();
     let delay = mode.response_delay(configured_delay());
-    let catalog = load_catalog(args.catalog.as_deref());
+    let catalog = load_catalog();
 
     eprintln!(
         "mock-sidecar: starting mode={mode:?} variant={} backend={}",
@@ -283,13 +276,10 @@ fn place_branch_override() -> PlaceBranch {
     }
 }
 
-fn load_catalog(explicit: Option<&Path>) -> Catalog {
-    // The real sidecar always receives `--catalog`; the environment fallback
-    // exists only so tests can exercise the built-in catalog. The flag wins so
-    // a developer's environment cannot override the sidecar's package data.
-    let configured = explicit
-        .map(Path::to_path_buf)
-        .or_else(|| std::env::var_os("MOCK_SIDECAR_CATALOG").map(PathBuf::from));
+fn load_catalog() -> Catalog {
+    // The mock has no embedded catalog data; tests point it at a file. When the
+    // variable is unset or unreadable the built-in catalog is used.
+    let configured = std::env::var_os("MOCK_SIDECAR_CATALOG").map(PathBuf::from);
 
     if let Some(path) = configured {
         match fs::read_to_string(&path) {
@@ -734,7 +724,6 @@ mod tests {
             probe: false,
             backend: "vulkan".to_string(),
             variant: "linux-vulkan".to_string(),
-            catalog: None,
         };
         let hello = hello(&args, &builtin_catalog(), Mode::Normal);
         assert!(hello.supports_atmosphere());

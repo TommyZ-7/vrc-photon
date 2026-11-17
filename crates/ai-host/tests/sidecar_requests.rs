@@ -102,8 +102,6 @@ fn mock_config(mock: &Path, mode: &str, delay_ms: Option<u64>) -> (TempDir, Side
     let catalog = tempdir.path().join("catalog.json");
     fs::write(&catalog, CATALOG_JSON).expect("write the catalog");
     let catalog_env = catalog.to_string_lossy().into_owned();
-    let calibration = tempdir.path().join("calibration.json");
-    fs::write(&calibration, "{}").expect("write the calibration data");
 
     let model = tempdir.path().join("d1-2B-Q8_0.gguf");
     fs::write(&model, b"mock model").expect("write the model");
@@ -122,8 +120,6 @@ fn mock_config(mock: &Path, mode: &str, delay_ms: Option<u64>) -> (TempDir, Side
         paths: SidecarPaths {
             install_dir,
             executable: mock.to_path_buf(),
-            catalog,
-            calibration,
         },
         model: ModelPaths { model, mmproj },
         variant: "linux-vulkan".to_string(),

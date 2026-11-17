@@ -39,10 +39,6 @@ pub struct SidecarPaths {
     pub install_dir: PathBuf,
     /// The sidecar executable (or the test mock).
     pub executable: PathBuf,
-    /// `catalog.json` shipped inside the package.
-    pub catalog: PathBuf,
-    /// `calibration.json` shipped inside the package.
-    pub calibration: PathBuf,
 }
 
 /// The model files passed to the sidecar at startup.
@@ -822,10 +818,6 @@ pub fn sidecar_command(config: &SidecarConfig) -> Command {
         .arg(&config.model.model)
         .arg("--mmproj")
         .arg(&config.model.mmproj)
-        .arg("--catalog")
-        .arg(&config.paths.catalog)
-        .arg("--calibration")
-        .arg(&config.paths.calibration)
         .arg("--backend")
         .arg(&config.backend)
         .arg("--variant")
@@ -873,10 +865,6 @@ pub fn probe_command(paths: &SidecarPaths, variant: &str) -> Command {
     let mut command = Command::new(&paths.executable);
     command
         .arg("--probe")
-        .arg("--catalog")
-        .arg(&paths.catalog)
-        .arg("--calibration")
-        .arg(&paths.calibration)
         .arg("--variant")
         .arg(variant)
         .current_dir(&paths.install_dir);
@@ -1194,10 +1182,6 @@ mod tests {
             paths: SidecarPaths {
                 install_dir: PathBuf::from("/data/plugins/autotag/linux-vulkan/1.0.0"),
                 executable: PathBuf::from("/data/plugins/autotag/linux-vulkan/1.0.0/d1-sidecar"),
-                catalog: PathBuf::from("/data/plugins/autotag/linux-vulkan/1.0.0/catalog.json"),
-                calibration: PathBuf::from(
-                    "/data/plugins/autotag/linux-vulkan/1.0.0/calibration.json",
-                ),
             },
             model: ModelPaths {
                 model: PathBuf::from("/models/d1-2B-Q8_0.gguf"),
@@ -1303,10 +1287,6 @@ mod tests {
                 "/models/d1-2B-Q8_0.gguf",
                 "--mmproj",
                 "/models/mmproj-d1-2B-Q8_0.gguf",
-                "--catalog",
-                "/data/plugins/autotag/linux-vulkan/1.0.0/catalog.json",
-                "--calibration",
-                "/data/plugins/autotag/linux-vulkan/1.0.0/calibration.json",
                 "--backend",
                 "vulkan",
                 "--variant",
@@ -1334,15 +1314,7 @@ mod tests {
 
         assert_eq!(
             arguments(&command),
-            vec![
-                "--probe",
-                "--catalog",
-                "/data/plugins/autotag/linux-vulkan/1.0.0/catalog.json",
-                "--calibration",
-                "/data/plugins/autotag/linux-vulkan/1.0.0/calibration.json",
-                "--variant",
-                "linux-vulkan",
-            ]
+            vec!["--probe", "--variant", "linux-vulkan"]
         );
         assert_eq!(
             command.get_current_dir(),
@@ -1488,8 +1460,6 @@ mod tests {
         let mut config = sample_config();
         config.paths.install_dir = dir.path().to_path_buf();
         config.paths.executable = executable;
-        config.paths.catalog = dir.path().join("catalog.json");
-        config.paths.calibration = dir.path().join("calibration.json");
 
         let (sender, receiver) = mpsc::channel();
         let spawning_thread = thread::spawn(move || {

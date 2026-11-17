@@ -39,38 +39,6 @@ const MMPROJ_FILE: &str = "mmproj-d1-2B-Q8_0.gguf";
 /// Long enough that a broken cancellation cannot hide behind the response.
 const SLOW_DELAY_MS: u64 = 30_000;
 
-const CATALOG_JSON: &str = r#"{
-  "version": "2026-11-07.1",
-  "outdoor": [
-    {
-      "key": "sea",
-      "name": "海",
-      "name_en": "Sea",
-      "description": "海が見える屋外",
-      "default_threshold": 0.5
-    }
-  ],
-  "indoor": [
-    {
-      "key": "japanese_room",
-      "name": "和室",
-      "name_en": "Japanese room",
-      "description": "畳・障子のある和室",
-      "default_threshold": 0.5
-    }
-  ],
-  "atmosphere": [
-    {
-      "key": "weather_clear",
-      "name": "晴れ",
-      "name_en": "Clear / sunny",
-      "description": "晴れている",
-      "default_threshold": 0.5,
-      "group": "weather"
-    }
-  ]
-}"#;
-
 #[test]
 fn install_import_tag_cancel_and_resume() {
     let mut ctx = DaemonAiE2e::new();
@@ -243,7 +211,10 @@ impl DaemonAiE2e {
             .unwrap()
             .expect("the install was activated");
         assert_eq!(install.variant, TEST_VARIANT);
-        assert_eq!(self.db().ai_tag_definitions(PLUGIN).unwrap().len(), 3);
+        assert!(
+            self.db().ai_tag_definitions(PLUGIN).unwrap().is_empty(),
+            "the catalog is synced from the sidecar hello"
+        );
         assert!(
             self.db()
                 .plugin_state(PLUGIN)
@@ -442,11 +413,7 @@ fn wrapper_entrypoint(mock: &Path, mode: &str, delay_ms: Option<u64>) -> Vec<u8>
 }
 
 fn package_with_entrypoint(key: &TestKey, entrypoint: Vec<u8>) -> TestPackage {
-    let entries = vec![
-        TestEntry::with_mode(TEST_ENTRYPOINT, entrypoint, 0o755),
-        TestEntry::new("catalog.json", CATALOG_JSON),
-        TestEntry::new("calibration.json", b"{}"),
-    ];
+    let entries = vec![TestEntry::with_mode(TEST_ENTRYPOINT, entrypoint, 0o755)];
     let files = entries
         .iter()
         .map(|entry| ManifestFile {
