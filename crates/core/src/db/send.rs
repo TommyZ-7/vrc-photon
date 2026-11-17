@@ -1,4 +1,5 @@
 use super::*;
+use crate::queue::{FailedJobEntry, QueueCounts, QueueEntry, QueueState};
 
 impl Db {
     // ---------- send outbox ----------
@@ -136,6 +137,117 @@ impl Db {
             |row| row.get(0),
         )?;
         Ok(count)
+    }
+
+    /// Active Discord sends for the shared queue UI, oldest first.
+    pub fn active_send_queue_entries(&self, limit: i64) -> Result<Vec<QueueEntry>> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT o.id, o.photo_id, p.file_name, o.status, \
+                COALESCE(o.destination, o.kind), o.created_at \
+             FROM send_outbox o \
+             LEFT JOIN photos p ON p.id = o.photo_id \
+             WHERE o.status IN ('waiting', 'pending', 'processing') \
+             ORDER BY o.created_at ASC, o.id ASC LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![clamp_limit(limit)], |row| {
+            let status = SendStatus::parse(&row.get::<_, String>(3)?);
+            Ok(QueueEntry {
+                feature: crate::queue::QueueFeature::Discord,
+                job_id: row.get::<_, i64>(0)?.to_string(),
+                photo_id: row.get(1)?,
+                photo_name: row.get(2)?,
+                state: QueueState::from_send_status(status).unwrap_or(QueueState::Pending),
+                progress: 0.0,
+                detail: row.get(4)?,
+                created_at: row.get(5)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    pub fn send_queue_counts(&self) -> Result<QueueCounts> {
+        let mut counts = QueueCounts::default();
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT status, COUNT(*) FROM send_outbox \
+             WHERE status IN ('waiting', 'pending', 'processing') GROUP BY status",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })?;
+        for row in rows {
+            let (status, count) = row?;
+            match QueueState::from_send_status(SendStatus::parse(&status)) {
+                Some(QueueState::Waiting) => counts.waiting = count,
+                Some(QueueState::Pending) => counts.pending = count,
+                Some(QueueState::Processing) => counts.processing = count,
+                None => {}
+            }
+        }
+        Ok(counts)
+    }
+
+    pub fn delete_waiting_send(&self, id: i64) -> Result<bool> {
+        let changed = self.conn.execute(
+            "DELETE FROM send_outbox WHERE id = ?1 AND status = 'waiting'",
+            params![id],
+        )?;
+        Ok(changed == 1)
+    }
+
+    pub fn delete_all_waiting_sends(&self) -> Result<usize> {
+        let changed = self
+            .conn
+            .execute("DELETE FROM send_outbox WHERE status = 'waiting'", [])?;
+        Ok(changed)
+    }
+
+    pub fn recent_failed_sends(&self, limit: i64) -> Result<Vec<FailedJobEntry>> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT o.id, o.photo_id, p.file_name, \
+                COALESCE(o.error_detail, o.error_code, ''), o.created_at \
+             FROM send_outbox o \
+             LEFT JOIN photos p ON p.id = o.photo_id \
+             WHERE o.status = 'failed' \
+             ORDER BY o.created_at DESC, o.id DESC LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![clamp_limit(limit)], |row| {
+            Ok(FailedJobEntry {
+                feature: crate::queue::QueueFeature::Discord,
+                job_id: row.get::<_, i64>(0)?.to_string(),
+                photo_id: row.get(1)?,
+                photo_name: row.get(2)?,
+                error: row.get(3)?,
+                created_at: row.get(4)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    pub fn count_failed_sends(&self) -> Result<i64> {
+        let count = self.conn.query_row(
+            "SELECT COUNT(*) FROM send_outbox WHERE status = 'failed'",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok(count)
+    }
+
+    /// Returns every eligible failed send to pending in one pass.
+    pub fn retry_all_failed_sends(&self) -> Result<usize> {
+        let changed = self.conn.execute(
+            "UPDATE send_outbox SET status = 'pending', attempts = 0, \
+                next_attempt_at = NULL, error_code = NULL, error_detail = NULL, \
+                started_at = NULL, finished_at = NULL \
+             WHERE status = 'failed' \
+               AND (photo_id IS NULL OR NOT EXISTS ( \
+                   SELECT 1 FROM send_outbox active \
+                   WHERE active.photo_id = send_outbox.photo_id \
+                     AND active.id <> send_outbox.id \
+                     AND active.status IN ('waiting', 'pending', 'processing') \
+               ))",
+            [],
+        )?;
+        Ok(changed)
     }
 
     /// Counts photos that have never been sent and have no active send. The

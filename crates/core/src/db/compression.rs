@@ -1,4 +1,5 @@
 use super::*;
+use crate::queue::{FailedJobEntry, QueueCounts, QueueEntry, QueueState};
 
 impl Db {
     // ---------- compression profiles ----------
@@ -666,6 +667,92 @@ impl Db {
             |row| row.get(0),
         )?;
         Ok(count)
+    }
+
+    /// Active compression rows for the shared queue UI, oldest first.
+    pub fn active_compression_queue_entries(&self, limit: i64) -> Result<Vec<QueueEntry>> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT j.id, j.photo_id, p.file_name, j.status, j.progress, \
+                CASE WHEN j.origin = 'auto' THEN 'auto' \
+                     ELSE COALESCE(pr.name, j.profile_id, 'manual') END, \
+                j.created_at \
+             FROM compression_jobs j \
+             LEFT JOIN photos p ON p.id = j.photo_id \
+             LEFT JOIN compression_profiles pr ON pr.id = j.profile_id \
+             WHERE j.status IN ('waiting', 'pending', 'processing') \
+             ORDER BY j.created_at ASC, j.id ASC LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![clamp_limit(limit)], |row| {
+            let status = QueueStatus::parse(&row.get::<_, String>(3)?);
+            Ok(QueueEntry {
+                feature: crate::queue::QueueFeature::Compression,
+                job_id: row.get(0)?,
+                photo_id: Some(row.get(1)?),
+                photo_name: row.get(2)?,
+                state: QueueState::from_queue_status(status).unwrap_or(QueueState::Pending),
+                progress: row.get::<_, f64>(4)? as f32,
+                detail: row.get(5)?,
+                created_at: row.get(6)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    pub fn compression_queue_counts(&self) -> Result<QueueCounts> {
+        let mut counts = QueueCounts::default();
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT status, COUNT(*) FROM compression_jobs \
+             WHERE status IN ('waiting', 'pending', 'processing') GROUP BY status",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })?;
+        for row in rows {
+            let (status, count) = row?;
+            match QueueState::from_queue_status(QueueStatus::parse(&status)) {
+                Some(QueueState::Waiting) => counts.waiting = count,
+                Some(QueueState::Pending) => counts.pending = count,
+                Some(QueueState::Processing) => counts.processing = count,
+                None => {}
+            }
+        }
+        Ok(counts)
+    }
+
+    pub fn delete_waiting_compression_job(&self, job_id: &str) -> Result<bool> {
+        let changed = self.conn.execute(
+            "DELETE FROM compression_jobs WHERE id = ?1 AND status = 'waiting'",
+            params![job_id],
+        )?;
+        Ok(changed == 1)
+    }
+
+    pub fn delete_all_waiting_compression_jobs(&self) -> Result<usize> {
+        let changed = self
+            .conn
+            .execute("DELETE FROM compression_jobs WHERE status = 'waiting'", [])?;
+        Ok(changed)
+    }
+
+    pub fn recent_failed_compression_jobs(&self, limit: i64) -> Result<Vec<FailedJobEntry>> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT j.id, j.photo_id, p.file_name, COALESCE(j.error, ''), j.created_at \
+             FROM compression_jobs j \
+             LEFT JOIN photos p ON p.id = j.photo_id \
+             WHERE j.status = 'failed' \
+             ORDER BY j.created_at DESC, j.id DESC LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![clamp_limit(limit)], |row| {
+            Ok(FailedJobEntry {
+                feature: crate::queue::QueueFeature::Compression,
+                job_id: row.get(0)?,
+                photo_id: Some(row.get(1)?),
+                photo_name: row.get(2)?,
+                error: row.get(3)?,
+                created_at: row.get(4)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
     /// Counts jobs a user still expects to run or finish: waiting, pending,

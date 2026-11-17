@@ -4,6 +4,7 @@ use crate::ai::{NewPhotoAi, PluginInstallation};
 use crate::model::{
     DeletionReason, DeletionStatus, NewPhoto, PhotoFilter, PhotoPlayer, PhotoStatus,
 };
+use crate::queue::{QueueFeature, QueueState};
 use vrc_photon_ai_protocol::{
     Catalog, ModelState, TagDefinition, TaggingErrorCode, TaggingJobStatus, TaggingStage,
 };
@@ -8111,4 +8112,238 @@ fn data_version_changes_after_another_connection_commits() {
     let before = reader.data_version().unwrap();
     writer.set_setting("version_probe", "1").unwrap();
     assert!(reader.data_version().unwrap() > before);
+}
+
+#[test]
+fn mixed_queue_entries_are_oldest_first_and_exclude_terminal_rows() {
+    let db = Db::open_in_memory().unwrap();
+    let waiting_photo = seed_photo(&db);
+    let pending_photo = seed_other_photo(&db);
+    let processing_photo = seed_photo_at(&db, "/photos/c.png");
+    let failed_photo = seed_photo_at(&db, "/photos/d.png");
+
+    assert!(
+        db.enqueue_auto_job_with_status(waiting_photo, "keep", QueueStatus::Waiting)
+            .unwrap()
+    );
+    assert!(
+        db.enqueue_auto_job_with_status(failed_photo, "keep", QueueStatus::Failed)
+            .unwrap()
+    );
+
+    assert!(
+        db.enqueue_send(
+            pending_photo,
+            SendKind::Photo,
+            SendOrigin::Auto,
+            SendStatus::Pending,
+        )
+        .unwrap()
+        .is_some()
+    );
+    let failed_send = db
+        .enqueue_send(
+            failed_photo,
+            SendKind::Photo,
+            SendOrigin::Auto,
+            SendStatus::Pending,
+        )
+        .unwrap()
+        .unwrap();
+    db.fail_send(
+        failed_send,
+        SendErrorCode::Http401,
+        Some("401"),
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    db.enqueue_tagging_jobs(&[processing_photo], AI_PLUGIN, TaggingJobStatus::Pending)
+        .unwrap();
+    let processing_job = db.next_pending_tagging_job().unwrap().unwrap();
+    assert_eq!(processing_job.status, TaggingJobStatus::Processing);
+
+    db.enqueue_tagging_jobs(&[failed_photo], AI_PLUGIN, TaggingJobStatus::Pending)
+        .unwrap();
+    let completed_job = db.next_pending_tagging_job().unwrap().unwrap();
+    db.complete_tagging_job(&completed_job.id).unwrap();
+
+    let entries = db.mixed_active_queue_entries(100).unwrap();
+    assert_eq!(entries.len(), 3);
+    assert!(
+        entries
+            .windows(2)
+            .all(|window| window[0].created_at <= window[1].created_at)
+    );
+    assert!(entries.iter().all(|entry| {
+        matches!(
+            entry.state,
+            QueueState::Waiting | QueueState::Pending | QueueState::Processing
+        )
+    }));
+    assert!(entries.iter().any(|entry| {
+        entry.feature == QueueFeature::Compression && entry.state == QueueState::Waiting
+    }));
+    assert!(entries.iter().any(|entry| {
+        entry.feature == QueueFeature::Discord && entry.state == QueueState::Pending
+    }));
+    assert!(entries.iter().any(|entry| {
+        entry.feature == QueueFeature::Tagging && entry.state == QueueState::Processing
+    }));
+    assert!(entries.iter().all(|entry| entry.photo_name.is_some()));
+}
+
+#[test]
+fn deleting_a_waiting_row_allows_the_same_photo_to_be_enqueued_again() {
+    let db = Db::open_in_memory().unwrap();
+    let photo = seed_photo(&db);
+    assert!(
+        db.enqueue_auto_job_with_status(photo, "keep", QueueStatus::Waiting)
+            .unwrap()
+    );
+    let entries = db
+        .active_queue_entries(QueueFeature::Compression, 10)
+        .unwrap();
+    assert_eq!(entries.len(), 1);
+    let job_id = entries[0].job_id.clone();
+    assert!(
+        db.delete_waiting_entry(QueueFeature::Compression, &job_id)
+            .unwrap()
+    );
+    assert!(
+        !db.delete_waiting_entry(QueueFeature::Compression, &job_id)
+            .unwrap()
+    );
+    assert!(
+        db.enqueue_auto_job_with_status(photo, "keep", QueueStatus::Waiting)
+            .unwrap()
+    );
+    assert_eq!(
+        db.queue_counts(QueueFeature::Compression).unwrap().waiting,
+        1
+    );
+}
+
+#[test]
+fn deleting_all_waiting_entries_only_removes_waiting_rows() {
+    let db = Db::open_in_memory().unwrap();
+    let waiting_photo = seed_photo(&db);
+    let pending_photo = seed_other_photo(&db);
+    let waiting_send_photo = seed_photo_at(&db, "/photos/c.png");
+    let pending_send_photo = seed_photo_at(&db, "/photos/d.png");
+    let waiting_tag_photo = seed_photo_at(&db, "/photos/e.png");
+    let pending_tag_photo = seed_photo_at(&db, "/photos/f.png");
+
+    assert!(
+        db.enqueue_auto_job_with_status(waiting_photo, "keep", QueueStatus::Waiting)
+            .unwrap()
+    );
+    assert!(
+        db.enqueue_auto_job_with_status(pending_photo, "keep", QueueStatus::Pending)
+            .unwrap()
+    );
+    db.enqueue_send(
+        waiting_send_photo,
+        SendKind::Photo,
+        SendOrigin::Auto,
+        SendStatus::Waiting,
+    )
+    .unwrap();
+    db.enqueue_send(
+        pending_send_photo,
+        SendKind::Photo,
+        SendOrigin::Auto,
+        SendStatus::Pending,
+    )
+    .unwrap();
+    db.enqueue_tagging_jobs(&[waiting_tag_photo], AI_PLUGIN, TaggingJobStatus::Waiting)
+        .unwrap();
+    db.enqueue_tagging_jobs(&[pending_tag_photo], AI_PLUGIN, TaggingJobStatus::Pending)
+        .unwrap();
+
+    assert_eq!(
+        db.delete_all_waiting_entries(QueueFeature::Compression)
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        db.delete_all_waiting_entries(QueueFeature::Discord)
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        db.delete_all_waiting_entries(QueueFeature::Tagging)
+            .unwrap(),
+        1
+    );
+
+    let compression = db.queue_counts(QueueFeature::Compression).unwrap();
+    assert_eq!((compression.waiting, compression.pending), (0, 1));
+    let discord = db.queue_counts(QueueFeature::Discord).unwrap();
+    assert_eq!((discord.waiting, discord.pending), (0, 1));
+    let tagging = db.queue_counts(QueueFeature::Tagging).unwrap();
+    assert_eq!((tagging.waiting, tagging.pending), (0, 1));
+}
+
+#[test]
+fn recent_failed_jobs_cover_all_three_features() {
+    let db = Db::open_in_memory().unwrap();
+    let compression_photo = seed_photo(&db);
+    let send_photo = seed_other_photo(&db);
+    let tagging_photo = seed_photo_at(&db, "/photos/c.png");
+
+    assert!(
+        db.enqueue_auto_job_with_status(compression_photo, "keep", QueueStatus::Failed)
+            .unwrap()
+    );
+    db.conn
+        .execute(
+            "UPDATE compression_jobs SET error = 'compression failed' WHERE photo_id = ?1",
+            params![compression_photo],
+        )
+        .unwrap();
+
+    let send_id = db
+        .enqueue_send(
+            send_photo,
+            SendKind::Photo,
+            SendOrigin::Auto,
+            SendStatus::Pending,
+        )
+        .unwrap()
+        .unwrap();
+    db.fail_send(
+        send_id,
+        SendErrorCode::Http401,
+        Some("discord failed"),
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    db.enqueue_tagging_jobs(&[tagging_photo], AI_PLUGIN, TaggingJobStatus::Pending)
+        .unwrap();
+    let tagging_job = db.next_pending_tagging_job().unwrap().unwrap();
+    db.fail_tagging_job(&tagging_job.id, TaggingErrorCode::SidecarTimeout)
+        .unwrap();
+
+    let compression = db.recent_failed_compression_jobs(5).unwrap();
+    assert_eq!(compression.len(), 1);
+    assert_eq!(compression[0].feature, QueueFeature::Compression);
+    assert_eq!(compression[0].error, "compression failed");
+
+    let sends = db.recent_failed_sends(5).unwrap();
+    assert_eq!(sends.len(), 1);
+    assert_eq!(sends[0].feature, QueueFeature::Discord);
+    assert_eq!(sends[0].error, "discord failed");
+    assert_eq!(db.count_failed_sends().unwrap(), 1);
+
+    let tagging = db.recent_failed_tagging_jobs(AI_PLUGIN, 5).unwrap();
+    assert_eq!(tagging.len(), 1);
+    assert_eq!(tagging[0].feature, QueueFeature::Tagging);
+    assert_eq!(tagging[0].error, "sidecar_timeout");
+    assert_eq!(db.failed_tagging_job_count(AI_PLUGIN).unwrap(), 1);
 }

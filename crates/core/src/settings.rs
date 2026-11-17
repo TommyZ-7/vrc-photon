@@ -200,6 +200,8 @@ pub struct AppSettings {
     pub tray: bool,
     pub auto_compress_enabled: bool,
     pub auto_compress: AutoBehavior,
+    #[serde(default)]
+    pub auto_compress_queue_paused: bool,
     /// Whether automatic compression keeps the original after a successful
     /// encode. Manual compression always keeps the original and never reads
     /// this value.
@@ -282,6 +284,8 @@ pub struct AppSettings {
     #[serde(default)]
     pub discord_auto: AutoBehavior,
     #[serde(default)]
+    pub discord_queue_paused: bool,
+    #[serde(default)]
     pub discord_consent_at: Option<i64>,
     /// Whether the daemon resolves world names through the VRChat API.
     #[serde(default)]
@@ -292,6 +296,8 @@ pub struct AppSettings {
     /// Whether newly imported photos are tagged automatically.
     #[serde(default)]
     pub ai_tagging_auto: AutoBehavior,
+    #[serde(default)]
+    pub ai_tagging_queue_paused: bool,
     /// Character presence threshold (0.0–1.0). `None` uses the sidecar default.
     #[serde(default)]
     pub ai_presence_threshold: Option<f32>,
@@ -445,6 +451,7 @@ impl Default for AppSettings {
             tray: true,
             auto_compress_enabled: true,
             auto_compress: AutoBehavior::immediate(),
+            auto_compress_queue_paused: false,
             auto_compress_keep_original: true,
             auto_compression: default_auto_compression(),
             clipboard_compression: default_clipboard_compression(),
@@ -475,10 +482,12 @@ impl Default for AppSettings {
             discord_include_players: false,
             discord_send_original: true,
             discord_auto: AutoBehavior::off(),
+            discord_queue_paused: false,
             discord_consent_at: None,
             world_name_resolution_enabled: false,
             ai_tagging_enabled: false,
             ai_tagging_auto: AutoBehavior::off(),
+            ai_tagging_queue_paused: false,
             ai_presence_threshold: None,
             ai_tagging_backend: default_ai_backend(),
             ai_tagging_idle_timeout_sec: default_ai_idle_timeout(),
@@ -1881,5 +1890,33 @@ mod tests {
         assert!(!raw.contains("discord_auto_since"));
         assert!(raw.contains("\"auto_compress\""));
         assert!(raw.contains("\"ai_tagging_auto\""));
+    }
+
+    #[test]
+    fn queue_pause_settings_default_to_false_and_survive_roundtrip() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+        let mut settings = AppSettings::load(&db).unwrap();
+        assert!(!settings.auto_compress_queue_paused);
+        assert!(!settings.discord_queue_paused);
+        assert!(!settings.ai_tagging_queue_paused);
+        settings.auto_compress_queue_paused = true;
+        settings.discord_queue_paused = true;
+        settings.ai_tagging_queue_paused = true;
+        settings.save(&db).unwrap();
+        let loaded = AppSettings::load(&db).unwrap();
+        assert!(loaded.auto_compress_queue_paused);
+        assert!(loaded.discord_queue_paused);
+        assert!(loaded.ai_tagging_queue_paused);
+    }
+
+    #[test]
+    fn old_settings_default_queue_pause_to_false() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+        db.set_setting(SETTINGS_KEY, r#"{"language":"ja"}"#)
+            .unwrap();
+        let loaded = AppSettings::load(&db).unwrap();
+        assert!(!loaded.auto_compress_queue_paused);
+        assert!(!loaded.discord_queue_paused);
+        assert!(!loaded.ai_tagging_queue_paused);
     }
 }
