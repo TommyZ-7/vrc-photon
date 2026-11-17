@@ -533,11 +533,17 @@ fn poll_watchers_queues_removals_and_ignores_derivative_creates() {
     let old = compressed.join("old.webp");
     let new = compressed.join("new.webp");
     let source = photo_dir.join("VRChat_new.png");
+    let jpeg = photo_dir.join("Steam_2026-10-21_21-14-03.221_4x3.jpg");
 
     tx.send(Ok(notify::Event::new(notify::EventKind::Create(
         notify::event::CreateKind::File,
     ))
     .add_path(created.clone())))
+        .unwrap();
+    tx.send(Ok(notify::Event::new(notify::EventKind::Create(
+        notify::event::CreateKind::File,
+    ))
+    .add_path(jpeg.clone())))
         .unwrap();
     tx.send(Ok(notify::Event::new(notify::EventKind::Remove(
         notify::event::RemoveKind::File,
@@ -559,6 +565,7 @@ fn poll_watchers_queues_removals_and_ignores_derivative_creates() {
     daemon.poll_watchers();
 
     assert!(!daemon.dirty_paths.contains(&created));
+    assert!(!daemon.dirty_paths.contains(&jpeg));
     assert!(daemon.dirty_paths.contains(&removed));
     assert!(daemon.dirty_paths.contains(&old));
     assert!(daemon.dirty_paths.contains(&source));

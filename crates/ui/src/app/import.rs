@@ -19,6 +19,7 @@ use vrc_photon_core::importer::{
     ImportResult,
 };
 use vrc_photon_core::linker;
+use vrc_photon_core::photo_filename::SOURCE_PHOTO_EXTENSION;
 use vrc_photon_core::scanner;
 use vrc_photon_core::scanner::ScanFailure;
 use vrc_photon_core::settings::AppSettings;
@@ -191,6 +192,19 @@ pub(crate) fn should_notify_import_progress(last: Option<Instant>, now: Instant)
     last.is_none_or(|last| now.saturating_duration_since(last) >= IMPORT_PROGRESS_NOTIFY_INTERVAL)
 }
 
+/// Native file-picker filters for manual imports: PNG only.
+fn import_dialog_filters() -> Vec<(String, Vec<String>)> {
+    // Some native dialogs match extension patterns case-sensitively, so the
+    // uppercase variant keeps `.PNG` selectable.
+    vec![(
+        tr!("import.dialog.filter.png"),
+        vec![
+            SOURCE_PHOTO_EXTENSION.to_string(),
+            SOURCE_PHOTO_EXTENSION.to_ascii_uppercase(),
+        ],
+    )]
+}
+
 impl App {
     pub(crate) fn open_import_dialog(
         &mut self,
@@ -220,10 +234,7 @@ impl App {
 
     pub(crate) fn pick_import_files(&mut self, window: &Window, cx: &mut Context<Self>) {
         let options = DialogOptions {
-            filters: vec![(
-                tr!("import.dialog.filter.images"),
-                vec!["png".to_string(), "jpg".to_string(), "jpeg".to_string()],
-            )],
+            filters: import_dialog_filters(),
             ..DialogOptions::default()
         };
         let dialog = options.dialog(Some(window));
@@ -843,8 +854,8 @@ mod tests {
     use super::{
         IMPORT_PROGRESS_NOTIFY_INTERVAL, ImportDialogError, ImportDialogOrigin, ImportDialogPhase,
         ImportDialogState, ImportReportView, add_photo_root_and_save, append_scan_error,
-        import_remaining, import_should_index, import_summary, merge_resume_report,
-        merge_retry_report, request_import_scan, reserve_import_dialog,
+        import_dialog_filters, import_remaining, import_should_index, import_summary,
+        merge_resume_report, merge_retry_report, request_import_scan, reserve_import_dialog,
         should_notify_import_progress,
     };
     use crate::ui::import::retryable_sources;
@@ -857,6 +868,13 @@ mod tests {
     };
     use vrc_photon_core::scanner::ScanFailure;
     use vrc_photon_core::settings::AppSettings;
+
+    #[test]
+    fn import_filter_accepts_only_png() {
+        let filters = import_dialog_filters();
+        assert_eq!(filters.len(), 1);
+        assert_eq!(filters[0].1, vec!["png".to_string(), "PNG".to_string()]);
+    }
 
     #[test]
     fn import_dialog_errors_render_in_the_current_language() {

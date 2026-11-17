@@ -81,7 +81,9 @@ pub struct ImportProgress {
     pub last_source: Option<PathBuf>,
 }
 
-/// Copies or moves source photos into a managed library folder.
+/// Copies or moves PNG source photos into a managed library folder.
+///
+/// JPG/JPEG sources are counted as skipped and are never copied or moved.
 ///
 /// Files are published through [`crate::fs_safe`], which claims the final name
 /// atomically and falls back to an exclusive reservation when hard links are
@@ -198,7 +200,7 @@ pub struct FolderScan {
     pub issues: Vec<ImportIssue>,
 }
 
-/// Collects supported photos under `folder` recursively.
+/// Collects PNG source photos under `folder` recursively.
 ///
 /// The walk skips symlinks, a directory named `compressed` (the scanner's
 /// derivative folder), and the `exclude` subtree (normally the import
@@ -663,6 +665,59 @@ mod tests {
         assert!(result.issues.is_empty());
         assert!(!source.exists());
         assert!(dest.join(source.file_name().unwrap()).exists());
+    }
+
+    #[test]
+    fn skips_jpeg_sources() {
+        let dir = tempdir().unwrap();
+        let png = dir.path().join("VRChat_2026-10-21_21-14-03.221_4x3.png");
+        write_png(&png);
+        let jpg = dir.path().join("Steam_2026-10-21_21-14-04.221_4x3.jpg");
+        crate::image_decode::test_support::write_jpeg_with_orientation(
+            &jpg,
+            &RgbaImage::from_pixel(4, 3, Rgba([10, 20, 30, 255])),
+            1,
+        );
+        let jpeg = dir.path().join("Steam_2026-10-21_21-14-05.221_4x3.jpeg");
+        crate::image_decode::test_support::write_jpeg_with_orientation(
+            &jpeg,
+            &RgbaImage::from_pixel(4, 3, Rgba([10, 20, 30, 255])),
+            1,
+        );
+        let dest = dir.path().join("dest");
+
+        for (mode, name) in [(ImportMode::Copy, "copy"), (ImportMode::Move, "move")] {
+            let dest = dest.join(name);
+            let result =
+                import_files(&[png.clone(), jpg.clone(), jpeg.clone()], &dest, mode).unwrap();
+
+            assert_eq!(result.imported.len(), 1, "{name}");
+            assert_eq!(result.skipped, 2, "{name}");
+            assert!(result.issues.is_empty(), "{name}");
+            assert!(dest.join(png.file_name().unwrap()).exists(), "{name}");
+            assert!(jpg.exists(), "skipped JPG must remain for {name}");
+            assert!(jpeg.exists(), "skipped JPEG must remain for {name}");
+            assert!(!dest.join(jpg.file_name().unwrap()).exists(), "{name}");
+            assert!(!dest.join(jpeg.file_name().unwrap()).exists(), "{name}");
+        }
+    }
+
+    #[test]
+    fn folder_scan_ignores_jpeg_sources() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("photos");
+        fs::create_dir_all(&root).unwrap();
+        let png = root.join("VRChat_2026-10-21_21-14-03.221_4x3.png");
+        write_png(&png);
+        crate::image_decode::test_support::write_jpeg_with_orientation(
+            &root.join("Steam_2026-10-21_21-14-04.221_4x3.jpg"),
+            &RgbaImage::from_pixel(4, 3, Rgba([10, 20, 30, 255])),
+            1,
+        );
+
+        let scan = collect_folder_sources(&root, None).unwrap();
+        assert_eq!(scan.files, vec![png]);
+        assert!(scan.issues.is_empty());
     }
 
     #[test]
