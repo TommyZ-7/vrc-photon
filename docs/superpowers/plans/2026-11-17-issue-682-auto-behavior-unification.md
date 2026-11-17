@@ -106,7 +106,7 @@
 - Create: `docs/superpowers/specs/2026-11-17-issue-682-auto-behavior-unification-design.md`
 - Create: `docs/superpowers/plans/2026-11-17-issue-682-auto-behavior-unification.md`（このファイル）
 
-- [ ] **Step 1: モックを作る**
+- [x] **Step 1: モックを作る**
 
 `docs/ui-682-auto-behavior-unification-mockup.html` に次を載せる。
 
@@ -129,7 +129,7 @@
 - #684: Discord の送信履歴カードと「履歴を消去」がないこと。
 - 判断項目と決定の一覧、移行の挙動変化、対象外。
 
-- [ ] **Step 2: docs PR を作る**
+- [x] **Step 2: docs PR を作る**
 
 `docs: 自動動作設定の統一モックと計画 (#682)`。ラベルは `enhancement`。
 Plannotator で計画書・設計書・モックをレビューし、承認を得るまで Phase 1 は
@@ -157,7 +157,7 @@ Phase 6 で行う。
   - `AppSettings { pub auto_compress_enabled: bool, pub auto_compress: AutoBehavior, pub discord_auto: AutoBehavior, pub ai_tagging_auto: AutoBehavior }`
   - `fn migrate_legacy_auto_settings(value: &mut serde_json::Value, now: i64)`
 
-- [ ] **Step 1: 失敗する移行テストを書く**
+- [x] **Step 1: 失敗する移行テストを書く**
 
 `crates/core/src/settings.rs` のテストに追加する。
 
@@ -304,12 +304,12 @@ fn loading_legacy_settings_persists_the_new_shape() {
 }
 ```
 
-- [ ] **Step 2: テストを実行して失敗を確認する**
+- [x] **Step 2: テストを実行して失敗を確認する**
 
 Run: `cargo test -p vrc-photon-core settings::tests::legacy_compression_fields_migrate_to_common_behavior`
 Expected: FAIL（`migrate_legacy_auto_settings` と `AutoBehavior` が未定義）
 
-- [ ] **Step 3: 型と移行を実装する**
+- [x] **Step 3: 型と移行を実装する**
 
 `crates/core/src/settings.rs` に `AutoMode`, `AutoScope`, `AutoBehavior`、
 `auto_compress_enabled: bool` を追加し、`DiscordAutoMode` と旧フィールドを削除する。
@@ -330,12 +330,12 @@ Expected: FAIL（`migrate_legacy_auto_settings` と `AutoBehavior` が未定義�
 `schema.rs` の `photos.created_at` は `to_rfc3339()` の文字列なので、後の SQL では
 `CAST(strftime('%s', p.created_at) AS INTEGER)` で Unix 秒に変換する。
 
-- [ ] **Step 4: テストを実行して通す**
+- [x] **Step 4: テストを実行して通す**
 
 Run: `cargo test -p vrc-photon-core settings::tests`
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add crates/core/src/settings.rs
@@ -362,7 +362,7 @@ git commit -m "feat(core): unify automatic behavior settings (#682)"
   - `Db::count_unsent_photo_backlog(&self, since: Option<i64>) -> Result<i64>`
   - `Db::enqueue_unsent_photo_backlog(&self, since: Option<i64>) -> Result<usize>`
 
-- [ ] **Step 1: 失敗する DB テストを書く**
+- [x] **Step 1: 失敗する DB テストを書く**
 
 `crates/core/src/db/tests.rs` に、写真の `created_at` を固定するヘルパーを追加する。
 
@@ -468,12 +468,12 @@ fn discord_unsent_backlog_respects_created_at_and_active_rows() {
 }
 ```
 
-- [ ] **Step 2: テストを実行して失敗を確認する**
+- [x] **Step 2: テストを実行して失敗を確認する**
 
 Run: `cargo test -p vrc-photon-core db::tests::compression_backlog_scope_filters_by_created_at`
 Expected: FAIL（引数が足りない／関数がない）
 
-- [ ] **Step 3: SQL を実装する**
+- [x] **Step 3: SQL を実装する**
 
 圧縮と AI の既存 `INSERT ... SELECT` に次の条件を追加する。
 
@@ -486,12 +486,12 @@ Discord は `send.rs` に2関数を追加する。対象条件は設計書の「
 単一 SQL で `kind = 'photo'`, `origin = 'auto'`, `status = 'pending'`,
 `created_at = now` を積む（per-photo ループにしない）。
 
-- [ ] **Step 4: テストを実行して通す**
+- [x] **Step 4: テストを実行して通す**
 
 Run: `cargo test -p vrc-photon-core db::tests`
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add crates/core/src/db
@@ -521,7 +521,7 @@ git commit -m "feat(core): scope automatic backlog queries (#682)"
   - `enqueue_auto_sends(db: &Db, photo_ids: &[i64]) -> Result<usize>`（既存シグネチャ、中身を変更）
   - `AppSettings::auto_compress_enabled` / `auto_compress` / `ai_tagging_auto` のデーモンコピー
 
-- [ ] **Step 1: 失敗するデーモンテストを書く**
+- [x] **Step 1: 失敗するデーモンテストを書く**
 
 ```rust
 #[test]
@@ -624,12 +624,12 @@ fn immediate_ai_mode_still_requires_a_ready_plugin() {
 ため、`scan_root_photos` か手動の一括処理に置き換える。`discord_auto_since` を
 設定しているテストは `discord_auto = AutoBehavior::immediate()` に置き換える。
 
-- [ ] **Step 2: テストを実行して失敗を確認する**
+- [x] **Step 2: テストを実行して失敗を確認する**
 
 Run: `cargo test -p vrc-photon-daemon initial_scan_never_enqueues_auto_compression_for_any_scope`
 Expected: FAIL（新しい型がない／挙動が違う）
 
-- [ ] **Step 3: デーモンを実装する**
+- [x] **Step 3: デーモンを実装する**
 
 - `enqueue_auto_jobs` は `mode` を受け取り、`Off` なら0、`Immediate` なら
   `QueueStatus::Pending`、`Waiting` なら `QueueStatus::Waiting`。
@@ -652,12 +652,12 @@ Expected: FAIL（新しい型がない／挙動が違う）
   `self.settings.ai_tagging_auto = settings.ai_tagging_auto;` に置き換える。
 - `ai_e2e.rs` の `ai_tagging_auto = false` を `AutoBehavior::off()` に置き換える。
 
-- [ ] **Step 4: テストを実行して通す**
+- [x] **Step 4: テストを実行して通す**
 
 Run: `cargo test -p vrc-photon-daemon`
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add crates/daemon
@@ -697,7 +697,7 @@ git commit -m "feat(daemon): apply the unified automatic modes (#682)"
   - `pub(crate) fn bulk_action_available(master_enabled: bool, feature_ready: bool) -> bool`
   - `pub(crate) fn discord_backlog_available(settings: &AppSettings, webhook: Option<&str>) -> bool`
 
-- [ ] **Step 1: 失敗する UI ロジックテストを書く**
+- [x] **Step 1: 失敗する UI ロジックテストを書く**
 
 `crates/ui/src/app/discord.rs` のテストを新しい型に更新し、次を追加する。
 
@@ -740,12 +740,12 @@ fn bulk_since_uses_the_activation_time_for_new_only() {
 }
 ```
 
-- [ ] **Step 2: テストを実行して失敗を確認する**
+- [x] **Step 2: テストを実行して失敗を確認する**
 
 Run: `cargo test -p vrc-photon-ui changing_mode_sets_activation_only_when_leaving_off`
 Expected: FAIL
 
-- [ ] **Step 3: 共通コンポーネントを作る**
+- [x] **Step 3: 共通コンポーネントを作る**
 
 `crates/ui/src/ui/auto_behavior.rs` に2つの部品を実装する。
 
@@ -764,7 +764,7 @@ Expected: FAIL
 自動動作と一括処理はカード化せず、見出し・セグメント・ボタンをカード本文に
 直接置く。専用の `segment` 部品を両方で共有する。
 
-- [ ] **Step 4: 3カードの表示順を統一する**
+- [x] **Step 4: 3カードの表示順を統一する**
 
 すべてのカードを次の順に並べる。
 
@@ -814,12 +814,12 @@ Expected: FAIL
 - `process_untagged_ai` は `ai_tagging_auto.bulk_since()` を
   `enqueue_tagging_backlog` に渡す。
 
-- [ ] **Step 5: テストを実行して通す**
+- [x] **Step 5: テストを実行して通す**
 
 Run: `cargo test -p vrc-photon-ui`
 Expected: PASS
 
-- [ ] **Step 6: コミット**
+- [x] **Step 6: コミット**
 
 ```bash
 git add crates/ui
@@ -841,32 +841,32 @@ git commit -m "feat(ui): unify the automatic and bulk controls in the integratio
 - Consumes: `auto_behavior_editor`、Task 4 のハンドラ。
 - Produces: `setup_ai(&self, cx: &mut Context<Self>) -> Div`。
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 既存の `setup_pages_advance_and_return_in_order` は変更しない。追加で
 `set_setup_immediate` が不要になったことを確認するため、コンパイルテストとして
 `cargo check` を使う。ロジックの追加テストは不要。
 
-- [ ] **Step 2: 自動圧縮ページを変更する**
+- [x] **Step 2: 自動圧縮ページを変更する**
 
 `setup_compression` の `setup-auto-enabled` マスタースイッチは残す。
 `setup-auto-immediate` を削除し、`setup-auto-keep`、警告、形式チップ、ロスレスを
 残した後、最後に `auto_mode_segmented` を置く。`integration_settings_body` の
 淡色化はマスタースイッチに従って維持する。一括処理ブロックは置かない。
 
-- [ ] **Step 3: Discord ページを変更する**
+- [x] **Step 3: Discord ページを変更する**
 
 既存の連携スイッチ、Webhook、送信先、プレイヤー名、原画優先の後に
 `auto_mode_segmented` を置く。連携が `Off` のときは現行どおり淡色にする。
 一括処理ブロックは置かない。
 
-- [ ] **Step 4: AI ページを変更する**
+- [x] **Step 4: AI ページを変更する**
 
 `setup_ai` に `cx` を渡し、紹介文の後に `auto_mode_segmented` を置く。
 プレビューと BOOTH の案内は残す。600×561 に収めるため、サンプル画像の高さを
 76 px から 52 px に縮める。一括処理ブロック、設定画面へのボタン・案内は置かない。
 
-- [ ] **Step 5: テストと目視確認**
+- [x] **Step 5: テストと目視確認**
 
 Run: `cargo test -p vrc-photon-ui app::setup::tests`
 Expected: PASS
@@ -874,7 +874,7 @@ Expected: PASS
 `hyprland-visual-qa` または利用環境の visual QA 手順で `--demo` を起動し、
 セットアップの3ページを 600×561 で確認する。
 
-- [ ] **Step 6: コミット**
+- [x] **Step 6: コミット**
 
 ```bash
 git add crates/ui/src/ui/setup.rs crates/ui/src/app/setup.rs
@@ -913,7 +913,7 @@ git commit -m "feat(ui): show the unified automatic controls in first-run setup 
   - `Db::recent_failed_sends(limit) -> Result<Vec<FailedJobEntry>>` / `count_failed_sends()`
   - `Db::recent_failed_tagging_jobs(plugin_id, limit) -> Result<Vec<FailedJobEntry>>` / `failed_tagging_job_count(plugin_id)`
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 ```rust
 #[test]
@@ -954,12 +954,12 @@ fn deleting_a_waiting_row_allows_the_same_photo_to_be_enqueued_again() {
 }
 ```
 
-- [ ] **Step 2: テストを実行して失敗を確認する**
+- [x] **Step 2: テストを実行して失敗を確認する**
 
 Run: `cargo test -p vrc-photon-core db::tests::mixed_queue_entries_are_oldest_first_and_exclude_terminal_rows`
 Expected: FAIL（型と API がない）
 
-- [ ] **Step 3: 型と DB API を実装する**
+- [x] **Step 3: 型と DB API を実装する**
 
 `crates/core/src/queue.rs` に表示モデルを置く。DB のクエリは3テーブルを
 `status IN ('waiting','pending','processing')` で絞り、`photos.file_name` を
@@ -973,12 +973,12 @@ LEFT JOIN する。混合キューは3つの一覧を Rust 側でマージし、
 `AppSettings` に `*_queue_paused` を追加し、`Default` と `#[serde(default)]` を
 設定する。既存 JSON の移行は不要（欠損は false）。
 
-- [ ] **Step 4: テストを実行して通す**
+- [x] **Step 4: テストを実行して通す**
 
 Run: `cargo test -p vrc-photon-core settings::tests && cargo test -p vrc-photon-core db::tests`
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add crates/core
@@ -1006,7 +1006,7 @@ git commit -m "feat(core): add queue pause settings and unified queue queries (#
   - `Daemon` の `compression_queue_paused` / `tagging_queue_paused` フィールド
   - `refresh_compression_settings` で pause 設定を反映
 
-- [ ] **Step 1: 失敗する一時停止テストを書く**
+- [x] **Step 1: 失敗する一時停止テストを書く**
 
 ```rust
 #[test]
@@ -1030,12 +1030,12 @@ fn paused_discord_worker_does_not_claim_pending_sends() { /* seed pending send, 
 fn paused_tagging_worker_does_not_claim_pending_jobs() { /* seed pending job, set paused, process_once, assert pending */ }
 ```
 
-- [ ] **Step 2: テストを実行して失敗を確認する**
+- [x] **Step 2: テストを実行して失敗を確認する**
 
 Run: `cargo test -p vrc-photon-daemon paused_compression_worker_does_not_claim_pending_jobs`
 Expected: FAIL
 
-- [ ] **Step 3: ワーカーに停止ゲートを追加する**
+- [x] **Step 3: ワーカーに停止ゲートを追加する**
 
 - 圧縮: `worker_loop` に `queue_paused` を追加し、`paused || queue_paused` を
   バッチ取得前に見る。既存のグローバル停止は維持する。
@@ -1054,12 +1054,12 @@ Expected: FAIL
   pause の変化を拾い、ワーカーを起こす。即時性が必要なら、保存後に
   `WakeJobs` / `WakeSends` / `WakeTagging` を送ってもよい。
 
-- [ ] **Step 4: テストを実行して通す**
+- [x] **Step 4: テストを実行して通す**
 
 Run: `cargo test -p vrc-photon-daemon`
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add crates/daemon
@@ -1097,7 +1097,7 @@ git commit -m "feat(daemon): honor per-feature queue pause (#684)"
   - `App::release_waiting_queue(feature, window, cx)`
   - `App::mixed_queue_entries` / `mixed_queue_counts`
 
-- [ ] **Step 1: 失敗する UI ロジックテストを書く**
+- [x] **Step 1: 失敗する UI ロジックテストを書く**
 
 ```rust
 #[test]
@@ -1120,12 +1120,12 @@ fn waiting_rows_can_be_deleted_but_pending_and_processing_cannot() {
 }
 ```
 
-- [ ] **Step 2: テストを実行して失敗を確認する**
+- [x] **Step 2: テストを実行して失敗を確認する**
 
 Run: `cargo test -p vrc-photon-ui mixed_queue_orders_features_by_created_at`
 Expected: FAIL
 
-- [ ] **Step 3: 共通キュー部品を作る**
+- [x] **Step 3: 共通キュー部品を作る**
 
 `crates/ui/src/ui/queue.rs` に次を実装する。
 
@@ -1140,7 +1140,7 @@ Expected: FAIL
 - `待機をすべて開始` は既存の release API を呼ぶ。圧縮は `keep_original=false`
   のとき既存の置換確認を出す。
 
-- [ ] **Step 4: 3カードとダッシュボードを置き換える**
+- [x] **Step 4: 3カードとダッシュボードを置き換える**
 
 - 自動圧縮: 一括処理の下に `queue_section(Compression, ...)`。
 - Discord: 送信履歴カードを削除し、一括処理の下に
@@ -1156,12 +1156,12 @@ Expected: FAIL
 - 圧縮の `queue_panel` / failed row / retry-all は削除または通知側へ移す。
 - サイドバーの圧縮カードとリボンの圧縮操作は変更しない。
 
-- [ ] **Step 5: テストを実行して通す**
+- [x] **Step 5: テストを実行して通す**
 
 Run: `cargo test -p vrc-photon-ui`
 Expected: PASS
 
-- [ ] **Step 6: コミット**
+- [x] **Step 6: コミット**
 
 ```bash
 git add crates/ui
@@ -1197,7 +1197,7 @@ git commit -m "feat(ui): unify the feature queues and the dashboard mixed queue 
   - `App::retry_all_failed_sends(cx)` / `App::retry_all_failed_tagging_jobs(cx)`
   - `Db::retry_all_failed_sends()` / `Db::retry_all_failed_tagging_jobs(plugin_id)`
 
-- [ ] **Step 1: 失敗する通知テストを書く**
+- [x] **Step 1: 失敗する通知テストを書く**
 
 ```rust
 #[test]
@@ -1217,12 +1217,12 @@ fn failed_job_entries_are_newest_first_and_capped_at_five() {
 }
 ```
 
-- [ ] **Step 2: テストを実行して失敗を確認する**
+- [x] **Step 2: テストを実行して失敗を確認する**
 
 Run: `cargo test -p vrc-photon-ui job_failures_section_appears_only_when_a_feature_has_failures`
 Expected: FAIL
 
-- [ ] **Step 3: 通知モーダルを拡張する**
+- [x] **Step 3: 通知モーダルを拡張する**
 
 - `FailureNotice` に Discord / Tagging を追加し、`failure_transition` の
   比較対象を3機能＋daemon errors に広げる。
@@ -1233,17 +1233,17 @@ Expected: FAIL
 - 失敗行はキューに表示しない。
 - 既存の圧縮通知カードの再試行は統合する。
 
-- [ ] **Step 4: 再試行 API を追加する**
+- [x] **Step 4: 再試行 API を追加する**
 
 Discord と AI に失敗全件の一括再試行を追加する。既存の個別再試行
 （`retry_send`, `retry_tagging_job`）を UI から呼ぶ。
 
-- [ ] **Step 5: テストを実行して通す**
+- [x] **Step 5: テストを実行して通す**
 
 Run: `cargo test -p vrc-photon-ui && cargo test -p vrc-photon-core db::tests`
 Expected: PASS
 
-- [ ] **Step 6: コミット**
+- [x] **Step 6: コミット**
 
 ```bash
 git add crates/ui crates/core/src/db
@@ -1267,7 +1267,7 @@ git commit -m "feat(ui): notify failed queue jobs with retry (#684)"
 - Consumes: Task 4/5/9/10 の UI キー。
 - Produces: なし。
 
-- [ ] **Step 1: 翻訳キーを追加する**
+- [x] **Step 1: 翻訳キーを追加する**
 
 `ja.yml` / `en.yml` に次を追加する（番号は目安）。
 
@@ -1335,7 +1335,7 @@ notifications.job_failures.error: 失敗した処理を再試行できません�
 - `integrations.ai.jobs.failed` / `integrations.ai.jobs.latest_failure` が
   未使用になったら削除する。
 
-- [ ] **Step 2: `placeholders.rs` を更新する**
+- [x] **Step 2: `placeholders.rs` を更新する**
 
 `tr_args!` を使う次のキーを `CALL_SITES` に追加する。引数名は `count` と `error`。
 
@@ -1347,7 +1347,7 @@ notifications.job_failures.error: 失敗した処理を再試行できません�
 - `queue.limit`
 - `notifications.job_failures.count` / `.error`
 
-- [ ] **Step 3: docs を実装に合わせる**
+- [x] **Step 3: docs を実装に合わせる**
 
 - `docs/ui.md`
   - §2.9 の保存値のみの一覧から `auto_compress_backlog` を外す。
@@ -1421,7 +1421,7 @@ notifications.job_failures.error: 失敗した処理を再試行できません�
   - 待機の行削除・一括削除と、実行待ち・実行中が削除できないことを確認する。
   - Discord の履歴カードと「履歴を消去」がないこと、失敗が通知に出ることを確認する。
 
-- [ ] **Step 4: ローカル検証**
+- [x] **Step 4: ローカル検証**
 
 ```bash
 cargo fmt --all -- --check
@@ -1429,7 +1429,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-- [ ] **Step 5: 目視確認**
+- [x] **Step 5: 目視確認**
 
 `--demo` で 1280×820 と 1080×700 を起動し、次を確認する。
 
@@ -1452,7 +1452,7 @@ cargo test --workspace
 - Discord の送信履歴カードと「履歴を消去」がない。
 - 通知モーダルに3機能の失敗行（最新5件）と再試行がある。
 
-- [ ] **Step 6: 実装 PR を作る**
+- [x] **Step 6: 実装 PR を作る**
 
 `feat: unify the automatic behavior and queue views across three features (#682, #684)`。
 本文に `Closes #682` と `Closes #684` を書く。ラベルは `enhancement`。
@@ -1462,28 +1462,28 @@ CI green を確認して merge し、`main` を pull する。
 
 ## 完了条件
 
-- [ ] `AutoBehavior { mode, scope, activated_at }` が3機能で共有されている。
-- [ ] 自動圧縮のマスタースイッチ `auto_compress_enabled` が実装されている。
-- [ ] 旧設定 JSON が読み込み時に移行され、保存後に旧キーが消える。
-- [ ] 初回フルスキャンでは3機能とも自動投入されない。
-- [ ] `ScanRoot`・監視・2回目以降のフルスキャンで新規写真が自動投入される。
-- [ ] 一括処理が `scope` に従い、`mode = Off` でも使え、マスタースイッチが
+- [x] `AutoBehavior { mode, scope, activated_at }` が3機能で共有されている。
+- [x] 自動圧縮のマスタースイッチ `auto_compress_enabled` が実装されている。
+- [x] 旧設定 JSON が読み込み時に移行され、保存後に旧キーが消える。
+- [x] 初回フルスキャンでは3機能とも自動投入されない。
+- [x] `ScanRoot`・監視・2回目以降のフルスキャンで新規写真が自動投入される。
+- [x] 一括処理が `scope` に従い、`mode = Off` でも使え、マスタースイッチが
       オフのときだけ無効になる。
-- [ ] Discord の一括送信が件数確認付きで、未送信写真だけを対象にする。
-- [ ] AI の `Immediate` は未準備で積まず、`Waiting` は未準備でも積む。
-- [ ] AI カードに「設定を開く」ボタンと案内文がない。
-- [ ] 3カードの表示順が統一され、3セットアップページには一括処理がない。
-- [ ] 自動動作と一括処理がカード化されず、一括処理の対象範囲が2分割セグメントに
+- [x] Discord の一括送信が件数確認付きで、未送信写真だけを対象にする。
+- [x] AI の `Immediate` は未準備で積まず、`Waiting` は未準備でも積む。
+- [x] AI カードに「設定を開く」ボタンと案内文がない。
+- [x] 3カードの表示順が統一され、3セットアップページには一括処理がない。
+- [x] 自動動作と一括処理がカード化されず、一括処理の対象範囲が2分割セグメントに
       なっている。両者の間に区切り線がある。
-- [ ] 確認ダイアログが件数だけを表示し、ヒント行・重複ラベル・空表示・
+- [x] 確認ダイアログが件数だけを表示し、ヒント行・重複ラベル・空表示・
       出力先の注記がない。
-- [ ] Discord の非公開インスタンス警告が、カードにも同意ダイアログにもない。
-- [ ] #684: ダッシュボードが3機能の混合キューになり、圧縮専用キューがない。
-- [ ] #684: 機能詳細のキューが待機・実行待ち・実行中だけを表示する。
-- [ ] #684: 機能別の一時停止が設定に保存され、再起動後も維持される。
-- [ ] #684: 停止中は新規取得が止まり、実行中は完了し、自動投入は続く。
-- [ ] #684: 待機だけを行単位・一括で削除でき、削除後に再投入できる。
-- [ ] #684: Discord の送信履歴カードと「履歴を消去」がない。
-- [ ] #684: 失敗行がキューに出ず、通知モーダルに最新5件と再試行が出る。
-- [ ] i18n のカタログ・placeholder テストを含む全テストが通る。
-- [ ] 実装 PR が merge され、#682 と #684 が閉じる。
+- [x] Discord の非公開インスタンス警告が、カードにも同意ダイアログにもない。
+- [x] #684: ダッシュボードが3機能の混合キューになり、圧縮専用キューがない。
+- [x] #684: 機能詳細のキューが待機・実行待ち・実行中だけを表示する。
+- [x] #684: 機能別の一時停止が設定に保存され、再起動後も維持される。
+- [x] #684: 停止中は新規取得が止まり、実行中は完了し、自動投入は続く。
+- [x] #684: 待機だけを行単位・一括で削除でき、削除後に再投入できる。
+- [x] #684: Discord の送信履歴カードと「履歴を消去」がない。
+- [x] #684: 失敗行がキューに出ず、通知モーダルに最新5件と再試行が出る。
+- [x] i18n のカタログ・placeholder テストを含む全テストが通る。
+- [x] 実装 PR が merge され、#682 と #684 が閉じる。

@@ -317,8 +317,9 @@ impl App {
             }
             IpcEvent::SendProgress { .. } => {
                 // A send moved between waiting / pending / processing /
-                // terminal; the history page and the waiting badge follow it.
+                // terminal; the queue and the history page follow it.
                 self.reload_send_history(cx);
+                self.refresh_live_async(cx);
                 true
             }
             IpcEvent::StatusChanged { status } => {
@@ -709,8 +710,7 @@ impl App {
 
     pub(crate) fn reload_job_state(&mut self, cx: &mut Context<Self>) {
         let job_apply = self.apply_job_snapshot(collect_jobs(&self.db));
-        let notified =
-            self.apply_failure_transition(job_apply.failed_count, job_apply.daemon_count, cx);
+        let notified = self.apply_failure_transition(job_apply.failure_counts, cx);
         if job_apply.changed || notified {
             cx.notify();
         }
@@ -1117,7 +1117,7 @@ mod tests {
     fn settings_reload_keeps_the_live_values_when_the_row_is_malformed() {
         let current = AppSettings {
             language: "en".to_string(),
-            auto_compress: false,
+            auto_compress_enabled: false,
             ..Default::default()
         };
         let error = serde_json::from_str::<AppSettings>("{").unwrap_err().into();
@@ -1125,7 +1125,7 @@ mod tests {
         let kept = settings_after_reload(&current, Err(error));
 
         assert_eq!(kept.language, "en");
-        assert!(!kept.auto_compress);
+        assert!(!kept.auto_compress_enabled);
     }
 
     #[test]

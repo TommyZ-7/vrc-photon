@@ -131,6 +131,8 @@ pub(crate) struct TaggingWorker {
     /// Pause gate read before claiming the next job. A job already running
     /// finishes; pause only stops new dequeues.
     paused: Arc<AtomicBool>,
+    /// Feature-specific pause gate. It has the same semantics as `paused`.
+    queue_paused: Arc<AtomicBool>,
     signal: Arc<JobSignal>,
     control: Arc<TaggingControl>,
     config: TaggingWorkerConfig,
@@ -156,6 +158,7 @@ impl TaggingWorker {
             events,
             running,
             paused: Arc::new(AtomicBool::new(false)),
+            queue_paused: Arc::new(AtomicBool::new(false)),
             signal,
             control,
             config,
@@ -170,10 +173,16 @@ impl TaggingWorker {
         self
     }
 
+    /// Binds the feature-specific pause gate.
+    pub(crate) fn with_queue_paused(mut self, queue_paused: Arc<AtomicBool>) -> Self {
+        self.queue_paused = queue_paused;
+        self
+    }
+
     /// Claims and processes one pending job. Returns `false` when the queue is
     /// empty (and performs the idle sidecar check) or when the daemon paused.
     pub(crate) fn process_once(&self) -> Result<bool> {
-        if self.is_stopping() || self.is_paused() {
+        if self.is_stopping() || self.is_paused() || self.is_queue_paused() {
             return Ok(false);
         }
         let job = self.db().next_pending_tagging_job()?;
@@ -197,6 +206,10 @@ impl TaggingWorker {
 
     pub(crate) fn is_paused(&self) -> bool {
         self.paused.load(Ordering::Relaxed)
+    }
+
+    pub(crate) fn is_queue_paused(&self) -> bool {
+        self.queue_paused.load(Ordering::Relaxed)
     }
 
     /// Waits for a wakeup or the poll interval before the next dequeue attempt.
@@ -676,7 +689,7 @@ impl Drop for JobCleanup<'_> {
 pub(crate) fn run_worker_loop(worker: &TaggingWorker) {
     let mut seen = 0;
     while !worker.is_stopping() {
-        if worker.is_paused() {
+        if worker.is_paused() || worker.is_queue_paused() {
             worker.wait_for_next_poll(&mut seen);
             continue;
         }
@@ -909,6 +922,62 @@ mod tests {
         assert!(!worker.process_once().unwrap());
         let counts = db.lock().unwrap().tagging_job_counts(AI_PLUGIN_ID).unwrap();
         assert_eq!(counts.pending, 1, "pause must not claim the queued job");
+        assert_eq!(counts.processing, 0);
+    }
+
+    #[test]
+    fn queue_paused_worker_does_not_claim_a_pending_job() {
+        let db = Arc::new(Mutex::new(Db::open_in_memory().unwrap()));
+        {
+            let db = db.lock().unwrap();
+            let root = db.add_root("/photos", "reference").unwrap();
+            let photo_id = db
+                .upsert_photo(&NewPhoto {
+                    root_id: root,
+                    rel_path: "a.png".to_string(),
+                    abs_path: "/photos/a.png".to_string(),
+                    file_name: "a.png".to_string(),
+                    captured_at_utc: 1_700_000_000,
+                    captured_at_local: "2026-10-21 21:14:03".to_string(),
+                    tz_offset_sec: 9 * 3600,
+                    width: 16,
+                    height: 10,
+                    file_size: 10,
+                    mtime: 1_700_000_000,
+                    blake3: None,
+                })
+                .unwrap();
+            db.enqueue_tagging_jobs(&[photo_id], AI_PLUGIN_ID, TaggingJobStatus::Pending)
+                .unwrap();
+        }
+        let events = EventBus::default();
+        let data_dir = PathBuf::from("/tmp/vrc-photon-tagging-queue-pause-test");
+        let plugin = PluginService::new(
+            db.clone(),
+            data_dir.clone(),
+            events.clone(),
+            Vec::new(),
+            Arc::new(UreqModelClient::new()),
+        );
+        let signal = Arc::new(JobSignal::default());
+        let worker = TaggingWorker::new(
+            db.clone(),
+            data_dir,
+            plugin,
+            events,
+            Arc::new(AtomicBool::new(true)),
+            signal.clone(),
+            Arc::new(TaggingControl::new(signal)),
+            TaggingWorkerConfig::default(),
+        )
+        .with_queue_paused(Arc::new(AtomicBool::new(true)));
+
+        assert!(!worker.process_once().unwrap());
+        let counts = db.lock().unwrap().tagging_job_counts(AI_PLUGIN_ID).unwrap();
+        assert_eq!(
+            counts.pending, 1,
+            "queue pause must not claim the queued job"
+        );
         assert_eq!(counts.processing, 0);
     }
 

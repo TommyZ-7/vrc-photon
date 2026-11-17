@@ -23,7 +23,7 @@ use vrc_photon_ai_host::test_support::{
 use vrc_photon_ai_host::{ManifestFile, ModelHttpClient};
 use vrc_photon_ai_protocol::{ModelState, TaggingJobStatus, TaggingStage};
 use vrc_photon_core::db::Db;
-use vrc_photon_core::settings::AppSettings;
+use vrc_photon_core::settings::{AppSettings, AutoBehavior};
 use vrc_photon_ipc::{Event, PluginInstallStatus};
 
 use crate::Daemon;
@@ -309,11 +309,11 @@ impl DaemonAiE2e {
             let db = self.db();
             let mut settings = AppSettings::load(&db).expect("load the settings");
             settings.ai_tagging_enabled = true;
-            settings.ai_tagging_auto = false;
+            settings.ai_tagging_auto = AutoBehavior::off();
             settings.save(&db).expect("save the settings");
         }
         self.daemon.settings.ai_tagging_enabled = true;
-        self.daemon.settings.ai_tagging_auto = false;
+        self.daemon.settings.ai_tagging_auto = AutoBehavior::off();
     }
 
     fn add_photo(&mut self, name: &str) -> i64 {
@@ -644,11 +644,11 @@ fn real_sidecar_install_import_and_tag() {
         let db = daemon.db.lock().unwrap();
         let mut settings = AppSettings::load(&db).unwrap();
         settings.ai_tagging_enabled = true;
-        settings.ai_tagging_auto = false;
+        settings.ai_tagging_auto = AutoBehavior::off();
         settings.save(&db).unwrap();
     }
     daemon.settings.ai_tagging_enabled = true;
-    daemon.settings.ai_tagging_auto = false;
+    daemon.settings.ai_tagging_auto = AutoBehavior::off();
 
     let path = photo_dir.join("VRChat_2026-11-04_20-00-00.000_16x9.png");
     image::RgbaImage::from_pixel(1280, 720, image::Rgba([20, 30, 40, 255]))

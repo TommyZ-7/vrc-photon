@@ -15,6 +15,7 @@ pub(crate) mod import;
 pub(crate) mod lifecycle;
 pub(crate) mod live;
 pub(crate) mod photos;
+pub(crate) mod queue;
 pub(crate) mod search;
 pub(crate) mod search_suggest;
 pub(crate) mod session;
@@ -31,7 +32,6 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::{Duration, Instant};
 
-use gpui_kit::base::VirtualListScrollHandle;
 use gpui_kit::component::WindowExt;
 use gpui_kit::component::button::Button;
 use gpui_kit::component::input::{InputEvent, InputState, TextareaState};
@@ -45,6 +45,7 @@ use vrc_photon_core::model::{
     CompressionJob, CompressionProfile, DaemonError, DeletionCounts, DeletionRequest, Derivative,
     LibraryStats, Photo, PhotoPlayer, PhotoTextFilter, SendHistoryEntry,
 };
+use vrc_photon_core::queue::{QueueCounts, QueueEntry};
 use vrc_photon_core::settings::{
     AppSettings, UI_CARD_RADIUS_MAX, UI_CARD_RADIUS_MIN, UI_GRID_GAP_MAX, UI_GRID_GAP_MIN,
     clamp_card_radius, clamp_grid_gap, load_discord_webhook,
@@ -82,7 +83,9 @@ use crate::ui::actions::{
 };
 use crate::ui::chrome::{ChromeLayout, chrome_layout};
 use crate::ui::gallery::GalleryView;
-use crate::ui::notifications::{ToastSpec, toast_flush_needed};
+use crate::ui::notifications::{
+    FailureCounts, NotificationSnapshot, ToastSpec, toast_flush_needed,
+};
 use crate::ui::palette::{accent_colors, main_colors, resolve};
 use crate::ui::settings::ThemeAxis;
 use crate::ui::theme::{
@@ -385,9 +388,14 @@ pub struct App {
     pub(crate) update: update_view::UpdateState,
     pub(crate) jobs: Vec<CompressionJob>,
     pub(crate) waiting_jobs: Vec<CompressionJob>,
-    /// Scroll offset of the virtualized compression queue, shared by the
-    /// compression screen and the dashboard panel.
-    pub(crate) queue_scroll: VirtualListScrollHandle,
+    pub(crate) compression_queue_entries: Vec<QueueEntry>,
+    pub(crate) discord_queue_entries: Vec<QueueEntry>,
+    pub(crate) tagging_queue_entries: Vec<QueueEntry>,
+    pub(crate) mixed_queue_entries: Vec<QueueEntry>,
+    pub(crate) compression_queue_counts: QueueCounts,
+    pub(crate) discord_queue_counts: QueueCounts,
+    pub(crate) tagging_queue_counts: QueueCounts,
+    pub(crate) mixed_queue_counts: QueueCounts,
     pub(crate) active_job_count: i64,
     pub(crate) waiting_job_count: i64,
     pub(crate) daemon_errors: Vec<DaemonError>,
@@ -398,6 +406,7 @@ pub struct App {
     pub(crate) retryable_failed_count: i64,
     pub(crate) failed_jobs: Vec<CompressionJob>,
     pub(crate) failed_job_names: HashMap<i64, String>,
+    pub(crate) job_failures: NotificationSnapshot,
     pub(crate) deletion_requests: Vec<DeletionRequest>,
     pub(crate) deletion_counts: DeletionCounts,
     pub(crate) deletion_baseline: Option<(i64, i64)>,
@@ -507,7 +516,7 @@ pub struct App {
     pub(crate) _theme_focus_subscriptions: Vec<Subscription>,
     pub(crate) _context_menu_activation: Subscription,
     pub(crate) _context_menu_bounds: Subscription,
-    pub(crate) failure_baseline: Option<(i64, usize)>,
+    pub(crate) failure_baseline: Option<FailureCounts>,
     pub(crate) demo: bool,
     pub(crate) demo_assets: Option<DemoAssets>,
 }
@@ -1310,7 +1319,14 @@ impl App {
             update: update_view::UpdateState::new(health_token, database_ok, demo, db_path),
             jobs: Vec::new(),
             waiting_jobs: Vec::new(),
-            queue_scroll: VirtualListScrollHandle::new(),
+            compression_queue_entries: Vec::new(),
+            discord_queue_entries: Vec::new(),
+            tagging_queue_entries: Vec::new(),
+            mixed_queue_entries: Vec::new(),
+            compression_queue_counts: QueueCounts::default(),
+            discord_queue_counts: QueueCounts::default(),
+            tagging_queue_counts: QueueCounts::default(),
+            mixed_queue_counts: QueueCounts::default(),
             active_job_count: 0,
             waiting_job_count: 0,
             daemon_errors: Vec::new(),
@@ -1318,6 +1334,7 @@ impl App {
             retryable_failed_count: 0,
             failed_jobs: Vec::new(),
             failed_job_names: HashMap::new(),
+            job_failures: NotificationSnapshot::default(),
             import_report: None,
             import_scan_target: None,
             import_auto_compress_enqueued: 0,
@@ -1759,7 +1776,7 @@ mod tests {
         global_shortcut_blocked, retain_recent_bounds, should_notify_library_error,
         should_render_shell,
     };
-    use crate::ui::notifications::{FailureNotice, failure_transition};
+    use crate::ui::notifications::{FailureCounts, FailureNotice, failure_transition};
     use gpui_kit::{Bounds, point, px, size};
     use std::time::Duration;
 
@@ -1951,15 +1968,53 @@ mod tests {
 
     #[test]
     fn failure_transition_only_reports_new_failures_after_the_baseline() {
-        assert!(failure_transition(None, (3, 2)).is_empty());
+        let initial = FailureCounts {
+            compression: 3,
+            discord: 1,
+            tagging: 0,
+            daemon: 2,
+        };
+        assert!(failure_transition(None, initial).is_empty());
         assert_eq!(
-            failure_transition(Some((3, 2)), (5, 2)),
+            failure_transition(
+                Some(initial),
+                FailureCounts {
+                    compression: 5,
+                    ..initial
+                }
+            ),
             vec![FailureNotice::Compression { count: 5 }]
         );
         assert_eq!(
-            failure_transition(Some((3, 2)), (3, 4)),
+            failure_transition(
+                Some(initial),
+                FailureCounts {
+                    discord: 2,
+                    ..initial
+                }
+            ),
+            vec![FailureNotice::Discord { count: 2 }]
+        );
+        assert_eq!(
+            failure_transition(
+                Some(initial),
+                FailureCounts {
+                    tagging: 1,
+                    ..initial
+                }
+            ),
+            vec![FailureNotice::Tagging { count: 1 }]
+        );
+        assert_eq!(
+            failure_transition(
+                Some(initial),
+                FailureCounts {
+                    daemon: 4,
+                    ..initial
+                }
+            ),
             vec![FailureNotice::Daemon { count: 4 }]
         );
-        assert!(failure_transition(Some((5, 4)), (5, 4)).is_empty());
+        assert!(failure_transition(Some(initial), initial).is_empty());
     }
 }

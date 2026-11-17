@@ -1,6 +1,7 @@
 pub(crate) mod actions;
 pub(crate) mod ai_tag_picker;
 pub(crate) mod ai_thresholds;
+pub(crate) mod auto_behavior;
 pub(crate) mod chrome;
 pub(crate) mod components;
 pub(crate) mod compression;
@@ -16,6 +17,7 @@ pub(crate) mod integrations;
 pub(crate) mod library;
 pub(crate) mod notifications;
 pub(crate) mod palette;
+pub(crate) mod queue;
 pub(crate) mod search;
 pub(crate) mod search_suggest;
 pub(crate) mod settings;

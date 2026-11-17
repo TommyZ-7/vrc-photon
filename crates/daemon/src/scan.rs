@@ -253,19 +253,25 @@ impl Daemon {
                 db.bump_library_revision()?;
             }
         }
-        if self.settings.auto_compress && !new_ids.is_empty() {
+        if self.settings.auto_compress_enabled
+            && self.settings.auto_compress.mode.is_active()
+            && !new_ids.is_empty()
+        {
             {
                 let db = lock_db(&self.db);
                 enqueue_auto_jobs(
                     &db,
                     &new_ids,
                     self.settings.auto_compress_keep_original,
-                    self.settings.auto_compress_immediate,
+                    self.settings.auto_compress.mode,
                 )?;
             }
             self.jobs.notify();
         }
-        if !new_ids.is_empty() {
+        if self.settings.ai_tagging_enabled
+            && self.settings.ai_tagging_auto.mode.is_active()
+            && !new_ids.is_empty()
+        {
             let tagging_enqueued = {
                 let db = lock_db(&self.db);
                 enqueue_auto_tagging(&db, &new_ids, &self.settings, tagging_ready)?
@@ -407,11 +413,11 @@ impl Daemon {
         let mut report = ScanReport::default();
         let mut auto_enqueued = 0;
         let root_count = roots.len();
+        let initial_scan = {
+            let db = lock_db(&self.db);
+            initial_scan_override.unwrap_or(full_scan && db.count_photos()? == 0)
+        };
         if !roots.is_empty() {
-            let initial_scan = {
-                let db = lock_db(&self.db);
-                initial_scan_override.unwrap_or(full_scan && db.count_photos()? == 0)
-            };
             let mut changed = false;
             let mut missing_ids = Vec::new();
             for (index, root) in roots.into_iter().enumerate() {
@@ -528,9 +534,10 @@ impl Daemon {
                 let db = lock_db(&self.db);
                 db.bump_library_revision()?;
             }
-            if self.settings.auto_compress
+            if self.settings.auto_compress_enabled
+                && self.settings.auto_compress.mode.is_active()
                 && !report.new_ids.is_empty()
-                && (!initial_scan || self.settings.auto_compress_backlog)
+                && !initial_scan
             {
                 let enqueued = {
                     let db = lock_db(&self.db);
@@ -538,13 +545,17 @@ impl Daemon {
                         &db,
                         &report.new_ids,
                         self.settings.auto_compress_keep_original,
-                        self.settings.auto_compress_immediate,
+                        self.settings.auto_compress.mode,
                     )?
                 };
                 auto_enqueued = enqueued;
                 self.jobs.notify();
             }
-            if !report.new_ids.is_empty() {
+            if self.settings.ai_tagging_enabled
+                && self.settings.ai_tagging_auto.mode.is_active()
+                && !report.new_ids.is_empty()
+                && !initial_scan
+            {
                 let tagging_enqueued = {
                     let db = lock_db(&self.db);
                     enqueue_auto_tagging(&db, &report.new_ids, &self.settings, tagging_ready)?
@@ -558,7 +569,7 @@ impl Daemon {
         if report.modified > 0 {
             self.link_unlinked()?;
         }
-        if !report.new_ids.is_empty() {
+        if !report.new_ids.is_empty() && !initial_scan {
             let enqueued = {
                 let db = lock_db(&self.db);
                 match discord::enqueue_auto_sends(&db, &report.new_ids) {

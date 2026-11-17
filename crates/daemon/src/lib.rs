@@ -27,7 +27,7 @@ use vrc_photon_core::scanner::{
     ScanFailure, ScanPhase as CoreScanPhase, ScanProgress, ScanReport, scan_and_index_shared,
     scan_one,
 };
-use vrc_photon_core::settings::{AppSettings, detect_vrchat_paths};
+use vrc_photon_core::settings::{AppSettings, AutoMode, detect_vrchat_paths};
 use vrc_photon_core::thumbnail;
 use vrc_photon_ipc::{
     Endpoint, Event, JobStatus, Operation, ScanPhase as IpcScanPhase, StatusSnapshot,

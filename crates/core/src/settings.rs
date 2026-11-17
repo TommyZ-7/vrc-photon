@@ -67,14 +67,114 @@ pub enum PhotosViewMode {
     Sessions,
 }
 
-/// How automatic Discord posting is scheduled after a photo is compressed.
+/// When an integration processes newly indexed photos.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
-pub enum DiscordAutoMode {
+pub enum AutoMode {
     #[default]
     Off,
     Immediate,
     Waiting,
+}
+
+impl AutoMode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Immediate => "immediate",
+            Self::Waiting => "waiting",
+        }
+    }
+
+    pub const fn is_active(self) -> bool {
+        !matches!(self, Self::Off)
+    }
+}
+
+/// Which photos a manual bulk action includes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AutoScope {
+    #[default]
+    NewOnly,
+    IncludeBacklog,
+}
+
+/// Shared automatic-behavior settings for compression, Discord, and AI.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AutoBehavior {
+    pub mode: AutoMode,
+    pub scope: AutoScope,
+    /// Unix seconds when the feature was last enabled. `None` means no
+    /// activation has been recorded.
+    pub activated_at: Option<i64>,
+}
+
+impl Default for AutoBehavior {
+    fn default() -> Self {
+        Self {
+            mode: AutoMode::Off,
+            scope: AutoScope::NewOnly,
+            activated_at: None,
+        }
+    }
+}
+
+impl AutoBehavior {
+    pub const fn off() -> Self {
+        Self {
+            mode: AutoMode::Off,
+            scope: AutoScope::NewOnly,
+            activated_at: None,
+        }
+    }
+
+    pub const fn immediate() -> Self {
+        Self {
+            mode: AutoMode::Immediate,
+            scope: AutoScope::NewOnly,
+            activated_at: None,
+        }
+    }
+
+    pub const fn waiting() -> Self {
+        Self {
+            mode: AutoMode::Waiting,
+            scope: AutoScope::NewOnly,
+            activated_at: None,
+        }
+    }
+
+    pub fn with_scope(mut self, scope: AutoScope) -> Self {
+        self.scope = scope;
+        self
+    }
+
+    /// Sets the mode and records activation when leaving `Off`.
+    pub fn set_mode(&mut self, mode: AutoMode, now: i64) {
+        if !self.mode.is_active() && mode.is_active() {
+            self.activated_at = Some(now);
+        }
+        self.mode = mode;
+    }
+
+    pub fn touch_activation(&mut self, now: i64) {
+        self.activated_at = Some(now);
+    }
+
+    /// Lower bound for a `NewOnly` manual bulk action. `IncludeBacklog` has
+    /// no lower bound.
+    pub fn bulk_since(&self) -> Option<i64> {
+        match self.scope {
+            AutoScope::NewOnly => self.activated_at,
+            AutoScope::IncludeBacklog => None,
+        }
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.mode.is_active()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -98,15 +198,15 @@ pub struct AppSettings {
     pub language: String,
     pub autostart: bool,
     pub tray: bool,
-    pub auto_compress: bool,
-    pub auto_compress_backlog: bool,
+    pub auto_compress_enabled: bool,
+    pub auto_compress: AutoBehavior,
+    #[serde(default)]
+    pub auto_compress_queue_paused: bool,
     /// Whether automatic compression keeps the original after a successful
     /// encode. Manual compression always keeps the original and never reads
     /// this value.
     #[serde(default = "default_true", alias = "compression_keep_original")]
     pub auto_compress_keep_original: bool,
-    #[serde(default = "default_true")]
-    pub auto_compress_immediate: bool,
     /// Compression parameters used by automatic compression. They are
     /// independent of the manual compression profiles.
     #[serde(default = "default_auto_compression")]
@@ -182,9 +282,9 @@ pub struct AppSettings {
     #[serde(default = "default_true")]
     pub discord_send_original: bool,
     #[serde(default)]
-    pub discord_auto_mode: DiscordAutoMode,
+    pub discord_auto: AutoBehavior,
     #[serde(default)]
-    pub discord_auto_since: Option<i64>,
+    pub discord_queue_paused: bool,
     #[serde(default)]
     pub discord_consent_at: Option<i64>,
     /// Whether the daemon resolves world names through the VRChat API.
@@ -195,7 +295,9 @@ pub struct AppSettings {
     pub ai_tagging_enabled: bool,
     /// Whether newly imported photos are tagged automatically.
     #[serde(default)]
-    pub ai_tagging_auto: bool,
+    pub ai_tagging_auto: AutoBehavior,
+    #[serde(default)]
+    pub ai_tagging_queue_paused: bool,
     /// Character presence threshold (0.0–1.0). `None` uses the sidecar default.
     #[serde(default)]
     pub ai_presence_threshold: Option<f32>,
@@ -347,10 +449,10 @@ impl Default for AppSettings {
             language: "ja".to_string(),
             autostart: true,
             tray: true,
-            auto_compress: true,
-            auto_compress_backlog: false,
+            auto_compress_enabled: true,
+            auto_compress: AutoBehavior::immediate(),
+            auto_compress_queue_paused: false,
             auto_compress_keep_original: true,
-            auto_compress_immediate: true,
             auto_compression: default_auto_compression(),
             clipboard_compression: default_clipboard_compression(),
             discord_compression: default_discord_compression(),
@@ -379,18 +481,141 @@ impl Default for AppSettings {
             discord_destination: default_discord_destination(),
             discord_include_players: false,
             discord_send_original: true,
-            discord_auto_mode: DiscordAutoMode::Off,
-            discord_auto_since: None,
+            discord_auto: AutoBehavior::off(),
+            discord_queue_paused: false,
             discord_consent_at: None,
             world_name_resolution_enabled: false,
             ai_tagging_enabled: false,
-            ai_tagging_auto: false,
+            ai_tagging_auto: AutoBehavior::off(),
+            ai_tagging_queue_paused: false,
             ai_presence_threshold: None,
             ai_tagging_backend: default_ai_backend(),
             ai_tagging_idle_timeout_sec: default_ai_idle_timeout(),
             ai_model_license_consent_at: None,
             setup_completed: false,
         }
+    }
+}
+
+/// Migrates the old boolean/mode fields to the shared `AutoBehavior` shape.
+/// New-format objects are left untouched; old keys are removed in every case.
+fn migrate_legacy_auto_settings(value: &mut serde_json::Value, now: i64) {
+    let Some(object) = value.as_object_mut() else {
+        return;
+    };
+
+    let old_enabled = object
+        .get("auto_compress")
+        .and_then(|value| value.as_bool());
+    let old_immediate = object
+        .get("auto_compress_immediate")
+        .and_then(|value| value.as_bool());
+    let old_backlog = object
+        .get("auto_compress_backlog")
+        .and_then(|value| value.as_bool());
+    let has_new_compression = object
+        .get("auto_compress")
+        .is_some_and(|value| value.is_object());
+
+    if !has_new_compression
+        && (old_enabled.is_some() || old_immediate.is_some() || old_backlog.is_some())
+    {
+        let enabled = old_enabled.unwrap_or(true);
+        // When the old master switch was off, the stored mode is a preference
+        // for the next enable. Migrating it to Waiting would leave the queue
+        // dormant after the user turns the switch back on.
+        let mode = if !enabled || old_immediate.unwrap_or(true) {
+            "immediate"
+        } else {
+            "waiting"
+        };
+        let scope = if old_backlog.unwrap_or(false) {
+            "include_backlog"
+        } else {
+            "new_only"
+        };
+        let activated_at = if enabled {
+            serde_json::json!(now)
+        } else {
+            serde_json::Value::Null
+        };
+        object
+            .entry("auto_compress_enabled".to_string())
+            .or_insert_with(|| serde_json::json!(enabled));
+        object.insert(
+            "auto_compress".to_string(),
+            serde_json::json!({
+                "mode": mode,
+                "scope": scope,
+                "activated_at": activated_at,
+            }),
+        );
+    }
+
+    object.remove("auto_compress_immediate");
+    object.remove("auto_compress_backlog");
+
+    let has_new_discord = object
+        .get("discord_auto")
+        .is_some_and(|value| value.is_object());
+    if !has_new_discord {
+        let old_mode = object
+            .get("discord_auto_mode")
+            .and_then(|value| value.as_str())
+            .map(str::to_string);
+        let old_since = object
+            .get("discord_auto_since")
+            .and_then(|value| value.as_i64());
+        if old_mode.is_some() || old_since.is_some() {
+            let mode = match old_mode.as_deref() {
+                Some("immediate") => "immediate",
+                Some("waiting") => "waiting",
+                _ => "off",
+            };
+            let enabled = object
+                .get("discord_enabled")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false);
+            let activated_at = old_since.or(if enabled { Some(now) } else { None });
+            object.insert(
+                "discord_auto".to_string(),
+                serde_json::json!({
+                    "mode": mode,
+                    "scope": "new_only",
+                    "activated_at": activated_at,
+                }),
+            );
+        }
+    }
+    object.remove("discord_auto_mode");
+    object.remove("discord_auto_since");
+
+    let has_new_ai = object
+        .get("ai_tagging_auto")
+        .is_some_and(|value| value.is_object());
+    if !has_new_ai
+        && let Some(auto) = object
+            .get("ai_tagging_auto")
+            .and_then(|value| value.as_bool())
+    {
+        let enabled = object
+            .get("ai_tagging_enabled")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false);
+        let mode = if auto { "immediate" } else { "off" };
+        let activated_at = if enabled {
+            serde_json::json!(now)
+        } else {
+            serde_json::Value::Null
+        };
+        object.insert(
+            "ai_tagging_auto".to_string(),
+            serde_json::json!({
+                "mode": mode,
+                "scope": "new_only",
+                "activated_at": activated_at,
+            }),
+        );
     }
 }
 
@@ -403,23 +628,48 @@ impl AppSettings {
     /// parse error is returned so callers can keep their in-memory settings.
     pub fn load(db: &Db) -> Result<Self> {
         match db.get_setting(SETTINGS_KEY)? {
-            Some(json) => match serde_json::from_str::<Self>(&json) {
-                Ok(mut settings) => {
-                    settings.normalize_discord_destination();
-                    settings.normalize_ai_settings();
-                    settings.normalize_grid_display();
-                    settings.normalize_compression_settings();
-                    Ok(settings)
-                }
-                Err(error) => {
-                    if let Err(backup_error) = backup_corrupt_settings(db, &json) {
-                        tracing::warn!(%backup_error, "cannot back up malformed app settings");
+            Some(json) => {
+                let mut value = match serde_json::from_str::<serde_json::Value>(&json) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        if let Err(backup_error) = backup_corrupt_settings(db, &json) {
+                            tracing::warn!(%backup_error, "cannot back up malformed app settings");
+                        }
+                        return Err(error.into());
                     }
-                    Err(error.into())
+                };
+                let before = value.clone();
+                migrate_legacy_auto_settings(&mut value, chrono::Utc::now().timestamp());
+                let mut settings = match serde_json::from_value::<Self>(value.clone()) {
+                    Ok(settings) => settings,
+                    Err(error) => {
+                        if let Err(backup_error) = backup_corrupt_settings(db, &json) {
+                            tracing::warn!(%backup_error, "cannot back up malformed app settings");
+                        }
+                        return Err(error.into());
+                    }
+                };
+                if value != before {
+                    match serde_json::to_string_pretty(&value) {
+                        Ok(serialized) => {
+                            if let Err(error) = db.set_setting(SETTINGS_KEY, &serialized) {
+                                tracing::warn!(%error, "cannot persist migrated app settings");
+                            }
+                        }
+                        Err(error) => {
+                            tracing::warn!(%error, "cannot serialize migrated app settings");
+                        }
+                    }
                 }
-            },
+                settings.normalize_discord_destination();
+                settings.normalize_ai_settings();
+                settings.normalize_grid_display();
+                settings.normalize_compression_settings();
+                Ok(settings)
+            }
             None => {
                 let mut settings = Self::default();
+                settings.auto_compress.activated_at = Some(chrono::Utc::now().timestamp());
                 let detected = detect_vrchat_paths();
                 settings.photo_roots = detected
                     .photo_roots
@@ -711,8 +961,6 @@ mod tests {
             "language": "ja",
             "autostart": false,
             "tray": true,
-            "auto_compress": true,
-            "auto_compress_backlog": false,
             "estimated_link": true,
             "thumbnail_cache_mb": 2048,
             "compression_workers": 2
@@ -747,15 +995,15 @@ mod tests {
             "language": "ja",
             "autostart": true,
             "tray": true,
-            "auto_compress": true,
-            "auto_compress_backlog": false,
             "estimated_link": true,
             "thumbnail_cache_mb": 2048,
             "compression_workers": 1
         }"#;
-        let settings: AppSettings = serde_json::from_str(json).unwrap();
+        let db = Db::open_in_memory().unwrap();
+        db.set_setting(SETTINGS_KEY, json).unwrap();
+        let settings = AppSettings::load(&db).unwrap();
         assert!(settings.auto_compress_keep_original);
-        assert!(settings.auto_compress_immediate);
+        assert_eq!(settings.auto_compress.mode, AutoMode::Immediate);
     }
 
     #[test]
@@ -767,15 +1015,15 @@ mod tests {
             "language": "ja",
             "autostart": true,
             "tray": true,
-            "auto_compress": true,
-            "auto_compress_backlog": false,
             "compression_keep_original": false,
             "auto_compress_immediate": true,
             "estimated_link": true,
             "thumbnail_cache_mb": 2048,
             "compression_workers": 1
         }"#;
-        let settings: AppSettings = serde_json::from_str(json).unwrap();
+        let db = Db::open_in_memory().unwrap();
+        db.set_setting(SETTINGS_KEY, json).unwrap();
+        let settings = AppSettings::load(&db).unwrap();
         assert!(!settings.auto_compress_keep_original);
     }
 
@@ -784,13 +1032,13 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let settings = AppSettings {
             auto_compress_keep_original: false,
-            auto_compress_immediate: false,
+            auto_compress: AutoBehavior::waiting(),
             ..Default::default()
         };
         settings.save(&db).unwrap();
         let loaded = AppSettings::load(&db).unwrap();
         assert!(!loaded.auto_compress_keep_original);
-        assert!(!loaded.auto_compress_immediate);
+        assert_eq!(loaded.auto_compress.mode, AutoMode::Waiting);
     }
 
     #[test]
@@ -851,8 +1099,6 @@ mod tests {
             "language": "ja",
             "autostart": true,
             "tray": true,
-            "auto_compress": true,
-            "auto_compress_backlog": false,
             "estimated_link": true,
             "thumbnail_cache_mb": 2048,
             "compression_workers": 1
@@ -1080,8 +1326,6 @@ mod tests {
             "language": "ja",
             "autostart": true,
             "tray": true,
-            "auto_compress": true,
-            "auto_compress_backlog": false,
             "estimated_link": true,
             "thumbnail_cache_mb": 2048,
             "compression_workers": 1
@@ -1119,8 +1363,6 @@ mod tests {
             "language": "ja",
             "autostart": true,
             "tray": true,
-            "auto_compress": true,
-            "auto_compress_backlog": false,
             "estimated_link": true,
             "thumbnail_cache_mb": 2048,
             "compression_workers": 1
@@ -1139,8 +1381,6 @@ mod tests {
             "language": "ja",
             "autostart": true,
             "tray": true,
-            "auto_compress": true,
-            "auto_compress_backlog": false,
             "estimated_link": true,
             "thumbnail_cache_mb": 2048,
             "compression_workers": 1,
@@ -1178,8 +1418,6 @@ mod tests {
             "language": "ja",
             "autostart": true,
             "tray": true,
-            "auto_compress": true,
-            "auto_compress_backlog": false,
             "estimated_link": true,
             "thumbnail_cache_mb": 2048,
             "compression_workers": 1
@@ -1224,8 +1462,8 @@ mod tests {
         assert_eq!(settings.discord_destination, "Discord");
         assert!(!settings.discord_include_players);
         assert!(settings.discord_send_original);
-        assert_eq!(settings.discord_auto_mode, DiscordAutoMode::Off);
-        assert_eq!(settings.discord_auto_since, None);
+        assert_eq!(settings.discord_auto.mode, AutoMode::Off);
+        assert_eq!(settings.discord_auto.activated_at, None);
         assert_eq!(settings.discord_consent_at, None);
     }
 
@@ -1237,15 +1475,14 @@ mod tests {
             "discord_destination",
             "discord_include_players",
             "discord_send_original",
-            "discord_auto_mode",
-            "discord_auto_since",
+            "discord_auto",
             "discord_consent_at",
         ] {
             value.as_object_mut().unwrap().remove(key);
         }
         let settings: AppSettings = serde_json::from_value(value).unwrap();
         assert!(!settings.discord_enabled);
-        assert_eq!(settings.discord_auto_mode, DiscordAutoMode::Off);
+        assert_eq!(settings.discord_auto.mode, AutoMode::Off);
         assert!(settings.discord_send_original);
     }
 
@@ -1297,15 +1534,21 @@ mod tests {
     fn ai_settings_default_off_and_survive_old_json() {
         let settings = AppSettings::default();
         assert!(!settings.ai_tagging_enabled);
-        assert!(!settings.ai_tagging_auto);
+        assert_eq!(settings.ai_tagging_auto.mode, AutoMode::Off);
         assert_eq!(settings.ai_tagging_backend, "auto");
         assert_eq!(settings.ai_tagging_idle_timeout_sec, 600);
         assert!(settings.ai_presence_threshold.is_none());
         assert!(settings.ai_model_license_consent_at.is_none());
 
-        let old: AppSettings = serde_json::from_str(r#"{"photo_roots":[],"log_dir":null,"managed_dir":null,"language":"ja","autostart":true,"tray":true,"auto_compress":true,"auto_compress_backlog":false,"estimated_link":true,"thumbnail_cache_mb":2048,"compression_workers":1}"#).unwrap();
+        let db = Db::open_in_memory().unwrap();
+        db.set_setting(
+            SETTINGS_KEY,
+            r#"{"photo_roots":[],"log_dir":null,"managed_dir":null,"language":"ja","autostart":true,"tray":true,"auto_compress":true,"auto_compress_backlog":false,"estimated_link":true,"thumbnail_cache_mb":2048,"compression_workers":1}"#,
+        )
+        .unwrap();
+        let old = AppSettings::load(&db).unwrap();
         assert!(!old.ai_tagging_enabled);
-        assert!(!old.ai_tagging_auto);
+        assert_eq!(old.ai_tagging_auto.mode, AutoMode::Off);
         assert_eq!(old.ai_tagging_backend, "auto");
         assert_eq!(old.ai_tagging_idle_timeout_sec, 600);
         assert!(old.ai_presence_threshold.is_none());
@@ -1353,7 +1596,7 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let settings = AppSettings {
             ai_tagging_enabled: true,
-            ai_tagging_auto: true,
+            ai_tagging_auto: AutoBehavior::immediate(),
             ai_presence_threshold: Some(0.85),
             ai_tagging_backend: "vulkan".to_string(),
             ai_tagging_idle_timeout_sec: 120,
@@ -1363,7 +1606,7 @@ mod tests {
         settings.save(&db).unwrap();
         let loaded = AppSettings::load(&db).unwrap();
         assert!(loaded.ai_tagging_enabled);
-        assert!(loaded.ai_tagging_auto);
+        assert_eq!(loaded.ai_tagging_auto.mode, AutoMode::Immediate);
         assert_eq!(loaded.ai_presence_threshold, Some(0.85));
         assert_eq!(loaded.ai_tagging_backend, "vulkan");
         assert_eq!(loaded.ai_tagging_idle_timeout_sec, 120);
@@ -1435,8 +1678,6 @@ mod tests {
             "language": "ja",
             "autostart": true,
             "tray": true,
-            "auto_compress": true,
-            "auto_compress_backlog": false,
             "estimated_link": true,
             "thumbnail_cache_mb": 2048,
             "compression_workers": 1
@@ -1485,8 +1726,6 @@ mod tests {
             "language": "ja",
             "autostart": true,
             "tray": true,
-            "auto_compress": true,
-            "auto_compress_backlog": false,
             "estimated_link": true,
             "thumbnail_cache_mb": 2048,
             "compression_workers": 1
@@ -1504,5 +1743,209 @@ mod tests {
                 .unwrap()
                 .world_name_resolution_enabled
         );
+    }
+
+    #[test]
+    fn legacy_compression_fields_migrate_to_common_behavior() {
+        let mut value = serde_json::json!({
+            "auto_compress": true,
+            "auto_compress_immediate": false,
+            "auto_compress_backlog": true,
+        });
+        migrate_legacy_auto_settings(&mut value, 1_700_000_000);
+        assert_eq!(value["auto_compress_enabled"], true);
+        assert_eq!(value["auto_compress"]["mode"], "waiting");
+        assert_eq!(value["auto_compress"]["scope"], "include_backlog");
+        assert_eq!(value["auto_compress"]["activated_at"], 1_700_000_000);
+        assert!(value.get("auto_compress_immediate").is_none());
+        assert!(value.get("auto_compress_backlog").is_none());
+    }
+
+    #[test]
+    fn legacy_disabled_compression_migrates_to_a_disabled_master_switch() {
+        let mut value = serde_json::json!({
+            "auto_compress": false,
+            "auto_compress_immediate": true,
+        });
+        migrate_legacy_auto_settings(&mut value, 1_700_000_000);
+        assert_eq!(value["auto_compress_enabled"], false);
+        assert_eq!(value["auto_compress"]["mode"], "immediate");
+        assert_eq!(
+            value["auto_compress"]["activated_at"],
+            serde_json::Value::Null
+        );
+    }
+
+    #[test]
+    fn disabled_compression_with_waiting_preference_still_migrates_to_immediate() {
+        let mut value = serde_json::json!({
+            "auto_compress": false,
+            "auto_compress_immediate": false,
+        });
+        migrate_legacy_auto_settings(&mut value, 1_700_000_000);
+        assert_eq!(value["auto_compress_enabled"], false);
+        assert_eq!(value["auto_compress"]["mode"], "immediate");
+    }
+
+    #[test]
+    fn migration_does_not_overwrite_an_existing_master_switch() {
+        let mut value = serde_json::json!({
+            "auto_compress": true,
+            "auto_compress_immediate": false,
+            "auto_compress_enabled": false,
+        });
+        migrate_legacy_auto_settings(&mut value, 1_700_000_000);
+        assert_eq!(value["auto_compress_enabled"], false);
+        assert_eq!(value["auto_compress"]["mode"], "waiting");
+    }
+
+    #[test]
+    fn invalid_migrated_settings_are_not_persisted() {
+        let db = Db::open_in_memory().unwrap();
+        let raw = r#"{"auto_compress":true,"compression_workers":"two"}"#;
+        db.set_setting(SETTINGS_KEY, raw).unwrap();
+        assert!(AppSettings::load(&db).is_err());
+        assert_eq!(db.get_setting(SETTINGS_KEY).unwrap().as_deref(), Some(raw));
+    }
+
+    #[test]
+    fn legacy_discord_fields_migrate_to_common_behavior() {
+        let mut value = serde_json::json!({
+            "discord_auto_mode": "immediate",
+            "discord_auto_since": 42,
+        });
+        migrate_legacy_auto_settings(&mut value, 1_700_000_000);
+        assert_eq!(value["discord_auto"]["mode"], "immediate");
+        assert_eq!(value["discord_auto"]["scope"], "new_only");
+        assert_eq!(value["discord_auto"]["activated_at"], 42);
+        assert!(value.get("discord_auto_mode").is_none());
+        assert!(value.get("discord_auto_since").is_none());
+    }
+
+    #[test]
+    fn legacy_ai_auto_boolean_migrates_to_mode() {
+        let mut value = serde_json::json!({
+            "ai_tagging_enabled": true,
+            "ai_tagging_auto": true,
+        });
+        migrate_legacy_auto_settings(&mut value, 1_700_000_000);
+        assert_eq!(value["ai_tagging_auto"]["mode"], "immediate");
+        assert_eq!(value["ai_tagging_auto"]["scope"], "new_only");
+        assert_eq!(value["ai_tagging_auto"]["activated_at"], 1_700_000_000);
+    }
+
+    #[test]
+    fn auto_behavior_bulk_since_uses_activation_only_for_new_only() {
+        let mut behavior = AutoBehavior::default();
+        assert_eq!(behavior.bulk_since(), None);
+        behavior.mode = AutoMode::Waiting;
+        behavior.activated_at = Some(42);
+        behavior.scope = AutoScope::NewOnly;
+        assert_eq!(behavior.bulk_since(), Some(42));
+        behavior.scope = AutoScope::IncludeBacklog;
+        assert_eq!(behavior.bulk_since(), None);
+    }
+
+    #[test]
+    fn set_mode_sets_activation_only_when_leaving_off() {
+        let mut behavior = AutoBehavior::default();
+        behavior.set_mode(AutoMode::Waiting, 100);
+        assert_eq!(behavior.activated_at, Some(100));
+        behavior.set_mode(AutoMode::Immediate, 200);
+        assert_eq!(behavior.activated_at, Some(100));
+        behavior.set_mode(AutoMode::Off, 300);
+        assert_eq!(behavior.activated_at, Some(100));
+        behavior.set_mode(AutoMode::Immediate, 400);
+        assert_eq!(behavior.activated_at, Some(400));
+    }
+
+    #[test]
+    fn loading_legacy_settings_then_saving_writes_only_common_keys() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+        db.set_setting(
+            SETTINGS_KEY,
+            r#"{"language":"ja","auto_compress":true,"auto_compress_immediate":false,
+                "auto_compress_backlog":true,"discord_auto_mode":"waiting",
+                "discord_auto_since":42,"ai_tagging_auto":true}"#,
+        )
+        .unwrap();
+        let settings = AppSettings::load(&db).unwrap();
+        assert!(settings.auto_compress_enabled);
+        assert_eq!(settings.auto_compress.mode, AutoMode::Waiting);
+        assert_eq!(settings.auto_compress.scope, AutoScope::IncludeBacklog);
+        assert_eq!(settings.discord_auto.mode, AutoMode::Waiting);
+        assert_eq!(settings.discord_auto.activated_at, Some(42));
+        assert_eq!(settings.ai_tagging_auto.mode, AutoMode::Immediate);
+        settings.save(&db).unwrap();
+        let raw = db.get_setting(SETTINGS_KEY).unwrap().unwrap();
+        for key in [
+            "auto_compress_immediate",
+            "auto_compress_backlog",
+            "discord_auto_mode",
+            "discord_auto_since",
+        ] {
+            assert!(!raw.contains(&format!("\"{key}\"")));
+        }
+        assert!(raw.contains("\"auto_compress\""));
+        assert!(raw.contains("\"discord_auto\""));
+        assert!(raw.contains("\"ai_tagging_auto\""));
+    }
+
+    #[test]
+    fn fresh_settings_start_the_compression_activation_at_now() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+        let before = chrono::Utc::now().timestamp();
+        let settings = AppSettings::load(&db).unwrap();
+        let after = chrono::Utc::now().timestamp();
+        assert!(settings.auto_compress_enabled);
+        let activated = settings.auto_compress.activated_at.unwrap();
+        assert!(activated >= before && activated <= after);
+    }
+
+    #[test]
+    fn loading_legacy_settings_persists_the_new_shape() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+        db.set_setting(
+            SETTINGS_KEY,
+            r#"{"language":"ja","auto_compress":true,"auto_compress_immediate":true,
+                "auto_compress_backlog":false,"ai_tagging_auto":true}"#,
+        )
+        .unwrap();
+        let _ = AppSettings::load(&db).unwrap();
+        let raw = db.get_setting(SETTINGS_KEY).unwrap().unwrap();
+        assert!(!raw.contains("auto_compress_immediate"));
+        assert!(!raw.contains("auto_compress_backlog"));
+        assert!(!raw.contains("discord_auto_mode"));
+        assert!(!raw.contains("discord_auto_since"));
+        assert!(raw.contains("\"auto_compress\""));
+        assert!(raw.contains("\"ai_tagging_auto\""));
+    }
+
+    #[test]
+    fn queue_pause_settings_default_to_false_and_survive_roundtrip() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+        let mut settings = AppSettings::load(&db).unwrap();
+        assert!(!settings.auto_compress_queue_paused);
+        assert!(!settings.discord_queue_paused);
+        assert!(!settings.ai_tagging_queue_paused);
+        settings.auto_compress_queue_paused = true;
+        settings.discord_queue_paused = true;
+        settings.ai_tagging_queue_paused = true;
+        settings.save(&db).unwrap();
+        let loaded = AppSettings::load(&db).unwrap();
+        assert!(loaded.auto_compress_queue_paused);
+        assert!(loaded.discord_queue_paused);
+        assert!(loaded.ai_tagging_queue_paused);
+    }
+
+    #[test]
+    fn old_settings_default_queue_pause_to_false() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+        db.set_setting(SETTINGS_KEY, r#"{"language":"ja"}"#)
+            .unwrap();
+        let loaded = AppSettings::load(&db).unwrap();
+        assert!(!loaded.auto_compress_queue_paused);
+        assert!(!loaded.discord_queue_paused);
+        assert!(!loaded.ai_tagging_queue_paused);
     }
 }

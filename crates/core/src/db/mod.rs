@@ -35,6 +35,7 @@ mod compression;
 mod daemon;
 mod deletion;
 mod photos;
+mod queue;
 mod roots;
 mod schema;
 mod send;

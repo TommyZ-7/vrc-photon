@@ -1,4 +1,5 @@
 use super::*;
+use crate::queue::{FailedJobEntry, QueueCounts, QueueEntry, QueueState};
 
 impl Db {
     // ---------- AI plugins ----------
@@ -536,7 +537,7 @@ impl Db {
     /// waiting/pending/processing rows from being duplicated. The whole
     /// backlog is one ordered `INSERT ... SELECT`, so a large library does not
     /// pay for a per-photo round trip inside the foreground transaction.
-    pub fn enqueue_tagging_backlog(&self, plugin_id: &str) -> Result<usize> {
+    pub fn enqueue_tagging_backlog(&self, plugin_id: &str, since: Option<i64>) -> Result<usize> {
         let inserted = self.conn.execute(
             "INSERT OR IGNORE INTO tagging_jobs \
                 (id, photo_id, plugin_id, status, progress, created_at) \
@@ -551,8 +552,9 @@ impl Db {
                    SELECT 1 FROM deletion_requests dr \
                    WHERE dr.photo_id = p.id AND dr.status IN ('pending', 'blocked', 'running') \
                ) \
+               AND (?3 IS NULL OR CAST(strftime('%s', p.created_at) AS INTEGER) >= ?3) \
              ORDER BY p.captured_at_utc DESC, p.id DESC",
-            params![plugin_id, now_string()],
+            params![plugin_id, now_string(), since],
         )?;
         Ok(inserted)
     }
@@ -789,6 +791,139 @@ impl Db {
             }
         }
         Ok(counts)
+    }
+
+    /// Active tagging rows for the shared queue UI, oldest first.
+    pub fn active_tagging_queue_entries(
+        &self,
+        plugin_id: &str,
+        limit: i64,
+    ) -> Result<Vec<QueueEntry>> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT j.id, j.photo_id, p.file_name, j.status, j.progress, \
+                COALESCE(j.stage, j.variant, ''), j.created_at \
+             FROM tagging_jobs j \
+             LEFT JOIN photos p ON p.id = j.photo_id \
+             WHERE j.plugin_id = ?1 AND j.status IN ('waiting', 'pending', 'processing') \
+             ORDER BY j.created_at ASC, j.id ASC LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![plugin_id, clamp_limit(limit)], |row| {
+            let status = TaggingJobStatus::parse(&row.get::<_, String>(3)?)
+                .unwrap_or(TaggingJobStatus::Pending);
+            Ok(QueueEntry {
+                feature: crate::queue::QueueFeature::Tagging,
+                job_id: row.get(0)?,
+                photo_id: Some(row.get(1)?),
+                photo_name: row.get(2)?,
+                state: QueueState::from_tagging_status(status).unwrap_or(QueueState::Pending),
+                progress: row.get::<_, f64>(4)? as f32,
+                detail: row.get(5)?,
+                created_at: row.get(6)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    pub fn tagging_queue_counts(&self, plugin_id: &str) -> Result<QueueCounts> {
+        let mut counts = QueueCounts::default();
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT status, COUNT(*) FROM tagging_jobs \
+             WHERE plugin_id = ?1 AND status IN ('waiting', 'pending', 'processing') \
+             GROUP BY status",
+        )?;
+        let rows = stmt.query_map(params![plugin_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })?;
+        for row in rows {
+            let (status, count) = row?;
+            match QueueState::from_tagging_status(
+                TaggingJobStatus::parse(&status).unwrap_or(TaggingJobStatus::Pending),
+            ) {
+                Some(QueueState::Waiting) => counts.waiting = count,
+                Some(QueueState::Pending) => counts.pending = count,
+                Some(QueueState::Processing) => counts.processing = count,
+                None => {}
+            }
+        }
+        Ok(counts)
+    }
+
+    pub fn delete_waiting_tagging_job(&self, job_id: &str, plugin_id: &str) -> Result<bool> {
+        let changed = self.conn.execute(
+            "DELETE FROM tagging_jobs \
+             WHERE id = ?1 AND plugin_id = ?2 AND status = 'waiting'",
+            params![job_id, plugin_id],
+        )?;
+        Ok(changed == 1)
+    }
+
+    pub fn delete_all_waiting_tagging_jobs(&self, plugin_id: &str) -> Result<usize> {
+        let changed = self.conn.execute(
+            "DELETE FROM tagging_jobs WHERE plugin_id = ?1 AND status = 'waiting'",
+            params![plugin_id],
+        )?;
+        Ok(changed)
+    }
+
+    pub fn recent_failed_tagging_jobs(
+        &self,
+        plugin_id: &str,
+        limit: i64,
+    ) -> Result<Vec<FailedJobEntry>> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT j.id, j.photo_id, p.file_name, COALESCE(j.error, ''), j.created_at \
+             FROM tagging_jobs j \
+             LEFT JOIN photos p ON p.id = j.photo_id \
+             WHERE j.plugin_id = ?1 AND j.status = 'failed' \
+             ORDER BY j.created_at DESC, j.id DESC LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![plugin_id, clamp_limit(limit)], |row| {
+            Ok(FailedJobEntry {
+                feature: crate::queue::QueueFeature::Tagging,
+                job_id: row.get(0)?,
+                photo_id: Some(row.get(1)?),
+                photo_name: row.get(2)?,
+                error: row.get(3)?,
+                created_at: row.get(4)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    pub fn failed_tagging_job_count(&self, plugin_id: &str) -> Result<i64> {
+        let count = self.conn.query_row(
+            "SELECT COUNT(*) FROM tagging_jobs WHERE plugin_id = ?1 AND status = 'failed'",
+            params![plugin_id],
+            |row| row.get(0),
+        )?;
+        Ok(count)
+    }
+
+    /// Returns one eligible failed job per photo/plugin to pending in one
+    /// pass. Retrying every failed row at once would violate the active-job
+    /// unique index when a photo has several failed jobs.
+    pub fn retry_all_failed_tagging_jobs(&self, plugin_id: &str) -> Result<usize> {
+        let changed = self.conn.execute(
+            "UPDATE tagging_jobs SET status = 'pending', retry_count = retry_count + 1, \
+                progress = 0, stage = NULL, error = NULL, started_at = NULL, finished_at = NULL \
+             WHERE plugin_id = ?1 AND status = 'failed' AND retry_count < ?2 \
+               AND id = ( \
+                   SELECT other.id FROM tagging_jobs other \
+                   WHERE other.photo_id = tagging_jobs.photo_id \
+                     AND other.plugin_id = tagging_jobs.plugin_id \
+                     AND other.status = 'failed' \
+                   ORDER BY other.created_at DESC, other.rowid DESC LIMIT 1 \
+               ) \
+               AND NOT EXISTS ( \
+                   SELECT 1 FROM tagging_jobs active \
+                   WHERE active.photo_id = tagging_jobs.photo_id \
+                     AND active.plugin_id = tagging_jobs.plugin_id \
+                     AND active.id <> tagging_jobs.id \
+                     AND active.status IN ('waiting', 'pending', 'processing') \
+               )",
+            params![plugin_id, MAX_TAGGING_RETRIES],
+        )?;
+        Ok(changed)
     }
 
     /// Newest unfinished jobs, for the settings/integrations status card.

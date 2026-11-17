@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::Duration;
 
+use chrono::Utc;
 use gpui_kit::*;
 use vrc_photon_ai_protocol::{
     ModelState, PluginInstallStatus, Probe, TaggingJobStatus, TaggingStage,
@@ -19,7 +20,7 @@ use vrc_photon_core::ai::{
 };
 use vrc_photon_core::db::Db;
 use vrc_photon_core::model::JobStatusCounts;
-use vrc_photon_core::settings::AppSettings;
+use vrc_photon_core::settings::{AppSettings, AutoMode, AutoScope};
 use vrc_photon_i18n::{MISSING, tr, tr_args};
 use vrc_photon_ipc::{
     ErrorCode, Event as IpcEvent, Request as IpcRequest, Response as IpcResponse,
@@ -1644,6 +1645,36 @@ impl App {
         cx.notify();
     }
 
+    pub(crate) fn set_ai_tagging_enabled(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        let was_enabled = self.settings.ai_tagging_enabled;
+        let now = Utc::now().timestamp();
+        self.save_ai_runtime_settings(cx, |settings| {
+            settings.ai_tagging_enabled = enabled;
+            if !was_enabled && enabled {
+                settings.ai_tagging_auto.touch_activation(now);
+            }
+        });
+    }
+
+    pub(crate) fn set_ai_auto_mode(
+        &mut self,
+        mode: AutoMode,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let now = Utc::now().timestamp();
+        self.save_ai_runtime_settings(cx, |settings| settings.ai_tagging_auto.set_mode(mode, now));
+    }
+
+    pub(crate) fn set_ai_auto_scope(
+        &mut self,
+        scope: AutoScope,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.save_ai_runtime_settings(cx, |settings| settings.ai_tagging_auto.scope = scope);
+    }
+
     /// Enqueues ready tagging jobs for the given photos. The plugin must be
     /// enabled and have an active installation, a ready model, and a probe.
     pub(crate) fn enqueue_ai_tagging(&mut self, photo_ids: &[i64], cx: &mut Context<Self>) {
@@ -1676,6 +1707,7 @@ impl App {
             }
         }
         self.refresh_ai_state(cx);
+        self.refresh_queue(cx);
         cx.notify();
     }
 
@@ -1689,30 +1721,65 @@ impl App {
         );
     }
 
-    /// Moves every waiting job to the ready queue and wakes the daemon's
-    /// tagging worker.
-    pub(crate) fn start_ai_backlog(&mut self, cx: &mut Context<Self>) {
-        match self.db.release_waiting_tagging_jobs(AI_PLUGIN_ID) {
-            Ok(0) => self.toast_info(tr!("integrations.ai.waiting.empty"), cx),
-            Ok(count) => {
+    pub(crate) fn retry_failed_tagging_job(&mut self, job_id: &str, cx: &mut Context<Self>) {
+        match self.db.retry_tagging_job(job_id) {
+            Ok(true) => {
+                self.wake_daemon(IpcRequest::WakeTagging, cx);
                 self.toast_success(
-                    tr_args!("integrations.ai.waiting.started", count = count),
+                    tr_args!("notifications.job_failures.retry_queued", count = 1),
                     cx,
                 );
-                self.wake_daemon(IpcRequest::WakeTagging, cx);
             }
+            Ok(false) => self.toast_warning(tr!("notifications.job_failures.retry_none"), cx),
             Err(error) => {
-                self.toast_error(tr_args!("integrations.ai.waiting.error", error = error), cx)
+                tracing::warn!(%error, job_id, "cannot retry a tagging job");
+                self.toast_error(
+                    tr_args!("notifications.job_failures.error", error = error),
+                    cx,
+                );
             }
         }
         self.refresh_ai_state(cx);
-        cx.notify();
+        self.refresh_queue(cx);
+    }
+
+    pub(crate) fn retry_all_failed_tagging_jobs(&mut self, cx: &mut Context<Self>) {
+        match self.db.retry_all_failed_tagging_jobs(AI_PLUGIN_ID) {
+            Ok(0) => self.toast_info(tr!("notifications.job_failures.retry_none"), cx),
+            Ok(count) => {
+                self.wake_daemon(IpcRequest::WakeTagging, cx);
+                self.toast_success(
+                    tr_args!("notifications.job_failures.retry_queued", count = count),
+                    cx,
+                );
+            }
+            Err(error) => {
+                tracing::warn!(%error, "cannot retry failed tagging jobs");
+                self.toast_error(
+                    tr_args!("notifications.job_failures.error", error = error),
+                    cx,
+                );
+            }
+        }
+        self.refresh_ai_state(cx);
+        self.refresh_queue(cx);
+    }
+
+    pub(crate) fn process_untagged_ai_action(
+        &mut self,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.process_untagged_ai(cx);
     }
 
     /// Queues every untagged photo and releases the waiting jobs to the
     /// daemon's tagging worker in one action.
     pub(crate) fn process_untagged_ai(&mut self, cx: &mut Context<Self>) {
-        match self.db.enqueue_tagging_backlog(AI_PLUGIN_ID) {
+        match self
+            .db
+            .enqueue_tagging_backlog(AI_PLUGIN_ID, self.settings.ai_tagging_auto.bulk_since())
+        {
             Ok(queued) => match self.db.release_waiting_tagging_jobs(AI_PLUGIN_ID) {
                 Ok(0) if queued == 0 => self.toast_info(tr!("integrations.ai.bulk.empty"), cx),
                 Ok(count) if count > 0 => {
@@ -1729,6 +1796,7 @@ impl App {
             }
         }
         self.refresh_ai_state(cx);
+        self.refresh_queue(cx);
         cx.notify();
     }
 
