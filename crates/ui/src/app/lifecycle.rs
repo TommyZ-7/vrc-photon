@@ -317,8 +317,9 @@ impl App {
             }
             IpcEvent::SendProgress { .. } => {
                 // A send moved between waiting / pending / processing /
-                // terminal; the history page and the waiting badge follow it.
+                // terminal; the queue and the history page follow it.
                 self.reload_send_history(cx);
+                self.refresh_live_async(cx);
                 true
             }
             IpcEvent::StatusChanged { status } => {

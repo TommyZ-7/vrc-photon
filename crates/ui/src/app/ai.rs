@@ -1707,6 +1707,7 @@ impl App {
             }
         }
         self.refresh_ai_state(cx);
+        self.refresh_queue(cx);
         cx.notify();
     }
 
@@ -1795,6 +1796,7 @@ impl App {
             }
         }
         self.refresh_ai_state(cx);
+        self.refresh_queue(cx);
         cx.notify();
     }
 

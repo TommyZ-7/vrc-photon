@@ -313,6 +313,7 @@ impl App {
                 }
             }
             self.reload_send_history(cx);
+            self.refresh_queue(cx);
             return;
         }
 
@@ -437,6 +438,7 @@ impl App {
             Ok(id) => {
                 self.pending_test_send = Some(id);
                 self.reload_send_history(cx);
+                self.refresh_queue(cx);
                 self.send_wake_sends(cx);
                 self.toast_info(tr!("integrations.discord.test.queued"), cx);
             }
@@ -587,6 +589,7 @@ impl App {
         ) {
             Ok(Some(_)) => {
                 self.reload_send_history(cx);
+                self.refresh_queue(cx);
                 self.send_wake_sends(cx);
                 self.toast_success(manual_send_toast(Ok(true)), cx);
             }
@@ -595,6 +598,7 @@ impl App {
             Ok(None) => match self.db.start_waiting_send(photo_id) {
                 Ok(true) => {
                     self.reload_send_history(cx);
+                    self.refresh_queue(cx);
                     self.send_wake_sends(cx);
                     self.toast_success(manual_send_toast(Ok(true)), cx);
                 }

@@ -2157,7 +2157,9 @@ fn run_once_does_not_start_the_tagging_worker() {
     ctx.daemon.run_once().unwrap();
 
     assert!(ctx.daemon.tagging_handle.is_none());
-    assert_eq!(ctx.tagging_counts().pending, 1);
+    // The first full scan never auto-enqueues AI jobs, so there is still no
+    // pending row even though the feature is enabled.
+    assert_eq!(ctx.tagging_counts().pending, 0);
 }
 
 #[test]
@@ -5079,6 +5081,32 @@ fn initial_scan_never_enqueues_auto_compression_for_any_scope() {
     });
     daemon.scan_photos_with_initial(Some(true)).unwrap();
     assert_eq!(daemon.db.lock().unwrap().count_active_jobs().unwrap(), 0);
+}
+
+#[test]
+fn initial_scan_never_enqueues_ai_or_discord_jobs() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    write_photo(
+        &dir.path()
+            .join("photos/VRChat_2026-10-21_21-14-03.221_4x3.png"),
+    );
+    save_daemon_settings(&daemon, |settings| {
+        settings.auto_compress = AutoBehavior::immediate().with_scope(AutoScope::IncludeBacklog);
+        settings.discord_enabled = true;
+        settings.discord_auto = AutoBehavior::immediate();
+        settings.ai_tagging_enabled = true;
+        settings.ai_tagging_auto = AutoBehavior::waiting();
+    });
+    {
+        let db = daemon.db.lock().unwrap();
+        save_discord_webhook(&db, "https://discord.com/api/webhooks/1/t").unwrap();
+    }
+    daemon.scan_photos_with_initial(Some(true)).unwrap();
+    let db = daemon.db.lock().unwrap();
+    assert_eq!(db.count_active_jobs().unwrap(), 0);
+    assert_eq!(db.tagging_job_counts(AI_PLUGIN_ID).unwrap().waiting, 0);
+    assert_eq!(db.count_pending_sends().unwrap(), 0);
 }
 
 #[test]

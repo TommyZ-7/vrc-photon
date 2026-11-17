@@ -899,18 +899,27 @@ impl Db {
         Ok(count)
     }
 
-    /// Returns every eligible failed tagging job to pending in one pass.
+    /// Returns one eligible failed job per photo/plugin to pending in one
+    /// pass. Retrying every failed row at once would violate the active-job
+    /// unique index when a photo has several failed jobs.
     pub fn retry_all_failed_tagging_jobs(&self, plugin_id: &str) -> Result<usize> {
         let changed = self.conn.execute(
             "UPDATE tagging_jobs SET status = 'pending', retry_count = retry_count + 1, \
                 progress = 0, stage = NULL, error = NULL, started_at = NULL, finished_at = NULL \
              WHERE plugin_id = ?1 AND status = 'failed' AND retry_count < ?2 \
-               AND NOT EXISTS ( \
-                   SELECT 1 FROM tagging_jobs other \
+               AND id = ( \
+                   SELECT other.id FROM tagging_jobs other \
                    WHERE other.photo_id = tagging_jobs.photo_id \
                      AND other.plugin_id = tagging_jobs.plugin_id \
-                     AND other.id <> tagging_jobs.id \
-                     AND other.status IN ('waiting', 'pending', 'processing') \
+                     AND other.status = 'failed' \
+                   ORDER BY other.created_at DESC, other.rowid DESC LIMIT 1 \
+               ) \
+               AND NOT EXISTS ( \
+                   SELECT 1 FROM tagging_jobs active \
+                   WHERE active.photo_id = tagging_jobs.photo_id \
+                     AND active.plugin_id = tagging_jobs.plugin_id \
+                     AND active.id <> tagging_jobs.id \
+                     AND active.status IN ('waiting', 'pending', 'processing') \
                )",
             params![plugin_id, MAX_TAGGING_RETRIES],
         )?;

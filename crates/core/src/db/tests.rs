@@ -8411,6 +8411,60 @@ fn retry_all_failed_sends_skips_rows_with_an_active_send() {
 }
 
 #[test]
+fn retry_all_failed_sends_retries_one_row_per_photo() {
+    let db = Db::open_in_memory().unwrap();
+    let photo = seed_photo(&db);
+    for _ in 0..2 {
+        let id = db
+            .enqueue_send(
+                photo,
+                SendKind::Photo,
+                SendOrigin::Auto,
+                SendStatus::Pending,
+            )
+            .unwrap()
+            .unwrap();
+        db.fail_send(id, SendErrorCode::Http401, Some("failed"), None, None, None)
+            .unwrap();
+    }
+
+    assert_eq!(db.retry_all_failed_sends().unwrap(), 1);
+    let history = db.send_history(10).unwrap();
+    assert_eq!(
+        history
+            .iter()
+            .filter(|row| row.entry.status == SendStatus::Pending)
+            .count(),
+        1
+    );
+    assert_eq!(
+        history
+            .iter()
+            .filter(|row| row.entry.status == SendStatus::Failed)
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn retry_all_failed_tagging_jobs_retries_one_row_per_photo() {
+    let db = Db::open_in_memory().unwrap();
+    let photo = seed_photo(&db);
+    for _ in 0..2 {
+        db.enqueue_tagging_jobs(&[photo], AI_PLUGIN, TaggingJobStatus::Pending)
+            .unwrap();
+        let job = db.next_pending_tagging_job().unwrap().unwrap();
+        db.fail_tagging_job(&job.id, TaggingErrorCode::SidecarTimeout)
+            .unwrap();
+    }
+
+    assert_eq!(db.retry_all_failed_tagging_jobs(AI_PLUGIN).unwrap(), 1);
+    let counts = db.tagging_job_counts(AI_PLUGIN).unwrap();
+    assert_eq!(counts.pending, 1);
+    assert_eq!(counts.failed, 1);
+}
+
+#[test]
 fn retry_all_failed_tagging_jobs_skips_rows_with_an_active_job() {
     let db = Db::open_in_memory().unwrap();
     let eligible_photo = seed_photo(&db);

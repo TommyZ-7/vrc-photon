@@ -413,11 +413,11 @@ impl Daemon {
         let mut report = ScanReport::default();
         let mut auto_enqueued = 0;
         let root_count = roots.len();
+        let initial_scan = {
+            let db = lock_db(&self.db);
+            initial_scan_override.unwrap_or(full_scan && db.count_photos()? == 0)
+        };
         if !roots.is_empty() {
-            let initial_scan = {
-                let db = lock_db(&self.db);
-                initial_scan_override.unwrap_or(full_scan && db.count_photos()? == 0)
-            };
             let mut changed = false;
             let mut missing_ids = Vec::new();
             for (index, root) in roots.into_iter().enumerate() {
@@ -554,6 +554,7 @@ impl Daemon {
             if self.settings.ai_tagging_enabled
                 && self.settings.ai_tagging_auto.mode.is_active()
                 && !report.new_ids.is_empty()
+                && !initial_scan
             {
                 let tagging_enqueued = {
                     let db = lock_db(&self.db);
@@ -568,7 +569,7 @@ impl Daemon {
         if report.modified > 0 {
             self.link_unlinked()?;
         }
-        if !report.new_ids.is_empty() {
+        if !report.new_ids.is_empty() && !initial_scan {
             let enqueued = {
                 let db = lock_db(&self.db);
                 match discord::enqueue_auto_sends(&db, &report.new_ids) {

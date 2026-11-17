@@ -232,18 +232,25 @@ impl Db {
         Ok(count)
     }
 
-    /// Returns every eligible failed send to pending in one pass.
+    /// Returns one eligible failed send per photo to pending in one pass.
+    /// A photo can accumulate several failed rows; retrying all of them at
+    /// once would violate the active-row unique index.
     pub fn retry_all_failed_sends(&self) -> Result<usize> {
         let changed = self.conn.execute(
             "UPDATE send_outbox SET status = 'pending', attempts = 0, \
                 next_attempt_at = NULL, error_code = NULL, error_detail = NULL, \
                 started_at = NULL, finished_at = NULL \
              WHERE status = 'failed' \
-               AND (photo_id IS NULL OR NOT EXISTS ( \
-                   SELECT 1 FROM send_outbox active \
-                   WHERE active.photo_id = send_outbox.photo_id \
-                     AND active.id <> send_outbox.id \
-                     AND active.status IN ('waiting', 'pending', 'processing') \
+               AND (photo_id IS NULL OR ( \
+                   id = (SELECT MAX(other.id) FROM send_outbox other \
+                         WHERE other.photo_id = send_outbox.photo_id \
+                           AND other.status = 'failed') \
+                   AND NOT EXISTS ( \
+                       SELECT 1 FROM send_outbox active \
+                       WHERE active.photo_id = send_outbox.photo_id \
+                         AND active.id <> send_outbox.id \
+                         AND active.status IN ('waiting', 'pending', 'processing') \
+                   ) \
                ))",
             [],
         )?;

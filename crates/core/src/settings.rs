@@ -521,7 +521,10 @@ fn migrate_legacy_auto_settings(value: &mut serde_json::Value, now: i64) {
         && (old_enabled.is_some() || old_immediate.is_some() || old_backlog.is_some())
     {
         let enabled = old_enabled.unwrap_or(true);
-        let mode = if old_immediate.unwrap_or(true) {
+        // When the old master switch was off, the stored mode is a preference
+        // for the next enable. Migrating it to Waiting would leave the queue
+        // dormant after the user turns the switch back on.
+        let mode = if !enabled || old_immediate.unwrap_or(true) {
             "immediate"
         } else {
             "waiting"
@@ -536,10 +539,9 @@ fn migrate_legacy_auto_settings(value: &mut serde_json::Value, now: i64) {
         } else {
             serde_json::Value::Null
         };
-        object.insert(
-            "auto_compress_enabled".to_string(),
-            serde_json::json!(enabled),
-        );
+        object
+            .entry("auto_compress_enabled".to_string())
+            .or_insert_with(|| serde_json::json!(enabled));
         object.insert(
             "auto_compress".to_string(),
             serde_json::json!({
@@ -548,10 +550,6 @@ fn migrate_legacy_auto_settings(value: &mut serde_json::Value, now: i64) {
                 "activated_at": activated_at,
             }),
         );
-    } else if let Some(enabled) = old_enabled {
-        object
-            .entry("auto_compress_enabled".to_string())
-            .or_insert_with(|| serde_json::json!(enabled));
     }
 
     object.remove("auto_compress_immediate");
@@ -642,6 +640,15 @@ impl AppSettings {
                 };
                 let before = value.clone();
                 migrate_legacy_auto_settings(&mut value, chrono::Utc::now().timestamp());
+                let mut settings = match serde_json::from_value::<Self>(value.clone()) {
+                    Ok(settings) => settings,
+                    Err(error) => {
+                        if let Err(backup_error) = backup_corrupt_settings(db, &json) {
+                            tracing::warn!(%backup_error, "cannot back up malformed app settings");
+                        }
+                        return Err(error.into());
+                    }
+                };
                 if value != before {
                     match serde_json::to_string_pretty(&value) {
                         Ok(serialized) => {
@@ -654,21 +661,11 @@ impl AppSettings {
                         }
                     }
                 }
-                match serde_json::from_value::<Self>(value) {
-                    Ok(mut settings) => {
-                        settings.normalize_discord_destination();
-                        settings.normalize_ai_settings();
-                        settings.normalize_grid_display();
-                        settings.normalize_compression_settings();
-                        Ok(settings)
-                    }
-                    Err(error) => {
-                        if let Err(backup_error) = backup_corrupt_settings(db, &json) {
-                            tracing::warn!(%backup_error, "cannot back up malformed app settings");
-                        }
-                        Err(error.into())
-                    }
-                }
+                settings.normalize_discord_destination();
+                settings.normalize_ai_settings();
+                settings.normalize_grid_display();
+                settings.normalize_compression_settings();
+                Ok(settings)
             }
             None => {
                 let mut settings = Self::default();
@@ -1777,6 +1774,38 @@ mod tests {
             value["auto_compress"]["activated_at"],
             serde_json::Value::Null
         );
+    }
+
+    #[test]
+    fn disabled_compression_with_waiting_preference_still_migrates_to_immediate() {
+        let mut value = serde_json::json!({
+            "auto_compress": false,
+            "auto_compress_immediate": false,
+        });
+        migrate_legacy_auto_settings(&mut value, 1_700_000_000);
+        assert_eq!(value["auto_compress_enabled"], false);
+        assert_eq!(value["auto_compress"]["mode"], "immediate");
+    }
+
+    #[test]
+    fn migration_does_not_overwrite_an_existing_master_switch() {
+        let mut value = serde_json::json!({
+            "auto_compress": true,
+            "auto_compress_immediate": false,
+            "auto_compress_enabled": false,
+        });
+        migrate_legacy_auto_settings(&mut value, 1_700_000_000);
+        assert_eq!(value["auto_compress_enabled"], false);
+        assert_eq!(value["auto_compress"]["mode"], "waiting");
+    }
+
+    #[test]
+    fn invalid_migrated_settings_are_not_persisted() {
+        let db = Db::open_in_memory().unwrap();
+        let raw = r#"{"auto_compress":true,"compression_workers":"two"}"#;
+        db.set_setting(SETTINGS_KEY, raw).unwrap();
+        assert!(AppSettings::load(&db).is_err());
+        assert_eq!(db.get_setting(SETTINGS_KEY).unwrap().as_deref(), Some(raw));
     }
 
     #[test]
