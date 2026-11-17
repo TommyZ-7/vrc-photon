@@ -171,7 +171,7 @@ impl App {
             SetupPage::Discord => self.setup_discord(cx),
             SetupPage::Compression => self.setup_compression(cx),
             SetupPage::Theme => self.setup_theme(cx).into_any_element(),
-            SetupPage::AiTagging => self.setup_ai(cx).into_any_element(),
+            SetupPage::AiTagging => self.setup_ai().into_any_element(),
         }
     }
 
@@ -792,7 +792,7 @@ impl App {
             .into_any_element()
     }
 
-    fn setup_ai(&self, cx: &mut Context<Self>) -> Div {
+    fn setup_ai(&self) -> Div {
         let p = self.palette;
         let tag = |label: String, probability: &'static str| -> Div {
             h_flex()
@@ -929,13 +929,6 @@ impl App {
                             .child(tr!("setup.ai.booth")),
                     ),
             )
-            .child(auto_mode_segmented(
-                &p,
-                "setup-ai",
-                self.settings.ai_tagging_auto.mode,
-                cx,
-                App::set_ai_auto_mode,
-            ))
             .child(
                 v_flex()
                     .gap(px(8.))
