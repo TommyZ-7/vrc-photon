@@ -240,6 +240,7 @@ impl App {
                 QueueFeature::Compression,
                 &self.compression_queue_entries,
                 self.compression_queue_counts,
+                enabled,
                 self.settings.auto_compress_queue_paused,
                 cx,
             ));
@@ -355,6 +356,7 @@ impl App {
                 QueueFeature::Tagging,
                 &self.tagging_queue_entries,
                 self.tagging_queue_counts,
+                enabled,
                 self.settings.ai_tagging_queue_paused,
                 cx,
             ));
