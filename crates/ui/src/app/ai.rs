@@ -36,6 +36,11 @@ pub(crate) use vrc_photon_core::ai::AI_PLUGIN_ID;
 /// Delay before an event burst triggers a state or inspector refresh.
 const AI_REFRESH_DEBOUNCE: Duration = Duration::from_millis(250);
 
+/// Native file-dialog filters for AI plugin packages.
+fn ai_plugin_package_dialog_filters() -> Vec<(String, Vec<String>)> {
+    vec![("VPP".to_string(), vec!["vpp".to_string()])]
+}
+
 /// Which operation produced a transient AI error. Keeping the origin lets the
 /// settings card show install/model failures and the runtime card show tagging
 /// failures without relabelling one as the other.
@@ -1408,7 +1413,7 @@ impl App {
 
     pub(crate) fn install_ai_plugin(&mut self, window: &Window, cx: &mut Context<Self>) {
         let options = DialogOptions {
-            filters: vec![("ZIP".to_string(), vec!["zip".to_string()])],
+            filters: ai_plugin_package_dialog_filters(),
             ..DialogOptions::default()
         };
         let dialog = options.dialog(Some(window));
@@ -1982,14 +1987,14 @@ mod tests {
         ManualRetagOutcome, ModelDownloadView, TaggingLiveRefresh, UninstallTarget,
         active_job_photo_label, ai_dashboard_view, ai_error_code_is_stable, ai_error_detail_in,
         ai_error_label_in, ai_error_summary_in, ai_error_toast_in, ai_job_error_is_notifiable,
-        ai_manifest_view, ai_plugin_card_state, ai_response_outcome, ai_tag_view, ai_tag_views,
-        apply_install_event, backend_options, backend_selection_is_disabled_when_not_ready,
-        collect_ai_snapshot, download_progress_bar_ratio, effective_ai_tagging_enabled,
-        enqueue_manual_retag, install_event_applies_to_ai, installation_row_id,
-        is_active_installation, load_photo_ai, model_progress_ratio, model_ready_toast_pending,
-        needs_license_consent, people_label, people_label_in, place_label,
-        place_label_with_confidence, probe_failure_info, request_error_kind,
-        uninstall_request_args, variant_backend_label,
+        ai_manifest_view, ai_plugin_card_state, ai_plugin_package_dialog_filters,
+        ai_response_outcome, ai_tag_view, ai_tag_views, apply_install_event, backend_options,
+        backend_selection_is_disabled_when_not_ready, collect_ai_snapshot,
+        download_progress_bar_ratio, effective_ai_tagging_enabled, enqueue_manual_retag,
+        install_event_applies_to_ai, installation_row_id, is_active_installation, load_photo_ai,
+        model_progress_ratio, model_ready_toast_pending, needs_license_consent, people_label,
+        people_label_in, place_label, place_label_with_confidence, probe_failure_info,
+        request_error_kind, uninstall_request_args, variant_backend_label,
     };
     use vrc_photon_ai_protocol::{
         BackendInfo, Catalog, ModelState, PluginInstallStatus, Probe, TagDefinition,
@@ -2001,6 +2006,14 @@ mod tests {
     use vrc_photon_core::db::Db;
     use vrc_photon_core::model::{JobStatusCounts, NewPhoto};
     use vrc_photon_ipc::{ErrorCode, Request, Response};
+
+    #[test]
+    fn ai_plugin_install_dialog_accepts_only_vpp_packages() {
+        assert_eq!(
+            ai_plugin_package_dialog_filters(),
+            vec![("VPP".to_string(), vec!["vpp".to_string()])]
+        );
+    }
 
     fn backend(kind: &str) -> BackendInfo {
         BackendInfo {
