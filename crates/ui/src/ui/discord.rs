@@ -147,6 +147,7 @@ impl App {
                 vrc_photon_core::queue::QueueFeature::Discord,
                 &self.discord_queue_entries,
                 self.discord_queue_counts,
+                enabled,
                 self.settings.discord_queue_paused,
                 cx,
             ));
