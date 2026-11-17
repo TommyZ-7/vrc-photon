@@ -157,7 +157,7 @@ Phase 6 で行う。
   - `AppSettings { pub auto_compress_enabled: bool, pub auto_compress: AutoBehavior, pub discord_auto: AutoBehavior, pub ai_tagging_auto: AutoBehavior }`
   - `fn migrate_legacy_auto_settings(value: &mut serde_json::Value, now: i64)`
 
-- [ ] **Step 1: 失敗する移行テストを書く**
+- [x] **Step 1: 失敗する移行テストを書く**
 
 `crates/core/src/settings.rs` のテストに追加する。
 
@@ -304,12 +304,12 @@ fn loading_legacy_settings_persists_the_new_shape() {
 }
 ```
 
-- [ ] **Step 2: テストを実行して失敗を確認する**
+- [x] **Step 2: テストを実行して失敗を確認する**
 
 Run: `cargo test -p vrc-photon-core settings::tests::legacy_compression_fields_migrate_to_common_behavior`
 Expected: FAIL（`migrate_legacy_auto_settings` と `AutoBehavior` が未定義）
 
-- [ ] **Step 3: 型と移行を実装する**
+- [x] **Step 3: 型と移行を実装する**
 
 `crates/core/src/settings.rs` に `AutoMode`, `AutoScope`, `AutoBehavior`、
 `auto_compress_enabled: bool` を追加し、`DiscordAutoMode` と旧フィールドを削除する。
@@ -330,12 +330,12 @@ Expected: FAIL（`migrate_legacy_auto_settings` と `AutoBehavior` が未定義�
 `schema.rs` の `photos.created_at` は `to_rfc3339()` の文字列なので、後の SQL では
 `CAST(strftime('%s', p.created_at) AS INTEGER)` で Unix 秒に変換する。
 
-- [ ] **Step 4: テストを実行して通す**
+- [x] **Step 4: テストを実行して通す**
 
 Run: `cargo test -p vrc-photon-core settings::tests`
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add crates/core/src/settings.rs
