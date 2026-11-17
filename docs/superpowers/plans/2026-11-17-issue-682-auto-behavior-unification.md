@@ -31,20 +31,25 @@
 - 自動動作が `Off` でも、機能のマスタースイッチがオンなら一括処理を使える。
   一括処理が無効になるのは、マスタースイッチがオフのときだけ
   （Discord は Webhook 不正、AI はプラグイン未準備も追加条件）。
-- Discord の一括送信は未送信写真だけを対象にし、件数付き確認ダイアログを出す。
+- Discord の一括送信は未送信写真だけを対象にし、件数だけの確認ダイアログを出す。
 - AI の `Immediate` はプラグイン準備完了時のみ積む。`Waiting` は未準備でも積む。
 - AI カード内の「設定を開く」ボタンと案内文を削除する。ダッシュボードの AI カードは
   この Issue の対象外。
 - カード内の表示順を「ヘッダー＋マスタースイッチ → 機能固有の設定 →
   自動動作 → 一括処理 → キュー」に統一する。
 - セットアップページには「自動動作」だけを置き、「一括処理」は表示しない。
+- 自動動作と一括処理はカード化せず、見出し・セグメント・ボタンをカード本文に
+  直接置く。一括処理の対象範囲は自動動作と同じ2分割セグメントにする。
+- ヒント行、重複ラベル、空表示、出力先の注記を置かない。#627 / #629 の
+  「連携・自動タブの余計な表記削除」に合わせる。
+- 確認ダイアログは件数だけを表示し、注意書き・補足を置かない。
 - #684: キューは待機・実行待ち・実行中だけを表示する。失敗・完了・履歴は出さない。
 - #684: 失敗は通知モーダルに最新5件まで出し、行ごとの再試行と機能別の一括再試行を
   用意する。失敗行はキューに戻さない。
 - #684: 機能別の一時停止を設定に保存する。停止中も実行中のジョブは完了し、
   自動投入は続ける。停止中も待機の開始・削除はできる。
 - #684: 待機行は行単位・一括で削除できる。実行待ち・実行中は削除しない。
-  一括削除は件数付き確認を出す。
+  一括削除は件数だけの確認を出す。
 - #684: ダッシュボードの圧縮専用キューパネルを3機能の混合キューに置き換える。
   混合キューに一時停止／再開は置かない。
 - #684: Discord の送信履歴カード、「履歴を消去」、履歴行を削除する。
@@ -81,7 +86,10 @@
 12. #684: キューに失敗・完了・履歴が出ず、Discord の送信履歴カードと
     「履歴を消去」がない。
 13. #684: 通知モーダルに3機能の最新5件の失敗と再試行が出る。
-14. ja / en の両カタログと `placeholders.rs` が更新され、i18n テストが通る。
+14. 自動動作と一括処理がカード化されず、一括処理の対象範囲が2分割セグメントに
+    なっている。ヒント行・重複ラベル・空表示・出力先の注記がない。
+15. Discord の一括送信と待機の一括削除の確認ダイアログが、件数だけを表示する。
+16. ja / en の両カタログと `placeholders.rs` が更新され、i18n テストが通る。
 
 ---
 
@@ -96,15 +104,17 @@
 
 `docs/ui-682-auto-behavior-unification-mockup.html` に次を載せる。
 
-- 共通コントロールの拡大図（自動動作の3分割セグメント、一括処理の対象範囲2チップ＋
-  実行ボタン、説明）。`mode = Off` でも一括処理が使えることを示す。
+- 共通コントロールの拡大図（自動動作の3分割セグメント、一括処理の対象範囲
+  2分割セグメント＋実行ボタン）。説明文は置かず、カード化しない。
+  `mode = Off` でも一括処理が使えることを示す。
 - 連携・自動の3カード（自動圧縮・Discord・AI）の変更後。表示順は
   「ヘッダー → 機能固有 → 自動動作 → 一括処理 → キュー」。
 - 自動圧縮カードのマスタースイッチ。
 - 初回セットアップの3ページ（自動圧縮・Discord・AI）の変更後。
   一括処理は表示せず、自動動作だけを置く。
 - AI カードから「設定を開く」ボタンと案内文を削除した状態。
-- Discord の件数付き確認ダイアログ。
+- Discord の一括送信と待機の一括削除の、件数だけの確認ダイアログ。
+- ヒント行・重複ラベル・空表示・出力先の注記を削除した状態（#627 / #629）。
 - #684: ダッシュボードの3機能混合キュー（機能バッジ、待機・実行待ち・実行中、
   待機行の削除、100件上限）。
 - #684: 機能詳細のキュー（件数、一時停止／再開、待機をすべて開始／削除、
@@ -736,17 +746,17 @@ Expected: FAIL
 1. `auto_mode_segmented`
    - 見出し「自動動作」＋3分割のセグメント（`{id_prefix}-mode-off/immediate/waiting`）。
    - 選択中のセグメントをアクセント色で塗る。
-   - 下に選択中のモードの説明（`auto.behavior.mode.*_hint`）。
+   - 説明文は置かない。
 2. `bulk_action_block`
    - 見出し「一括処理」。
-   - 対象範囲2チップ（`{id_prefix}-scope-new/backlog`）。
-   - 説明「一括処理の対象にする写真の範囲を選びます。」
-   - 選択中の対象範囲の説明（`auto.bulk.scope.*_hint`）。
+   - 対象範囲2分割のセグメント（`{id_prefix}-scope-new/backlog`）。
+     自動動作と同じ `segment` 部品・同じ見た目にする。
+   - 説明文は置かない。
    - 実行ボタン（`{id_prefix}-bulk`）。`enabled` が false なら `.disabled(true)`。
    - `cx.listener` で `on_scope` / `on_bulk` を呼ぶ。
 
-セグメントは `crate::ui::components::chip` をベースにした専用の `segment` を使い、
-チップの「対象範囲」と見た目を分ける。
+自動動作と一括処理はカード化せず、見出し・セグメント・ボタンをカード本文に
+直接置く。専用の `segment` 部品を両方で共有する。
 
 - [ ] **Step 4: 3カードの表示順を統一する**
 
@@ -773,7 +783,7 @@ Expected: FAIL
     `integrations.discord.backlog.button`）。`mode != Off` の警告は自動動作の直後に出す。
   - 一括処理は `discord_enabled` と有効な Webhook で有効。`mode = Off` でも有効。
   - `send_discord_backlog` は件数を数え、0件なら情報トースト、1件以上なら
-    `window.open_alert_dialog` で件数と非公開インスタンスの注意を表示し、OK で
+    `window.open_alert_dialog` で件数だけを表示し、OK で
     `confirm_discord_backlog` を呼ぶ。OK 時に `discord_consent_at` が `None` なら
     記録する。
   - 最後にキューを置く（Task 9）。送信履歴は置かない。
@@ -1120,7 +1130,7 @@ Expected: FAIL
 - 行の高さ・仮想リストは既存の `QueueRow` を置き換え、100件上限で使う。
 - 状態ラベルは `QueueState` から翻訳キーへ変換する。
 - 削除ボタンは `QueueState::Waiting` のときだけ出す。
-- `待機をすべて削除` は `delete_all_waiting` を呼ぶ前に件数付き確認を出す。
+- `待機をすべて削除` は `delete_all_waiting` を呼ぶ前に件数だけの確認を出す。
 - `待機をすべて開始` は既存の release API を呼ぶ。圧縮は `keep_original=false`
   のとき既存の置換確認を出す。
 
@@ -1260,18 +1270,12 @@ auto.behavior.mode: 自動動作 / Automatic behavior
 auto.behavior.mode.off: しない / Off
 auto.behavior.mode.immediate: 即時 / Immediate
 auto.behavior.mode.waiting: 待機 / Waiting
-auto.behavior.mode.off_hint: 新しい写真を自動では処理しません。
-auto.behavior.mode.immediate_hint: 新しく追加された写真をすぐに処理します。
-auto.behavior.mode.waiting_hint: 新しく追加された写真を待機ジョブとして積み、あとから一括で開始できます。
 auto.bulk.title: 一括処理 / Bulk actions
-auto.bulk.hint: 一括処理の対象にする写真の範囲を選びます。
 auto.bulk.scope.new_only: 有効化以降の新規のみ / New photos after enabling
 auto.bulk.scope.include_backlog: 既存の未処理分も含める / Include existing unprocessed photos
-auto.bulk.scope.new_only_hint: 一括処理は、機能を有効にした後に追加された写真だけを対象にします。
-auto.bulk.scope.include_backlog_hint: 一括処理は、有効化前の写真も含めたすべての未処理分を対象にします。
 integrations.discord.backlog.button: 未送信を一括送信 / Send unsent photos
 integrations.discord.backlog.confirm.title: 未送信写真の一括送信 / Send unsent photos
-integrations.discord.backlog.confirm.body: 既存の未送信写真 %{count} 件を Discord へ送信します。非公開インスタンスで撮影した写真も含まれます。
+integrations.discord.backlog.confirm.body: 送信対象: %{count} 件 / %{count} selected
 integrations.discord.backlog.confirm.ok: 送信する / Send
 integrations.discord.backlog.empty: 送信対象の未送信写真はありません。
 integrations.discord.backlog.started: 未送信写真 %{count} 件を送信キューに追加しました。
@@ -1286,7 +1290,7 @@ queue.paused: 一時停止中 / Paused
 queue.start_waiting: 待機をすべて開始 / Start all waiting
 queue.delete_waiting_all: 待機をすべて削除 / Delete all waiting
 queue.delete_waiting_all.confirm.title: 待機中の行を削除 / Delete waiting rows
-queue.delete_waiting_all.confirm.body: 待機中の %{count} 件を削除します。実行待ち・実行中は削除されません。
+queue.delete_waiting_all.confirm.body: 削除対象: %{count} 件 / %{count} selected
 queue.delete_waiting_all.confirm.ok: 削除する / Delete
 queue.delete_waiting_all.done: 待機中の %{count} 件を削除しました。
 queue.delete_waiting_all.error: 待機中の行を削除できませんでした: %{error}
@@ -1339,12 +1343,14 @@ notifications.job_failures.error: 失敗した処理を再試行できません�
 - `docs/ui.md`
   - §2.9 の保存値のみの一覧から `auto_compress_backlog` を外す。
   - §2.10 の自動圧縮カードはマスタースイッチを残し、3値の自動動作、
-    「一括処理」ブロック、圧縮設定の順に書く。一括処理は `mode = Off` でも
-    使えることを明記する。
+    「一括処理」セクション、圧縮設定の順に書く。一括処理は `mode = Off` でも
+    使えることを明記する。対象範囲は2分割セグメントにする。
   - §2.10 の AI カードは自動動作と一括処理を共通化し、設定画面へのボタン・案内を
     置かないことを書く。
-  - §2.10 の Discord 自動送信を共通化し、未送信の一括送信、件数付き確認、
+  - §2.10 の Discord 自動送信を共通化し、未送信の一括送信、件数だけの確認、
     撮影時刻カットオフ廃止を書く。
+  - §2.10 の自動動作と一括処理はカード化せず、ヒント行・重複ラベル・空表示・
+    出力先の注記を置かない（#627 / #629 に合わせる）。
   - §2.10 の3カードの表示順を「ヘッダー → 機能固有 → 自動動作 → 一括処理 →
     キュー」に統一する。
   - §2.12 の Discord に自動動作を追加し、自動圧縮はマスタースイッチ＋
@@ -1423,7 +1429,9 @@ cargo test --workspace
 - 自動圧縮カードにマスタースイッチがあり、一括処理は `mode = Off` でも使える。
 - マスタースイッチをオフにすると、一括処理が無効になる。
 - AI カードに「設定を開く」ボタンと案内文がない。
-- Discord の一括送信ボタンと件数確認ダイアログ。
+- Discord の一括送信ボタンと、件数だけの確認ダイアログ。
+- 自動動作と一括処理がカード化されず、一括処理の対象範囲も2分割セグメントに
+  なっている。ヒント行・重複ラベル・空表示がない。
 - 初回セットアップの3ページに一括処理がなく、自動動作だけがあり、
   600×561 に収まる。
 - ダッシュボードが3機能の混合キューになり、機能バッジ・状態・写真名・
@@ -1455,6 +1463,10 @@ CI green を確認して merge し、`main` を pull する。
 - [ ] AI の `Immediate` は未準備で積まず、`Waiting` は未準備でも積む。
 - [ ] AI カードに「設定を開く」ボタンと案内文がない。
 - [ ] 3カードの表示順が統一され、3セットアップページには一括処理がない。
+- [ ] 自動動作と一括処理がカード化されず、一括処理の対象範囲が2分割セグメントに
+      なっている。
+- [ ] 確認ダイアログが件数だけを表示し、ヒント行・重複ラベル・空表示・
+      出力先の注記がない。
 - [ ] #684: ダッシュボードが3機能の混合キューになり、圧縮専用キューがない。
 - [ ] #684: 機能詳細のキューが待機・実行待ち・実行中だけを表示する。
 - [ ] #684: 機能別の一時停止が設定に保存され、再起動後も維持される。
