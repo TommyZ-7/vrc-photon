@@ -183,7 +183,7 @@ impl App {
             .child(card_divider(&p))
             .child(self.setting_switch(
                 tr!("settings.startup.keep_original"),
-                tr!("settings.startup.keep_original_hint"),
+                "",
                 self.settings.auto_compress_keep_original,
                 false,
                 cx,
