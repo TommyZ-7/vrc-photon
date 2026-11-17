@@ -82,9 +82,9 @@ pub(crate) fn manual_send_toast(result: Result<bool, DiscordSendGuardError>) -> 
 /// rather than a success with a count of zero.
 pub(crate) fn waiting_release_toast(count: usize) -> String {
     if count == 0 {
-        tr!("integrations.discord.history.release_none")
+        tr!("queue.empty")
     } else {
-        tr_args!("integrations.discord.history.release_done", count = count)
+        tr_args!("queue.start_waiting.done", count = count)
     }
 }
 
@@ -462,7 +462,7 @@ impl App {
             }
             Err(error) => {
                 tracing::warn!(%error, "cannot release waiting Discord sends");
-                self.toast_error(tr!("integrations.discord.history.release_error"), cx);
+                self.toast_error(tr_args!("queue.start_waiting.error", error = error), cx);
             }
         }
         cx.notify();
@@ -684,13 +684,10 @@ mod tests {
 
     #[test]
     fn waiting_release_result_messages() {
-        assert_eq!(
-            waiting_release_toast(0),
-            tr!("integrations.discord.history.release_none")
-        );
+        assert_eq!(waiting_release_toast(0), tr!("queue.empty"));
         assert_eq!(
             waiting_release_toast(3),
-            tr_args!("integrations.discord.history.release_done", count = 3)
+            tr_args!("queue.start_waiting.done", count = 3)
         );
     }
 

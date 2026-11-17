@@ -563,8 +563,11 @@ CREATE INDEX idx_send_outbox_photo
 - ワーカー起動時に `processing` が残っていれば、自動再送せず
   `failed`（`error_code='interrupted'`）にする。Discord に冪等キーがないため。
 - terminal 行（`sent` / `failed` / `cancelled`）は最新 500 件を上限として、
-  送信完了後に古い行を削除する。UI は最新 100 件を表示し、「履歴を消去」で
-  terminal 行を全削除できる。
+  送信完了後に古い行を削除する。UI に送信履歴は表示せず、「履歴を消去」も
+  置かない。terminal 行は通知とテスト送信の結果解決のために保持する。
+- 待機行の削除は `DELETE ... WHERE status='waiting'` で行そのものを消す。
+  `sent` / `failed` / `cancelled` などの terminal 行は削除しない。
+  `pending` / `processing` は削除できない。
 - 削除要求と強制削除は、対象写真の `waiting` / `pending` / `failed` を
   `cancelled` にする。`processing` は完了まで残す。削除の実行はアクティブな
   送信がなくなるまで待つが、`failed` はブロックしない。
@@ -678,8 +681,8 @@ UIからデーモンへの再実行要求。FIFOの小さなキュー。
 ```text
 photo_roots, log_dir, managed_dir, language,
 import_preserve_folder_structure, import_include_root_folder,
-autostart, tray, auto_compress, auto_compress_backlog,
-auto_compress_immediate, auto_compress_keep_original,
+autostart, tray, auto_compress_enabled, auto_compress,
+auto_compress_queue_paused, auto_compress_keep_original,
 auto_compression, clipboard_compression, discord_compression,
 estimated_link, thumbnail_cache_mb, thumbnail_size,
 compression_workers,
@@ -690,9 +693,9 @@ ui_card_radius, ui_photos_view_mode, ui_theme_main, ui_theme_accent,
 auto_update_check, update_last_checked_at,
 world_name_resolution_enabled,
 discord_enabled, discord_destination, discord_include_players,
-discord_send_original, discord_auto_mode, discord_auto_since,
+discord_send_original, discord_auto, discord_queue_paused,
 discord_consent_at,
-ai_tagging_enabled, ai_tagging_auto,
+ai_tagging_enabled, ai_tagging_auto, ai_tagging_queue_paused,
 ai_presence_threshold, ai_tagging_backend, ai_tagging_idle_timeout_sec,
 ai_model_license_consent_at, setup_completed
 ```
@@ -705,7 +708,9 @@ ai_model_license_consent_at, setup_completed
 - `ui_photos_view_mode` は `timeline` / `sessions`（既定 `timeline`）。
 - `ui_max_fps` は 30 / 60 / 120 / 144 / 240 / 0（無制限、既定 60）。
 - `import_preserve_folder_structure` / `import_include_root_folder` は既定 false。`include_root` は `preserve` が true のときだけ効果を持つ。
-- `estimated_link` は既定 true、`auto_compress_keep_original` は既定 true、`auto_compress_immediate` は既定 true、`auto_compress_backlog` は既定 false。
+- `estimated_link` は既定 true、`auto_compress_enabled` は既定 true、`auto_compress_keep_original` は既定 true。
+- `auto_compress` / `discord_auto` / `ai_tagging_auto` は `{ mode, scope, activated_at }` のオブジェクト。`auto_compress` は `Immediate / NewOnly`、`discord_auto` と `ai_tagging_auto` は `Off / NewOnly` を既定とする。
+- `auto_compress_queue_paused` / `discord_queue_paused` / `ai_tagging_queue_paused` は既定 false。既存 JSON にない場合は false として読む。
 - `auto_compression` は WebP ロスレス・リサイズなし、`discord_compression` は WebP ロスレス・2560×1440 の縮小のみ、`clipboard_compression` は 2560×1440 の縮小のみを既定とする。
 - `thumbnail_cache_mb` / `compression_workers` / `estimated_link` は保存値のみで、設定画面には表示しない。
 
@@ -716,7 +721,8 @@ ai_model_license_consent_at, setup_completed
 AI タグ付けの既定値:
 
 - `ai_tagging_enabled = false`
-- `ai_tagging_auto = false`
+- `ai_tagging_auto = { mode: Off, scope: NewOnly, activated_at: None }`
+- `ai_tagging_queue_paused = false`
 - `ai_presence_threshold = None`（sidecar の hello が返す既定値を使う。0.0〜1.0 に clamp）
 - `ai_tagging_backend = "auto"`（`auto` / `vulkan` / `cuda` / `roc` / `cpu`。不明値は `auto`）
 - `ai_tagging_idle_timeout_sec = 600`（30〜3600 に clamp）
@@ -728,8 +734,8 @@ Discord 関連の既定値:
 - `discord_destination = "Discord"`（空・空白のみは保存時に `"Discord"` へ戻す）
 - `discord_include_players = false`
 - `discord_send_original = true`
-- `discord_auto_mode = Off`（`Off` / `Immediate` / `Waiting`）
-- `discord_auto_since = None`（自動送信の対象にする撮影時刻の下限）
+- `discord_auto = { mode: Off, scope: NewOnly, activated_at: None }`
+- `discord_queue_paused = false`
 - `discord_consent_at = None`（初回同意の記録）
 
 ## 4. 不変条件
@@ -757,6 +763,9 @@ Discord 関連の既定値:
 21. `tagging_jobs` の active（`waiting` / `pending` / `processing`）は写真・プラグイン単位で1件だけ。`waiting` はバックログ専用で、一括解放または対象写真の手動タグ付けだけが `pending` に移す。
 22. active な `tagging_jobs` は削除をブロックする。`failed` のタグ付けジョブは `force=0` の削除をブロックし、強制削除は active なジョブをキャンセルしてから実行する。
 23. プラグインのアンインストールで `delete_ai_tags=true` を選んだ場合だけ、`photo_ai` / `photo_ai_tags` / `ai_tag_definitions` / `ai_tag_thresholds` を削除する。既定は AI タグを残す。
+24. キュー UI は3機能の `waiting` / `pending` / `processing` だけを表示する。`completed` / `sent` / `failed` / `cancelled` などの terminal 行は通知・テスト送信の結果解決のために DB に残すが、履歴 UI には表示しない。
+25. 待機行の削除は行そのものを消し、部分ユニークインデックスを空けて同じ写真を再投入できるようにする。`pending` / `processing` は削除しない。
+26. 機能別の一時停止は `auto_compress_queue_paused` / `discord_queue_paused` / `ai_tagging_queue_paused` に保存する。停止中はワーカーが新しいジョブを取得せず、実行中のジョブは完了する。自動投入は止めない。
 24. モデルの readiness 判定はファイルの存在とサイズだけを見る。SHA-256 はダウンロード / オフライン取込のときだけ検証する。
 
 ## 5. タイムゾーンと時刻
