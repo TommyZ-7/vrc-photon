@@ -1,0 +1,893 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VRC PhotoN — 自動動作とキューの統一モック (#682 / #684)</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%230d1420'/%3E%3Ccircle cx='16' cy='16' r='7' fill='none' stroke='%238bcbff' stroke-width='2'/%3E%3C/svg%3E">
+<style>
+  :root {
+    color-scheme: dark;
+    --font: "Inter", "Noto Sans JP", "Hiragino Sans", "Yu Gothic UI", system-ui, -apple-system, sans-serif;
+    --text: #eef4ff;
+    --muted: #a8b4ca;
+    --dim: #7f8ba3;
+    --faint: #5e6a81;
+    --accent: #8bcbff;
+    --green: #7ee2b8;
+    --rose: #ff94a8;
+    --amber: #f4c878;
+    --line: rgba(255, 255, 255, 0.105);
+    --line-strong: rgba(255, 255, 255, 0.17);
+    --line-soft: rgba(255, 255, 255, 0.065);
+    --panel: #0d1420;
+    --panel-deep: #080d15;
+    --panel-2: #151f2f;
+    --accent-soft: rgba(139, 203, 255, 0.14);
+    --r-card: 22px;
+  }
+
+  * { box-sizing: border-box; }
+  html { overflow-x: hidden; }
+  body {
+    margin: 0;
+    min-width: 320px;
+    background: #05070d;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -2;
+    background:
+      radial-gradient(ellipse 58% 54% at 10% 2%, rgba(54, 107, 255, 0.28), transparent 66%),
+      radial-gradient(ellipse 46% 52% at 92% 6%, rgba(255, 86, 181, 0.12), transparent 68%),
+      radial-gradient(ellipse 52% 48% at 64% 104%, rgba(30, 202, 178, 0.10), transparent 68%),
+      linear-gradient(140deg, #04060c 0%, #0a0f1e 44%, #060811 100%);
+  }
+
+  .page { width: min(1440px, calc(100% - 48px)); margin: 0 auto; padding: 44px 0 80px; }
+  .masthead { display: flex; align-items: flex-start; justify-content: space-between; gap: 28px; margin-bottom: 28px; }
+  .eyebrow { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; }
+  .issue-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border: 1px solid rgba(139,203,255,.24); border-radius: 999px; background: rgba(139,203,255,.08); color: var(--accent); font-size: 10px; letter-spacing: .08em; }
+  h1 { margin: 11px 0 9px; font-size: clamp(25px, 3vw, 36px); line-height: 1.22; letter-spacing: -.035em; font-weight: 620; }
+  .lede { max-width: 920px; margin: 0; color: var(--muted); font-size: 13px; }
+  .lede b { color: var(--text); font-weight: 560; }
+  .meta-card { flex: none; min-width: 300px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 16px; background: rgba(13,20,32,.72); }
+  .meta-row { display: flex; justify-content: space-between; gap: 18px; padding: 4px 0; color: var(--dim); font-size: 11px; }
+  .meta-row b { color: var(--text); font-weight: 550; }
+  .meta-row + .meta-row { border-top: 1px solid var(--line-soft); }
+
+  .section-label { display: flex; align-items: baseline; gap: 12px; margin: 44px 0 14px; }
+  .section-label h2 { margin: 0; font-size: 15px; font-weight: 580; letter-spacing: -.01em; }
+  .section-label span { color: var(--dim); font-size: 11px; }
+  .section-note { max-width: 1000px; margin: -4px 0 18px; color: var(--dim); font-size: 11.5px; }
+  .section-note b { color: var(--muted); font-weight: 560; }
+
+  .decision-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 18px 0 6px; }
+  .decision { padding: 13px 14px; border: 1px solid var(--line); border-radius: 14px; background: rgba(14,21,34,.72); }
+  .decision .q { color: var(--accent); font-size: 10px; letter-spacing: .08em; }
+  .decision h3 { margin: 5px 0 6px; font-size: 12px; font-weight: 580; }
+  .decision p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
+  .decision .ok { display: inline-block; margin-top: 8px; padding: 2px 7px; border-radius: 999px; color: var(--green); background: rgba(126,226,184,.07); border: 1px solid rgba(126,226,184,.18); font-size: 9.5px; }
+
+  /* Shared controls */
+  .control-stage { display: grid; grid-template-columns: 1.15fr 1fr; gap: 18px; align-items: start; }
+  .control-panel { border: 1px solid var(--line); border-radius: var(--r-card); background: linear-gradient(180deg, rgba(17,25,39,.78), rgba(9,14,23,.9)); padding: 18px; box-shadow: 0 20px 60px rgba(0,0,0,.22); }
+  .control-panel h3 { margin: 0 0 4px; font-size: 12px; font-weight: 580; }
+  .control-panel .sub { margin: 0 0 16px; color: var(--dim); font-size: 10.5px; }
+  .control-block { display: flex; flex-direction: column; gap: 7px; padding: 0; border: 0; background: transparent; }
+  .control-block + .control-block { margin-top: 4px; }
+  .control-label { color: var(--text); font-size: 12px; font-weight: 560; margin-bottom: 0; }
+
+  /* Segmented control */
+  .segment-control { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 10px; background: rgba(5,9,15,.45); }
+  .segment-control.two { grid-template-columns: repeat(2, 1fr); }
+  .segment { display: flex; align-items: center; justify-content: center; min-height: 28px; padding: 0 8px; border-radius: 7px; color: var(--muted); font-size: 10.5px; font-weight: 500; cursor: pointer; text-align: center; }
+  .segment.active { background: var(--accent-soft); color: var(--accent); box-shadow: inset 0 0 0 1px rgba(139,203,255,.22); }
+  .segment.disabled { opacity: .45; cursor: default; }
+
+  /* Chips for bulk scope */
+  .chip-row { display: flex; flex-wrap: wrap; gap: 5px; }
+  .chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 999px; border: 1px solid transparent; background: var(--panel-2); color: var(--muted); font-size: 10.5px; font-weight: 500; white-space: nowrap; }
+  .chip.active { background: var(--accent-soft); border-color: rgba(139,203,255,.32); color: var(--accent); }
+  .bulk-block { display: flex; flex-direction: column; gap: 7px; padding: 0; border: 0; background: transparent; }
+  .bulk-block .control-label { margin-bottom: 0; }
+  .bulk-block .btn { margin-top: 4px; }
+  .state-table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
+  .state-table th { text-align: left; color: var(--dim); font-weight: 500; padding: 6px 8px; border-bottom: 1px solid var(--line-soft); }
+  .state-table td { padding: 7px 8px; border-bottom: 1px solid var(--line-soft); color: var(--muted); vertical-align: top; }
+  .state-table tr:last-child td { border-bottom: 0; }
+  .state-table td:first-child { color: var(--text); white-space: nowrap; }
+
+  /* App shell */
+  .app-shell { display: grid; grid-template-columns: 196px 1fr; min-height: 760px; border: 1px solid var(--line); border-radius: var(--r-card); overflow: hidden; background: #070b12; box-shadow: 0 24px 80px rgba(0,0,0,.35); }
+  .sidebar { padding: 16px 12px; border-right: 1px solid var(--line-soft); background: linear-gradient(180deg, rgba(14,21,34,.9), rgba(7,11,18,.95)); }
+  .brand { display: flex; align-items: center; gap: 8px; padding: 2px 6px 18px; color: var(--text); font-size: 12px; font-weight: 600; }
+  .brand-mark { width: 18px; height: 18px; border-radius: 6px; border: 1px solid rgba(139,203,255,.35); background: radial-gradient(circle at 35% 35%, rgba(139,203,255,.42), rgba(139,203,255,.05)); }
+  .nav-label { padding: 8px 8px 4px; color: var(--faint); font-size: 9px; letter-spacing: .12em; text-transform: uppercase; }
+  .nav-item { display: flex; align-items: center; gap: 7px; min-height: 27px; padding: 4px 8px; border-radius: 8px; color: var(--muted); font-size: 10.5px; }
+  .nav-item + .nav-item { margin-top: 2px; }
+  .nav-item.active { background: rgba(139,203,255,.09); color: var(--text); }
+  .nav-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--faint); flex: none; }
+  .nav-dot.on { background: var(--green); box-shadow: 0 0 0 3px rgba(126,226,184,.08); }
+  .workspace { padding: 18px 20px 22px; min-width: 0; }
+  .workspace-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 14px; }
+  .workspace-head h2 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: -.02em; }
+  .workspace-head p { margin: 4px 0 0; color: var(--dim); font-size: 10.5px; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 10px; }
+  .tab { padding: 4px 10px; border-radius: 999px; border: 1px solid transparent; background: transparent; color: var(--dim); font-size: 10px; cursor: pointer; font-family: inherit; }
+  .tab.active { background: rgba(139,203,255,.09); border-color: rgba(139,203,255,.22); color: var(--accent); }
+  .master-detail { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 14px; align-items: start; }
+  .master-list { padding: 10px; border: 1px solid var(--line); border-radius: 15px; background: rgba(13,20,32,.74); }
+  .master-item { display: flex; align-items: center; gap: 8px; min-height: 39px; padding: 7px 9px; border-radius: 10px; color: var(--muted); font-size: 11.5px; cursor: pointer; }
+  .master-item + .master-item { margin-top: 2px; }
+  .master-item.active { background: rgba(139,203,255,.09); color: var(--text); box-shadow: inset 0 0 0 1px rgba(139,203,255,.16); }
+  .master-item .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--faint); flex: none; }
+  .master-item .dot.on { background: var(--green); box-shadow: 0 0 0 3px rgba(126,226,184,.07); }
+  .master-item .name { flex: 1; min-width: 0; }
+  .master-item .mini { color: var(--faint); font-size: 9px; }
+
+  .card { padding: 16px; border: 1px solid var(--line); border-radius: 18px; background: linear-gradient(180deg, #101827, #0a101a); box-shadow: inset 0 1px 0 rgba(255,255,255,.035); }
+  .card-head { display: flex; align-items: center; gap: 12px; }
+  .card-head .title { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; }
+  .card-body { display: flex; flex-direction: column; gap: 11px; padding-top: 12px; }
+  .divider { height: 1px; background: var(--line-soft); }
+  .card-section { display: flex; flex-direction: column; gap: 5px; }
+  .card-section-title { color: var(--text); font-size: 12px; font-weight: 560; }
+  .card-section-title.small { color: var(--dim); font-size: 10px; font-weight: 600; letter-spacing: .05em; }
+  .row { display: flex; align-items: center; gap: 10px; }
+  .row .label { flex: 1; min-width: 0; color: var(--text); font-size: 11.5px; }
+  .switch { width: 30px; height: 17px; border-radius: 999px; background: rgba(255,255,255,.12); position: relative; flex: none; }
+  .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%; background: var(--muted); }
+  .switch.on { background: rgba(139,203,255,.5); }
+  .switch.on::after { transform: translateX(13px); background: #eaf6ff; }
+  .warning { padding: 8px 10px; border-radius: 8px; font-size: 9.5px; line-height: 1.55; }
+  .warning.amber { background: rgba(244,200,120,.06); border: 1px solid rgba(244,200,120,.16); color: var(--amber); }
+  .warning.red { background: rgba(255,148,168,.055); border: 1px solid rgba(255,148,168,.16); color: var(--rose); }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 27px; padding: 4px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.04); color: var(--muted); font-size: 10px; font-family: inherit; white-space: nowrap; }
+  .btn.primary { border-color: rgba(139,203,255,.28); background: rgba(139,203,255,.1); color: var(--accent); }
+  .btn.full { width: 100%; }
+  .btn.disabled { opacity: .42; }
+  .btn.small { min-height: 23px; padding: 3px 8px; font-size: 9px; }
+  .input { min-height: 30px; padding: 5px 9px; border-radius: 8px; border: 1px solid var(--line); background: rgba(5,9,15,.5); color: var(--dim); font-size: 10.5px; }
+  .input.masked { letter-spacing: .06em; }
+  .queue-row { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 8px; background: rgba(255,255,255,.025); font-size: 10px; }
+  .queue-row .name { flex: 1; min-width: 0; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .queue-row .meta { color: var(--faint); font-size: 9px; }
+  .badge { padding: 2px 6px; border-radius: 999px; font-size: 9px; }
+  .badge.green { color: var(--green); background: rgba(126,226,184,.07); border: 1px solid rgba(126,226,184,.18); }
+  .badge.amber { color: var(--amber); background: rgba(244,200,120,.07); border: 1px solid rgba(244,200,120,.18); }
+  .badge.rose { color: var(--rose); background: rgba(255,148,168,.07); border: 1px solid rgba(255,148,168,.18); }
+  .badge.accent { color: var(--accent); background: rgba(139,203,255,.07); border: 1px solid rgba(139,203,255,.18); }
+  .badge.blue { color: #8fb7ff; background: rgba(90,169,255,.07); border: 1px solid rgba(90,169,255,.18); }
+  .format-row { display: flex; gap: 5px; flex-wrap: wrap; }
+
+  /* Unified queue */
+  .queue-section { padding: 13px 14px; border: 1px solid var(--line-soft); border-radius: 14px; background: rgba(255,255,255,.018); }
+  .queue-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .queue-head .title { color: var(--text); font-size: 12px; font-weight: 560; }
+  .queue-head .btn { margin-left: auto; }
+  .queue-counts { display: flex; gap: 4px; flex-wrap: wrap; }
+  .queue-actions { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 9px; }
+  .queue-list { display: flex; flex-direction: column; gap: 3px; margin-top: 9px; }
+  .queue-row { display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 6px 8px; border-radius: 8px; background: rgba(255,255,255,.025); font-size: 10px; }
+  .queue-row .name { flex: 1; min-width: 0; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .queue-row .meta { color: var(--faint); font-size: 9px; white-space: nowrap; }
+  .queue-row .delete { margin-left: auto; }
+  .queue-progress { width: 90px; height: 3px; border-radius: 999px; background: rgba(255,255,255,.08); overflow: hidden; flex: none; }
+  .queue-progress span { display: block; height: 100%; background: var(--accent); }
+  .queue-empty { padding: 14px 4px; color: var(--dim); font-size: 10.5px; }
+
+  /* Dashboard mixed queue */
+  .dash-shell { border: 1px solid var(--line); border-radius: var(--r-card); background: #070b12; padding: 16px; box-shadow: 0 24px 80px rgba(0,0,0,.35); }
+  .dash-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 12px; }
+  .dash-stat { padding: 10px 12px; border: 1px solid var(--line-soft); border-radius: 12px; background: rgba(255,255,255,.018); }
+  .dash-stat .label { color: var(--dim); font-size: 9px; }
+  .dash-stat .value { margin-top: 3px; color: var(--text); font-size: 18px; font-weight: 600; }
+  .dash-main { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 12px; align-items: start; }
+  .dash-queue { padding: 14px; border: 1px solid var(--line); border-radius: 17px; background: linear-gradient(180deg, #101827, #0a101a); }
+  .dash-queue-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-bottom: 10px; border-bottom: 1px solid var(--line-soft); }
+  .dash-queue-head .title { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; }
+  .dash-side { display: flex; flex-direction: column; gap: 10px; }
+  .dash-card { padding: 12px; border: 1px solid var(--line); border-radius: 15px; background: rgba(13,20,32,.74); }
+  .dash-card .title { font-size: 11px; font-weight: 560; }
+  .dash-card .line { display: flex; justify-content: space-between; gap: 10px; margin-top: 6px; color: var(--dim); font-size: 9.5px; }
+  .dash-card .line b { color: var(--text); font-weight: 550; }
+
+  /* Failure notification */
+  .failure-row { display: flex; align-items: flex-start; gap: 7px; padding: 8px; border-radius: 8px; background: rgba(255,148,168,.035); border: 1px solid rgba(255,148,168,.1); }
+  .failure-row + .failure-row { margin-top: 5px; }
+  .failure-row .name { flex: 1; min-width: 0; color: var(--text); font-size: 10px; }
+  .failure-row .error { color: var(--dim); font-size: 9px; margin-top: 2px; }
+  .failure-row .retry { flex: none; }
+  .failure-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
+  .format-chip { padding: 3px 9px; border-radius: 8px; background: rgba(255,255,255,.035); color: var(--muted); font-size: 9.5px; }
+  .format-chip.active { background: var(--accent-soft); color: var(--accent); }
+
+  .detail-panel { display: none; }
+  .detail-panel.active { display: block; }
+
+  /* Setup frames */
+  .setup-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; }
+  .setup-frame { width: 600px; height: 561px; flex: none; border: 1px solid var(--line-strong); border-radius: 18px; overflow: hidden; background: #070b12; box-shadow: 0 24px 70px rgba(0,0,0,.35); display: flex; flex-direction: column; }
+  .setup-titlebar { height: 32px; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; border-bottom: 1px solid var(--line-soft); background: rgba(10,15,24,.92); color: var(--faint); font-size: 9px; }
+  .setup-body { flex: 1; min-height: 0; padding: 17px 22px 10px; overflow: hidden; }
+  .setup-body h3 { margin: 0 0 4px; font-size: 15px; font-weight: 600; letter-spacing: -.02em; }
+  .setup-body .setup-lede { margin: 0 0 11px; color: var(--dim); font-size: 10px; line-height: 1.55; }
+  .setup-body.setup-tight { display: flex; flex-direction: column; gap: 7px; }
+  .setup-tight h3 { margin-bottom: 0; }
+  .setup-tight .input { min-height: 26px; padding: 3px 8px; font-size: 9.5px; }
+  .setup-tight .setup-switch-row { min-height: 23px; }
+  .setup-tight .setup-label { color: var(--text); font-size: 9.5px; }
+  .setup-tight .control-block { padding: 8px 9px; }
+  .setup-tight .control-label { font-size: 10.5px; margin-bottom: 6px; }
+  .setup-footer { height: 45px; display: flex; align-items: center; justify-content: space-between; padding: 0 18px; border-top: 1px solid var(--line-soft); background: rgba(8,12,19,.9); }
+  .setup-footer .left { color: var(--faint); font-size: 9px; }
+  .setup-footer .right { display: flex; gap: 6px; }
+  .setup-switch-row { display: flex; align-items: center; gap: 10px; min-height: 27px; }
+  .setup-switch-row .label { flex: 1; color: var(--text); font-size: 10.5px; }
+  .preview-wrap { padding: 8px; border-radius: 12px; border: 1px solid rgba(255,255,255,.08); background: var(--panel-deep); }
+  .preview-image { height: 52px; border-radius: 8px; border: 1px solid rgba(255,255,255,.09); background: linear-gradient(135deg, rgba(139,203,255,.4), rgba(126,226,184,.18)); }
+  .preview-tags { display: flex; flex-direction: column; gap: 5px; margin-top: 7px; padding: 7px; border-radius: 9px; border: 1px solid rgba(126,226,184,.2); background: rgba(126,226,184,.045); }
+  .preview-tag-line { display: flex; gap: 4px; flex-wrap: wrap; }
+  .preview-tag { padding: 2px 6px; border-radius: 999px; border: 1px solid rgba(126,226,184,.22); background: rgba(126,226,184,.06); color: var(--green); font-size: 8.5px; }
+
+  /* Dialog */
+  .dialog-stage { display: flex; justify-content: center; gap: 20px; flex-wrap: wrap; padding: 8px 0 4px; }
+  .dialog { width: 440px; border: 1px solid var(--line-strong); border-radius: 18px; background: linear-gradient(180deg, #111a28, #0a101a); box-shadow: 0 30px 90px rgba(0,0,0,.5); overflow: hidden; }
+  .dialog-head { padding: 15px 18px 6px; }
+  .dialog-head h3 { margin: 0; font-size: 14px; font-weight: 600; }
+  .dialog-body { padding: 2px 18px 6px; color: var(--muted); font-size: 11px; line-height: 1.65; }
+  .dialog-body b { color: var(--text); }
+  .dialog-actions { display: flex; justify-content: flex-end; gap: 7px; padding: 4px 18px 13px; }
+
+  .review-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 11px; }
+  .review-table th { text-align: left; color: var(--dim); font-weight: 500; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  .review-table td { padding: 9px 10px; border-bottom: 1px solid var(--line-soft); color: var(--muted); vertical-align: top; }
+  .review-table td:first-child { color: var(--text); white-space: nowrap; }
+  .review-table tr:last-child td { border-bottom: 0; }
+
+  .footer-note { margin-top: 42px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 16px; background: rgba(13,20,32,.7); color: var(--muted); font-size: 11.5px; }
+  .footer-note b { color: var(--text); }
+  .footer-note ul { margin: 8px 0 0; padding-left: 18px; }
+  .footer-note li { margin: 3px 0; }
+
+  @media (max-width: 1180px) {
+    .decision-grid { grid-template-columns: repeat(2, 1fr); }
+    .control-stage { grid-template-columns: 1fr; }
+    .master-detail { grid-template-columns: 1fr; }
+    .master-list { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; }
+  }
+  @media (max-width: 900px) {
+    .masthead { flex-direction: column; }
+    .meta-card { width: 100%; }
+    .app-shell { grid-template-columns: 1fr; }
+    .sidebar { display: none; }
+    .setup-frame { width: min(600px, 100%); }
+    .decision-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="masthead">
+    <div>
+      <div class="eyebrow"><span class="issue-chip">#682</span><span class="issue-chip">#684</span><span>settings &amp; queues</span></div>
+      <h1>自動動作とキュー表示を3機能で統一する</h1>
+      <p class="lede">
+        自動圧縮・Discord 自動送信・AI 自動タグ付けの<b>自動動作</b>を3分割セグメントに、
+        <b>一括処理</b>を対象範囲2チップ＋実行ボタンに統一する。
+        <b>キュー</b>は待機・実行待ち・実行中だけを同じ構成で表示し、履歴は持たない。
+        機能ごとの一時停止と、待機行の削除を追加する。
+      </p>
+    </div>
+    <div class="meta-card">
+      <div class="meta-row"><span>対象</span><b>連携・自動 / ダッシュボード / 通知</b></div>
+      <div class="meta-row"><span>自動動作</span><b>しない / 即時 / 待機</b></div>
+      <div class="meta-row"><span>キュー</span><b>待機 / 実行待ち / 実行中</b></div>
+      <div class="meta-row"><span>履歴・失敗</span><b>履歴なし / 失敗は通知</b></div>
+      <div class="meta-row"><span>表示順</span><b>ヘッダー → 機能固有 → 自動動作 → 一括処理 → キュー</b></div>
+    </div>
+  </header>
+
+  <div class="decision-grid">
+    <div class="decision">
+      <div class="q">Q1 / Q9</div>
+      <h3>一括処理は手動のみ</h3>
+      <p>既存分を自動で積まない。対象範囲は「一括処理」ボタンが対象にする写真の範囲を決める。</p>
+      <span class="ok">手動のみ</span>
+    </div>
+    <div class="decision">
+      <div class="q">Q2</div>
+      <h3>「新規」はライブラリ追加基準</h3>
+      <p>有効化後に索引された写真を新規とする。Discord の撮影時刻カットオフは廃止。</p>
+      <span class="ok">photos.created_at</span>
+    </div>
+    <div class="decision">
+      <div class="q">Q4 / Q10</div>
+      <h3>マスタースイッチは残す</h3>
+      <p>自動動作が「しない」でも一括処理は使える。無効になるのは機能のマスタースイッチがオフのときだけ。</p>
+      <span class="ok">Off でも一括処理は有効</span>
+    </div>
+    <div class="decision">
+      <div class="q">Q5 / Q13</div>
+      <h3>自動動作も一括処理もセグメント</h3>
+      <p>「自動動作」は3分割、「一括処理」の対象範囲は2分割のセグメント。カード化せず、見出し・選択・実行ボタンだけを置く。</p>
+      <span class="ok">カード化しない</span>
+    </div>
+    <div class="decision">
+      <div class="q">Q14 / Q15</div>
+      <h3>一時停止は設定に保存</h3>
+      <p>再起動後も停止を維持する。停止中は新しいジョブを取得しないだけで、実行中は完了し、自動投入は続く。</p>
+      <span class="ok">開始だけ止める</span>
+    </div>
+    <div class="decision">
+      <div class="q">Q16 / Q19</div>
+      <h3>キューは処理中だけ、失敗は通知</h3>
+      <p>待機・実行待ち・実行中だけを表示する。失敗・完了・履歴は出さず、失敗は通知モーダルで最新5件と再試行を出す。</p>
+      <span class="ok">履歴なし</span>
+    </div>
+    <div class="decision">
+      <div class="q">Q17</div>
+      <h3>ダッシュボードは混合キュー</h3>
+      <p>3機能を混ぜた一覧に置き換える。一時停止／再開はダッシュボードには置かず、各機能詳細で操作する。</p>
+      <span class="ok">表示専用</span>
+    </div>
+    <div class="decision">
+      <div class="q">Q18</div>
+      <h3>待機だけ削除できる</h3>
+      <p>行単位と一括削除を用意する。実行待ち・実行中は削除しない。一括削除の確認は件数だけを出す。</p>
+      <span class="ok">待機のみ</span>
+    </div>
+  </div>
+
+  <div class="section-label"><h2>1. 共通コントロール</h2><span>3カード + 3セットアップページ（セットアップは自動動作のみ）</span></div>
+  <p class="section-note">
+    自動動作は3分割、一括処理の対象範囲は2分割のセグメント。
+    どちらもカード化せず、見出し・選択・実行ボタンだけをカード本文に直接置く。
+    説明や補足は置かない。両者の間には区切り線を置く。
+  </p>
+
+  <div class="control-stage">
+    <div class="control-panel">
+      <h3>既定の表示（自動圧縮 / 即時・新規のみ）</h3>
+      <p class="sub">カード内では機能固有の設定の後に置く。見出しは 12 px。</p>
+      <div class="control-block">
+        <div class="control-label">自動動作</div>
+        <div class="segment-control">
+          <div class="segment">しない</div>
+          <div class="segment active">即時</div>
+          <div class="segment">待機</div>
+        </div>
+      </div>
+      <div class="divider"></div>
+      <div class="bulk-block">
+        <div class="control-label">一括処理</div>
+        <div class="segment-control two">
+          <div class="segment active">有効化以降の新規のみ</div>
+          <div class="segment">既存の未処理分も含める</div>
+        </div>
+        <button class="btn full">未圧縮画像を一括圧縮</button>
+      </div>
+    </div>
+
+    <div class="control-panel">
+      <h3>マスタースイッチと自動動作の関係</h3>
+      <p class="sub">「しない」は自動処理を止めるだけで、一括処理は止めない。</p>
+      <table class="state-table">
+        <tr><th>マスター</th><th>自動動作</th><th>新規写真</th><th>一括処理</th></tr>
+        <tr><td>オフ</td><td>—</td><td>自動では処理しない</td><td><span class="badge rose">無効</span></td></tr>
+        <tr><td>オン</td><td>しない</td><td>自動では処理しない</td><td><span class="badge accent">有効</span></td></tr>
+        <tr><td>オン</td><td>即時</td><td><span class="badge green">pending</span></td><td><span class="badge accent">有効</span></td></tr>
+        <tr><td>オン</td><td>待機</td><td><span class="badge amber">waiting</span></td><td><span class="badge accent">有効</span></td></tr>
+      </table>
+      <div class="control-block" style="margin-top:12px">
+        <div class="control-label">自動動作（マスタースイッチがオフ）</div>
+        <div class="segment-control">
+          <div class="segment disabled">しない</div>
+          <div class="segment disabled">即時</div>
+          <div class="segment disabled">待機</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-label"><h2>2. 連携・自動</h2><span>3カードの表示順を統一</span></div>
+  <p class="section-note">
+    すべてのカードで「ヘッダー＋マスタースイッチ → 機能固有の設定 → 自動動作 →
+    一括処理 → キュー」の順に並べる。タブはモック用の切り替えで、実画面では
+    左の一覧選択で切り替わる。
+  </p>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="auto" onclick="showTab('auto')">自動圧縮</button>
+    <button class="tab" data-tab="discord" onclick="showTab('discord')">Discord</button>
+    <button class="tab" data-tab="ai" onclick="showTab('ai')">AI タグ付け</button>
+  </div>
+
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark"></span> VRC PhotoN</div>
+      <div class="nav-label">Library</div>
+      <div class="nav-item"><span class="nav-dot"></span> 写真</div>
+      <div class="nav-item"><span class="nav-dot"></span> 検索</div>
+      <div class="nav-item"><span class="nav-dot"></span> 圧縮</div>
+      <div class="nav-label">System</div>
+      <div class="nav-item active"><span class="nav-dot"></span> 連携・自動</div>
+      <div class="nav-item"><span class="nav-dot"></span> 設定</div>
+    </aside>
+
+    <main class="workspace">
+      <div class="workspace-head">
+        <div>
+          <h2>連携・自動</h2>
+          <p>接続と自動動作を機能ごとに設定します。</p>
+        </div>
+        <span class="badge accent">1280 × 820</span>
+      </div>
+
+      <div class="master-detail">
+        <div class="master-list">
+          <div class="master-item" data-master="discord" onclick="showTab('discord')"><span class="dot on"></span><span class="name">Discord 連携</span><span class="mini">ON</span></div>
+          <div class="master-item active" data-master="auto" onclick="showTab('auto')"><span class="dot on"></span><span class="name">自動圧縮</span><span class="mini">ON</span></div>
+          <div class="master-item" data-master="ai" onclick="showTab('ai')"><span class="dot on"></span><span class="name">AI タグ付け</span><span class="mini">ON</span></div>
+          <div class="master-item"><span class="dot on"></span><span class="name">クリップボード</span><span class="mini">ON</span></div>
+        </div>
+
+        <div>
+          <!-- Auto compression -->
+          <section class="detail-panel active" data-panel="auto">
+            <div class="card">
+              <div class="card-head">
+                <div class="title">自動圧縮</div>
+                <span class="switch on"></span>
+              </div>
+              <div class="card-body">
+                <div class="divider"></div>
+                <div class="row">
+                  <div class="label">自動圧縮後に元画像を保持</div>
+                  <span class="switch on"></span>
+                </div>
+                <div class="divider"></div>
+                <div class="card-section-title small">圧縮設定</div>
+                <div class="format-row">
+                  <span class="format-chip">JPEG</span>
+                  <span class="format-chip active">WebP</span>
+                  <span class="format-chip">AVIF</span>
+                  <span class="format-chip">JPEG XL</span>
+                </div>
+                <div class="row"><div class="label">ロスレス</div><span class="switch on"></span></div>
+                <div class="row"><div class="label">リサイズ</div><span class="switch"></span><span class="badge">元のサイズ</span></div>
+                <div class="divider"></div>
+                <div class="control-block">
+                  <div class="control-label">自動動作</div>
+                  <div class="segment-control">
+                    <div class="segment active">しない</div>
+                    <div class="segment">即時</div>
+                    <div class="segment">待機</div>
+                  </div>
+                </div>
+                <div class="divider"></div>
+                <div class="bulk-block">
+                  <div class="control-label">一括処理</div>
+                  <div class="segment-control two">
+                    <div class="segment active">有効化以降の新規のみ</div>
+                    <div class="segment">既存の未処理分も含める</div>
+                  </div>
+                  <button class="btn full">未圧縮画像を一括圧縮</button>
+                </div>
+                <div class="divider"></div>
+                <div class="queue-section">
+                  <div class="queue-head">
+                    <div class="title">キュー</div>
+                    <div class="queue-counts">
+                      <span class="badge amber">待機 2</span>
+                      <span class="badge accent">実行待ち 1</span>
+                      <span class="badge green">実行中 1</span>
+                    </div>
+                    <button class="btn small">一時停止</button>
+                  </div>
+                  <div class="queue-actions">
+                    <button class="btn small primary">待機をすべて開始</button>
+                    <button class="btn small">待機をすべて削除</button>
+                  </div>
+                  <div class="queue-list">
+                    <div class="queue-row"><span class="badge amber">待機</span><span class="name">vrc-photon-1042.png</span><span class="meta">自動圧縮</span><button class="btn small delete">削除</button></div>
+                    <div class="queue-row"><span class="badge accent">実行待ち</span><span class="name">vrc-photon-1041.png</span><span class="meta">自動圧縮</span></div>
+                    <div class="queue-row"><span class="badge green">実行中</span><span class="name">vrc-photon-1040.png</span><div class="queue-progress"><span style="width:62%"></span></div><span class="meta">62%</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Discord -->
+          <section class="detail-panel" data-panel="discord">
+            <div class="card">
+              <div class="card-head">
+                <div class="title">Discord 連携</div>
+                <span class="switch on"></span>
+              </div>
+              <div class="card-body">
+                <div class="divider"></div>
+                <div class="card-section-title small">Webhook URL</div>
+                <div class="input masked">https://discord.com/api/webhooks/……/••••••••</div>
+                <div class="row"><div class="label">送信先名</div><span class="input" style="min-width:180px">Discord</span></div>
+                <div class="divider"></div>
+                <div class="row"><div class="label">原画を優先</div><span class="switch on"></span></div>
+                <div class="row"><div class="label">プレイヤー名を含める</div><span class="switch"></span></div>
+                <div class="divider"></div>
+                <div class="card-section-title small">圧縮設定</div>
+                <div class="format-row">
+                  <span class="format-chip">JPEG</span>
+                  <span class="format-chip active">WebP</span>
+                  <span class="format-chip">AVIF</span>
+                  <span class="format-chip">JPEG XL</span>
+                </div>
+                <div class="divider"></div>
+                <div class="control-block">
+                  <div class="control-label">自動動作</div>
+                  <div class="segment-control">
+                    <div class="segment">しない</div>
+                    <div class="segment">即時</div>
+                    <div class="segment active">待機</div>
+                  </div>
+                </div>
+                <div class="divider"></div>
+                <div class="bulk-block">
+                  <div class="control-label">一括処理</div>
+                  <div class="segment-control two">
+                    <div class="segment">有効化以降の新規のみ</div>
+                    <div class="segment active">既存の未処理分も含める</div>
+                  </div>
+                  <button class="btn full">未送信を一括送信</button>
+                </div>
+                <div class="divider"></div>
+                <div class="queue-section">
+                  <div class="queue-head">
+                    <div class="title">キュー</div>
+                    <div class="queue-counts">
+                      <span class="badge amber">待機 1</span>
+                      <span class="badge accent">実行待ち 1</span>
+                      <span class="badge green">実行中 1</span>
+                    </div>
+                    <button class="btn small">一時停止</button>
+                  </div>
+                  <div class="queue-actions">
+                    <button class="btn small primary">待機をすべて開始</button>
+                    <button class="btn small">待機をすべて削除</button>
+                  </div>
+                  <div class="queue-list">
+                    <div class="queue-row"><span class="badge amber">待機</span><span class="name">vrc-photon-1042.png</span><span class="meta">VRC PhotoN</span><button class="btn small delete">削除</button></div>
+                    <div class="queue-row"><span class="badge accent">実行待ち</span><span class="name">vrc-photon-1041.png</span><span class="meta">VRC PhotoN</span></div>
+                    <div class="queue-row"><span class="badge green">実行中</span><span class="name">vrc-photon-1040.png</span><div class="queue-progress"><span style="width:38%"></span></div><span class="meta">38%</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- AI -->
+          <section class="detail-panel" data-panel="ai">
+            <div class="card">
+              <div class="card-head">
+                <div class="title">AI タグ付け</div>
+                <span class="switch on"></span>
+              </div>
+              <div class="card-body">
+                <div class="divider"></div>
+                <div class="card-section-title small">バックエンド</div>
+                <div class="chip-row">
+                  <span class="chip active">自動</span>
+                  <span class="chip">Vulkan</span>
+                  <span class="chip">CPU</span>
+                </div>
+                <div class="divider"></div>
+                <div class="control-block">
+                  <div class="control-label">自動動作</div>
+                  <div class="segment-control">
+                    <div class="segment">しない</div>
+                    <div class="segment active">即時</div>
+                    <div class="segment">待機</div>
+                  </div>
+                </div>
+                <div class="divider"></div>
+                <div class="bulk-block">
+                  <div class="control-label">一括処理</div>
+                  <div class="segment-control two">
+                    <div class="segment active">有効化以降の新規のみ</div>
+                    <div class="segment">既存の未処理分も含める</div>
+                  </div>
+                  <button class="btn full">未タグ付けのものを一括処理</button>
+                </div>
+                <div class="divider"></div>
+                <div class="queue-section">
+                  <div class="queue-head">
+                    <div class="title">キュー</div>
+                    <div class="queue-counts">
+                      <span class="badge amber">待機 3</span>
+                      <span class="badge accent">実行待ち 1</span>
+                      <span class="badge green">実行中 1</span>
+                    </div>
+                    <button class="btn small">一時停止</button>
+                  </div>
+                  <div class="queue-actions">
+                    <button class="btn small primary">待機をすべて開始</button>
+                    <button class="btn small">待機をすべて削除</button>
+                  </div>
+                  <div class="queue-list">
+                    <div class="queue-row"><span class="badge amber">待機</span><span class="name">vrc-photon-1039.png</span><span class="meta">AI タグ付け</span><button class="btn small delete">削除</button></div>
+                    <div class="queue-row"><span class="badge accent">実行待ち</span><span class="name">vrc-photon-1038.png</span><span class="meta">AI タグ付け</span></div>
+                    <div class="queue-row"><span class="badge green">実行中</span><span class="name">vrc-photon-1037.png</span><div class="queue-progress"><span style="width:71%"></span></div><span class="meta">雰囲気タグを生成中</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <div class="section-label"><h2>3. ダッシュボード</h2><span>3機能の混合キュー / 一時停止は置かない</span></div>
+  <p class="section-note">
+    現行の圧縮専用キューパネルを、3機能を混合したキューに置き換える。
+    待機・実行待ち・実行中だけを出し、失敗・完了・履歴は出さない。
+    待機行はここからも削除できる。一時停止／再開は各機能詳細にだけ置く。
+  </p>
+
+  <div class="dash-shell">
+    <div class="dash-stats">
+      <div class="dash-stat"><div class="label">写真</div><div class="value">12,480</div></div>
+      <div class="dash-stat"><div class="label">未完了</div><div class="value">7</div></div>
+      <div class="dash-stat"><div class="label">ライブラリ</div><div class="value">84.2 GB</div></div>
+      <div class="dash-stat"><div class="label">デーモン</div><div class="value" style="font-size:14px">稼働中</div></div>
+    </div>
+    <div class="dash-main">
+      <div class="dash-queue">
+        <div class="dash-queue-head">
+          <div class="title">キュー</div>
+          <div class="queue-counts">
+            <span class="badge amber">待機 4</span>
+            <span class="badge accent">実行待ち 2</span>
+            <span class="badge green">実行中 1</span>
+          </div>
+        </div>
+        <div class="queue-list">
+          <div class="queue-row"><span class="badge accent">自動圧縮</span><span class="badge amber">待機</span><span class="name">vrc-photon-1042.png</span><span class="meta">自動圧縮</span><button class="btn small delete">削除</button></div>
+          <div class="queue-row"><span class="badge blue">Discord</span><span class="badge accent">実行待ち</span><span class="name">vrc-photon-1041.png</span><span class="meta">VRC PhotoN</span></div>
+          <div class="queue-row"><span class="badge green">AI タグ付け</span><span class="badge green">実行中</span><span class="name">vrc-photon-1038.png</span><div class="queue-progress"><span style="width:71%"></span></div><span class="meta">雰囲気タグを生成中</span></div>
+          <div class="queue-row"><span class="badge accent">自動圧縮</span><span class="badge amber">待機</span><span class="name">vrc-photon-1037.png</span><span class="meta">自動圧縮</span><button class="btn small delete">削除</button></div>
+          <div class="queue-row"><span class="badge blue">Discord</span><span class="badge amber">待機</span><span class="name">vrc-photon-1036.png</span><span class="meta">VRC PhotoN</span><button class="btn small delete">削除</button></div>
+          <div class="queue-row"><span class="badge green">AI タグ付け</span><span class="badge accent">実行待ち</span><span class="name">vrc-photon-1035.png</span><span class="meta">AI タグ付け</span></div>
+        </div>
+
+      </div>
+      <div class="dash-side">
+        <div class="dash-card"><div class="title">デーモン</div><div class="line"><span>状態</span><b>稼働中</b></div><div class="line"><span>最終同期</span><b>12 秒前</b></div><div class="line"><span>監視</span><b>有効</b></div></div>
+        <div class="dash-card"><div class="title">セッション</div><div class="line"><span>ワールド</span><b>The Black Cat</b></div><div class="line"><span>同接</span><b>8 人</b></div></div>
+        <div class="dash-card"><div class="title">モニター</div><div class="line"><span>写真フォルダ</span><b>D:\VRChat</b></div><div class="line"><span>ログ</span><b>監視中</b></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-label"><h2>4. 初回セットアップ</h2><span>自動動作だけ / 一括処理は表示しない</span></div>
+  <p class="section-note">
+    セットアップでは自動動作のセグメントだけを置く。対象範囲と一括処理ボタンは
+    「連携・自動」の詳細に集約し、初回の画面を複雑にしない。
+    自動圧縮と Discord のマスタースイッチは現行どおり残す。
+  </p>
+
+  <div class="setup-grid">
+    <!-- Setup compression -->
+    <div class="setup-frame setup-tight">
+      <div class="setup-titlebar"><span>セットアップ</span><span>3 / 8</span></div>
+      <div class="setup-body">
+        <h3>自動圧縮</h3>
+        <div class="setup-switch-row"><span class="label">自動圧縮</span><span class="switch on"></span></div>
+        <div class="setup-switch-row"><span class="label">自動圧縮後に元画像を保持</span><span class="switch on"></span></div>
+        <div class="divider"></div>
+        <div class="card-section-title">圧縮設定</div>
+        <div class="format-row" style="margin:5px 0 6px">
+          <span class="format-chip">JPEG</span>
+          <span class="format-chip active">WebP</span>
+          <span class="format-chip">AVIF</span>
+          <span class="format-chip">JPEG XL</span>
+        </div>
+        <div class="setup-switch-row"><span class="label">ロスレス</span><span class="switch on"></span></div>
+        <div class="divider"></div>
+        <div class="control-block">
+          <div class="control-label">自動動作</div>
+          <div class="segment-control">
+            <div class="segment">しない</div>
+            <div class="segment active">即時</div>
+            <div class="segment">待機</div>
+          </div>
+        </div>
+      </div>
+      <div class="setup-footer"><span class="left">戻る</span><span class="right"><button class="btn small primary">次へ</button></span></div>
+    </div>
+
+    <!-- Setup Discord -->
+    <div class="setup-frame setup-tight">
+      <div class="setup-titlebar"><span>セットアップ</span><span>4 / 8</span></div>
+      <div class="setup-body">
+        <h3>Discord 連携</h3>
+        <div class="setup-switch-row"><span class="label">Discord 連携</span><span class="switch on"></span></div>
+        <div class="divider"></div>
+        <div class="setup-label">Webhook URL</div>
+        <div class="input">https://discord.com/api/webhooks/…</div>
+        <div class="setup-label">送信先名</div>
+        <div class="input">Discord</div>
+        <div class="setup-switch-row"><span class="label">プレイヤー名を含める</span><span class="switch"></span></div>
+        <div class="setup-switch-row"><span class="label">原画を優先</span><span class="switch on"></span></div>
+        <div class="divider"></div>
+        <div class="control-block">
+          <div class="control-label">自動動作</div>
+          <div class="segment-control">
+            <div class="segment active">しない</div>
+            <div class="segment">即時</div>
+            <div class="segment">待機</div>
+          </div>
+        </div>
+      </div>
+      <div class="setup-footer"><span class="left">戻る</span><span class="right"><button class="btn small primary">次へ</button></span></div>
+    </div>
+
+    <!-- Setup AI -->
+    <div class="setup-frame setup-tight">
+      <div class="setup-titlebar"><span>セットアップ</span><span>8 / 8</span></div>
+      <div class="setup-body">
+        <h3>AI タグ付け</h3>
+        <p class="setup-lede" style="margin-bottom:4px">写真の場所・雰囲気・人数をローカルで推定し、検索できるタグを付けます。</p>
+        <div class="control-block">
+          <div class="control-label">自動動作</div>
+          <div class="segment-control">
+            <div class="segment active">しない</div>
+            <div class="segment">即時</div>
+            <div class="segment">待機</div>
+          </div>
+        </div>
+        <div class="preview-wrap">
+          <div class="preview-image"></div>
+          <div class="preview-tags">
+            <div class="preview-tag-line"><span class="preview-tag">✦ 屋外</span><span class="preview-tag">✦ 夜</span></div>
+            <div class="preview-tag-line"><span class="preview-tag">人数 2</span><span class="preview-tag">場所 屋外</span></div>
+          </div>
+        </div>
+        <div style="color:var(--green);font-size:9px">プラグインは BOOTH で配布しています。</div>
+      </div>
+      <div class="setup-footer"><span class="left">戻る</span><span class="right"><button class="btn small primary">完了</button></span></div>
+    </div>
+  </div>
+
+  <div class="section-label"><h2>5. 確認ダイアログ</h2><span>一括送信 / 待機の一括削除</span></div>
+  <p class="section-note">
+    確認ダイアログは件数だけを出す。注意書きや補足は置かない。
+    0件のときはダイアログを出さない。
+  </p>
+
+  <div class="dialog-stage">
+    <div class="dialog">
+      <div class="dialog-head"><h3>未送信写真の一括送信</h3></div>
+      <div class="dialog-body">
+        送信対象: <b>128 件</b>
+      </div>
+      <div class="dialog-actions">
+        <button class="btn small">キャンセル</button>
+        <button class="btn small primary">送信する</button>
+      </div>
+    </div>
+    <div class="dialog">
+      <div class="dialog-head"><h3>待機中の行を削除</h3></div>
+      <div class="dialog-body">
+        削除対象: <b>4 件</b>
+      </div>
+      <div class="dialog-actions">
+        <button class="btn small">キャンセル</button>
+        <button class="btn small primary">削除する</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-label"><h2>6. 失敗通知</h2><span>履歴の代わりに最新5件＋再試行</span></div>
+  <p class="section-note">
+    失敗行はキューに残さない。通知ベルを開くと「処理の失敗」セクションが出る。
+    機能バッジ、写真名、エラー概要、再試行を最新5件まで表示する。
+    機能ごとの件数と「すべて再試行」も出す。
+  </p>
+
+  <div class="dialog-stage">
+    <div class="dialog" style="width:520px">
+      <div class="dialog-head"><h3>処理の失敗</h3></div>
+      <div class="dialog-body">
+        <div class="failure-row"><span class="badge accent">自動圧縮</span><div style="flex:1;min-width:0"><div class="name">vrc-photon-1042.png</div><div class="error">圧縮に失敗しました（出力ファイルを書き込めません）</div></div><button class="btn small retry">再試行</button></div>
+        <div class="failure-row"><span class="badge blue">Discord</span><div style="flex:1;min-width:0"><div class="name">vrc-photon-1041.png</div><div class="error">Webhook が 401 を返しました</div></div><button class="btn small retry">再試行</button></div>
+        <div class="failure-row"><span class="badge green">AI タグ付け</span><div style="flex:1;min-width:0"><div class="name">vrc-photon-1038.png</div><div class="error">sidecar がタイムアウトしました</div></div><button class="btn small retry">再試行</button></div>
+        <div class="failure-row"><span class="badge accent">自動圧縮</span><div style="flex:1;min-width:0"><div class="name">vrc-photon-1035.png</div><div class="error">画像を読み込めません</div></div><button class="btn small retry">再試行</button></div>
+        <div class="failure-row"><span class="badge blue">Discord</span><div style="flex:1;min-width:0"><div class="name">vrc-photon-1034.png</div><div class="error">アップロードが 413 で拒否されました</div></div><button class="btn small retry">再試行</button></div>
+        <div class="failure-actions"><button class="btn small">すべて再試行</button></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-label"><h2>7. 判断と挙動の確認</h2><span>実装前に合意する範囲</span></div>
+  <table class="review-table">
+    <thead><tr><th>項目</th><th>決定</th><th>補足</th></tr></thead>
+    <tbody>
+      <tr><td>自動動作</td><td>しない / 即時 / 待機</td><td>3機能で同じ `AutoMode`。3分割のセグメントで選ぶ。</td></tr>
+      <tr><td>マスタースイッチ</td><td>機能ごとに残す</td><td>自動圧縮は `auto_compress_enabled`、Discord は `discord_enabled`、AI は `ai_tagging_enabled`。</td></tr>
+      <tr><td>一括処理</td><td>対象範囲2分割セグメント ＋ 実行ボタン</td><td>「対象範囲」ではなく「一括処理」と表示し、自動動作と同じセグメントデザインにする。自動動作との間に区切り線を置く。</td></tr>
+      <tr><td>「しない」の一括処理</td><td>有効</td><td>マスタースイッチがオンの間は使える。無効になるのはマスタースイッチがオフのときだけ。</td></tr>
+      <tr><td>表記</td><td>ヒント・重複ラベル・空表示なし</td><td>#627 / #629 の「連携・自動タブの余計な表記削除」に合わせる。</td></tr>
+      <tr><td>表示順</td><td>ヘッダー → 機能固有 → 自動動作 → 一括処理 → キュー</td><td>3カードで同じ順にする。</td></tr>
+      <tr><td>セットアップ</td><td>自動動作だけ</td><td>対象範囲・一括処理は表示しない。圧縮と Discord のマスタースイッチは残す。</td></tr>
+      <tr><td>AI の設定導線</td><td>削除</td><td>AI カードの「設定を開く」ボタンと案内文を置かない。</td></tr>
+      <tr><td>AI 即時</td><td>準備完了時のみ積む</td><td>未準備では積まない。待機は未準備でも waiting で積む。</td></tr>
+      <tr><td>Discord の対象</td><td>未送信の全写真</td><td>送信成功なし・アクティブ送信なし・削除中でない。失敗・取消は含む。</td></tr>
+      <tr><td>キューの内容</td><td>待機・実行待ち・実行中だけ</td><td>失敗・完了・履歴は表示しない。失敗は通知へ。</td></tr>
+      <tr><td>ダッシュボード</td><td>3機能の混合キュー</td><td>圧縮専用パネルを置き換える。一時停止／再開は置かない。</td></tr>
+      <tr><td>一時停止</td><td>設定に保存 / 再起動後も維持</td><td>停止中は新規取得を止める。実行中は完了し、自動投入は続く。</td></tr>
+      <tr><td>待機の削除</td><td>行単位＋一括</td><td>待機だけ。実行待ち・実行中は削除しない。一括は件数確認。</td></tr>
+      <tr><td>履歴</td><td>表示しない</td><td>Discord の送信履歴カードと「履歴を消去」を廃止する。</td></tr>
+      <tr><td>失敗通知</td><td>最新5件＋再試行</td><td>機能バッジ・写真名・エラー・再試行。件数と一括再試行も出す。</td></tr>
+    </tbody>
+  </table>
+
+  <div class="section-label"><h2>8. 移行と挙動変化</h2><span>リリースノートに明記する</span></div>
+  <table class="review-table">
+    <thead><tr><th>旧設定</th><th>新設定</th><th>利用者に見える変化</th></tr></thead>
+    <tbody>
+      <tr><td>`auto_compress`（bool）</td><td>`auto_compress_enabled`</td><td>機能のマスタースイッチ。false はスイッチオフとして移行する。</td></tr>
+      <tr><td>`auto_compress_immediate`</td><td>`auto_compress.mode`</td><td>true→即時 / false→待機。マスタースイッチがオフなら自動動作は動かない。</td></tr>
+      <tr><td>`auto_compress_backlog`</td><td>`auto_compress.scope`</td><td>true→既存も含める / false→新規のみ。初回スキャンでは自動投入しない。</td></tr>
+      <tr><td>`discord_auto_mode`</td><td>`discord_auto.mode`</td><td>そのまま。`discord_auto_since` は `activated_at` に移り、自動投入の撮影時刻判定には使わない。</td></tr>
+      <tr><td>`ai_tagging_auto` (bool)</td><td>`ai_tagging_auto.mode`</td><td>true→即時 / false→しない。待機が新設され、未準備でも waiting で積める。</td></tr>
+      <tr><td>—</td><td>`auto_compress_queue_paused` / `discord_queue_paused` / `ai_tagging_queue_paused`</td><td>新規。既定 false。再起動後も停止状態を維持する。</td></tr>
+      <tr><td>Discord 送信履歴</td><td>なし</td><td>履歴カードと「履歴を消去」を削除する。terminal 行は通知とテスト送信の結果解決にだけ使う。</td></tr>
+    </tbody>
+  </table>
+
+  <div class="footer-note">
+    <b>レビュー時の確認ポイント</b>
+    <ul>
+      <li>マスタースイッチがオンのまま自動動作を「しない」にしても、一括処理が使えるか。</li>
+      <li>自動動作が3分割セグメント、一括処理の対象範囲が2分割セグメントになっているか。</li>
+      <li>3カードの表示順が「ヘッダー → 機能固有 → 自動動作 → 一括処理 → キュー」で揃っているか。</li>
+      <li>自動動作と一括処理がカード化されず、見出し・セグメント・実行ボタンだけになっているか。両者の間に区切り線があるか。</li>
+      <li>確認ダイアログが件数だけになっているか。余計な注意書きがないか。</li>
+      <li>ヒント行・重複ラベル・空表示が残っていないか。</li>
+      <li>AI カードから「設定を開く」ボタンと案内文が消えているか。</li>
+      <li>セットアップ3ページに一括処理がなく、自動動作だけがあるか。</li>
+      <li>ダッシュボードが3機能の混合キューになり、機能バッジと待機行の削除があるか。</li>
+      <li>機能詳細のキューに一時停止／再開、待機をすべて開始／削除、待機行の削除があるか。</li>
+      <li>キューに失敗・完了・履歴が出ず、失敗が通知モーダルに最新5件で出るか。</li>
+      <li>Discord の送信履歴カードと「履歴を消去」が消えているか。</li>
+      <li>旧設定の移行と、`discord_auto_since` 廃止の挙動変化に納得できるか。</li>
+    </ul>
+  </div>
+</div>
+
+<script>
+  function showTab(name) {
+    document.querySelectorAll('.detail-panel').forEach((panel) => {
+      panel.classList.toggle('active', panel.dataset.panel === name);
+    });
+    document.querySelectorAll('.tab').forEach((tab) => {
+      tab.classList.toggle('active', tab.dataset.tab === name);
+    });
+    document.querySelectorAll('.master-item[data-master]').forEach((item) => {
+      item.classList.toggle('active', item.dataset.master === name);
+    });
+  }
+</script>
+</body>
+</html>
