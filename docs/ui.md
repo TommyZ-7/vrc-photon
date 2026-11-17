@@ -240,7 +240,11 @@ OSウィンドウ（背景ブラー要求）
 AI タグ付けカードは、ヘッダーの有効化スイッチ、バックエンド選択、自動動作の
 3分割セグメント、一括処理（対象範囲2分割セグメント＋実行ボタン）、キュー
 （待機・実行待ち・実行中）をこの順に表示する。失敗件数・最新失敗・設定画面への
-ボタンは置かない。状態バッジは表示しない。
+ボタンは置かない。状態バッジは表示しない。有効化スイッチは
+プラグイン導入時だけ表示する。未導入時は一覧の状態ドットを淡色にし、カード本文を
+淡色・操作不可にする。この間の実効状態は無効で、保存値は書き換えない。
+導入済みでモデルや probe が未準備でもスイッチは表示し、バックエンド選択だけを
+準備完了まで出さない。
 
 自動圧縮カードは、マスタースイッチ、自動圧縮後に元画像を保持、圧縮設定
 （形式・品質・ロスレス・リサイズ）、自動動作、一括処理、キューをこの順に表示する。
@@ -327,7 +331,7 @@ AI タグ付けカードは、ヘッダーの有効化スイッチ、バック�
 - Discord: 連携スイッチ、Webhook URL、送信先名、プレイヤー名を含める、原画を優先、自動動作の3分割セグメント。連携がOFFのときはスイッチより下を淡色にして操作を止める。Webhook はページを離れるときに HTTPS / ホスト / パスを検証し、不正なら留まってインライン表示する。空欄は変更なし。一括処理は置かず、非公開インスタンスの警告も出さない。
 - 自動圧縮: 自動圧縮、自動圧縮後に元画像を保持の2スイッチ、形式チップ（JPEG / WebP / AVIF / JPEG XL）、ロスレス、自動動作の3分割セグメント。元画像保持がOFFのときは警告を出す。自動圧縮がOFFのときは本文を淡色にして操作を止める。一括処理は置かない。
 - テーマ: 設定画面と同じメイン18色・サブ18色（6色×3行、30 px スウォッチ）を表示し、選択を即時反映・保存する。
-- AIタグ付け: 自動動作の3分割セグメントだけを置く。機能の紹介文、BOOTH でプラグインを購入できる旨、写真上に AI タグ（場所・雰囲気・人数・場所の推定）が表示されるプレビューを出す。実際の有効化・プラグイン導入・モデルDLは設定画面で行う。一括処理・設定画面への導線は置かない。
+- AIタグ付け: 機能の紹介文、BOOTH でプラグインを購入できる旨、写真上に AI タグ（場所・雰囲気・人数・場所の推定）が表示されるプレビューを出す。自動動作・一括処理・設定操作は置かない。実際の有効化・プラグイン導入・モデルDLは設定画面で行う。設定画面への導線も置かない。
 - 初回には自動送信・送信履歴・Discord圧縮、圧縮の画質・リサイズ、AIのバックエンド・閾値・variant管理、ワールド名解決、最大FPS、自動更新、サムネイルキャッシュ、クリップボードを含めない。これらは設定画面に残す。
 
 ## 3. キーボードショートカット
@@ -459,6 +463,7 @@ AI タグ付けカードは、ヘッダーの有効化スイッチ、バック�
 - モック: [ui-glass-ribbon-mockup.html](ui-glass-ribbon-mockup.html)
 - セッション表示の設計・モック: [2026-11-09-session-groups-design.md](superpowers/specs/2026-11-09-session-groups-design.md) / [ui-session-groups-mockup.html](ui-session-groups-mockup.html)
 - 自動動作とキュー表示の統一 #682 / #684: [2026-11-17-issue-682-auto-behavior-unification-design.md](superpowers/specs/2026-11-17-issue-682-auto-behavior-unification-design.md) / [2026-11-17-issue-682-auto-behavior-unification.md](superpowers/plans/2026-11-17-issue-682-auto-behavior-unification.md) / [ui-682-auto-behavior-unification-mockup.html](ui-682-auto-behavior-unification-mockup.html)
+- AIタグ付けの表示条件 #692 / #693: [2026-11-17-issue-692-693-ai-tagging-visibility-design.md](superpowers/specs/2026-11-17-issue-692-693-ai-tagging-visibility-design.md) / [2026-11-17-issue-692-693-ai-tagging-visibility.md](superpowers/plans/2026-11-17-issue-692-693-ai-tagging-visibility.md) / [ui-692-693-ai-tagging-visibility-mockup.html](ui-692-693-ai-tagging-visibility-mockup.html)
 - セッションの一括格納 #660: [2026-11-16-issue-660-collapse-all-design.md](superpowers/specs/2026-11-16-issue-660-collapse-all-design.md) / [2026-11-16-issue-660-collapse-all.md](superpowers/plans/2026-11-16-issue-660-collapse-all.md) / [ui-660-collapse-all-mockup.html](ui-660-collapse-all-mockup.html)
 - セッション表示フォローアップ #492–#501: [2026-11-10-issue-492-501-followups.md](superpowers/plans/2026-11-10-issue-492-501-followups.md) / [ui-492-495-499-mockup.html](ui-492-495-499-mockup.html)
 - 余計な表記の削除 #490: [2026-11-10-issue-490-remove-labels-design.md](superpowers/specs/2026-11-10-issue-490-remove-labels-design.md) / [2026-11-10-issue-490-remove-labels.md](superpowers/plans/2026-11-10-issue-490-remove-labels.md) / [ui-490-remove-labels-mockup.html](ui-490-remove-labels-mockup.html)
