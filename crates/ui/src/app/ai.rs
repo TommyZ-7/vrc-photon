@@ -514,11 +514,16 @@ pub(crate) struct AiDashboardView {
     pub(crate) more: usize,
 }
 
+/// AI tagging only runs while the plugin is installed. The stored preference
+/// is kept as-is so reinstalling the plugin restores it.
+pub(crate) fn effective_ai_tagging_enabled(configured: bool, installed: bool) -> bool {
+    configured && installed
+}
+
 /// Builds the dashboard view. The card is hidden for an uninstalled plugin and
 /// for a ready plugin that the user has not enabled; a not-ready plugin stays
 /// visible so the card can point at setup.
-pub(crate) fn ai_dashboard_view(ai: &AiUiState, enabled: bool) -> AiDashboardView {
-    let installed = ai.installed();
+pub(crate) fn ai_dashboard_view(ai: &AiUiState, enabled: bool) -> AiDashboardView {    let installed = ai.installed();
     let ready = ai.ready();
     let visible = installed && (!ready || enabled);
     if !visible {
@@ -1978,11 +1983,12 @@ mod tests {
         ai_error_label_in, ai_error_summary_in, ai_error_toast_in, ai_job_error_is_notifiable,
         ai_manifest_view, ai_plugin_card_state, ai_response_outcome, ai_tag_view, ai_tag_views,
         apply_install_event, backend_options, backend_selection_is_disabled_when_not_ready,
-        collect_ai_snapshot, download_progress_bar_ratio, enqueue_manual_retag,
-        install_event_applies_to_ai, installation_row_id, is_active_installation, load_photo_ai,
-        model_progress_ratio, model_ready_toast_pending, needs_license_consent, people_label,
-        people_label_in, place_label, place_label_with_confidence, probe_failure_info,
-        request_error_kind, uninstall_request_args, variant_backend_label,
+        collect_ai_snapshot, download_progress_bar_ratio, effective_ai_tagging_enabled,
+        enqueue_manual_retag, install_event_applies_to_ai, installation_row_id,
+        is_active_installation, load_photo_ai, model_progress_ratio, model_ready_toast_pending,
+        needs_license_consent, people_label, people_label_in, place_label,
+        place_label_with_confidence, probe_failure_info, request_error_kind, uninstall_request_args,
+        variant_backend_label,
     };
     use vrc_photon_ai_protocol::{
         BackendInfo, Catalog, ModelState, PluginInstallStatus, Probe, TagDefinition,
@@ -2343,6 +2349,14 @@ mod tests {
         ai.installations.push(sample_install());
         assert!(ai.installed());
         assert!(!ai.ready());
+    }
+
+    #[test]
+    fn ai_tagging_is_disabled_while_the_plugin_is_not_installed() {
+        assert!(!effective_ai_tagging_enabled(true, false));
+        assert!(!effective_ai_tagging_enabled(false, false));
+        assert!(effective_ai_tagging_enabled(true, true));
+        assert!(!effective_ai_tagging_enabled(false, true));
     }
 
     #[test]
