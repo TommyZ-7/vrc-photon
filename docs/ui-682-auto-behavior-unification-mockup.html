@@ -353,7 +353,7 @@
   <p class="section-note">
     自動動作は3分割、一括処理の対象範囲は2分割のセグメント。
     どちらもカード化せず、見出し・選択・実行ボタンだけをカード本文に直接置く。
-    説明や補足は置かない。
+    説明や補足は置かない。両者の間には区切り線を置く。
   </p>
 
   <div class="control-stage">
@@ -368,6 +368,7 @@
           <div class="segment">待機</div>
         </div>
       </div>
+      <div class="divider"></div>
       <div class="bulk-block">
         <div class="control-label">一括処理</div>
         <div class="segment-control two">
@@ -474,6 +475,7 @@
                     <div class="segment">待機</div>
                   </div>
                 </div>
+                <div class="divider"></div>
                 <div class="bulk-block">
                   <div class="control-label">一括処理</div>
                   <div class="segment-control two">
@@ -539,7 +541,7 @@
                     <div class="segment active">待機</div>
                   </div>
                 </div>
-                <div class="warning amber">非公開インスタンスで撮影した写真も送信対象になります。Webhook の投稿先を確認してください。</div>
+                <div class="divider"></div>
                 <div class="bulk-block">
                   <div class="control-label">一括処理</div>
                   <div class="segment-control two">
@@ -597,6 +599,7 @@
                     <div class="segment">待機</div>
                   </div>
                 </div>
+                <div class="divider"></div>
                 <div class="bulk-block">
                   <div class="control-label">一括処理</div>
                   <div class="segment-control two">
@@ -822,7 +825,7 @@
     <tbody>
       <tr><td>自動動作</td><td>しない / 即時 / 待機</td><td>3機能で同じ `AutoMode`。3分割のセグメントで選ぶ。</td></tr>
       <tr><td>マスタースイッチ</td><td>機能ごとに残す</td><td>自動圧縮は `auto_compress_enabled`、Discord は `discord_enabled`、AI は `ai_tagging_enabled`。</td></tr>
-      <tr><td>一括処理</td><td>対象範囲2分割セグメント ＋ 実行ボタン</td><td>「対象範囲」ではなく「一括処理」と表示し、自動動作と同じセグメントデザインにする。</td></tr>
+      <tr><td>一括処理</td><td>対象範囲2分割セグメント ＋ 実行ボタン</td><td>「対象範囲」ではなく「一括処理」と表示し、自動動作と同じセグメントデザインにする。自動動作との間に区切り線を置く。</td></tr>
       <tr><td>「しない」の一括処理</td><td>有効</td><td>マスタースイッチがオンの間は使える。無効になるのはマスタースイッチがオフのときだけ。</td></tr>
       <tr><td>表記</td><td>ヒント・重複ラベル・空表示なし</td><td>#627 / #629 の「連携・自動タブの余計な表記削除」に合わせる。</td></tr>
       <tr><td>表示順</td><td>ヘッダー → 機能固有 → 自動動作 → 一括処理 → キュー</td><td>3カードで同じ順にする。</td></tr>
@@ -859,7 +862,7 @@
       <li>マスタースイッチがオンのまま自動動作を「しない」にしても、一括処理が使えるか。</li>
       <li>自動動作が3分割セグメント、一括処理の対象範囲が2分割セグメントになっているか。</li>
       <li>3カードの表示順が「ヘッダー → 機能固有 → 自動動作 → 一括処理 → キュー」で揃っているか。</li>
-      <li>自動動作と一括処理がカード化されず、見出し・セグメント・実行ボタンだけになっているか。</li>
+      <li>自動動作と一括処理がカード化されず、見出し・セグメント・実行ボタンだけになっているか。両者の間に区切り線があるか。</li>
       <li>確認ダイアログが件数だけになっているか。余計な注意書きがないか。</li>
       <li>ヒント行・重複ラベル・空表示が残っていないか。</li>
       <li>AI カードから「設定を開く」ボタンと案内文が消えているか。</li>
