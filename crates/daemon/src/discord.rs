@@ -198,6 +198,9 @@ pub(crate) fn process_next_send(
 /// Phase one: validate the integration and claim a row.
 fn claim_ready_send(db: &Db, now: i64) -> Result<Option<SendOutboxEntry>> {
     let settings = AppSettings::load(db)?;
+    if settings.discord_queue_paused {
+        return Ok(None);
+    }
     if ready_webhook(db, &settings)?.is_none() {
         return Ok(None);
     }
@@ -1148,6 +1151,33 @@ mod tests {
             process_next_send(&db, &transport, &events, 100).unwrap(),
             ProcessOutcome::Idle
         ));
+        assert!(transport.requests.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn paused_queue_does_not_claim_pending_sends() {
+        let dir = tempfile::tempdir().unwrap();
+        let (db, photo) = discord_db(&dir);
+        enable_discord(&db, "https://discord.com/api/webhooks/1/t");
+        with_db(&db, |db| {
+            let mut settings = AppSettings::load(db).unwrap();
+            settings.discord_queue_paused = true;
+            settings.save(db).unwrap();
+            db.enqueue_send(
+                photo,
+                SendKind::Photo,
+                SendOrigin::Manual,
+                SendStatus::Pending,
+            )
+            .unwrap();
+        });
+        let transport = FakeTransport::default();
+        let events = EventBus::default();
+        assert!(matches!(
+            process_next_send(&db, &transport, &events, 100).unwrap(),
+            ProcessOutcome::Idle
+        ));
+        assert_eq!(with_db(&db, |db| db.count_pending_sends().unwrap()), 1);
         assert!(transport.requests.lock().unwrap().is_empty());
     }
 

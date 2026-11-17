@@ -79,6 +79,7 @@ pub(crate) fn preferred_display_derivative(derivatives: &[Derivative]) -> Option
 /// Tracks the cache size between scans. `known_bytes` is `None` while the
 /// cache has not been measured yet, which forces the first prune decision to
 /// scan even when nothing was generated.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn worker_loop(
     db: Arc<Mutex<Db>>,
     running: Arc<AtomicBool>,
@@ -86,12 +87,13 @@ pub(crate) fn worker_loop(
     events: EventBus,
     thumbnail_dir: PathBuf,
     paused: Arc<AtomicBool>,
+    queue_paused: Arc<AtomicBool>,
     budget: Arc<MemoryBudget>,
 ) {
     let mut seen_generation = 0;
     let mut last_poll_error: Option<String> = None;
     while running.load(Ordering::Relaxed) {
-        if paused.load(Ordering::Relaxed) {
+        if paused.load(Ordering::Relaxed) || queue_paused.load(Ordering::Relaxed) {
             jobs.wait(&mut seen_generation, COMPRESSION_IDLE_WAIT);
             continue;
         }

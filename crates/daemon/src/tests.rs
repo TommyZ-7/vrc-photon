@@ -5444,6 +5444,31 @@ fn auto_compress_holds_waiting_jobs_until_released() {
 }
 
 #[test]
+fn paused_compression_queue_does_not_claim_pending_jobs() {
+    let dir = tempfile::tempdir().unwrap();
+    let photo_dir = dir.path().join("photos");
+    let log_dir = dir.path().join("logs");
+    std::fs::create_dir_all(&photo_dir).unwrap();
+    std::fs::create_dir_all(&log_dir).unwrap();
+    write_photo(&photo_dir.join("VRChat_2026-10-21_21-24-00.000_4x3.png"));
+
+    let db_path = dir.path().join("library.db");
+    let mut daemon = Daemon::open(&db_path, Some(photo_dir.clone()), Some(log_dir)).unwrap();
+    daemon.set_thumbnail_dir(dir.path().join("thumbnails"));
+    save_daemon_settings(&daemon, |settings| {
+        settings.auto_compress = AutoBehavior::immediate();
+        settings.auto_compress_queue_paused = true;
+    });
+    daemon.scan_root_photos(photo_dir).unwrap();
+    daemon.refresh_compression_settings();
+    daemon.compress_pending().unwrap();
+
+    let db = daemon.db.lock().unwrap();
+    assert_eq!(db.count_jobs(QueueStatus::Processing).unwrap(), 0);
+    assert_eq!(db.count_jobs(QueueStatus::Pending).unwrap(), 1);
+}
+
+#[test]
 fn auto_replace_failure_leaves_the_original_in_place() {
     let dir = tempfile::tempdir().unwrap();
     let photo_dir = dir.path().join("photos");

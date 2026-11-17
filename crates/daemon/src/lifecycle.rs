@@ -96,6 +96,9 @@ pub struct Daemon {
     /// Fast pause gate read by workers at their dequeue points. Mirrors
     /// `DaemonStatus::paused`, which remains the status-snapshot source.
     pub(crate) paused: Arc<AtomicBool>,
+    /// Feature-specific queue pause gates. They stop new dequeues only.
+    pub(crate) compression_queue_paused: Arc<AtomicBool>,
+    pub(crate) tagging_queue_paused: Arc<AtomicBool>,
     pub(crate) wake: Arc<WakeSignal>,
     /// Wakes supervised workers out of a restart backoff during shutdown.
     pub(crate) supervisor_wake: Arc<WakeSignal>,
@@ -346,6 +349,8 @@ impl Daemon {
         }
         let tagging = Arc::new(JobSignal::default());
         let tagging_control = Arc::new(TaggingControl::new(tagging.clone()));
+        let compression_queue_paused = settings.auto_compress_queue_paused;
+        let tagging_queue_paused = settings.ai_tagging_queue_paused;
 
         Ok(Self {
             db,
@@ -355,6 +360,8 @@ impl Daemon {
             status: Arc::new(Mutex::new(DaemonStatus::default())),
             running: Arc::new(AtomicBool::new(true)),
             paused: Arc::new(AtomicBool::new(false)),
+            compression_queue_paused: Arc::new(AtomicBool::new(compression_queue_paused)),
+            tagging_queue_paused: Arc::new(AtomicBool::new(tagging_queue_paused)),
             wake: Arc::new(WakeSignal::default()),
             supervisor_wake: Arc::new(WakeSignal::default()),
             jobs: Arc::new(JobSignal::default()),
@@ -908,6 +915,11 @@ impl Daemon {
     }
 
     pub fn compress_pending(&mut self) -> Result<()> {
+        if self.paused.load(Ordering::Relaxed)
+            || self.compression_queue_paused.load(Ordering::Relaxed)
+        {
+            return Ok(());
+        }
         loop {
             let jobs = {
                 let db = lock_db(&self.db);
@@ -1273,8 +1285,27 @@ impl Daemon {
         let Some(settings) = loaded else {
             return;
         };
+        let old_compression_queue_paused = self.compression_queue_paused.load(Ordering::Relaxed);
+        let old_tagging_queue_paused = self.tagging_queue_paused.load(Ordering::Relaxed);
+        let old_discord_queue_paused = self.settings.discord_queue_paused;
         self.settings.auto_compress_enabled = settings.auto_compress_enabled;
         self.settings.auto_compress = settings.auto_compress;
+        self.settings.auto_compress_queue_paused = settings.auto_compress_queue_paused;
+        self.settings.discord_queue_paused = settings.discord_queue_paused;
+        self.settings.ai_tagging_queue_paused = settings.ai_tagging_queue_paused;
+        self.compression_queue_paused
+            .store(settings.auto_compress_queue_paused, Ordering::Relaxed);
+        self.tagging_queue_paused
+            .store(settings.ai_tagging_queue_paused, Ordering::Relaxed);
+        if old_compression_queue_paused != settings.auto_compress_queue_paused {
+            self.jobs.notify();
+        }
+        if old_tagging_queue_paused != settings.ai_tagging_queue_paused {
+            self.tagging.notify();
+        }
+        if old_discord_queue_paused != settings.discord_queue_paused {
+            self.sends.notify();
+        }
         self.settings.auto_compress_keep_original = settings.auto_compress_keep_original;
         self.settings.auto_compression = settings.auto_compression.clone();
         self.settings.discord_compression = settings.discord_compression.clone();
@@ -1501,7 +1532,8 @@ impl Daemon {
             self.tagging_control.clone(),
             config,
         )
-        .with_paused(self.paused.clone());
+        .with_paused(self.paused.clone())
+        .with_queue_paused(self.tagging_queue_paused.clone());
         self.tagging_handle =
             self.spawn_supervised_worker("tagging", move || tagging::run_worker_loop(&worker));
     }
@@ -1626,6 +1658,7 @@ impl Daemon {
             let events = self.events.clone();
             let thumbnail_dir = self.thumbnail_dir.clone();
             let paused = self.paused.clone();
+            let queue_paused = self.compression_queue_paused.clone();
             let budget = self.compression_budget.clone();
             let name = format!("compress-{index}");
             let Some(handle) = self.spawn_supervised_worker(&name, move || {
@@ -1636,6 +1669,7 @@ impl Daemon {
                     events.clone(),
                     thumbnail_dir.clone(),
                     paused.clone(),
+                    queue_paused.clone(),
                     budget.clone(),
                 )
             }) else {
