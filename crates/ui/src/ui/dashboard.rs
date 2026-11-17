@@ -40,7 +40,10 @@ impl App {
             ))
             .child(self.stat_card(
                 tr!("dashboard.stat.active_jobs"),
-                tr_args!("dashboard.stat.jobs_value", count = self.active_job_count),
+                tr_args!(
+                    "dashboard.stat.jobs_value",
+                    count = self.mixed_queue_counts.total()
+                ),
             ))
             .child(self.stat_card(
                 tr!("dashboard.stat.library_size"),
@@ -73,7 +76,7 @@ impl App {
                             .min_w_0()
                             .min_h_0()
                             .gap(px(CARD_GAP))
-                            .child(self.queue_panel(cx)),
+                            .child(crate::ui::queue::mixed_queue_panel(self, cx)),
                     )
                     .child(
                         v_flex()

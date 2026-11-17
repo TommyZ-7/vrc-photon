@@ -17,6 +17,7 @@ pub(crate) mod integrations;
 pub(crate) mod library;
 pub(crate) mod notifications;
 pub(crate) mod palette;
+pub(crate) mod queue;
 pub(crate) mod search;
 pub(crate) mod search_suggest;
 pub(crate) mod settings;

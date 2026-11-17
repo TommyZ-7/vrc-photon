@@ -456,6 +456,7 @@ impl App {
             Ok(0) => self.toast_warning(waiting_release_toast(0), cx),
             Ok(count) => {
                 self.reload_send_history(cx);
+                self.refresh_queue(cx);
                 self.send_wake_sends(cx);
                 self.toast_success(waiting_release_toast(count), cx);
             }
@@ -520,6 +521,7 @@ impl App {
                     }
                 }
                 self.reload_send_history(cx);
+                self.refresh_queue(cx);
                 self.send_wake_sends(cx);
                 self.toast_success(
                     tr_args!("integrations.discord.backlog.started", count = count),
@@ -619,6 +621,7 @@ impl App {
 
     /// Returns a failed row to the queue. The database rejects the retry when
     /// the photo already has an active send, which the warning toast covers.
+    #[allow(dead_code)] // Used by the notification failure rows (Task 10).
     pub(crate) fn retry_send(&mut self, id: i64, cx: &mut Context<Self>) {
         match self.db.retry_send(id) {
             Ok(true) => {
@@ -636,75 +639,6 @@ impl App {
                     format!(
                         "{}: {error}",
                         tr!("integrations.discord.history.retry.error")
-                    ),
-                    cx,
-                );
-            }
-        }
-        cx.notify();
-    }
-
-    /// Cancels a queued or failed row. `processing` is not cancellable because
-    /// the upload is already in flight; the warning toast covers a row that
-    /// changed state after the click.
-    pub(crate) fn cancel_send(&mut self, id: i64, cx: &mut Context<Self>) {
-        match self.db.cancel_send(id) {
-            Ok(true) => {
-                self.reload_send_history(cx);
-                self.toast_success(tr!("integrations.discord.history.cancel.done"), cx);
-            }
-            Ok(false) => {
-                self.reload_send_history(cx);
-                self.toast_warning(tr!("integrations.discord.history.cancel.unavailable"), cx);
-            }
-            Err(error) => {
-                tracing::warn!(%error, id, "cannot cancel a Discord send");
-                self.toast_error(
-                    format!(
-                        "{}: {error}",
-                        tr!("integrations.discord.history.cancel.error")
-                    ),
-                    cx,
-                );
-            }
-        }
-        cx.notify();
-    }
-
-    /// Asks before deleting every terminal row. Active sends stay in the
-    /// outbox, so clearing history never drops pending work.
-    pub(crate) fn clear_send_history(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let entity = cx.entity();
-        let panel_deep = self.palette.panel_deep;
-        window.open_alert_dialog(cx, move |alert, _, _| {
-            let entity = entity.clone();
-            alert
-                .title(tr!("integrations.discord.history.clear.title"))
-                .bg(rgb(panel_deep))
-                .description(tr!("integrations.discord.history.clear.description"))
-                .confirm()
-                .ok_text(tr!("integrations.discord.history.clear.ok"))
-                .ok_variant(ButtonVariant::Danger)
-                .cancel_text(tr!("common.cancel"))
-                .on_ok(move |_, _, cx| {
-                    entity.update(cx, |this, cx| this.delete_send_history(cx));
-                    true
-                })
-        });
-    }
-
-    fn delete_send_history(&mut self, cx: &mut Context<Self>) {
-        match self.db.clear_send_history() {
-            Ok(_) => {
-                self.reload_send_history(cx);
-                self.toast_success(tr!("integrations.discord.history.clear.done"), cx);
-            }
-            Err(error) => {
-                tracing::warn!(%error, "cannot clear the Discord send history");
-                self.toast_error(
-                    format!(
-                        "{}: {error}",
-                        tr!("integrations.discord.history.clear.error")
                     ),
                     cx,
                 );

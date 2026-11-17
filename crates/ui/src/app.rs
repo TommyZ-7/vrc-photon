@@ -15,6 +15,7 @@ pub(crate) mod import;
 pub(crate) mod lifecycle;
 pub(crate) mod live;
 pub(crate) mod photos;
+pub(crate) mod queue;
 pub(crate) mod search;
 pub(crate) mod search_suggest;
 pub(crate) mod session;
@@ -31,7 +32,6 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::{Duration, Instant};
 
-use gpui_kit::base::VirtualListScrollHandle;
 use gpui_kit::component::WindowExt;
 use gpui_kit::component::button::Button;
 use gpui_kit::component::input::{InputEvent, InputState, TextareaState};
@@ -45,6 +45,7 @@ use vrc_photon_core::model::{
     CompressionJob, CompressionProfile, DaemonError, DeletionCounts, DeletionRequest, Derivative,
     LibraryStats, Photo, PhotoPlayer, PhotoTextFilter, SendHistoryEntry,
 };
+use vrc_photon_core::queue::{QueueCounts, QueueEntry};
 use vrc_photon_core::settings::{
     AppSettings, UI_CARD_RADIUS_MAX, UI_CARD_RADIUS_MIN, UI_GRID_GAP_MAX, UI_GRID_GAP_MIN,
     clamp_card_radius, clamp_grid_gap, load_discord_webhook,
@@ -385,9 +386,14 @@ pub struct App {
     pub(crate) update: update_view::UpdateState,
     pub(crate) jobs: Vec<CompressionJob>,
     pub(crate) waiting_jobs: Vec<CompressionJob>,
-    /// Scroll offset of the virtualized compression queue, shared by the
-    /// compression screen and the dashboard panel.
-    pub(crate) queue_scroll: VirtualListScrollHandle,
+    pub(crate) compression_queue_entries: Vec<QueueEntry>,
+    pub(crate) discord_queue_entries: Vec<QueueEntry>,
+    pub(crate) tagging_queue_entries: Vec<QueueEntry>,
+    pub(crate) mixed_queue_entries: Vec<QueueEntry>,
+    pub(crate) compression_queue_counts: QueueCounts,
+    pub(crate) discord_queue_counts: QueueCounts,
+    pub(crate) tagging_queue_counts: QueueCounts,
+    pub(crate) mixed_queue_counts: QueueCounts,
     pub(crate) active_job_count: i64,
     pub(crate) waiting_job_count: i64,
     pub(crate) daemon_errors: Vec<DaemonError>,
@@ -1310,7 +1316,14 @@ impl App {
             update: update_view::UpdateState::new(health_token, database_ok, demo, db_path),
             jobs: Vec::new(),
             waiting_jobs: Vec::new(),
-            queue_scroll: VirtualListScrollHandle::new(),
+            compression_queue_entries: Vec::new(),
+            discord_queue_entries: Vec::new(),
+            tagging_queue_entries: Vec::new(),
+            mixed_queue_entries: Vec::new(),
+            compression_queue_counts: QueueCounts::default(),
+            discord_queue_counts: QueueCounts::default(),
+            tagging_queue_counts: QueueCounts::default(),
+            mixed_queue_counts: QueueCounts::default(),
             active_job_count: 0,
             waiting_job_count: 0,
             daemon_errors: Vec::new(),

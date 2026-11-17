@@ -20,6 +20,7 @@ use vrc_photon_core::model::{
     CompressionJob, CompressionProfile, DaemonError, DeletionCounts, DeletionRequest, Derivative,
     LibraryStats, Photo, PhotoPlayer, PhotoSort, QueueStatus, SendHistoryEntry,
 };
+use vrc_photon_core::queue::{QueueCounts, QueueEntry, QueueFeature};
 use vrc_photon_core::settings::AppSettings;
 use vrc_photon_i18n::tr_args;
 
@@ -151,6 +152,14 @@ pub(crate) struct JobSnapshot {
     waiting_job_count: Option<i64>,
     failed_job_count: Option<i64>,
     retryable_failed_count: Option<i64>,
+    compression_queue_entries: Option<Vec<QueueEntry>>,
+    discord_queue_entries: Option<Vec<QueueEntry>>,
+    tagging_queue_entries: Option<Vec<QueueEntry>>,
+    mixed_queue_entries: Option<Vec<QueueEntry>>,
+    compression_queue_counts: Option<QueueCounts>,
+    discord_queue_counts: Option<QueueCounts>,
+    tagging_queue_counts: Option<QueueCounts>,
+    mixed_queue_counts: Option<QueueCounts>,
     daemon_errors: Option<Vec<DaemonError>>,
 }
 
@@ -341,6 +350,34 @@ impl App {
                 .retryable_failed_count
                 .is_some_and(|count| count != self.retryable_failed_count)
             || snapshot
+                .compression_queue_entries
+                .as_ref()
+                .is_some_and(|entries| entries != &self.compression_queue_entries)
+            || snapshot
+                .discord_queue_entries
+                .as_ref()
+                .is_some_and(|entries| entries != &self.discord_queue_entries)
+            || snapshot
+                .tagging_queue_entries
+                .as_ref()
+                .is_some_and(|entries| entries != &self.tagging_queue_entries)
+            || snapshot
+                .mixed_queue_entries
+                .as_ref()
+                .is_some_and(|entries| entries != &self.mixed_queue_entries)
+            || snapshot
+                .compression_queue_counts
+                .is_some_and(|counts| counts != self.compression_queue_counts)
+            || snapshot
+                .discord_queue_counts
+                .is_some_and(|counts| counts != self.discord_queue_counts)
+            || snapshot
+                .tagging_queue_counts
+                .is_some_and(|counts| counts != self.tagging_queue_counts)
+            || snapshot
+                .mixed_queue_counts
+                .is_some_and(|counts| counts != self.mixed_queue_counts)
+            || snapshot
                 .daemon_errors
                 .as_ref()
                 .is_some_and(|errors| errors != &self.daemon_errors);
@@ -368,6 +405,30 @@ impl App {
             }
             if let Some(count) = snapshot.retryable_failed_count {
                 self.retryable_failed_count = count;
+            }
+            if let Some(entries) = snapshot.compression_queue_entries {
+                self.compression_queue_entries = entries;
+            }
+            if let Some(entries) = snapshot.discord_queue_entries {
+                self.discord_queue_entries = entries;
+            }
+            if let Some(entries) = snapshot.tagging_queue_entries {
+                self.tagging_queue_entries = entries;
+            }
+            if let Some(entries) = snapshot.mixed_queue_entries {
+                self.mixed_queue_entries = entries;
+            }
+            if let Some(counts) = snapshot.compression_queue_counts {
+                self.compression_queue_counts = counts;
+            }
+            if let Some(counts) = snapshot.discord_queue_counts {
+                self.discord_queue_counts = counts;
+            }
+            if let Some(counts) = snapshot.tagging_queue_counts {
+                self.tagging_queue_counts = counts;
+            }
+            if let Some(counts) = snapshot.mixed_queue_counts {
+                self.mixed_queue_counts = counts;
             }
             if let Some(errors) = snapshot.daemon_errors {
                 self.daemon_errors = errors;
@@ -690,6 +751,25 @@ pub(crate) fn collect_jobs(db: &Db) -> JobSnapshot {
                 .collect()
         })
     });
+    let compression_queue_entries = db.active_queue_entries(QueueFeature::Compression, 100).ok();
+    let discord_queue_entries = db.active_queue_entries(QueueFeature::Discord, 100).ok();
+    let tagging_queue_entries = db.active_queue_entries(QueueFeature::Tagging, 100).ok();
+    let mixed_queue_entries = db.mixed_active_queue_entries(100).ok();
+    let compression_queue_counts = db.queue_counts(QueueFeature::Compression).ok();
+    let discord_queue_counts = db.queue_counts(QueueFeature::Discord).ok();
+    let tagging_queue_counts = db.queue_counts(QueueFeature::Tagging).ok();
+    let mixed_queue_counts = match (
+        compression_queue_counts,
+        discord_queue_counts,
+        tagging_queue_counts,
+    ) {
+        (Some(compression), Some(discord), Some(tagging)) => Some(QueueCounts {
+            waiting: compression.waiting + discord.waiting + tagging.waiting,
+            pending: compression.pending + discord.pending + tagging.pending,
+            processing: compression.processing + discord.processing + tagging.processing,
+        }),
+        _ => None,
+    };
     JobSnapshot {
         jobs: db.list_jobs(20).ok(),
         waiting_jobs: db.list_jobs_by_status(QueueStatus::Waiting, 100).ok(),
@@ -699,6 +779,14 @@ pub(crate) fn collect_jobs(db: &Db) -> JobSnapshot {
         waiting_job_count: db.count_jobs(QueueStatus::Waiting).ok(),
         failed_job_count: db.count_jobs(QueueStatus::Failed).ok(),
         retryable_failed_count: db.count_retryable_failed_jobs().ok(),
+        compression_queue_entries,
+        discord_queue_entries,
+        tagging_queue_entries,
+        mixed_queue_entries,
+        compression_queue_counts,
+        discord_queue_counts,
+        tagging_queue_counts,
+        mixed_queue_counts,
         daemon_errors: db.daemon_errors().ok(),
     }
 }

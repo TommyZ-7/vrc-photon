@@ -16,8 +16,11 @@ use crate::app::ai::{
     backend_options, backend_selection_is_disabled_when_not_ready, variant_backend_label,
 };
 use crate::app::compression::FeatureCompressionTarget;
+use vrc_photon_core::queue::QueueFeature;
+
 use crate::ui::auto_behavior::{auto_mode_segmented, bulk_action_available, bulk_action_block};
 use crate::ui::components::{card_divider, chip, compression_policy_warning, glass_panel};
+use crate::ui::queue::queue_section;
 use crate::ui::theme::*;
 
 impl App {
@@ -41,9 +44,7 @@ impl App {
             .track_scroll(&self.integrations_scroll)
             .gap(px(CARD_GAP));
         let detail_body = match selected {
-            IntegrationsSection::Discord => detail_body
-                .child(self.discord_card(cx))
-                .child(self.send_history_card(window, cx)),
+            IntegrationsSection::Discord => detail_body.child(self.discord_card(cx)),
             IntegrationsSection::AutoCompression => {
                 detail_body.child(self.auto_compression_card(cx))
             }
@@ -230,6 +231,14 @@ impl App {
                 cx,
                 App::set_auto_compress_scope,
                 App::process_uncompressed_compression_action,
+            ))
+            .child(queue_section(
+                self,
+                QueueFeature::Compression,
+                &self.compression_queue_entries,
+                self.compression_queue_counts,
+                self.settings.auto_compress_queue_paused,
+                cx,
             ));
 
         glass_panel(&self.palette)
@@ -336,6 +345,14 @@ impl App {
                 cx,
                 App::set_ai_auto_scope,
                 App::process_untagged_ai_action,
+            ))
+            .child(queue_section(
+                self,
+                QueueFeature::Tagging,
+                &self.tagging_queue_entries,
+                self.tagging_queue_counts,
+                self.settings.ai_tagging_queue_paused,
+                cx,
             ));
 
         glass_panel(&self.palette)
