@@ -523,7 +523,8 @@ pub(crate) fn effective_ai_tagging_enabled(configured: bool, installed: bool) ->
 /// Builds the dashboard view. The card is hidden for an uninstalled plugin and
 /// for a ready plugin that the user has not enabled; a not-ready plugin stays
 /// visible so the card can point at setup.
-pub(crate) fn ai_dashboard_view(ai: &AiUiState, enabled: bool) -> AiDashboardView {    let installed = ai.installed();
+pub(crate) fn ai_dashboard_view(ai: &AiUiState, enabled: bool) -> AiDashboardView {
+    let installed = ai.installed();
     let ready = ai.ready();
     let visible = installed && (!ready || enabled);
     if !visible {
@@ -1987,8 +1988,8 @@ mod tests {
         enqueue_manual_retag, install_event_applies_to_ai, installation_row_id,
         is_active_installation, load_photo_ai, model_progress_ratio, model_ready_toast_pending,
         needs_license_consent, people_label, people_label_in, place_label,
-        place_label_with_confidence, probe_failure_info, request_error_kind, uninstall_request_args,
-        variant_backend_label,
+        place_label_with_confidence, probe_failure_info, request_error_kind,
+        uninstall_request_args, variant_backend_label,
     };
     use vrc_photon_ai_protocol::{
         BackendInfo, Catalog, ModelState, PluginInstallStatus, Probe, TagDefinition,

@@ -278,8 +278,7 @@ impl App {
         let p = self.palette;
         let ready = self.ai.ready();
         let installed = self.ai.installed();
-        let enabled =
-            effective_ai_tagging_enabled(self.settings.ai_tagging_enabled, installed);
+        let enabled = effective_ai_tagging_enabled(self.settings.ai_tagging_enabled, installed);
         let behavior = self.settings.ai_tagging_auto;
         let backend_selection_disabled =
             backend_selection_is_disabled_when_not_ready(ready, enabled);
