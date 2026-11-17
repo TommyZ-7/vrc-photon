@@ -841,32 +841,32 @@ git commit -m "feat(ui): unify the automatic and bulk controls in the integratio
 - Consumes: `auto_behavior_editor`、Task 4 のハンドラ。
 - Produces: `setup_ai(&self, cx: &mut Context<Self>) -> Div`。
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 既存の `setup_pages_advance_and_return_in_order` は変更しない。追加で
 `set_setup_immediate` が不要になったことを確認するため、コンパイルテストとして
 `cargo check` を使う。ロジックの追加テストは不要。
 
-- [ ] **Step 2: 自動圧縮ページを変更する**
+- [x] **Step 2: 自動圧縮ページを変更する**
 
 `setup_compression` の `setup-auto-enabled` マスタースイッチは残す。
 `setup-auto-immediate` を削除し、`setup-auto-keep`、警告、形式チップ、ロスレスを
 残した後、最後に `auto_mode_segmented` を置く。`integration_settings_body` の
 淡色化はマスタースイッチに従って維持する。一括処理ブロックは置かない。
 
-- [ ] **Step 3: Discord ページを変更する**
+- [x] **Step 3: Discord ページを変更する**
 
 既存の連携スイッチ、Webhook、送信先、プレイヤー名、原画優先の後に
 `auto_mode_segmented` を置く。連携が `Off` のときは現行どおり淡色にする。
 一括処理ブロックは置かない。
 
-- [ ] **Step 4: AI ページを変更する**
+- [x] **Step 4: AI ページを変更する**
 
 `setup_ai` に `cx` を渡し、紹介文の後に `auto_mode_segmented` を置く。
 プレビューと BOOTH の案内は残す。600×561 に収めるため、サンプル画像の高さを
 76 px から 52 px に縮める。一括処理ブロック、設定画面へのボタン・案内は置かない。
 
-- [ ] **Step 5: テストと目視確認**
+- [x] **Step 5: テストと目視確認**
 
 Run: `cargo test -p vrc-photon-ui app::setup::tests`
 Expected: PASS
@@ -874,7 +874,7 @@ Expected: PASS
 `hyprland-visual-qa` または利用環境の visual QA 手順で `--demo` を起動し、
 セットアップの3ページを 600×561 で確認する。
 
-- [ ] **Step 6: コミット**
+- [x] **Step 6: コミット**
 
 ```bash
 git add crates/ui/src/ui/setup.rs crates/ui/src/app/setup.rs

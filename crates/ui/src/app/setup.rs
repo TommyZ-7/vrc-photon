@@ -254,17 +254,6 @@ impl App {
         }
     }
 
-    pub(crate) fn set_setup_immediate(&mut self, immediate: bool, cx: &mut Context<Self>) {
-        if self.settings.auto_compress_immediate == immediate {
-            return;
-        }
-        self.settings.auto_compress_immediate = immediate;
-        if let Err(error) = self.settings.save(&self.db) {
-            tracing::warn!(%error, "cannot save immediate compression setting");
-        }
-        cx.notify();
-    }
-
     pub(crate) fn set_setup_keep_original(&mut self, keep: bool, cx: &mut Context<Self>) {
         if self.settings.auto_compress_keep_original == keep {
             return;

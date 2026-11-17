@@ -18,6 +18,7 @@ use vrc_photon_i18n::tr;
 use crate::app::App;
 use crate::app::compression::FeatureCompressionTarget;
 use crate::app::setup::{SetupPage, SetupPathField, display_preview_has_body, setup_page_offset};
+use crate::ui::auto_behavior::auto_mode_segmented;
 use crate::ui::components::{card_divider, compression_policy_warning, dialog_panel};
 use crate::ui::settings::ThemeAxis;
 use crate::ui::theme::*;
@@ -170,7 +171,7 @@ impl App {
             SetupPage::Discord => self.setup_discord(cx),
             SetupPage::Compression => self.setup_compression(cx),
             SetupPage::Theme => self.setup_theme(cx).into_any_element(),
-            SetupPage::AiTagging => self.setup_ai().into_any_element(),
+            SetupPage::AiTagging => self.setup_ai(cx).into_any_element(),
         }
     }
 
@@ -633,6 +634,13 @@ impl App {
                 self.settings.discord_send_original,
                 cx,
                 |app, value, _, cx| app.set_discord_send_original(value, cx),
+            ))
+            .child(auto_mode_segmented(
+                &p,
+                "setup-discord",
+                self.settings.discord_auto.mode,
+                cx,
+                App::set_discord_auto_mode,
             ));
 
         div()
@@ -657,19 +665,11 @@ impl App {
 
     fn setup_compression(&self, cx: &mut Context<Self>) -> AnyElement {
         let p = self.palette;
-        let enabled = self.settings.auto_compress;
+        let enabled = self.settings.auto_compress_enabled;
         let options = self.settings.auto_compression.clone();
 
         let settings_body = v_flex()
             .gap(px(7.))
-            .child(setup_switch_row(
-                &p,
-                tr!("settings.startup.immediate"),
-                "setup-auto-immediate",
-                self.settings.auto_compress_immediate,
-                cx,
-                |app, value, _, cx| app.set_setup_immediate(value, cx),
-            ))
             .child(setup_switch_row(
                 &p,
                 tr!("settings.startup.keep_original"),
@@ -679,10 +679,7 @@ impl App {
                 |app, value, _, cx| app.set_setup_keep_original(value, cx),
             ))
             .when_some(
-                compression_policy_warning(
-                    self.settings.auto_compress_keep_original,
-                    self.settings.auto_compress,
-                ),
+                compression_policy_warning(self.settings.auto_compress_keep_original, enabled),
                 |this, warning| {
                     this.child(
                         div()
@@ -769,7 +766,14 @@ impl App {
                                 );
                             })),
                     ),
-            );
+            )
+            .child(auto_mode_segmented(
+                &p,
+                "setup-auto",
+                self.settings.auto_compress.mode,
+                cx,
+                App::set_auto_compress_mode,
+            ));
 
         div()
             .flex()
@@ -788,7 +792,7 @@ impl App {
             .into_any_element()
     }
 
-    fn setup_ai(&self) -> Div {
+    fn setup_ai(&self, cx: &mut Context<Self>) -> Div {
         let p = self.palette;
         let tag = |label: String, probability: &'static str| -> Div {
             h_flex()
@@ -855,7 +859,7 @@ impl App {
         };
 
         let sample_image = div()
-            .h(px(76.))
+            .h(px(52.))
             .w_full()
             .rounded(px(8.))
             .border_1()
@@ -925,6 +929,13 @@ impl App {
                             .child(tr!("setup.ai.booth")),
                     ),
             )
+            .child(auto_mode_segmented(
+                &p,
+                "setup-ai",
+                self.settings.ai_tagging_auto.mode,
+                cx,
+                App::set_ai_auto_mode,
+            ))
             .child(
                 v_flex()
                     .gap(px(8.))
