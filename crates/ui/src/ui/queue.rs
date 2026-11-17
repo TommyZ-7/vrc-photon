@@ -27,6 +27,29 @@ pub(crate) fn waiting_delete_available(state: QueueState) -> bool {
     state == QueueState::Waiting
 }
 
+/// Which queue actions a card exposes while it is enabled.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct QueueActionAvailability {
+    pub(crate) pause: bool,
+    pub(crate) start_waiting: bool,
+    pub(crate) delete_waiting: bool,
+}
+
+pub(crate) fn queue_action_availability(
+    card_enabled: bool,
+    waiting: i64,
+) -> QueueActionAvailability {
+    QueueActionAvailability {
+        pause: card_enabled,
+        start_waiting: card_enabled && waiting > 0,
+        delete_waiting: card_enabled && waiting > 0,
+    }
+}
+
+pub(crate) fn queue_row_delete_available(card_enabled: bool, state: QueueState) -> bool {
+    card_enabled && waiting_delete_available(state)
+}
+
 fn feature_label(feature: QueueFeature) -> String {
     match feature {
         QueueFeature::Compression => tr!("queue.feature.compression"),
@@ -90,10 +113,12 @@ fn entry_name(entry: &QueueEntry) -> String {
 }
 
 /// One queue row. `show_feature` adds the feature badge used by the dashboard.
+/// `card_enabled` keeps row actions inert while the owning card is disabled.
 pub(crate) fn queue_row(
     app: &App,
     entry: &QueueEntry,
     show_feature: bool,
+    card_enabled: bool,
     cx: &mut Context<App>,
 ) -> AnyElement {
     let p = app.palette;
@@ -145,6 +170,7 @@ pub(crate) fn queue_row(
                 .child(detail),
         )
         .when(waiting_delete_available(state), |this| {
+            let delete_enabled = queue_row_delete_available(card_enabled, state);
             this.child(
                 Button::new(SharedString::from(format!(
                     "queue-delete-{}-{job_id}",
@@ -153,9 +179,13 @@ pub(crate) fn queue_row(
                 .label(tr!("queue.delete_waiting_row"))
                 .small()
                 .ghost()
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.delete_waiting_entry(feature, &job_id, cx);
-                })),
+                .disabled(!delete_enabled)
+                .tab_stop(delete_enabled)
+                .when(delete_enabled, |button| {
+                    button.on_click(cx.listener(move |this, _, _, cx| {
+                        this.delete_waiting_entry(feature, &job_id, cx);
+                    }))
+                }),
             )
         })
         .into_any_element()
@@ -168,6 +198,7 @@ pub(crate) fn queue_section(
     feature: QueueFeature,
     entries: &[QueueEntry],
     counts: QueueCounts,
+    card_enabled: bool,
     paused: bool,
     cx: &mut Context<App>,
 ) -> AnyElement {
@@ -177,7 +208,7 @@ pub(crate) fn queue_section(
         QueueFeature::Discord => "integrations-discord-queue",
         QueueFeature::Tagging => "integrations-ai-queue",
     };
-    let waiting = counts.waiting > 0;
+    let actions = queue_action_availability(card_enabled, counts.waiting);
 
     v_flex()
         .gap(px(8.))
@@ -205,9 +236,13 @@ pub(crate) fn queue_section(
                             tr!("queue.pause")
                         })
                         .small()
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.set_queue_paused(feature, !paused, cx);
-                        })),
+                        .disabled(!actions.pause)
+                        .tab_stop(actions.pause)
+                        .when(actions.pause, |button| {
+                            button.on_click(cx.listener(move |this, _, _, cx| {
+                                this.set_queue_paused(feature, !paused, cx);
+                            }))
+                        }),
                 ),
         )
         .child(
@@ -241,20 +276,26 @@ pub(crate) fn queue_section(
                         .label(tr!("queue.start_waiting"))
                         .small()
                         .primary()
-                        .disabled(!waiting)
-                        .on_click(cx.listener(move |this, _, window, cx| {
-                            this.release_waiting_queue(feature, window, cx);
-                        })),
+                        .disabled(!actions.start_waiting)
+                        .tab_stop(actions.start_waiting)
+                        .when(actions.start_waiting, |button| {
+                            button.on_click(cx.listener(move |this, _, window, cx| {
+                                this.release_waiting_queue(feature, window, cx);
+                            }))
+                        }),
                 )
                 .child(
                     Button::new(SharedString::from(format!("{prefix}-delete-waiting")))
                         .label(tr!("queue.delete_waiting_all"))
                         .small()
                         .ghost()
-                        .disabled(!waiting)
-                        .on_click(cx.listener(move |this, _, window, cx| {
-                            this.delete_all_waiting(feature, window, cx);
-                        })),
+                        .disabled(!actions.delete_waiting)
+                        .tab_stop(actions.delete_waiting)
+                        .when(actions.delete_waiting, |button| {
+                            button.on_click(cx.listener(move |this, _, window, cx| {
+                                this.delete_all_waiting(feature, window, cx);
+                            }))
+                        }),
                 ),
         )
         .child(if entries.is_empty() {
@@ -268,7 +309,11 @@ pub(crate) fn queue_section(
         } else {
             v_flex()
                 .gap(px(2.))
-                .children(entries.iter().map(|entry| queue_row(app, entry, false, cx)))
+                .children(
+                    entries
+                        .iter()
+                        .map(|entry| queue_row(app, entry, false, card_enabled, cx)),
+                )
                 .when(counts.total() > entries.len() as i64, |this| {
                     this.child(
                         div()
@@ -349,7 +394,11 @@ pub(crate) fn mixed_queue_panel(app: &App, cx: &mut Context<App>) -> AnyElement 
                             .child(tr!("queue.empty")),
                     )
                 })
-                .children(entries.iter().map(|entry| queue_row(app, entry, true, cx)))
+                .children(
+                    entries
+                        .iter()
+                        .map(|entry| queue_row(app, entry, true, true, cx)),
+                )
                 .when(counts.total() > 100, |this| {
                     this.child(
                         div()
@@ -365,7 +414,10 @@ pub(crate) fn mixed_queue_panel(app: &App, cx: &mut Context<App>) -> AnyElement 
 
 #[cfg(test)]
 mod tests {
-    use super::{QueueEntry, QueueFeature, QueueState, sort_mixed_queue, waiting_delete_available};
+    use super::{
+        QueueEntry, QueueFeature, QueueState, queue_action_availability,
+        queue_row_delete_available, sort_mixed_queue, waiting_delete_available,
+    };
 
     fn entry(feature: QueueFeature, created_at: &str) -> QueueEntry {
         QueueEntry {
@@ -397,5 +449,31 @@ mod tests {
         assert!(waiting_delete_available(QueueState::Waiting));
         assert!(!waiting_delete_available(QueueState::Pending));
         assert!(!waiting_delete_available(QueueState::Processing));
+    }
+
+    #[test]
+    fn queue_actions_are_disabled_while_the_card_is_disabled() {
+        let actions = queue_action_availability(false, 2);
+        assert!(!actions.pause);
+        assert!(!actions.start_waiting);
+        assert!(!actions.delete_waiting);
+
+        let actions = queue_action_availability(true, 0);
+        assert!(actions.pause);
+        assert!(!actions.start_waiting);
+        assert!(!actions.delete_waiting);
+
+        let actions = queue_action_availability(true, 2);
+        assert!(actions.pause);
+        assert!(actions.start_waiting);
+        assert!(actions.delete_waiting);
+    }
+
+    #[test]
+    fn queue_row_delete_is_disabled_while_the_card_is_disabled() {
+        assert!(queue_row_delete_available(true, QueueState::Waiting));
+        assert!(!queue_row_delete_available(false, QueueState::Waiting));
+        assert!(!queue_row_delete_available(true, QueueState::Pending));
+        assert!(!queue_row_delete_available(true, QueueState::Processing));
     }
 }
