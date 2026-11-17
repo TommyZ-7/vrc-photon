@@ -21,7 +21,7 @@ use vrc_photon_ai_host::{
     install_from_zip_keeping_backup as install_plugin_zip_keeping_backup, parse_manifest,
     plugins_root, restore_installation_backup,
 };
-use vrc_photon_ai_protocol::{Catalog, Hello, ModelState, Probe};
+use vrc_photon_ai_protocol::{Hello, ModelState, Probe};
 use vrc_photon_core::ai::PluginInstallation;
 use vrc_photon_core::db::Db;
 use vrc_photon_core::logging::{MAX_LOG_BYTES, prepare_log_file_in};
@@ -698,7 +698,7 @@ impl PluginServiceInner {
             )
         };
         // The package contents are about to change under the plugin. Drop the
-        // cached readiness until the new package passes catalog sync + probe.
+        // cached readiness until the new package passes the probe.
         self.db()
             .set_plugin_probe_json(&installed.plugin_id, None)?;
 
@@ -720,7 +720,7 @@ impl PluginServiceInner {
             manifest_json: installed.manifest_json,
             catalog_version: Some(manifest.catalog_version.clone()),
             // The previous active installation stays active until this one has
-            // passed catalog sync and probe.
+            // passed the probe.
             active: false,
             installed_at: now.clone(),
             updated_at: now,
@@ -728,7 +728,6 @@ impl PluginServiceInner {
         self.db().upsert_plugin_installation(&install)?;
 
         let result = (|| -> Result<()> {
-            self.sync_catalog_from_install(&install)?;
             self.probe_install(&install)?;
             // Re-check the package and stop the sidecar immediately before
             // activating, so a client started for the previous package cannot
@@ -803,21 +802,9 @@ impl PluginServiceInner {
                         "cannot restore the previous AI plugin installation"
                     );
                 }
-                let catalog_restored = match self.sync_catalog_from_install(previous) {
-                    Ok(()) => true,
-                    Err(restore) => {
-                        tracing::warn!(
-                            %restore,
-                            plugin_id = %install.plugin_id,
-                            "cannot restore the previous AI plugin catalog"
-                        );
-                        false
-                    }
-                };
-                if catalog_restored
-                    && let Err(restore) = self
-                        .db()
-                        .set_plugin_probe_json(&install.plugin_id, previous_probe.as_deref())
+                if let Err(restore) = self
+                    .db()
+                    .set_plugin_probe_json(&install.plugin_id, previous_probe.as_deref())
                 {
                     tracing::warn!(
                         %restore,
@@ -985,21 +972,6 @@ impl PluginServiceInner {
         self.events.publish(Event::PluginStateChanged {
             plugin_id: install.plugin_id.clone(),
         });
-        Ok(())
-    }
-
-    fn sync_catalog_from_install(&self, install: &PluginInstallation) -> Result<()> {
-        let manifest = parse_manifest(install.manifest_json.as_bytes())?;
-        let catalog_bytes = fs::read(Path::new(&install.path).join("catalog.json"))?;
-        let catalog: Catalog = serde_json::from_slice(&catalog_bytes)?;
-        if catalog.version != manifest.catalog_version {
-            return Err(AiHostError::Integrity(format!(
-                "catalog.json version {} does not match manifest catalog_version {}",
-                catalog.version, manifest.catalog_version
-            ))
-            .into());
-        }
-        self.db().sync_ai_catalog(&install.plugin_id, &catalog)?;
         Ok(())
     }
 
@@ -1782,8 +1754,6 @@ fn sidecar_paths(install: &PluginInstallation, manifest: &PluginManifest) -> Sid
     let install_dir = PathBuf::from(&install.path);
     SidecarPaths {
         executable: install_dir.join(&manifest.entrypoint),
-        catalog: install_dir.join("catalog.json"),
-        calibration: install_dir.join("calibration.json"),
         install_dir,
     }
 }
@@ -1848,7 +1818,7 @@ mod tests {
         AiHostError, ManifestFile, ModelCheck, ModelHttpClient, check_model, model_dir, plugin_dir,
         plugins_root,
     };
-    use vrc_photon_ai_protocol::{Catalog, ModelState, Probe};
+    use vrc_photon_ai_protocol::{ModelState, Probe};
     use vrc_photon_core::db::Db;
     use vrc_photon_core::settings::AppSettings;
     use vrc_photon_ipc::{Event, PluginInstallStatus};
@@ -1863,38 +1833,6 @@ mod tests {
     const MMPROJ_BYTES: &[u8] = b"mmproj";
     const MODEL_FILE: &str = "d1-2B-Q8_0.gguf";
     const MMPROJ_FILE: &str = "mmproj-d1-2B-Q8_0.gguf";
-
-    const CATALOG_JSON: &str = r#"{
-  "version": "2026-11-07.1",
-  "outdoor": [
-    {
-      "key": "sea",
-      "name": "海",
-      "name_en": "Sea",
-      "description": "海が見える屋外",
-      "default_threshold": 0.5
-    }
-  ],
-  "indoor": [
-    {
-      "key": "japanese_room",
-      "name": "和室",
-      "name_en": "Japanese room",
-      "description": "畳・障子のある和室",
-      "default_threshold": 0.5
-    }
-  ],
-  "atmosphere": [
-    {
-      "key": "weather_clear",
-      "name": "晴れ",
-      "name_en": "Clear / sunny",
-      "description": "晴れている",
-      "default_threshold": 0.5,
-      "group": "weather"
-    }
-  ]
-}"#;
 
     struct MockModelClient {
         files: HashMap<String, Vec<u8>>,
@@ -1976,6 +1914,10 @@ mod tests {
         }
     }
 
+    fn shell_quote(value: &str) -> String {
+        format!("'{}'", value.replace('\'', "'\\''"))
+    }
+
     fn package_with(
         key: &TestKey,
         mock: &Path,
@@ -1994,11 +1936,7 @@ mod tests {
         backend: &str,
         extra: &[TestEntry],
     ) -> TestPackage {
-        let mut entries = vec![
-            TestEntry::with_mode(TEST_ENTRYPOINT, entrypoint, 0o755),
-            TestEntry::new("catalog.json", CATALOG_JSON),
-            TestEntry::new("calibration.json", b"{}"),
-        ];
+        let mut entries = vec![TestEntry::with_mode(TEST_ENTRYPOINT, entrypoint, 0o755)];
         entries.extend_from_slice(extra);
 
         let files = entries
@@ -2254,7 +2192,7 @@ mod tests {
     }
 
     #[test]
-    fn install_probes_and_syncs_the_catalog() {
+    fn install_probes_and_records_the_catalog_version() {
         let ctx = TestContext::new();
         let photo = ctx.seed_photo();
         let events = ctx.events.subscribe();
@@ -2268,7 +2206,10 @@ mod tests {
             .unwrap();
         assert_eq!(install.variant, "linux-cpu");
         assert_eq!(install.catalog_version.as_deref(), Some(CATALOG_VERSION));
-        assert_eq!(ctx.db().ai_tag_definitions(PLUGIN).unwrap().len(), 3);
+        assert!(
+            ctx.db().ai_tag_definitions(PLUGIN).unwrap().is_empty(),
+            "the catalog is synced from the sidecar hello, not read from the package"
+        );
         assert!(ctx.db().tagging_jobs_for_photo(photo).unwrap().is_empty());
         assert!(ctx.db().photo_ai_tags(photo, false).unwrap().is_empty());
 
@@ -2564,7 +2505,10 @@ mod tests {
     fn uninstall_keeps_or_deletes_ai_tags() {
         let ctx = TestContext::new();
         ctx.install_default();
-        assert_eq!(ctx.db().ai_tag_definitions(PLUGIN).unwrap().len(), 3);
+        ctx.make_model_ready();
+        ctx.service.sidecar().unwrap();
+        let catalog_len = ctx.db().ai_tag_definitions(PLUGIN).unwrap().len();
+        assert!(catalog_len > 0);
 
         let install_path = PathBuf::from(
             &ctx.db()
@@ -2583,7 +2527,7 @@ mod tests {
         );
         assert_eq!(
             ctx.db().ai_tag_definitions(PLUGIN).unwrap().len(),
-            3,
+            catalog_len,
             "uninstall without deleting AI tags must keep the catalog"
         );
         assert!(!install_path.exists());
@@ -3109,48 +3053,19 @@ mod tests {
     }
 
     #[test]
-    fn catalog_sync_rejects_a_mismatched_package_catalog() {
+    fn install_rejects_a_sidecar_with_a_mismatched_catalog_version() {
         let ctx = TestContext::new();
-        let mut package = ctx.package("linux-cpu", "cpu", &[]);
-        let catalog = catalog_with_version("2099-01-01.0");
-        let entry = package
-            .entries_mut()
-            .iter_mut()
-            .find(|entry| entry.path == "catalog.json")
-            .unwrap();
-        entry.data = serde_json::to_vec(&catalog).unwrap();
-        let files = package
-            .entries()
-            .iter()
-            .map(|entry| ManifestFile {
-                path: entry.path.clone(),
-                size: entry.data.len() as u64,
-                sha256: sha256_hex(&entry.data),
-            })
-            .collect();
-        package.manifest_mut().files = files;
+        let entrypoint = format!(
+            "#!/bin/sh\nexport MOCK_SIDECAR_MODE=wrong_catalog\nexec {} \"$@\"\n",
+            shell_quote(&ctx.mock.to_string_lossy()),
+        );
+        let package =
+            package_from_entrypoint(&ctx.key, entrypoint.into_bytes(), "linux-cpu", "cpu", &[]);
         let zip = ctx.write_zip("mismatch.zip", &package);
 
         ctx.service.install_from_zip(&zip).unwrap();
-        let deadline = Instant::now() + Duration::from_secs(30);
-        loop {
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            match ctx.install_rx.recv_timeout(remaining) {
-                Ok(Event::PluginInstallProgress {
-                    status: PluginInstallStatus::Failed,
-                    error,
-                    ..
-                }) => {
-                    assert!(
-                        error.as_deref().unwrap_or_default().contains("catalog"),
-                        "{error:?}"
-                    );
-                    break;
-                }
-                Ok(_) => {}
-                Err(_) => panic!("timed out waiting for the catalog mismatch"),
-            }
-        }
+        let error = ctx.wait_for_install_failure();
+        assert!(error.contains("catalog"), "{error}");
         assert!(ctx.db().ai_tag_definitions(PLUGIN).unwrap().is_empty());
     }
 
@@ -3316,14 +3231,5 @@ mod tests {
         // another test (#647).
         let _process_guard = process_lock();
         fs::write(executable, script).expect("replace the sidecar entrypoint");
-    }
-
-    fn catalog_with_version(version: &str) -> Catalog {
-        serde_json::from_str::<Catalog>(CATALOG_JSON)
-            .map(|mut catalog| {
-                catalog.version = version.to_string();
-                catalog
-            })
-            .unwrap()
     }
 }

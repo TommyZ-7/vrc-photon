@@ -836,37 +836,6 @@ mod tests {
     use crate::ipc_server::EventBus;
     use crate::plugin::{AI_PLUGIN_ID, PluginService};
 
-    const CATALOG_JSON: &str = r#"{
-  "version": "2026-11-07.1",
-  "outdoor": [
-    {
-      "key": "sea",
-      "name": "海",
-      "name_en": "Sea",
-      "description": "海が見える屋外",
-      "default_threshold": 0.5
-    }
-  ],
-  "indoor": [
-    {
-      "key": "japanese_room",
-      "name": "和室",
-      "name_en": "Japanese room",
-      "description": "畳・障子のある和室",
-      "default_threshold": 0.5
-    }
-  ],
-  "atmosphere": [
-    {
-      "key": "weather_clear",
-      "name": "晴れ",
-      "name_en": "Clear / sunny",
-      "description": "晴れている",
-      "default_threshold": 0.5,
-      "group": "weather"
-    }
-  ]
-}"#;
     const MODEL_BYTES: &[u8] = b"model";
     const MMPROJ_BYTES: &[u8] = b"mmproj";
     const MODEL_FILE: &str = "d1-2B-Q8_0.gguf";
@@ -1102,11 +1071,7 @@ mod tests {
     }
 
     fn package_with_entrypoint(key: &TestKey, entrypoint: Vec<u8>) -> TestPackage {
-        let entries = vec![
-            TestEntry::with_mode(TEST_ENTRYPOINT, entrypoint, 0o755),
-            TestEntry::new("catalog.json", CATALOG_JSON),
-            TestEntry::new("calibration.json", b"{}"),
-        ];
+        let entries = vec![TestEntry::with_mode(TEST_ENTRYPOINT, entrypoint, 0o755)];
         let files = entries
             .iter()
             .map(|entry| ManifestFile {

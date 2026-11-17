@@ -975,8 +975,8 @@ mod tests {
         assert_eq!(installed.manifest, *package.manifest());
         assert!(installed.manifest_json.contains("\"plugin_id\""));
         assert_eq!(
-            fs::read(installed.path.join("catalog.json")).unwrap(),
-            br#"{"version":"2026-11-07.1"}"#
+            fs::read(installed.path.join("LICENSE")).unwrap(),
+            b"test license\n"
         );
         assert!(installed.path.join(TEST_ENTRYPOINT).is_file());
         assert!(staging_entries(data_dir.path()).is_empty());
@@ -1046,7 +1046,7 @@ mod tests {
         // The real EOCD at EOF is valid and `zip` would use it; only the
         // precheck sees the earlier candidate claiming 65535 entries.
         let archive = ZipArchive::new(BufReader::new(File::open(zip.path()).unwrap())).unwrap();
-        assert_eq!(archive.len(), 5);
+        assert_eq!(archive.len(), 4);
 
         let error = install_from_zip(
             zip.path(),
@@ -1245,15 +1245,11 @@ mod tests {
         let original_len = package
             .entries()
             .iter()
-            .find(|entry| entry.path == "catalog.json")
+            .find(|entry| entry.path == "LICENSE")
             .unwrap()
             .data
             .len();
-        replace_entry_data(
-            &mut package,
-            "catalog.json",
-            "x".repeat(original_len).as_bytes(),
-        );
+        replace_entry_data(&mut package, "LICENSE", "x".repeat(original_len).as_bytes());
 
         let error = install(&package, data_dir.path()).unwrap_err();
         assert!(matches!(error, AiHostError::Integrity(_)));
@@ -1274,7 +1270,7 @@ mod tests {
     fn install_rejects_file_size_mismatch() {
         let data_dir = tempdir().unwrap();
         let mut package = TestPackage::new();
-        replace_entry_data(&mut package, "catalog.json", b"short");
+        replace_entry_data(&mut package, "LICENSE", b"short");
 
         let error = install(&package, data_dir.path()).unwrap_err();
         assert!(matches!(error, AiHostError::Integrity(_)));
@@ -1391,7 +1387,7 @@ mod tests {
         let entries: Vec<_> = package
             .entries()
             .iter()
-            .filter(|entry| entry.path != "catalog.json")
+            .filter(|entry| entry.path != "LICENSE")
             .cloned()
             .collect();
         let zip = write_temp_zip(
@@ -1552,20 +1548,16 @@ mod tests {
         let data_dir = tempdir().unwrap();
         let mut package = TestPackage::new();
         let installed = install(&package, data_dir.path()).unwrap();
-        let original = fs::read(installed.path.join("catalog.json")).unwrap();
+        let original = fs::read(installed.path.join("LICENSE")).unwrap();
 
         // Same length as the signed entry, so extraction reaches the SHA-256
         // check after the staging directory has been populated.
-        replace_entry_data(
-            &mut package,
-            "catalog.json",
-            br#"{"version":"2026-11-03.2"}"#,
-        );
+        replace_entry_data(&mut package, "LICENSE", b"tast license\n");
         assert_eq!(
             package
                 .entries()
                 .iter()
-                .find(|entry| entry.path == "catalog.json")
+                .find(|entry| entry.path == "LICENSE")
                 .unwrap()
                 .data
                 .len(),
@@ -1578,10 +1570,7 @@ mod tests {
         );
 
         assert!(installed.path.join(TEST_ENTRYPOINT).is_file());
-        assert_eq!(
-            fs::read(installed.path.join("catalog.json")).unwrap(),
-            original
-        );
+        assert_eq!(fs::read(installed.path.join("LICENSE")).unwrap(), original);
         assert!(staging_entries(data_dir.path()).is_empty());
         assert!(backup_entries(data_dir.path()).is_empty());
     }
@@ -1591,7 +1580,7 @@ mod tests {
         let data_dir = tempdir().unwrap();
         let package = TestPackage::new();
         let installed = install(&package, data_dir.path()).unwrap();
-        let old_catalog = fs::read(installed.path.join("catalog.json")).unwrap();
+        let old_license = fs::read(installed.path.join("LICENSE")).unwrap();
         let old_entrypoint = fs::read(installed.path.join(TEST_ENTRYPOINT)).unwrap();
         let zip = package.temp_zip().unwrap();
 
@@ -1614,8 +1603,8 @@ mod tests {
 
         assert!(matches!(error, AiHostError::Io(_)), "{error:?}");
         assert_eq!(
-            fs::read(installed.path.join("catalog.json")).unwrap(),
-            old_catalog
+            fs::read(installed.path.join("LICENSE")).unwrap(),
+            old_license
         );
         assert_eq!(
             fs::read(installed.path.join(TEST_ENTRYPOINT)).unwrap(),
@@ -1629,7 +1618,7 @@ mod tests {
     fn install_leaves_no_target_or_staging_after_a_first_failure() {
         let data_dir = tempdir().unwrap();
         let mut package = TestPackage::new();
-        replace_entry_data(&mut package, "catalog.json", b"broken");
+        replace_entry_data(&mut package, "LICENSE", b"broken");
 
         assert!(install(&package, data_dir.path()).is_err());
         assert!(

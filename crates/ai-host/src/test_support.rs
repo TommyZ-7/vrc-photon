@@ -113,8 +113,7 @@ impl TestEntry {
 pub fn sample_entries() -> Vec<TestEntry> {
     vec![
         TestEntry::with_mode(TEST_ENTRYPOINT, b"#!/bin/sh\nexit 0\n", 0o644),
-        TestEntry::new("catalog.json", br#"{"version":"2026-11-07.1"}"#),
-        TestEntry::new("calibration.json", br#"{"thresholds":{}}"#),
+        TestEntry::new("LICENSE", b"test license\n"),
     ]
 }
 

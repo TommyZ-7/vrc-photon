@@ -38,19 +38,6 @@ const CATALOG_JSON: &str = r#"{
   ]
 }"#;
 
-const DECOY_CATALOG_JSON: &str = r#"{
-  "version": "decoy",
-  "outdoor": [
-    {
-      "key": "env_only",
-      "name": "Env only",
-      "description": "must never be selected while --catalog is present",
-      "default_threshold": 0.5
-    }
-  ],
-  "indoor": []
-}"#;
-
 struct MockFixture {
     _tempdir: TempDir,
     config: SidecarConfig,
@@ -102,8 +89,6 @@ fn test_config(mock: &Path, mode: &str) -> MockFixture {
     let catalog = tempdir.path().join("catalog.json");
     fs::write(&catalog, CATALOG_JSON).expect("write the catalog");
     let catalog_env = catalog.to_string_lossy().into_owned();
-    let calibration = tempdir.path().join("calibration.json");
-    fs::write(&calibration, "{}").expect("write the calibration data");
 
     let model = tempdir.path().join("d1-2B-Q8_0.gguf");
     fs::write(&model, b"mock model").expect("write the model");
@@ -114,8 +99,6 @@ fn test_config(mock: &Path, mode: &str) -> MockFixture {
         paths: SidecarPaths {
             install_dir,
             executable: mock.to_path_buf(),
-            catalog,
-            calibration,
         },
         model: ModelPaths { model, mmproj },
         variant: "linux-vulkan".to_string(),
@@ -237,7 +220,7 @@ fn probe_reads_backends() {
 
     assert_eq!(probe.protocol_version, 1);
     assert_eq!(probe.variant, "linux-vulkan");
-    assert_eq!(probe.catalog_version, "2026-11-03.1");
+    assert_eq!(probe.catalog_version, "2026-11-07.1");
     assert!(
         probe
             .backends
@@ -258,7 +241,7 @@ fn probe_checks_the_full_identity() {
     let mock = mock_sidecar();
     let fixture = test_config(&mock, "normal");
     let expectations = ProbeExpectations::new("vrc-photon-autotag", "linux-vulkan")
-        .with_catalog_version("2026-11-03.1");
+        .with_catalog_version("2026-11-07.1");
 
     let probe = SidecarClient::probe_with_expectations(
         &fixture.config.paths,
@@ -299,31 +282,6 @@ fn spawn_redirects_stderr_to_the_log() {
         "the sidecar stderr must be redirected: {contents:?}"
     );
     assert!(client.is_alive());
-}
-
-#[test]
-fn catalog_argument_wins_over_the_environment() {
-    let mock = mock_sidecar();
-    let mut fixture = test_config(&mock, "normal");
-    let decoy = fixture._tempdir.path().join("decoy-catalog.json");
-    fs::write(&decoy, DECOY_CATALOG_JSON).expect("write the decoy catalog");
-
-    let decoy_catalog: vrc_photon_ai_protocol::Catalog =
-        serde_json::from_str(DECOY_CATALOG_JSON).expect("the decoy catalog must parse");
-    assert_eq!(decoy_catalog.outdoor[0].key, "env_only");
-
-    let catalog_env = fixture
-        .config
-        .env
-        .iter_mut()
-        .find(|(key, _)| key == "MOCK_SIDECAR_CATALOG")
-        .expect("the test config sets MOCK_SIDECAR_CATALOG");
-    catalog_env.1 = decoy.to_string_lossy().into_owned();
-
-    let client = SidecarClient::spawn(fixture.config).expect("spawn the mock sidecar");
-
-    assert_eq!(client.hello().catalog.version, "2026-11-03.1");
-    assert_eq!(client.hello().catalog.outdoor[0].key, "sea");
 }
 
 #[test]
