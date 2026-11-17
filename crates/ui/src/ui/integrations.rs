@@ -13,7 +13,8 @@ use vrc_photon_i18n::tr;
 use crate::app::App;
 use crate::app::IntegrationsSection;
 use crate::app::ai::{
-    backend_options, backend_selection_is_disabled_when_not_ready, variant_backend_label,
+    backend_options, backend_selection_is_disabled_when_not_ready, effective_ai_tagging_enabled,
+    variant_backend_label,
 };
 use crate::app::compression::FeatureCompressionTarget;
 use vrc_photon_core::queue::QueueFeature;
@@ -89,6 +90,8 @@ impl App {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let p = self.palette;
+        let ai_enabled =
+            effective_ai_tagging_enabled(self.settings.ai_tagging_enabled, self.ai.installed());
 
         let items = [
             (
@@ -107,7 +110,7 @@ impl App {
                 IntegrationsSection::AiTagging,
                 "integrations-list-ai",
                 tr!("integrations.ai.title"),
-                self.settings.ai_tagging_enabled,
+                ai_enabled,
             ),
             (
                 IntegrationsSection::Clipboard,
@@ -274,7 +277,9 @@ impl App {
     fn ai_tagging_card(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let p = self.palette;
         let ready = self.ai.ready();
-        let enabled = self.settings.ai_tagging_enabled;
+        let installed = self.ai.installed();
+        let enabled =
+            effective_ai_tagging_enabled(self.settings.ai_tagging_enabled, installed);
         let behavior = self.settings.ai_tagging_auto;
         let backend_selection_disabled =
             backend_selection_is_disabled_when_not_ready(ready, enabled);
@@ -373,13 +378,15 @@ impl App {
                                 .child(tr!("integrations.ai.title")),
                         ),
                     )
-                    .child(
-                        Switch::new("integrations-ai-enabled")
-                            .checked(enabled)
-                            .on_click(cx.listener(|this, checked, _, cx| {
-                                this.set_ai_tagging_enabled(*checked, cx);
-                            })),
-                    ),
+                    .when(installed, |this| {
+                        this.child(
+                            Switch::new("integrations-ai-enabled")
+                                .checked(enabled)
+                                .on_click(cx.listener(|this, checked, _, cx| {
+                                    this.set_ai_tagging_enabled(*checked, cx);
+                                })),
+                        )
+                    }),
             )
             .child(self.integration_settings_body(enabled, body))
             .into_any_element()
