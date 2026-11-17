@@ -41,7 +41,7 @@
   - `configured && installed` を返す。
   - Task 2 の一覧ドットとカードが使う。
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 `mod tests` の `use super::{...}` に `effective_ai_tagging_enabled` を追加し、次のテストを足す。
 
@@ -55,13 +55,13 @@ fn ai_tagging_is_disabled_while_the_plugin_is_not_installed() {
 }
 ```
 
-- [ ] **Step 2: テストが失敗することを確認する**
+- [x] **Step 2: テストが失敗することを確認する**
 
 Run: `cargo test -p vrc-photon-ui ai_tagging_is_disabled_while_the_plugin_is_not_installed`
 
 Expected: FAIL（`effective_ai_tagging_enabled` が見つからない）
 
-- [ ] **Step 3: 最小限の実装を追加する**
+- [x] **Step 3: 最小限の実装を追加する**
 
 `ai_dashboard_view` の近くに次を置く。
 
@@ -73,13 +73,13 @@ pub(crate) fn effective_ai_tagging_enabled(configured: bool, installed: bool) ->
 }
 ```
 
-- [ ] **Step 4: テストが通ることを確認する**
+- [x] **Step 4: テストが通ることを確認する**
 
 Run: `cargo test -p vrc-photon-ui ai_tagging_is_disabled_while_the_plugin_is_not_installed`
 
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add crates/ui/src/app/ai.rs
@@ -99,7 +99,7 @@ git commit -m "fix(ui): compute the effective AI tagging state (#693)"
 - Consumes: `App::ai.installed()` / `App::settings.ai_tagging_enabled`
 - Produces: 未導入時のカードヘッダーから `Switch` を除いた表示
 
-- [ ] **Step 1: 一覧の AI 行だけ実効状態を使う**
+- [x] **Step 1: 一覧の AI 行だけ実効状態を使う**
 
 `integrations_list` の先頭で次を計算する。
 
@@ -111,7 +111,7 @@ let ai_enabled =
 `items` 配列の `IntegrationsSection::AiTagging` の 4 番目（状態）を
 `self.settings.ai_tagging_enabled` から `ai_enabled` に変える。他の行は変更しない。
 
-- [ ] **Step 2: カードの実効状態と導入判定を計算する**
+- [x] **Step 2: カードの実効状態と導入判定を計算する**
 
 `ai_tagging_card` の先頭を次の値に変える。
 
@@ -125,20 +125,20 @@ let enabled =
 そのまま使う。`enabled` が false になることで本文の淡色化と操作ブロックが
 既存の仕組みで行われる。
 
-- [ ] **Step 3: 未導入時だけヘッダースイッチを生成しない**
+- [x] **Step 3: 未導入時だけヘッダースイッチを生成しない**
 
 カードヘッダーの `Switch::new("integrations-ai-enabled")` の子を
 `.when(installed, |this| { ... })` で包む。タイトルは常に表示する。
 スイッチの `checked(enabled)`、`on_click` の `set_ai_tagging_enabled` は
 現行のまま。インストール済みの見た目・動作は変えない。
 
-- [ ] **Step 4: ビルドとテスト**
+- [x] **Step 4: ビルドとテスト**
 
 Run: `cargo test -p vrc-photon-ui && cargo build -p vrc-photon-ui`
 
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add crates/ui/src/ui/integrations.rs
@@ -157,13 +157,13 @@ git commit -m "fix(ui): hide the AI tagging switch before the plugin is installe
 - Consumes: `App::settings.ai_tagging_auto` を使わなくなる
 - Produces: `fn setup_ai(&self) -> Div`（`Context` 引数を削除）
 
-- [ ] **Step 1: 自動動作セグメントの描画を削除する**
+- [x] **Step 1: 自動動作セグメントの描画を削除する**
 
 `setup_ai` の `v_flex()` から次の `.child(auto_mode_segmented(...))` ブロック
 （`"setup-ai"`、`self.settings.ai_tagging_auto.mode`、`App::set_ai_auto_mode`）を
 削除する。紹介文、BOOTH の案内、プレビューの子はそのまま残す。
 
-- [ ] **Step 2: 不要になった `cx` 引数を削除する**
+- [x] **Step 2: 不要になった `cx` 引数を削除する**
 
 `setup_ai` のシグネチャを `fn setup_ai(&self) -> Div` に変え、呼び出し側を
 `SetupPage::AiTagging => self.setup_ai().into_any_element(),` にする。
@@ -171,13 +171,13 @@ git commit -m "fix(ui): hide the AI tagging switch before the plugin is installe
 `crate::ui::auto_behavior::auto_mode_segmented` の import は Discord と
 自動圧縮のセットアップページで使うため残す。
 
-- [ ] **Step 3: ビルドとテスト**
+- [x] **Step 3: ビルドとテスト**
 
 Run: `cargo build -p vrc-photon-ui && cargo test -p vrc-photon-ui app::setup`
 
 Expected: PASS
 
-- [ ] **Step 4: コミット**
+- [x] **Step 4: コミット**
 
 ```bash
 git add crates/ui/src/ui/setup.rs
@@ -196,7 +196,7 @@ git commit -m "fix(ui): drop the automatic behavior control from the AI setup pa
 - Consumes: Task 1〜3 の変更
 - Produces: 実装 PR に貼る検証結果
 
-- [ ] **Step 1: ローカル検証を実行する**
+- [x] **Step 1: ローカル検証を実行する**
 
 Run:
 
@@ -207,20 +207,20 @@ cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warni
 Expected: PASS（既知の並列実行フレーク #647 が出た場合だけ単体再実行し、
 失敗ではないことを確認して PR に記録する）
 
-- [ ] **Step 2: 初回セットアップを目視確認する**
+- [x] **Step 2: 初回セットアップを目視確認する**
 
 新しい設定ディレクトリでアプリを起動し、AIタグ付けページを開く。
 自動動作のラベルと3分割セグメントがなく、紹介文の次にプレビューが来ること、
 600×561 のパネルからはみ出さないことを確認する。日本語と英語の両方を見る。
 
-- [ ] **Step 3: 連携・自動を目視確認する**
+- [x] **Step 3: 連携・自動を目視確認する**
 
 - プラグイン未導入: AIタグ付けカードのヘッダーにスイッチがなく、一覧ドットが
   淡色で、本文が淡色・操作不可。
 - プラグイン導入済み: スイッチが表示され、ON/OFF が本文と一覧ドットに反映される。
 - モデル未準備の導入済み状態でもスイッチが消えない。
 
-- [ ] **Step 4: PR を作成する**
+- [x] **Step 4: PR を作成する**
 
 `fix/692-693-ai-tagging-visibility` から `main` へ PR を作成し、`bug` ラベルを付け、
 本文に `Closes #692` と `Closes #693`、検証結果、目視確認の結果を書く。
