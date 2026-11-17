@@ -341,7 +341,11 @@ impl Db {
     /// derivative and no active compression job. This backs the bulk
     /// "compress uncompressed photos" action; already compressed photos and
     /// photos with queued work are left untouched.
-    pub fn enqueue_auto_jobs_for_uncompressed(&self, policy: &str) -> Result<usize> {
+    pub fn enqueue_auto_jobs_for_uncompressed(
+        &self,
+        policy: &str,
+        since: Option<i64>,
+    ) -> Result<usize> {
         let inserted = self.conn.execute(
             "INSERT INTO compression_jobs(id, photo_id, profile_id, origin, status, progress, policy, output_dir, created_at) \
              SELECT lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-' || \
@@ -359,8 +363,9 @@ impl Db {
                    SELECT 1 FROM compression_jobs j \
                    WHERE j.photo_id = p.id \
                      AND (j.origin = 'auto' OR j.status IN ('waiting', 'pending', 'processing')) \
-               )",
-            params![policy, now_string()],
+               ) \
+               AND (?3 IS NULL OR CAST(strftime('%s', p.created_at) AS INTEGER) >= ?3)",
+            params![policy, now_string(), since],
         )?;
         Ok(inserted)
     }

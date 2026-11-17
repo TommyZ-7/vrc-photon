@@ -77,6 +77,15 @@ fn seed_other_photo(db: &Db) -> i64 {
     .unwrap()
 }
 
+fn set_photo_created_at(db: &Db, photo_id: i64, created_at: &str) {
+    db.conn
+        .execute(
+            "UPDATE photos SET created_at = ?1 WHERE id = ?2",
+            rusqlite::params![created_at, photo_id],
+        )
+        .unwrap();
+}
+
 const AI_PLUGIN: &str = "vrc-photon-autotag";
 
 fn ai_install(plugin_id: &str, variant: &str, version: &str, active: bool) -> PluginInstallation {
@@ -3055,7 +3064,11 @@ fn auto_backlog_queues_only_uncompressed_idle_photos() {
     db.enqueue_auto_job_with_status(ids[2], "keep", QueueStatus::Failed)
         .unwrap();
 
-    assert_eq!(db.enqueue_auto_jobs_for_uncompressed("replace").unwrap(), 1);
+    assert_eq!(
+        db.enqueue_auto_jobs_for_uncompressed("replace", None)
+            .unwrap(),
+        1
+    );
     let jobs = db.list_jobs(10).unwrap();
     let queued = jobs
         .iter()
@@ -3070,7 +3083,129 @@ fn auto_backlog_queues_only_uncompressed_idle_photos() {
     assert!(queued.output_dir.is_none());
 
     assert_eq!(db.release_waiting_jobs("replace").unwrap(), 1);
-    assert_eq!(db.enqueue_auto_jobs_for_uncompressed("keep").unwrap(), 0);
+    assert_eq!(
+        db.enqueue_auto_jobs_for_uncompressed("keep", None).unwrap(),
+        0
+    );
+}
+
+#[test]
+fn compression_backlog_scope_filters_by_created_at() {
+    let db = Db::open_in_memory().unwrap();
+    let old = seed_photo(&db);
+    let new = seed_other_photo(&db);
+    set_photo_created_at(&db, old, "2026-01-01T00:00:00+00:00");
+    set_photo_created_at(&db, new, "2026-02-01T00:00:00+00:00");
+    let since = chrono::DateTime::parse_from_rfc3339("2026-01-15T00:00:00+00:00")
+        .unwrap()
+        .timestamp();
+    assert_eq!(
+        db.enqueue_auto_jobs_for_uncompressed("keep", Some(since))
+            .unwrap(),
+        1
+    );
+    let jobs = db.list_jobs(10).unwrap();
+    assert_eq!(jobs.len(), 1);
+    assert_eq!(jobs[0].photo_id, new);
+    assert_ne!(jobs[0].photo_id, old);
+}
+
+#[test]
+fn compression_backlog_without_since_includes_every_uncompressed_photo() {
+    let db = Db::open_in_memory().unwrap();
+    seed_photo(&db);
+    seed_other_photo(&db);
+    assert_eq!(
+        db.enqueue_auto_jobs_for_uncompressed("keep", None).unwrap(),
+        2
+    );
+}
+
+#[test]
+fn tagging_backlog_scope_filters_by_created_at() {
+    let db = Db::open_in_memory().unwrap();
+    let old = seed_photo(&db);
+    let new = seed_other_photo(&db);
+    set_photo_created_at(&db, old, "2026-01-01T00:00:00+00:00");
+    set_photo_created_at(&db, new, "2026-02-01T00:00:00+00:00");
+    let since = chrono::DateTime::parse_from_rfc3339("2026-01-15T00:00:00+00:00")
+        .unwrap()
+        .timestamp();
+    assert_eq!(
+        db.enqueue_tagging_backlog("vrc-photon-ai", Some(since))
+            .unwrap(),
+        1
+    );
+    assert!(db.tagging_jobs_for_photo(old).unwrap().is_empty());
+    assert_eq!(db.tagging_jobs_for_photo(new).unwrap().len(), 1);
+}
+
+#[test]
+fn discord_unsent_backlog_counts_only_never_sent_photos() {
+    let db = Db::open_in_memory().unwrap();
+    let sent = seed_photo(&db);
+    let failed = seed_other_photo(&db);
+    let sent_id = db
+        .enqueue_send(
+            sent,
+            SendKind::Photo,
+            SendOrigin::Manual,
+            SendStatus::Pending,
+        )
+        .unwrap()
+        .unwrap();
+    db.conn
+        .execute(
+            "UPDATE send_outbox SET status = 'sent' WHERE id = ?1",
+            [sent_id],
+        )
+        .unwrap();
+    let failed_id = db
+        .enqueue_send(
+            failed,
+            SendKind::Photo,
+            SendOrigin::Manual,
+            SendStatus::Pending,
+        )
+        .unwrap()
+        .unwrap();
+    db.conn
+        .execute(
+            "UPDATE send_outbox SET status = 'failed' WHERE id = ?1",
+            [failed_id],
+        )
+        .unwrap();
+    assert_eq!(db.count_unsent_photo_backlog(None).unwrap(), 1);
+    assert_eq!(db.enqueue_unsent_photo_backlog(None).unwrap(), 1);
+    assert_eq!(db.count_unsent_photo_backlog(None).unwrap(), 0);
+}
+
+#[test]
+fn discord_unsent_backlog_respects_created_at_and_active_rows() {
+    let db = Db::open_in_memory().unwrap();
+    let photos = seed_photos(&db, 3);
+    let old = photos[0];
+    let active = photos[1];
+    let eligible = photos[2];
+    set_photo_created_at(&db, old, "2026-01-01T00:00:00+00:00");
+    set_photo_created_at(&db, active, "2026-02-01T00:00:00+00:00");
+    set_photo_created_at(&db, eligible, "2026-02-02T00:00:00+00:00");
+    db.enqueue_send(
+        active,
+        SendKind::Photo,
+        SendOrigin::Manual,
+        SendStatus::Waiting,
+    )
+    .unwrap();
+    let since = chrono::DateTime::parse_from_rfc3339("2026-01-15T00:00:00+00:00")
+        .unwrap()
+        .timestamp();
+    assert_eq!(db.count_unsent_photo_backlog(Some(since)).unwrap(), 1);
+    assert_eq!(db.enqueue_unsent_photo_backlog(Some(since)).unwrap(), 1);
+    assert_eq!(db.count_unsent_photo_backlog(Some(since)).unwrap(), 0);
+    assert!(db.active_send_for_photo(active).unwrap().is_some());
+    assert!(db.active_send_for_photo(old).unwrap().is_none());
+    assert!(db.active_send_for_photo(eligible).unwrap().is_some());
 }
 
 #[test]
@@ -4665,13 +4800,13 @@ fn backlog_enqueue_is_idempotent_and_newest_first() {
     let db = Db::open_in_memory().unwrap();
     let photos = seed_photos(&db, 1000);
 
-    assert_eq!(db.enqueue_tagging_backlog(AI_PLUGIN).unwrap(), 1000);
-    assert_eq!(db.enqueue_tagging_backlog(AI_PLUGIN).unwrap(), 0);
+    assert_eq!(db.enqueue_tagging_backlog(AI_PLUGIN, None).unwrap(), 1000);
+    assert_eq!(db.enqueue_tagging_backlog(AI_PLUGIN, None).unwrap(), 0);
     assert_eq!(db.tagging_job_counts(AI_PLUGIN).unwrap().waiting, 1000);
     assert!(db.next_pending_tagging_job().unwrap().is_none());
 
     assert_eq!(db.release_waiting_tagging_jobs(AI_PLUGIN).unwrap(), 1000);
-    assert_eq!(db.enqueue_tagging_backlog(AI_PLUGIN).unwrap(), 0);
+    assert_eq!(db.enqueue_tagging_backlog(AI_PLUGIN, None).unwrap(), 0);
     let mut claimed = Vec::new();
     for _ in 0..3 {
         claimed.push(db.next_pending_tagging_job().unwrap().unwrap().photo_id);

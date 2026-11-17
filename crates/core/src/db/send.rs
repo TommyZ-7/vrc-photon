@@ -138,6 +138,60 @@ impl Db {
         Ok(count)
     }
 
+    /// Counts photos that have never been sent and have no active send. The
+    /// optional `since` lower bound is the library-addition cutoff.
+    pub fn count_unsent_photo_backlog(&self, since: Option<i64>) -> Result<i64> {
+        let count = self.conn.query_row(
+            "SELECT COUNT(*) FROM photos p \
+             WHERE p.status IN ('present', 'replaced') \
+               AND NOT EXISTS ( \
+                   SELECT 1 FROM deletion_requests dr \
+                   WHERE dr.photo_id = p.id AND dr.status IN ('pending', 'blocked', 'running') \
+               ) \
+               AND NOT EXISTS ( \
+                   SELECT 1 FROM send_outbox o \
+                   WHERE o.photo_id = p.id AND o.status = 'sent' \
+               ) \
+               AND NOT EXISTS ( \
+                   SELECT 1 FROM send_outbox o \
+                   WHERE o.photo_id = p.id \
+                     AND o.status IN ('waiting', 'pending', 'processing') \
+               ) \
+               AND (?1 IS NULL OR CAST(strftime('%s', p.created_at) AS INTEGER) >= ?1)",
+            params![since],
+            |row| row.get(0),
+        )?;
+        Ok(count)
+    }
+
+    /// Queues every never-sent photo without an active send as automatic
+    /// pending work. `INSERT OR IGNORE` and the partial unique index make the
+    /// operation idempotent.
+    pub fn enqueue_unsent_photo_backlog(&self, since: Option<i64>) -> Result<usize> {
+        let inserted = self.conn.execute(
+            "INSERT OR IGNORE INTO send_outbox(photo_id, kind, origin, status, created_at) \
+             SELECT p.id, 'photo', 'auto', 'pending', ?2 \
+             FROM photos p \
+             WHERE p.status IN ('present', 'replaced') \
+               AND NOT EXISTS ( \
+                   SELECT 1 FROM deletion_requests dr \
+                   WHERE dr.photo_id = p.id AND dr.status IN ('pending', 'blocked', 'running') \
+               ) \
+               AND NOT EXISTS ( \
+                   SELECT 1 FROM send_outbox o \
+                   WHERE o.photo_id = p.id AND o.status = 'sent' \
+               ) \
+               AND NOT EXISTS ( \
+                   SELECT 1 FROM send_outbox o \
+                   WHERE o.photo_id = p.id \
+                     AND o.status IN ('waiting', 'pending', 'processing') \
+               ) \
+               AND (?1 IS NULL OR CAST(strftime('%s', p.created_at) AS INTEGER) >= ?1)",
+            params![since, now_string()],
+        )?;
+        Ok(inserted)
+    }
+
     /// Marks a claimed send as sent and stores the Discord identity produced by
     /// the upload. Rows that are not `processing` are left untouched.
     pub fn complete_send(&self, id: i64, completion: &SendCompletion) -> Result<()> {

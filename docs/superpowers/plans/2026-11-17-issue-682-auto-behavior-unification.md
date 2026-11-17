@@ -362,7 +362,7 @@ git commit -m "feat(core): unify automatic behavior settings (#682)"
   - `Db::count_unsent_photo_backlog(&self, since: Option<i64>) -> Result<i64>`
   - `Db::enqueue_unsent_photo_backlog(&self, since: Option<i64>) -> Result<usize>`
 
-- [ ] **Step 1: 失敗する DB テストを書く**
+- [x] **Step 1: 失敗する DB テストを書く**
 
 `crates/core/src/db/tests.rs` に、写真の `created_at` を固定するヘルパーを追加する。
 
@@ -468,12 +468,12 @@ fn discord_unsent_backlog_respects_created_at_and_active_rows() {
 }
 ```
 
-- [ ] **Step 2: テストを実行して失敗を確認する**
+- [x] **Step 2: テストを実行して失敗を確認する**
 
 Run: `cargo test -p vrc-photon-core db::tests::compression_backlog_scope_filters_by_created_at`
 Expected: FAIL（引数が足りない／関数がない）
 
-- [ ] **Step 3: SQL を実装する**
+- [x] **Step 3: SQL を実装する**
 
 圧縮と AI の既存 `INSERT ... SELECT` に次の条件を追加する。
 
@@ -486,12 +486,12 @@ Discord は `send.rs` に2関数を追加する。対象条件は設計書の「
 単一 SQL で `kind = 'photo'`, `origin = 'auto'`, `status = 'pending'`,
 `created_at = now` を積む（per-photo ループにしない）。
 
-- [ ] **Step 4: テストを実行して通す**
+- [x] **Step 4: テストを実行して通す**
 
 Run: `cargo test -p vrc-photon-core db::tests`
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add crates/core/src/db

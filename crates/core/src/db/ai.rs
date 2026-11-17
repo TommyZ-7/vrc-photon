@@ -536,7 +536,7 @@ impl Db {
     /// waiting/pending/processing rows from being duplicated. The whole
     /// backlog is one ordered `INSERT ... SELECT`, so a large library does not
     /// pay for a per-photo round trip inside the foreground transaction.
-    pub fn enqueue_tagging_backlog(&self, plugin_id: &str) -> Result<usize> {
+    pub fn enqueue_tagging_backlog(&self, plugin_id: &str, since: Option<i64>) -> Result<usize> {
         let inserted = self.conn.execute(
             "INSERT OR IGNORE INTO tagging_jobs \
                 (id, photo_id, plugin_id, status, progress, created_at) \
@@ -551,8 +551,9 @@ impl Db {
                    SELECT 1 FROM deletion_requests dr \
                    WHERE dr.photo_id = p.id AND dr.status IN ('pending', 'blocked', 'running') \
                ) \
+               AND (?3 IS NULL OR CAST(strftime('%s', p.created_at) AS INTEGER) >= ?3) \
              ORDER BY p.captured_at_utc DESC, p.id DESC",
-            params![plugin_id, now_string()],
+            params![plugin_id, now_string(), since],
         )?;
         Ok(inserted)
     }
