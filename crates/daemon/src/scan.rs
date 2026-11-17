@@ -253,19 +253,25 @@ impl Daemon {
                 db.bump_library_revision()?;
             }
         }
-        if self.settings.auto_compress && !new_ids.is_empty() {
+        if self.settings.auto_compress_enabled
+            && self.settings.auto_compress.mode.is_active()
+            && !new_ids.is_empty()
+        {
             {
                 let db = lock_db(&self.db);
                 enqueue_auto_jobs(
                     &db,
                     &new_ids,
                     self.settings.auto_compress_keep_original,
-                    self.settings.auto_compress_immediate,
+                    self.settings.auto_compress.mode,
                 )?;
             }
             self.jobs.notify();
         }
-        if !new_ids.is_empty() {
+        if self.settings.ai_tagging_enabled
+            && self.settings.ai_tagging_auto.mode.is_active()
+            && !new_ids.is_empty()
+        {
             let tagging_enqueued = {
                 let db = lock_db(&self.db);
                 enqueue_auto_tagging(&db, &new_ids, &self.settings, tagging_ready)?
@@ -528,9 +534,10 @@ impl Daemon {
                 let db = lock_db(&self.db);
                 db.bump_library_revision()?;
             }
-            if self.settings.auto_compress
+            if self.settings.auto_compress_enabled
+                && self.settings.auto_compress.mode.is_active()
                 && !report.new_ids.is_empty()
-                && (!initial_scan || self.settings.auto_compress_backlog)
+                && !initial_scan
             {
                 let enqueued = {
                     let db = lock_db(&self.db);
@@ -538,13 +545,16 @@ impl Daemon {
                         &db,
                         &report.new_ids,
                         self.settings.auto_compress_keep_original,
-                        self.settings.auto_compress_immediate,
+                        self.settings.auto_compress.mode,
                     )?
                 };
                 auto_enqueued = enqueued;
                 self.jobs.notify();
             }
-            if !report.new_ids.is_empty() {
+            if self.settings.ai_tagging_enabled
+                && self.settings.ai_tagging_auto.mode.is_active()
+                && !report.new_ids.is_empty()
+            {
                 let tagging_enqueued = {
                     let db = lock_db(&self.db);
                     enqueue_auto_tagging(&db, &report.new_ids, &self.settings, tagging_ready)?

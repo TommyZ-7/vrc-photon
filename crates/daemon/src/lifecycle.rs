@@ -1273,9 +1273,8 @@ impl Daemon {
         let Some(settings) = loaded else {
             return;
         };
+        self.settings.auto_compress_enabled = settings.auto_compress_enabled;
         self.settings.auto_compress = settings.auto_compress;
-        self.settings.auto_compress_backlog = settings.auto_compress_backlog;
-        self.settings.auto_compress_immediate = settings.auto_compress_immediate;
         self.settings.auto_compress_keep_original = settings.auto_compress_keep_original;
         self.settings.auto_compression = settings.auto_compression.clone();
         self.settings.discord_compression = settings.discord_compression.clone();

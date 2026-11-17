@@ -4,13 +4,13 @@ pub(crate) fn enqueue_auto_jobs(
     db: &Db,
     new_ids: &[i64],
     keep_original: bool,
-    immediate: bool,
+    mode: AutoMode,
 ) -> Result<usize> {
     let policy = if keep_original { "keep" } else { "replace" };
-    let status = if immediate {
-        QueueStatus::Pending
-    } else {
-        QueueStatus::Waiting
+    let status = match mode {
+        AutoMode::Off => return Ok(0),
+        AutoMode::Immediate => QueueStatus::Pending,
+        AutoMode::Waiting => QueueStatus::Waiting,
     };
     let mut enqueued = 0;
     for photo_id in new_ids {
@@ -35,14 +35,16 @@ pub(crate) fn enqueue_auto_tagging(
     settings: &AppSettings,
     plugin_ready: bool,
 ) -> Result<usize> {
-    if new_ids.is_empty()
-        || !settings.ai_tagging_enabled
-        || !settings.ai_tagging_auto
-        || !plugin_ready
-    {
+    if new_ids.is_empty() || !settings.ai_tagging_enabled {
         return Ok(0);
     }
-    let enqueued = db.enqueue_tagging_jobs(new_ids, AI_PLUGIN_ID, TaggingJobStatus::Pending)?;
+    let status = match settings.ai_tagging_auto.mode {
+        AutoMode::Off => return Ok(0),
+        AutoMode::Immediate if !plugin_ready => return Ok(0),
+        AutoMode::Immediate => TaggingJobStatus::Pending,
+        AutoMode::Waiting => TaggingJobStatus::Waiting,
+    };
+    let enqueued = db.enqueue_tagging_jobs(new_ids, AI_PLUGIN_ID, status)?;
     tracing::info!(
         photos = new_ids.len(),
         jobs = enqueued,

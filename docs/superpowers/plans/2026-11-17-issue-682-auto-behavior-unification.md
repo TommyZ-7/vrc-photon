@@ -521,7 +521,7 @@ git commit -m "feat(core): scope automatic backlog queries (#682)"
   - `enqueue_auto_sends(db: &Db, photo_ids: &[i64]) -> Result<usize>`（既存シグネチャ、中身を変更）
   - `AppSettings::auto_compress_enabled` / `auto_compress` / `ai_tagging_auto` のデーモンコピー
 
-- [ ] **Step 1: 失敗するデーモンテストを書く**
+- [x] **Step 1: 失敗するデーモンテストを書く**
 
 ```rust
 #[test]
@@ -624,12 +624,12 @@ fn immediate_ai_mode_still_requires_a_ready_plugin() {
 ため、`scan_root_photos` か手動の一括処理に置き換える。`discord_auto_since` を
 設定しているテストは `discord_auto = AutoBehavior::immediate()` に置き換える。
 
-- [ ] **Step 2: テストを実行して失敗を確認する**
+- [x] **Step 2: テストを実行して失敗を確認する**
 
 Run: `cargo test -p vrc-photon-daemon initial_scan_never_enqueues_auto_compression_for_any_scope`
 Expected: FAIL（新しい型がない／挙動が違う）
 
-- [ ] **Step 3: デーモンを実装する**
+- [x] **Step 3: デーモンを実装する**
 
 - `enqueue_auto_jobs` は `mode` を受け取り、`Off` なら0、`Immediate` なら
   `QueueStatus::Pending`、`Waiting` なら `QueueStatus::Waiting`。
@@ -652,12 +652,12 @@ Expected: FAIL（新しい型がない／挙動が違う）
   `self.settings.ai_tagging_auto = settings.ai_tagging_auto;` に置き換える。
 - `ai_e2e.rs` の `ai_tagging_auto = false` を `AutoBehavior::off()` に置き換える。
 
-- [ ] **Step 4: テストを実行して通す**
+- [x] **Step 4: テストを実行して通す**
 
 Run: `cargo test -p vrc-photon-daemon`
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add crates/daemon

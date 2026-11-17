@@ -22,7 +22,7 @@ use vrc_photon_core::model::{
     CompressionOptions, Photo, PhotoStatus, SendCompletion, SendErrorCode, SendKind, SendOrigin,
     SendOutboxEntry, SendSource, SendStatus,
 };
-use vrc_photon_core::settings::{AppSettings, DiscordAutoMode, load_discord_webhook};
+use vrc_photon_core::settings::{AppSettings, AutoMode, load_discord_webhook};
 use vrc_photon_i18n::tr;
 use vrc_photon_ipc::Event;
 
@@ -355,7 +355,7 @@ pub(crate) fn recover_interrupted_sends(db: &Db) -> Result<usize> {
 // enqueue policy can also be exercised in isolation.
 pub(crate) fn enqueue_auto_sends(db: &Db, photo_ids: &[i64]) -> Result<usize> {
     let settings = AppSettings::load(db)?;
-    if !settings.discord_enabled || settings.discord_auto_mode == DiscordAutoMode::Off {
+    if !settings.discord_enabled || settings.discord_auto.mode == AutoMode::Off {
         return Ok(0);
     }
     let Some(url) = load_discord_webhook(db)? else {
@@ -364,13 +364,10 @@ pub(crate) fn enqueue_auto_sends(db: &Db, photo_ids: &[i64]) -> Result<usize> {
     if validate_webhook_url(&url).is_err() {
         return Ok(0);
     }
-    let Some(since) = settings.discord_auto_since else {
-        return Ok(0);
-    };
-    let status = match settings.discord_auto_mode {
-        DiscordAutoMode::Immediate => SendStatus::Pending,
-        DiscordAutoMode::Waiting => SendStatus::Waiting,
-        DiscordAutoMode::Off => return Ok(0),
+    let status = match settings.discord_auto.mode {
+        AutoMode::Immediate => SendStatus::Pending,
+        AutoMode::Waiting => SendStatus::Waiting,
+        AutoMode::Off => return Ok(0),
     };
 
     let mut enqueued = 0;
@@ -378,7 +375,7 @@ pub(crate) fn enqueue_auto_sends(db: &Db, photo_ids: &[i64]) -> Result<usize> {
         let Some(photo) = db.photo_by_id(photo_id)? else {
             continue;
         };
-        if photo.captured_at_utc < since || photo.status == PhotoStatus::Deleting {
+        if photo.status == PhotoStatus::Deleting {
             continue;
         }
         if db
@@ -865,7 +862,7 @@ mod tests {
         SendSource, SendStatus,
     };
     use vrc_photon_core::settings::{
-        AppSettings, DiscordAutoMode, clear_discord_webhook, save_discord_webhook,
+        AppSettings, AutoBehavior, clear_discord_webhook, save_discord_webhook,
     };
 
     use super::*;
@@ -1013,23 +1010,31 @@ mod tests {
     }
 
     #[test]
-    fn auto_enqueue_respects_mode_webhook_and_auto_since() {
+    fn auto_enqueue_respects_mode_and_webhook() {
         let dir = tempfile::tempdir().unwrap();
         let db = Db::open(dir.path().join("library.db")).unwrap();
         let old = seed_photo_at(&db, 100, "old.png");
         let new = seed_photo_at(&db, 300, "new.png");
         let mut settings = AppSettings::load(&db).unwrap();
         settings.discord_enabled = true;
-        settings.discord_auto_mode = DiscordAutoMode::Immediate;
-        settings.discord_auto_since = Some(200);
+        settings.discord_auto = AutoBehavior::immediate();
         settings.save(&db).unwrap();
         save_discord_webhook(&db, "https://discord.com/api/webhooks/1/t").unwrap();
-        assert_eq!(enqueue_auto_sends(&db, &[old, new]).unwrap(), 1);
+        assert_eq!(enqueue_auto_sends(&db, &[old, new]).unwrap(), 2);
         let history = db.send_history(10).unwrap();
-        assert_eq!(history.len(), 1);
-        assert_eq!(history[0].entry.photo_id, Some(new));
-        assert_eq!(history[0].entry.origin, SendOrigin::Auto);
-        assert_eq!(history[0].entry.status, SendStatus::Pending);
+        assert_eq!(history.len(), 2);
+        assert!(
+            history
+                .iter()
+                .all(|row| row.entry.origin == SendOrigin::Auto
+                    && row.entry.status == SendStatus::Pending)
+        );
+        let ids: Vec<_> = history
+            .iter()
+            .filter_map(|row| row.entry.photo_id)
+            .collect();
+        assert!(ids.contains(&old));
+        assert!(ids.contains(&new));
     }
 
     #[test]
@@ -1038,8 +1043,7 @@ mod tests {
         let db = Db::open(dir.path().join("library.db")).unwrap();
         let photo = seed_photo_at(&db, 300, "a.png");
         let mut settings = AppSettings::load(&db).unwrap();
-        settings.discord_auto_mode = DiscordAutoMode::Immediate;
-        settings.discord_auto_since = Some(200);
+        settings.discord_auto = AutoBehavior::immediate();
         settings.save(&db).unwrap();
         save_discord_webhook(&db, "https://discord.com/api/webhooks/1/t").unwrap();
         // enabled=false
@@ -1054,7 +1058,7 @@ mod tests {
         assert_eq!(enqueue_auto_sends(&db, &[photo]).unwrap(), 0);
         // mode=Off
         save_discord_webhook(&db, "https://discord.com/api/webhooks/1/t").unwrap();
-        settings.discord_auto_mode = DiscordAutoMode::Off;
+        settings.discord_auto = AutoBehavior::off();
         settings.save(&db).unwrap();
         assert_eq!(enqueue_auto_sends(&db, &[photo]).unwrap(), 0);
     }
@@ -1066,8 +1070,7 @@ mod tests {
         let photo = seed_photo_at(&db, 300, "a.png");
         let mut settings = AppSettings::load(&db).unwrap();
         settings.discord_enabled = true;
-        settings.discord_auto_mode = DiscordAutoMode::Waiting;
-        settings.discord_auto_since = Some(200);
+        settings.discord_auto = AutoBehavior::waiting();
         settings.save(&db).unwrap();
         save_discord_webhook(&db, "https://discord.com/api/webhooks/1/t").unwrap();
         assert_eq!(enqueue_auto_sends(&db, &[photo]).unwrap(), 1);
