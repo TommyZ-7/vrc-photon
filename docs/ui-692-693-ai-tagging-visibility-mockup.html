@@ -1,0 +1,513 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VRC PhotoN — AIタグ付けの表示条件モック (#692 / #693)</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%230d1420'/%3E%3Ccircle cx='16' cy='16' r='7' fill='none' stroke='%238bcbff' stroke-width='2'/%3E%3C/svg%3E">
+<style>
+  :root {
+    color-scheme: dark;
+    --font: "Inter", "Noto Sans JP", "Hiragino Sans", "Yu Gothic UI", system-ui, -apple-system, sans-serif;
+    --text: #eef4ff;
+    --muted: #a8b4ca;
+    --dim: #7f8ba3;
+    --faint: #5e6a81;
+    --accent: #8bcbff;
+    --green: #7ee2b8;
+    --rose: #ff94a8;
+    --amber: #f4c878;
+    --line: rgba(255, 255, 255, 0.105);
+    --line-soft: rgba(255, 255, 255, 0.065);
+    --panel: #0d1420;
+    --panel-deep: #080d15;
+    --panel-2: #151f2f;
+    --accent-soft: rgba(139, 203, 255, 0.14);
+    --r-card: 22px;
+  }
+
+  * { box-sizing: border-box; }
+  html { overflow-x: hidden; }
+  body {
+    margin: 0;
+    min-width: 320px;
+    background: #05070d;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -2;
+    background:
+      radial-gradient(ellipse 58% 54% at 10% 2%, rgba(54, 107, 255, 0.28), transparent 66%),
+      radial-gradient(ellipse 46% 52% at 92% 6%, rgba(255, 86, 181, 0.12), transparent 68%),
+      radial-gradient(ellipse 52% 48% at 64% 104%, rgba(30, 202, 178, 0.10), transparent 68%),
+      linear-gradient(140deg, #04060c 0%, #0a0f1e 44%, #060811 100%);
+  }
+
+  .page { width: min(1440px, calc(100% - 48px)); margin: 0 auto; padding: 44px 0 80px; }
+  .masthead { display: flex; align-items: flex-start; justify-content: space-between; gap: 28px; margin-bottom: 28px; }
+  .eyebrow { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; }
+  .issue-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border: 1px solid rgba(139,203,255,.24); border-radius: 999px; background: rgba(139,203,255,.08); color: var(--accent); font-size: 10px; letter-spacing: .08em; }
+  h1 { margin: 11px 0 9px; font-size: clamp(25px, 3vw, 36px); line-height: 1.22; letter-spacing: -.035em; font-weight: 620; }
+  .lede { max-width: 880px; margin: 0; color: var(--muted); font-size: 13px; }
+  .lede b { color: var(--text); font-weight: 560; }
+  .meta-card { flex: none; min-width: 300px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 16px; background: rgba(13,20,32,.72); }
+  .meta-row { display: flex; justify-content: space-between; gap: 18px; padding: 4px 0; color: var(--dim); font-size: 11px; }
+  .meta-row b { color: var(--text); font-weight: 550; }
+  .meta-row + .meta-row { border-top: 1px solid var(--line-soft); }
+
+  .section-label { display: flex; align-items: baseline; gap: 12px; margin: 44px 0 14px; }
+  .section-label h2 { margin: 0; font-size: 15px; font-weight: 580; letter-spacing: -.01em; }
+  .section-label span { color: var(--dim); font-size: 11px; }
+  .section-note { max-width: 1000px; margin: -4px 0 18px; color: var(--dim); font-size: 11.5px; }
+  .section-note b { color: var(--muted); font-weight: 560; }
+
+  .decision-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 18px 0 6px; }
+  .decision { padding: 13px 14px; border: 1px solid var(--line); border-radius: 14px; background: rgba(14,21,34,.72); }
+  .decision .q { color: var(--accent); font-size: 10px; letter-spacing: .08em; }
+  .decision h3 { margin: 5px 0 6px; font-size: 12px; font-weight: 580; }
+  .decision p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
+  .decision .ok { display: inline-block; margin-top: 8px; padding: 2px 7px; border-radius: 999px; color: var(--green); background: rgba(126,226,184,.07); border: 1px solid rgba(126,226,184,.18); font-size: 9.5px; }
+
+  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 10px; }
+  .panel { border: 1px solid var(--line); border-radius: var(--r-card); background: linear-gradient(180deg, rgba(17,25,39,.78), rgba(9,14,23,.9)); padding: 16px; box-shadow: 0 20px 60px rgba(0,0,0,.22); }
+  .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 2px 4px 13px; }
+  .panel-title { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 560; }
+  .panel-note { color: var(--dim); font-size: 10.5px; }
+  .tag { padding: 2px 7px; border-radius: 999px; font-size: 9.5px; letter-spacing: .04em; }
+  .tag.before { color: var(--dim); background: rgba(255,255,255,.04); border: 1px solid var(--line-soft); }
+  .tag.after { color: var(--green); background: rgba(126,226,184,.07); border: 1px solid rgba(126,226,184,.18); }
+  .state-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
+  .state-dot.after { background: var(--green); box-shadow: 0 0 0 4px rgba(126,226,184,.09); }
+  .stage { border: 1px solid var(--line-soft); border-radius: 16px; background: var(--panel-deep); padding: 16px; }
+
+  .annotation { display: block; margin-top: 10px; color: var(--dim); font-size: 10px; line-height: 1.55; }
+  .annotation p { margin: 0 0 3px; }
+  .annotation p:last-child { margin-bottom: 0; }
+  .annotation b { color: var(--muted); font-weight: 560; }
+  .annotation .del { color: var(--rose); }
+  .annotation .keep { color: var(--green); }
+
+  /* Shared app surfaces */
+
+  .setup-panel {
+    width: 600px;
+    max-width: 100%;
+    min-height: 561px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    padding: 36px 38px 28px;
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: 20px;
+    background: #0d1420;
+    box-shadow: 0 18px 44px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.04);
+  }
+  .setup-title { font-size: 24px; font-weight: 600; letter-spacing: -.02em; }
+  .setup-body { flex: 1; padding-top: 30px; }
+  .setup-footer { display: flex; justify-content: flex-end; align-items: center; gap: 8px; padding-top: 16px; }
+
+  .setup-intro { font-size: 12px; line-height: 1.6; color: var(--muted); }
+  .setup-booth { margin-top: 4px; font-size: 11px; font-weight: 500; color: var(--green); }
+  .setup-stack { display: flex; flex-direction: column; gap: 10px; }
+  .setup-mode { display: flex; flex-direction: column; gap: 7px; }
+  .control-label { font-size: 12px; font-weight: 600; color: var(--text); }
+  .segment { display: flex; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
+  .segment > span { flex: 1; height: 27px; display: flex; align-items: center; justify-content: center; border-radius: 7px; font-size: 10.5px; font-weight: 500; color: var(--muted); background: #1a2536; }
+  .segment > span.active { color: var(--accent); background: var(--accent-soft); }
+
+  .setup-preview { display: flex; flex-direction: column; gap: 8px; padding: 8px; border: 1px solid rgba(255,255,255,.12); border-radius: 12px; background: #080d15; }
+  .sample-image { height: 52px; border: 1px solid rgba(238,244,255,.18); border-radius: 8px; background: linear-gradient(135deg, rgba(139,203,255,.4), rgba(126,226,184,.18)); }
+  .ai-panel { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid rgba(126,226,184,.33); border-radius: 10px; background: rgba(126,226,184,.05); }
+  .ai-panel-title { font-size: 10px; font-weight: 600; color: var(--green); }
+  .ai-section { display: flex; align-items: center; gap: 6px; font-size: 9px; font-weight: 500; color: var(--muted); }
+  .ai-section::before { content: ""; width: 2px; height: 9px; border-radius: 999px; background: rgba(126,226,184,.4); }
+  .tag-row { display: flex; flex-wrap: wrap; gap: 4px; }
+  .ai-tag { display: inline-flex; align-items: center; gap: 3px; padding: 2px 7px; border: 1px solid rgba(126,226,184,.22); border-radius: 999px; background: rgba(126,226,184,.08); color: var(--green); font-size: 10px; }
+  .ai-tag em { font-style: normal; font-size: 9px; color: var(--muted); }
+  .fact-row { display: flex; gap: 6px; }
+  .fact { flex: 1; min-width: 0; padding: 5px 7px; border-radius: 7px; background: rgba(126,226,184,.04); }
+  .fact .k { font-size: 9px; color: var(--faint); }
+  .fact .v { font-size: 11px; font-weight: 500; color: var(--text); }
+
+  .btn { display: inline-flex; align-items: center; justify-content: center; height: 38px; padding: 0 18px; border: 1px solid rgba(255,255,255,.12); border-radius: 9px; background: rgba(255,255,255,.04); color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .btn.primary { border-color: rgba(139,203,255,.32); background: rgba(139,203,255,.12); color: var(--accent); }
+  .btn.small { height: 24px; padding: 0 8px; border-radius: 7px; font-size: 9px; }
+  .btn.ghost { background: transparent; }
+  .btn.disabled { opacity: .45; }
+
+  .removed-zone { position: relative; border: 1px dashed rgba(255,148,168,.42); border-radius: 8px; padding: 7px 8px; color: var(--rose); background: rgba(255,148,168,.045); }
+
+  /* Integrations screen */
+
+  .app-screen { padding: 12px; border: 1px solid var(--line-soft); border-radius: 16px; background: #070b12; }
+  .integrations { display: flex; gap: 12px; align-items: stretch; }
+  .int-list { flex: none; width: 252px; padding: 8px; border: 1px solid rgba(255,255,255,.1); border-radius: 17px; background: #0d1420; }
+  .int-row { display: flex; align-items: center; gap: 8px; padding: 11px; border: 1px solid transparent; border-radius: 9px; }
+  .int-row + .int-row { margin-top: 4px; }
+  .int-row.active { border-color: rgba(139,203,255,.4); background: var(--accent-soft); }
+  .int-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
+  .int-dot.on { background: var(--green); }
+  .int-name { font-size: 13px; font-weight: 600; color: var(--text); }
+  .int-detail { flex: 1; min-width: 0; }
+  .int-card { padding: 14px; border: 1px solid rgba(255,255,255,.1); border-radius: 17px; background: #0d1420; }
+  .int-head { display: flex; align-items: center; gap: 12px; }
+  .int-title { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; }
+  .int-body { display: flex; flex-direction: column; gap: 12px; padding-top: 12px; }
+  .divider { height: 1px; width: 100%; background: rgba(255,255,255,.065); }
+  .section-title { font-size: 12px; font-weight: 600; }
+  .section-stack { display: flex; flex-direction: column; gap: 6px; }
+  .section-stack.tight { gap: 7px; }
+  .chip-row { display: flex; flex-wrap: wrap; gap: 4px; }
+  .chip { padding: 3px 8px; border-radius: 999px; font-size: 10px; font-weight: 500; color: var(--muted); background: #1a2536; }
+  .chip.active { color: var(--accent); background: var(--accent-soft); }
+  .switch { position: relative; flex: none; width: 36px; height: 20px; border-radius: 999px; background: #263246; }
+  .switch.on { background: rgba(139,203,255,.75); }
+  .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: none; }
+  .switch.on::after { left: 18px; }
+  .bulk-button { display: flex; align-items: center; justify-content: center; height: 24px; border: 1px solid rgba(139,203,255,.28); border-radius: 7px; background: rgba(139,203,255,.1); color: var(--accent); font-size: 9px; }
+  .bulk-button.disabled { border-color: rgba(255,255,255,.1); background: rgba(255,255,255,.03); color: var(--faint); }
+  .queue-head { display: flex; align-items: center; gap: 8px; }
+  .queue-title { font-size: 12px; font-weight: 600; }
+  .badge { padding: 2px 6px; border-radius: 999px; font-size: 9px; }
+  .badge.amber { color: var(--amber); background: rgba(244,200,120,.08); border: 1px solid rgba(244,200,120,.18); }
+  .badge.muted { color: var(--muted); background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.08); }
+  .badge.accent { color: var(--accent); background: rgba(139,203,255,.08); border: 1px solid rgba(139,203,255,.18); }
+  .queue-actions { display: flex; flex-wrap: wrap; gap: 5px; }
+  .queue-empty { padding: 8px 4px; color: var(--faint); font-size: 10px; }
+  .body-inert { opacity: .5; }
+
+  .state-block { margin-top: 14px; }
+  .state-block .caption { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; color: var(--muted); font-size: 11px; }
+
+  .keep-list { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 22px; margin: 4px 0 10px; padding: 0; list-style: none; color: var(--muted); font-size: 11px; }
+  .keep-list li { position: relative; padding-left: 13px; }
+  .keep-list li::before { content: ""; position: absolute; left: 0; top: 8px; width: 5px; height: 5px; border-radius: 50%; background: var(--green); }
+  .keep-list li.warn::before { background: var(--amber); }
+
+  .footer-note { margin-top: 40px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 16px; background: rgba(13,20,32,.7); color: var(--muted); font-size: 11.5px; }
+  .footer-note b { color: var(--text); }
+  .footer-note ul { margin: 8px 0 0; padding-left: 18px; }
+  .footer-note li { margin: 3px 0; }
+
+  @media (max-width: 1200px) {
+    .compare { grid-template-columns: 1fr; }
+    .setup-panel { width: 100%; }
+  }
+  @media (max-width: 900px) {
+    .masthead { flex-direction: column; }
+    .meta-card { width: 100%; }
+    .decision-grid { grid-template-columns: 1fr; }
+    .integrations { flex-direction: column; }
+    .int-list { width: 100%; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="masthead">
+    <div>
+      <div class="eyebrow"><span class="issue-chip">#692</span><span class="issue-chip">#693</span><span>UI visibility · no data change</span></div>
+      <h1>AIタグ付けの表示条件</h1>
+      <p class="lede">
+        初回セットアップの AIタグ付けページから<b>自動動作</b>を外し、
+        プラグイン未導入時は「連携・自動」の AIタグ付けカードから<b>有効化スイッチ</b>を隠す。
+        保存設定は書き換えず、未導入の間だけ実効状態を無効として扱う。
+      </p>
+    </div>
+    <div class="meta-card">
+      <div class="meta-row"><span>対象</span><b>初回セットアップ / 連携・自動</b></div>
+      <div class="meta-row"><span>変更</span><b>描画ノードの削除と表示条件のみ</b></div>
+      <div class="meta-row"><span>PR</span><b>docs 1 + 実装 1</b></div>
+      <div class="meta-row"><span>状態</span><b>承認待ち</b></div>
+    </div>
+  </header>
+
+  <div class="section-label"><h2>承認ポイント</h2><span>実装前に確認する判断</span></div>
+  <div class="decision-grid">
+    <div class="decision">
+      <div class="q">Q1 · #692 セットアップ</div>
+      <h3>自動動作だけを外す</h3>
+      <p>紹介文、BOOTH の案内、AI タグのプレビューは残す。「自動動作」ラベルと「しない／即時／待機」のセグメントだけを削除し、代わりの文言や導線は追加しない。</p>
+      <span class="ok">Issue 指定どおり</span>
+    </div>
+    <div class="decision">
+      <div class="q">Q2 · スイッチを隠す条件</div>
+      <h3>プラグイン未導入のときだけ</h3>
+      <p><code>ai.installed()</code> が false のときだけ隠す。導入済みでモデルや probe が未準備の場合は、従来どおりスイッチを表示する。</p>
+      <span class="ok">推奨</span>
+    </div>
+    <div class="decision">
+      <div class="q">Q3 · 未導入時の状態</div>
+      <h3>保存値は変えず、実効値だけ無効</h3>
+      <p><code>ai_tagging_enabled &amp;&amp; installed</code> を実効値にする。一覧ドットと本文の淡色化に使い、保存値はそのまま。再導入すると以前の設定に戻る。</p>
+      <span class="ok">推奨</span>
+    </div>
+  </div>
+
+  <div class="section-label"><h2>1. 初回セットアップ / AIタグ付け</h2><span>Issue #692 · 自動動作を削除</span></div>
+  <p class="section-note">
+    削除するのは「自動動作」の3分割セグメントだけ。ページタイトル、紹介文、BOOTH の案内、
+    プレビュー、戻る／完了はそのまま残す。縦の間隔は既存の 10 px を使い、削除跡に余白や区切り線を足さない。
+  </p>
+  <div class="compare">
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title"><span class="state-dot"></span>変更前</div><span class="tag before">BEFORE</span></div>
+      <div class="stage" style="padding:12px;">
+        <div class="setup-panel">
+          <div class="setup-title">AIタグ付け</div>
+          <div class="setup-body">
+            <div class="setup-stack">
+              <div>
+                <div class="setup-intro">AIタグ付けを有効にすると、写真の内容から人物の有無・屋外/屋内・雰囲気などを自動でタグ付けします。解析はこの端末内で完結し、写真は外部へ送信されません。プラグインとモデルの準備は設定画面から行えます。</div>
+                <div class="setup-booth">AIタグ付けプラグインは BOOTH で購入できます。</div>
+              </div>
+              <div class="setup-mode">
+                <div class="control-label">自動動作</div>
+                <div class="segment">
+                  <span class="active">しない</span>
+                  <span>即時</span>
+                  <span>待機</span>
+                </div>
+              </div>
+              <div class="setup-preview">
+                <div class="sample-image"></div>
+                <div class="ai-panel">
+                  <div class="ai-panel-title">AI タグ</div>
+                  <div class="ai-section">場所</div>
+                  <div class="tag-row"><span class="ai-tag">✦ 海辺 <em>92%</em></span></div>
+                  <div class="ai-section">雰囲気</div>
+                  <div class="tag-row"><span class="ai-tag">✦ 明るい <em>81%</em></span><span class="ai-tag">✦ 穏やか <em>76%</em></span></div>
+                  <div class="fact-row">
+                    <div class="fact"><div class="k">人数</div><div class="v">2人</div></div>
+                    <div class="fact"><div class="k">場所</div><div class="v">屋外</div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="setup-footer">
+            <span class="btn">戻る</span>
+            <span class="btn primary">完了</span>
+          </div>
+        </div>
+      </div>
+      <div class="annotation"><b>現状:</b> 紹介文の次に自動動作のセグメントがあり、その下にプレビュー。自動動作を変えても、プラグイン未導入のセットアップ中はタグ付けは動かない。</div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title"><span class="state-dot after"></span>変更後</div><span class="tag after">AFTER</span></div>
+      <div class="stage" style="padding:12px;">
+        <div class="setup-panel">
+          <div class="setup-title">AIタグ付け</div>
+          <div class="setup-body">
+            <div class="setup-stack">
+              <div>
+                <div class="setup-intro">AIタグ付けを有効にすると、写真の内容から人物の有無・屋外/屋内・雰囲気などを自動でタグ付けします。解析はこの端末内で完結し、写真は外部へ送信されません。プラグインとモデルの準備は設定画面から行えます。</div>
+                <div class="setup-booth">AIタグ付けプラグインは BOOTH で購入できます。</div>
+              </div>
+              <div class="setup-preview">
+                <div class="sample-image"></div>
+                <div class="ai-panel">
+                  <div class="ai-panel-title">AI タグ</div>
+                  <div class="ai-section">場所</div>
+                  <div class="tag-row"><span class="ai-tag">✦ 海辺 <em>92%</em></span></div>
+                  <div class="ai-section">雰囲気</div>
+                  <div class="tag-row"><span class="ai-tag">✦ 明るい <em>81%</em></span><span class="ai-tag">✦ 穏やか <em>76%</em></span></div>
+                  <div class="fact-row">
+                    <div class="fact"><div class="k">人数</div><div class="v">2人</div></div>
+                    <div class="fact"><div class="k">場所</div><div class="v">屋外</div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="setup-footer">
+            <span class="btn">戻る</span>
+            <span class="btn primary">完了</span>
+          </div>
+        </div>
+      </div>
+      <div class="annotation">
+        <p><b class="del">削除:</b> 自動動作ラベル、「しない／即時／待機」。</p>
+        <p><b class="keep">残す:</b> タイトル、紹介文、BOOTH の案内、プレビュー、戻る／完了。</p>
+        <p><b>間隔:</b> 紹介文とプレビューの間は既存の 10 px。空のセクションや区切り線は置かない。</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-label"><h2>2. 連携・自動 / AIタグ付け</h2><span>Issue #693 · 未導入時はスイッチを隠す</span></div>
+  <p class="section-note">
+    未導入の判定は <code>ai.installed()</code>（アクティブなパッケージ、またはインストール行がある）。
+    未導入の間は一覧ドットを淡色にし、カード本文は既存の <code>integration_settings_body</code> で
+    淡色・操作不可にする。モデルや probe の準備状況では隠さない。
+  </p>
+
+  <div class="panel" style="margin-bottom:18px;">
+    <div class="panel-head"><div class="panel-title"><span class="state-dot"></span>変更前 · プラグイン未導入（保存値は ON）</div><span class="tag before">BEFORE</span></div>
+    <div class="app-screen">
+      <div class="integrations">
+        <div class="int-list">
+          <div class="int-row"><span class="int-dot on"></span><span class="int-name">Discord 連携</span></div>
+          <div class="int-row"><span class="int-dot on"></span><span class="int-name">自動圧縮</span></div>
+          <div class="int-row active"><span class="int-dot on"></span><span class="int-name">AI タグ付け</span></div>
+          <div class="int-row"><span class="int-dot on"></span><span class="int-name">クリップボード</span></div>
+        </div>
+        <div class="int-detail">
+          <div class="int-card">
+            <div class="int-head">
+              <div class="int-title">AI タグ付け</div>
+              <span class="switch on"></span>
+            </div>
+            <div class="int-body">
+              <div class="divider"></div>
+              <div class="section-stack">
+                <div class="control-label">自動動作</div>
+                <div class="segment"><span>しない</span><span class="active">即時</span><span>待機</span></div>
+              </div>
+              <div class="divider"></div>
+              <div class="section-stack">
+                <div class="control-label">一括処理</div>
+                <div class="segment"><span class="active">有効化以降の新規のみ</span><span>既存の未処理分も含める</span></div>
+                <div class="bulk-button disabled">未タグ付けのものを一括処理</div>
+              </div>
+              <div class="divider"></div>
+              <div class="section-stack">
+                <div class="queue-head"><span class="queue-title">キュー</span><span style="flex:1"></span><span class="btn small">一時停止</span></div>
+                <div class="chip-row"><span class="badge amber">待機 0</span><span class="badge muted">実行待ち 0</span><span class="badge accent">実行中 0</span></div>
+                <div class="queue-actions"><span class="btn small primary disabled">待機をすべて開始</span><span class="btn small ghost disabled">待機をすべて削除</span></div>
+                <div class="queue-empty">キューは空です</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="annotation"><b>問題:</b> プラグイン未導入でもスイッチと一覧ドットが ON のまま。スイッチを押してもタグ付けは動かず、状態が実態と合わない。</div>
+  </div>
+
+  <div class="panel" style="margin-bottom:18px;">
+    <div class="panel-head"><div class="panel-title"><span class="state-dot after"></span>変更後 · プラグイン未導入（保存値は ON のまま）</div><span class="tag after">AFTER</span></div>
+    <div class="app-screen">
+      <div class="integrations">
+        <div class="int-list">
+          <div class="int-row"><span class="int-dot on"></span><span class="int-name">Discord 連携</span></div>
+          <div class="int-row"><span class="int-dot on"></span><span class="int-name">自動圧縮</span></div>
+          <div class="int-row active"><span class="int-dot"></span><span class="int-name">AI タグ付け</span></div>
+          <div class="int-row"><span class="int-dot on"></span><span class="int-name">クリップボード</span></div>
+        </div>
+        <div class="int-detail">
+          <div class="int-card">
+            <div class="int-head">
+              <div class="int-title">AI タグ付け</div>
+            </div>
+            <div class="int-body body-inert">
+              <div class="divider"></div>
+              <div class="section-stack">
+                <div class="control-label">自動動作</div>
+                <div class="segment"><span>しない</span><span class="active">即時</span><span>待機</span></div>
+              </div>
+              <div class="divider"></div>
+              <div class="section-stack">
+                <div class="control-label">一括処理</div>
+                <div class="segment"><span class="active">有効化以降の新規のみ</span><span>既存の未処理分も含める</span></div>
+                <div class="bulk-button disabled">未タグ付けのものを一括処理</div>
+              </div>
+              <div class="divider"></div>
+              <div class="section-stack">
+                <div class="queue-head"><span class="queue-title">キュー</span><span style="flex:1"></span><span class="btn small">一時停止</span></div>
+                <div class="chip-row"><span class="badge amber">待機 0</span><span class="badge muted">実行待ち 0</span><span class="badge accent">実行中 0</span></div>
+                <div class="queue-actions"><span class="btn small primary disabled">待機をすべて開始</span><span class="btn small ghost disabled">待機をすべて削除</span></div>
+                <div class="queue-empty">キューは空です</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="annotation">
+      <p><b class="del">削除:</b> ヘッダーの有効化スイッチ。一覧ドットは淡色。</p>
+      <p><b class="keep">維持:</b> 本文の並びと内容。既存の仕組みで 0.5 の不透明度にし、クリックを受け付けない。</p>
+      <p><b>保存値:</b> <code>ai_tagging_enabled</code> は true のまま。再導入するとスイッチが戻り、ON で表示される。</p>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><div class="panel-title"><span class="state-dot after"></span>参考 · プラグイン導入済み（モデル未準備でもスイッチは出る）</div><span class="tag after">UNCHANGED</span></div>
+    <div class="app-screen">
+      <div class="integrations">
+        <div class="int-list">
+          <div class="int-row"><span class="int-dot on"></span><span class="int-name">Discord 連携</span></div>
+          <div class="int-row"><span class="int-dot on"></span><span class="int-name">自動圧縮</span></div>
+          <div class="int-row active"><span class="int-dot on"></span><span class="int-name">AI タグ付け</span></div>
+          <div class="int-row"><span class="int-dot on"></span><span class="int-name">クリップボード</span></div>
+        </div>
+        <div class="int-detail">
+          <div class="int-card">
+            <div class="int-head">
+              <div class="int-title">AI タグ付け</div>
+              <span class="switch on"></span>
+            </div>
+            <div class="int-body">
+              <div class="divider"></div>
+              <div class="section-stack">
+                <div class="control-label">自動動作</div>
+                <div class="segment"><span>しない</span><span class="active">即時</span><span>待機</span></div>
+              </div>
+              <div class="divider"></div>
+              <div class="section-stack">
+                <div class="control-label">一括処理</div>
+                <div class="segment"><span class="active">有効化以降の新規のみ</span><span>既存の未処理分も含める</span></div>
+                <div class="bulk-button disabled">未タグ付けのものを一括処理</div>
+              </div>
+              <div class="divider"></div>
+              <div class="section-stack">
+                <div class="queue-head"><span class="queue-title">キュー</span><span style="flex:1"></span><span class="btn small">一時停止</span></div>
+                <div class="chip-row"><span class="badge amber">待機 0</span><span class="badge muted">実行待ち 0</span><span class="badge accent">実行中 0</span></div>
+                <div class="queue-actions"><span class="btn small primary disabled">待機をすべて開始</span><span class="btn small ghost disabled">待機をすべて削除</span></div>
+                <div class="queue-empty">キューは空です</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="annotation"><b>条件:</b> <code>ai.installed()</code> が true なら、モデル・probe が未準備でもスイッチを表示する。バックエンド選択は <code>ready()</code> のときだけ出す現行条件を変えない。</div>
+  </div>
+
+  <div class="section-label"><h2>3. 変更しないもの</h2><span>回帰確認の対象</span></div>
+  <div class="panel" style="padding:18px 20px;">
+    <ul class="keep-list">
+      <li>設定画面の AI プラグインカード（導入・モデル・probe・削除）</li>
+      <li>連携・自動のカード本文の並び（自動動作 → 一括処理 → キュー）</li>
+      <li>プラグイン導入済みのスイッチ表示と ON/OFF の動作</li>
+      <li>ダッシュボードの AI カード（未導入時は非表示のまま）</li>
+      <li>右クリックメニューの AI タグ付け（<code>ready()</code> で無効のまま）</li>
+      <li class="warn">保存設定・プラグイン導入処理・タグ付けワーカー・キューの処理</li>
+    </ul>
+    <div class="annotation">
+      <p><b>翻訳:</b> 追加・削除なし。<code>auto.behavior.mode</code> は連携・自動など他の画面で使い続ける。</p>
+      <p><b>ドキュメント:</b> docs PR で <code>docs/ui.md</code> §2.10 / §2.12、<code>docs/features.md</code> 14.3、<code>docs/testing.md</code> を実装に合わせる。</p>
+    </div>
+  </div>
+
+  <div class="footer-note">
+    <b>承認時にお願いしたいこと</b>
+    <ul>
+      <li>#692: セットアップの AIタグ付けページから「自動動作」のセグメントだけを削除し、紹介文・BOOTH の案内・プレビューを残す。</li>
+      <li>#693: プラグイン未導入時だけスイッチを隠し、保存値を書き換えず、一覧ドットと本文を無効表示にする。</li>
+      <li>導入済みでモデルや probe が未準備の場合は、従来どおりスイッチを表示する。</li>
+    </ul>
+    実装は、このモック・設計・計画の承認後に開始し、1 つの実装 PR で #692 と #693 を閉じます。
+  </div>
+
+</div>
+</body>
+</html>
