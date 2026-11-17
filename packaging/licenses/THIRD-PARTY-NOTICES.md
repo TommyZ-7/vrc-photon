@@ -3656,7 +3656,7 @@ the library.  If this is what you want to do, use the GNU Lesser General
 Public License instead of this License.  But first, please read
 <https://www.gnu.org/licenses/why-not-lgpl.html>.
 ```
-### vrc-photon-ai-host 0.14.1, vrc-photon-ai-mock-sidecar 0.14.1, vrc-photon-ai-protocol 0.14.1, vrc-photon-core 0.14.1, vrc-photon-daemon 0.14.1, vrc-photon-i18n 0.14.1, vrc-photon-ipc 0.14.1, vrc-photon-mcp 0.14.1, vrc-photon-release-tool 0.14.1, vrc-photon-signing 0.14.1, vrc-photon-ui 0.14.1, vrc-photon-update 0.14.1
+### vrc-photon-ai-host 0.14.2, vrc-photon-ai-mock-sidecar 0.14.2, vrc-photon-ai-protocol 0.14.2, vrc-photon-core 0.14.2, vrc-photon-daemon 0.14.2, vrc-photon-i18n 0.14.2, vrc-photon-ipc 0.14.2, vrc-photon-mcp 0.14.2, vrc-photon-release-tool 0.14.2, vrc-photon-signing 0.14.2, vrc-photon-ui 0.14.2, vrc-photon-update 0.14.2
 
 ```
 GNU GENERAL PUBLIC LICENSE
