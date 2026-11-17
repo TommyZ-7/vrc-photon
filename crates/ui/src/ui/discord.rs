@@ -20,13 +20,14 @@ use vrc_photon_core::model::{
     CompressionFormat, CompressionOptions, SendErrorCode, SendHistoryEntry, SendKind, SendSource,
     SendStatus,
 };
-use vrc_photon_core::settings::DiscordAutoMode;
 use vrc_photon_i18n::{tr, tr_args};
 
 use crate::app::App;
 use crate::app::compression::FeatureCompressionTarget;
 use crate::app::daemon::{format_timestamp, open_path};
-use crate::ui::components::{card_divider, glass_panel, manual_option_row};
+use crate::app::discord::discord_backlog_available;
+use crate::ui::auto_behavior::{auto_mode_segmented, bulk_action_block};
+use crate::ui::components::{card_divider, glass_panel};
 use crate::ui::theme::*;
 
 /// The database read and the card both cap the history at the newest rows;
@@ -678,56 +679,33 @@ impl App {
             .into_any_element()
     }
 
-    /// Off / Immediate / Waiting. The first switch away from Off opens the
-    /// consent dialog from `App::set_discord_auto_mode`; the note below the
-    /// rows repeats the privacy caveat next to the controls that cause it.
-    fn discord_auto_section(&self, cx: &mut Context<Self>) -> AnyElement {
+    /// Off / Immediate / Waiting plus the independent bulk action. The bulk
+    /// action stays available while the automatic mode is off as long as the
+    /// integration and webhook are valid.
+    fn discord_auto_section(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let p = self.palette;
-        let current = self.settings.discord_auto_mode;
-        let options = [
-            (
-                DiscordAutoMode::Off,
-                "discord-auto-off",
-                tr!("integrations.discord.auto.off"),
-            ),
-            (
-                DiscordAutoMode::Immediate,
-                "discord-auto-immediate",
-                tr!("integrations.discord.auto.immediate"),
-            ),
-            (
-                DiscordAutoMode::Waiting,
-                "discord-auto-waiting",
-                tr!("integrations.discord.auto.waiting"),
-            ),
-        ];
-
+        let behavior = self.settings.discord_auto;
+        let bulk_enabled = discord_backlog_available(&self.settings, self.discord_url.as_deref());
         v_flex()
-            .gap(px(6.))
-            .child(
-                div()
-                    .text_size(px(12.))
-                    .text_color(rgb(p.text))
-                    .child(tr!("integrations.discord.auto.title")),
-            )
-            .children(options.into_iter().map(|(mode, id, title)| {
-                manual_option_row(&p, SharedString::from(id), title, "", current == mode, true)
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        this.set_discord_auto_mode(mode, window, cx);
-                    }))
-                    .into_any_element()
-            }))
-            .when(current != DiscordAutoMode::Off, |this| {
-                this.child(
-                    div()
-                        .p(px(8.))
-                        .rounded(px(8.))
-                        .bg(rgb(p.amber_soft))
-                        .text_size(px(10.))
-                        .text_color(rgb(p.amber))
-                        .child(tr!("warning.private_instances")),
-                )
-            })
+            .gap(px(12.))
+            .child(auto_mode_segmented(
+                &p,
+                "integrations-discord",
+                behavior.mode,
+                cx,
+                App::set_discord_auto_mode,
+            ))
+            .child(card_divider(&p))
+            .child(bulk_action_block(
+                &p,
+                "integrations-discord",
+                behavior,
+                bulk_enabled,
+                tr!("integrations.discord.backlog.button"),
+                cx,
+                App::set_discord_auto_scope,
+                App::send_discord_backlog,
+            ))
             .into_any_element()
     }
 }

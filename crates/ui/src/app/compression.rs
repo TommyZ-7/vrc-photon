@@ -7,6 +7,7 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
+use chrono::Utc;
 use gpui_kit::component::WindowExt;
 use gpui_kit::component::button::ButtonVariant;
 use gpui_kit::*;
@@ -15,6 +16,7 @@ use vrc_photon_core::model::{
     CompressionOptions, CompressionProfile, MAX_JOB_RETRIES, MAX_PROFILE_NAME_CHARS, QueueStatus,
     ResizeSettings,
 };
+use vrc_photon_core::settings::{AutoMode, AutoScope};
 use vrc_photon_i18n::{tr, tr_args};
 
 use crate::app::App;
@@ -361,7 +363,10 @@ impl App {
     /// compression, then releases the waiting queue so the whole backlog runs.
     pub(crate) fn process_uncompressed_compression(&mut self, cx: &mut Context<Self>) {
         let policy = compression_policy(self.settings.auto_compress_keep_original);
-        match self.db.enqueue_auto_jobs_for_uncompressed(policy) {
+        match self
+            .db
+            .enqueue_auto_jobs_for_uncompressed(policy, self.settings.auto_compress.bulk_since())
+        {
             Ok(queued) => match self.db.release_waiting_jobs(policy) {
                 Ok(0) if queued == 0 => self.toast_info(tr!("compression.auto.bulk.empty"), cx),
                 Ok(count) if count > 0 => {
@@ -382,6 +387,58 @@ impl App {
                 tracing::warn!(%error, "cannot enqueue the automatic compression backlog");
                 self.toast_error(tr_args!("compression.auto.bulk.error", error = error), cx);
             }
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn process_uncompressed_compression_action(
+        &mut self,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.process_uncompressed_compression(cx);
+    }
+
+    pub(crate) fn set_auto_compress_enabled(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        if self.settings.auto_compress_enabled == enabled {
+            return;
+        }
+        self.settings.auto_compress_enabled = enabled;
+        if enabled {
+            self.settings
+                .auto_compress
+                .touch_activation(Utc::now().timestamp());
+        }
+        if let Err(error) = self.settings.save(&self.db) {
+            tracing::warn!(%error, "cannot save the automatic compression master switch");
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn set_auto_compress_mode(
+        &mut self,
+        mode: AutoMode,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.settings
+            .auto_compress
+            .set_mode(mode, Utc::now().timestamp());
+        if let Err(error) = self.settings.save(&self.db) {
+            tracing::warn!(%error, "cannot save the automatic compression mode");
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn set_auto_compress_scope(
+        &mut self,
+        scope: AutoScope,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.settings.auto_compress.scope = scope;
+        if let Err(error) = self.settings.save(&self.db) {
+            tracing::warn!(%error, "cannot save the automatic compression scope");
         }
         cx.notify();
     }

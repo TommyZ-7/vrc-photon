@@ -697,7 +697,7 @@ git commit -m "feat(daemon): apply the unified automatic modes (#682)"
   - `pub(crate) fn bulk_action_available(master_enabled: bool, feature_ready: bool) -> bool`
   - `pub(crate) fn discord_backlog_available(settings: &AppSettings, webhook: Option<&str>) -> bool`
 
-- [ ] **Step 1: 失敗する UI ロジックテストを書く**
+- [x] **Step 1: 失敗する UI ロジックテストを書く**
 
 `crates/ui/src/app/discord.rs` のテストを新しい型に更新し、次を追加する。
 
@@ -740,12 +740,12 @@ fn bulk_since_uses_the_activation_time_for_new_only() {
 }
 ```
 
-- [ ] **Step 2: テストを実行して失敗を確認する**
+- [x] **Step 2: テストを実行して失敗を確認する**
 
 Run: `cargo test -p vrc-photon-ui changing_mode_sets_activation_only_when_leaving_off`
 Expected: FAIL
 
-- [ ] **Step 3: 共通コンポーネントを作る**
+- [x] **Step 3: 共通コンポーネントを作る**
 
 `crates/ui/src/ui/auto_behavior.rs` に2つの部品を実装する。
 
@@ -764,7 +764,7 @@ Expected: FAIL
 自動動作と一括処理はカード化せず、見出し・セグメント・ボタンをカード本文に
 直接置く。専用の `segment` 部品を両方で共有する。
 
-- [ ] **Step 4: 3カードの表示順を統一する**
+- [x] **Step 4: 3カードの表示順を統一する**
 
 すべてのカードを次の順に並べる。
 
@@ -814,12 +814,12 @@ Expected: FAIL
 - `process_untagged_ai` は `ai_tagging_auto.bulk_since()` を
   `enqueue_tagging_backlog` に渡す。
 
-- [ ] **Step 5: テストを実行して通す**
+- [x] **Step 5: テストを実行して通す**
 
 Run: `cargo test -p vrc-photon-ui`
 Expected: PASS
 
-- [ ] **Step 6: コミット**
+- [x] **Step 6: コミット**
 
 ```bash
 git add crates/ui

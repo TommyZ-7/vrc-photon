@@ -12,7 +12,7 @@ use gpui_kit::*;
 use vrc_photon_core::discord::{WebhookUrlError, validate_webhook_url};
 use vrc_photon_core::model::{PhotoStatus, SendHistoryEntry, SendKind, SendOrigin, SendStatus};
 use vrc_photon_core::settings::{
-    AppSettings, DiscordAutoMode, clear_discord_webhook, save_discord_webhook,
+    AppSettings, AutoMode, AutoScope, clear_discord_webhook, save_discord_webhook,
 };
 use vrc_photon_i18n::{tr, tr_args};
 
@@ -48,6 +48,12 @@ pub(crate) fn discord_send_guard(
         return Err(DiscordSendGuardError::InvalidWebhook);
     }
     Ok(())
+}
+
+/// The bulk action only needs the feature and a valid webhook; an inactive
+/// automatic mode does not disable it.
+pub(crate) fn discord_backlog_available(settings: &AppSettings, webhook: Option<&str>) -> bool {
+    discord_send_guard(settings, webhook).is_ok()
 }
 
 /// Toast text for a manual send.
@@ -119,33 +125,24 @@ pub(crate) fn needs_discord_consent(settings: &AppSettings) -> bool {
 /// off never clears it.
 pub(crate) fn apply_discord_auto_mode(
     settings: &mut AppSettings,
-    mode: DiscordAutoMode,
+    mode: AutoMode,
     now: i64,
-    was_off: bool,
+    _was_off: bool,
 ) {
-    settings.discord_auto_mode = mode;
-    if mode != DiscordAutoMode::Off && was_off {
-        settings.discord_auto_since = Some(now);
-    }
+    settings.discord_auto.set_mode(mode, now);
 }
 
-/// Restarts the automatic-send window at `now`.
+/// Restarts the bulk-action activation window at `now`.
 ///
-/// Only automatic mode owns the cutoff: with the mode off there is nothing to
-/// resume, so the stored timestamp stays untouched.
-fn refresh_auto_since(settings: &mut AppSettings, now: i64) -> bool {
-    if settings.discord_auto_mode == DiscordAutoMode::Off {
-        return false;
-    }
-    settings.discord_auto_since = Some(now);
-    true
+/// The feature and the first webhook are feature-level resumes: they move the
+/// boundary even when the automatic mode is off, because the bulk action still
+/// works in that state.
+fn refresh_auto_activation(settings: &mut AppSettings, now: i64) {
+    settings.discord_auto.touch_activation(now);
 }
 
 /// Applies the master switch resuming from `false` to `true`.
-///
-/// Photos captured while the feature was off must not be posted as a backlog,
-/// so the cutoff moves even when the automatic mode itself did not change.
-pub(crate) fn auto_since_for_feature_resume(
+pub(crate) fn auto_activation_for_feature_resume(
     settings: &mut AppSettings,
     was_enabled: bool,
     enabled: bool,
@@ -154,14 +151,12 @@ pub(crate) fn auto_since_for_feature_resume(
     if was_enabled || !enabled {
         return false;
     }
-    refresh_auto_since(settings, now)
+    refresh_auto_activation(settings, now);
+    true
 }
 
 /// Applies the first webhook arriving after the integration had none.
-///
-/// The worker only sends while a webhook exists, so storing one is a resume in
-/// the same way as enabling the feature.
-pub(crate) fn auto_since_for_webhook_resume(
+pub(crate) fn auto_activation_for_webhook_resume(
     settings: &mut AppSettings,
     had_webhook: bool,
     has_webhook: bool,
@@ -170,7 +165,8 @@ pub(crate) fn auto_since_for_webhook_resume(
     if had_webhook || !has_webhook {
         return false;
     }
-    refresh_auto_since(settings, now)
+    refresh_auto_activation(settings, now);
+    true
 }
 
 impl App {
@@ -182,7 +178,7 @@ impl App {
         self.settings.discord_enabled = enabled;
         // Enabling again after a pause restarts the automatic window, so
         // photos captured while the feature was off are not posted.
-        auto_since_for_feature_resume(
+        auto_activation_for_feature_resume(
             &mut self.settings,
             was_enabled,
             enabled,
@@ -219,7 +215,7 @@ impl App {
                 self.discord_url_error = None;
                 // The first webhook resumes automatic sending; the cutoff must
                 // move so photos captured while it was missing stay behind.
-                if auto_since_for_webhook_resume(
+                if auto_activation_for_webhook_resume(
                     &mut self.settings,
                     had_webhook,
                     true,
@@ -296,14 +292,14 @@ impl App {
     /// accepted.
     pub(crate) fn set_discord_auto_mode(
         &mut self,
-        mode: DiscordAutoMode,
+        mode: AutoMode,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let was_off = self.settings.discord_auto_mode == DiscordAutoMode::Off;
+        let was_off = self.settings.discord_auto.mode == AutoMode::Off;
 
-        if mode == DiscordAutoMode::Off {
-            self.settings.discord_auto_mode = DiscordAutoMode::Off;
+        if mode == AutoMode::Off {
+            self.settings.discord_auto.mode = AutoMode::Off;
             if let Err(error) = self.settings.save(&self.db) {
                 tracing::warn!(%error, "cannot save the Discord automatic-send mode");
             }
@@ -344,23 +340,27 @@ impl App {
         self.save_discord_auto_mode(mode, was_off, cx);
     }
 
-    /// Records consent and applies the mode chosen in the consent dialog.
-    pub(crate) fn confirm_discord_auto_mode(
+    pub(crate) fn set_discord_auto_scope(
         &mut self,
-        mode: DiscordAutoMode,
+        scope: AutoScope,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let was_off = self.settings.discord_auto_mode == DiscordAutoMode::Off;
+        self.settings.discord_auto.scope = scope;
+        if let Err(error) = self.settings.save(&self.db) {
+            tracing::warn!(%error, "cannot save the Discord bulk scope");
+        }
+        cx.notify();
+    }
+
+    /// Records consent and applies the mode chosen in the consent dialog.
+    pub(crate) fn confirm_discord_auto_mode(&mut self, mode: AutoMode, cx: &mut Context<Self>) {
+        let was_off = self.settings.discord_auto.mode == AutoMode::Off;
         self.settings.discord_consent_at = Some(Utc::now().timestamp());
         self.save_discord_auto_mode(mode, was_off, cx);
     }
 
-    fn save_discord_auto_mode(
-        &mut self,
-        mode: DiscordAutoMode,
-        was_off: bool,
-        cx: &mut Context<Self>,
-    ) {
+    fn save_discord_auto_mode(&mut self, mode: AutoMode, was_off: bool, cx: &mut Context<Self>) {
         apply_discord_auto_mode(&mut self.settings, mode, Utc::now().timestamp(), was_off);
         if let Err(error) = self.settings.save(&self.db) {
             tracing::warn!(%error, "cannot save the Discord automatic-send mode");
@@ -462,6 +462,76 @@ impl App {
             Err(error) => {
                 tracing::warn!(%error, "cannot release waiting Discord sends");
                 self.toast_error(tr!("integrations.discord.history.release_error"), cx);
+            }
+        }
+        cx.notify();
+    }
+
+    /// Sends every never-sent photo that has no active send. The count is
+    /// shown in a count-only confirmation before anything is queued.
+    pub(crate) fn send_discord_backlog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let since = self.settings.discord_auto.bulk_since();
+        match self.db.count_unsent_photo_backlog(since) {
+            Ok(0) => {
+                self.toast_info(tr!("integrations.discord.backlog.empty"), cx);
+            }
+            Ok(count) => {
+                let entity = cx.entity();
+                let panel_deep = self.palette.panel_deep;
+                window.open_alert_dialog(cx, move |alert, _, _| {
+                    let entity = entity.clone();
+                    alert
+                        .title(tr!("integrations.discord.backlog.confirm.title"))
+                        .bg(rgb(panel_deep))
+                        .description(tr_args!(
+                            "integrations.discord.backlog.confirm.body",
+                            count = count
+                        ))
+                        .confirm()
+                        .ok_text(tr!("integrations.discord.backlog.confirm.ok"))
+                        .ok_variant(ButtonVariant::Primary)
+                        .cancel_text(tr!("common.cancel"))
+                        .on_ok(move |_, _, cx| {
+                            entity.update(cx, |this, cx| this.confirm_discord_backlog(cx));
+                            true
+                        })
+                });
+            }
+            Err(error) => {
+                tracing::warn!(%error, "cannot count the unsent Discord backlog");
+                self.toast_error(
+                    tr_args!("integrations.discord.backlog.error", error = error),
+                    cx,
+                );
+            }
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn confirm_discord_backlog(&mut self, cx: &mut Context<Self>) {
+        let since = self.settings.discord_auto.bulk_since();
+        match self.db.enqueue_unsent_photo_backlog(since) {
+            Ok(0) => self.toast_info(tr!("integrations.discord.backlog.empty"), cx),
+            Ok(count) => {
+                if self.settings.discord_consent_at.is_none() {
+                    self.settings.discord_consent_at = Some(Utc::now().timestamp());
+                    if let Err(error) = self.settings.save(&self.db) {
+                        tracing::warn!(%error, "cannot save Discord consent");
+                    }
+                }
+                self.reload_send_history(cx);
+                self.send_wake_sends(cx);
+                self.toast_success(
+                    tr_args!("integrations.discord.backlog.started", count = count),
+                    cx,
+                );
+            }
+            Err(error) => {
+                tracing::warn!(%error, "cannot enqueue the unsent Discord backlog");
+                self.toast_error(
+                    tr_args!("integrations.discord.backlog.error", error = error),
+                    cx,
+                );
             }
         }
         cx.notify();
@@ -647,12 +717,13 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::{
-        DiscordSendGuardError, apply_discord_auto_mode, auto_since_for_feature_resume,
-        auto_since_for_webhook_resume, discord_send_guard, manual_send_toast,
-        needs_discord_consent, normalized_destination, waiting_release_toast, webhook_error_key,
+        DiscordSendGuardError, apply_discord_auto_mode, auto_activation_for_feature_resume,
+        auto_activation_for_webhook_resume, discord_backlog_available, discord_send_guard,
+        manual_send_toast, needs_discord_consent, normalized_destination, waiting_release_toast,
+        webhook_error_key,
     };
     use vrc_photon_core::discord::{WebhookUrlError, mask_webhook_url, validate_webhook_url};
-    use vrc_photon_core::settings::{AppSettings, DiscordAutoMode};
+    use vrc_photon_core::settings::{AppSettings, AutoBehavior, AutoMode};
     use vrc_photon_i18n::{tr, tr_args};
 
     #[test]
@@ -676,113 +747,134 @@ mod tests {
     }
 
     #[test]
-    fn enabling_auto_sets_auto_since_only_when_leaving_off() {
+    fn changing_mode_sets_activation_only_when_leaving_off() {
         let mut settings = AppSettings::default();
-        let now = 1234;
-        apply_discord_auto_mode(&mut settings, DiscordAutoMode::Immediate, now, true);
-        assert_eq!(settings.discord_auto_since, Some(now));
-        assert_eq!(settings.discord_auto_mode, DiscordAutoMode::Immediate);
-        apply_discord_auto_mode(&mut settings, DiscordAutoMode::Waiting, 5678, false);
-        assert_eq!(settings.discord_auto_since, Some(now)); // 即時→待機ではリセットしない
+        settings.discord_auto.mode = AutoMode::Off;
+        apply_discord_auto_mode(&mut settings, AutoMode::Waiting, 100, true);
+        assert_eq!(settings.discord_auto.activated_at, Some(100));
+        apply_discord_auto_mode(&mut settings, AutoMode::Immediate, 200, false);
+        assert_eq!(settings.discord_auto.activated_at, Some(100));
     }
 
     #[test]
-    fn disabling_auto_keeps_the_capture_cutoff() {
+    fn disabling_auto_keeps_the_activation() {
         let mut settings = AppSettings {
-            discord_auto_since: Some(42),
+            discord_auto: AutoBehavior {
+                activated_at: Some(42),
+                ..AutoBehavior::immediate()
+            },
             ..AppSettings::default()
         };
-        apply_discord_auto_mode(&mut settings, DiscordAutoMode::Off, 99, false);
-        assert_eq!(settings.discord_auto_mode, DiscordAutoMode::Off);
-        assert_eq!(settings.discord_auto_since, Some(42));
+        apply_discord_auto_mode(&mut settings, AutoMode::Off, 99, false);
+        assert_eq!(settings.discord_auto.mode, AutoMode::Off);
+        assert_eq!(settings.discord_auto.activated_at, Some(42));
     }
 
     #[test]
-    fn enabling_the_feature_updates_the_cutoff_only_when_resuming() {
+    fn enabling_the_feature_updates_the_activation_only_when_resuming() {
         let mut settings = AppSettings {
-            discord_auto_mode: DiscordAutoMode::Immediate,
-            discord_auto_since: Some(42),
+            discord_auto: AutoBehavior {
+                activated_at: Some(42),
+                ..AutoBehavior::immediate()
+            },
             ..AppSettings::default()
         };
-        // すでに有効なら何もしない。
-        assert!(!auto_since_for_feature_resume(
+        assert!(!auto_activation_for_feature_resume(
             &mut settings,
             true,
             true,
             99
         ));
-        assert_eq!(settings.discord_auto_since, Some(42));
-        // 無効化してもカットオフは消さない。
-        assert!(!auto_since_for_feature_resume(
+        assert_eq!(settings.discord_auto.activated_at, Some(42));
+        assert!(!auto_activation_for_feature_resume(
             &mut settings,
             true,
             false,
             99
         ));
-        assert_eq!(settings.discord_auto_since, Some(42));
-        // false -> true で再開する。
-        assert!(auto_since_for_feature_resume(
+        assert_eq!(settings.discord_auto.activated_at, Some(42));
+        assert!(auto_activation_for_feature_resume(
             &mut settings,
             false,
             true,
             99
         ));
-        assert_eq!(settings.discord_auto_since, Some(99));
+        assert_eq!(settings.discord_auto.activated_at, Some(99));
     }
 
     #[test]
-    fn saving_the_first_webhook_updates_the_cutoff_only_when_resuming() {
+    fn saving_the_first_webhook_updates_the_activation_only_when_resuming() {
         let mut settings = AppSettings {
-            discord_auto_mode: DiscordAutoMode::Waiting,
-            discord_auto_since: Some(42),
+            discord_auto: AutoBehavior {
+                activated_at: Some(42),
+                ..AutoBehavior::waiting()
+            },
             ..AppSettings::default()
         };
-        // 変更（すでにある）では動かさない。
-        assert!(!auto_since_for_webhook_resume(
+        assert!(!auto_activation_for_webhook_resume(
             &mut settings,
             true,
             true,
             99
         ));
-        assert_eq!(settings.discord_auto_since, Some(42));
-        // 削除では動かさない。
-        assert!(!auto_since_for_webhook_resume(
+        assert_eq!(settings.discord_auto.activated_at, Some(42));
+        assert!(!auto_activation_for_webhook_resume(
             &mut settings,
             true,
             false,
             99
         ));
-        assert_eq!(settings.discord_auto_since, Some(42));
-        // 未設定 -> 設定で再開する。
-        assert!(auto_since_for_webhook_resume(
+        assert_eq!(settings.discord_auto.activated_at, Some(42));
+        assert!(auto_activation_for_webhook_resume(
             &mut settings,
             false,
             true,
             99
         ));
-        assert_eq!(settings.discord_auto_since, Some(99));
+        assert_eq!(settings.discord_auto.activated_at, Some(99));
     }
 
     #[test]
-    fn resume_does_not_touch_the_cutoff_when_auto_mode_is_off() {
+    fn resume_updates_the_activation_even_when_auto_mode_is_off() {
         let mut settings = AppSettings {
-            discord_auto_mode: DiscordAutoMode::Off,
-            discord_auto_since: Some(42),
+            discord_auto: AutoBehavior {
+                activated_at: Some(42),
+                ..AutoBehavior::off()
+            },
             ..AppSettings::default()
         };
-        assert!(!auto_since_for_feature_resume(
+        assert!(auto_activation_for_feature_resume(
             &mut settings,
             false,
             true,
             99
         ));
-        assert!(!auto_since_for_webhook_resume(
+        assert_eq!(settings.discord_auto.activated_at, Some(99));
+        assert!(auto_activation_for_webhook_resume(
             &mut settings,
             false,
             true,
-            99
+            100
         ));
-        assert_eq!(settings.discord_auto_since, Some(42));
+        assert_eq!(settings.discord_auto.activated_at, Some(100));
+    }
+
+    #[test]
+    fn discord_backlog_button_does_not_require_an_active_auto_mode() {
+        let mut settings = AppSettings {
+            discord_enabled: true,
+            discord_auto: AutoBehavior::off(),
+            ..AppSettings::default()
+        };
+        assert!(discord_backlog_available(
+            &settings,
+            Some("https://discord.com/api/webhooks/1/token")
+        ));
+        settings.discord_enabled = false;
+        assert!(!discord_backlog_available(
+            &settings,
+            Some("https://discord.com/api/webhooks/1/token")
+        ));
     }
 
     #[test]
