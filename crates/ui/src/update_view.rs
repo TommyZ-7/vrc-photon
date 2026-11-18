@@ -708,14 +708,6 @@ impl UpdateState {
         .detach();
     }
 
-    pub(crate) fn nav_badge(&self) -> Option<String> {
-        matches!(
-            self.phase,
-            UpdatePhase::Available(_) | UpdatePhase::Downloading { .. } | UpdatePhase::Ready { .. }
-        )
-        .then(|| tr!("update.badge"))
-    }
-
     pub(crate) fn notice(&self) -> Option<&UpdateNotice> {
         self.notice.as_ref()
     }
