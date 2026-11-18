@@ -10,9 +10,9 @@ use gpui_kit::component::button::{Button, ButtonVariant, ButtonVariants};
 use semver::Version;
 use vrc_photon_i18n::{tr, tr_args};
 use vrc_photon_update::{
-    ApplyJob, ApplyKind, AvailableUpdate, FeedConfig, InstallKind, IoOperation, LastErrorCode,
-    LastResult, LastStatus, NativeString, UpdateError, UpdatePaths, UreqClient, check, download,
-    start_apply,
+    ApplyJob, ApplyKind, AvailableUpdate, FeedCheck, FeedConfig, InstallKind, IoOperation,
+    LastErrorCode, LastResult, LastStatus, NativeString, UpdateError, UpdatePaths, UreqClient,
+    ai_plugin, check, download, start_apply,
 };
 
 use crate::app::App;
@@ -135,28 +135,35 @@ mod tests {
         assert!(!phase_allows_auto_check(&UpdatePhase::Applying));
     }
 
+    fn feed_with_update(version: Version) -> FeedCheck {
+        FeedCheck {
+            update: Some(AvailableUpdate {
+                version,
+                notes_url: None,
+                asset: None,
+                public_keys: Vec::new(),
+                signed_manifest: vrc_photon_update::SignedManifest {
+                    bytes: Vec::new(),
+                    signature: String::new(),
+                },
+            }),
+            ai_plugin: None,
+        }
+    }
+
     #[test]
     fn automatic_check_failure_restores_an_available_update() {
-        let update = AvailableUpdate {
-            version: Version::new(0, 4, 0),
-            notes_url: None,
-            asset: None,
-            public_keys: Vec::new(),
-            signed_manifest: vrc_photon_update::SignedManifest {
-                bytes: Vec::new(),
-                signature: String::new(),
-            },
-        };
-        let failure: std::result::Result<Option<AvailableUpdate>, UpdateText> =
+        let update = feed_with_update(Version::new(0, 4, 0));
+        let failure: std::result::Result<FeedCheck, UpdateText> =
             Err(UpdateText::key("update.error.network"));
 
-        let restored = resolve_checked_phase(false, &failure, Some(update.clone()));
+        let restored = resolve_checked_phase(false, &failure, update.update.clone());
         assert!(matches!(
             restored,
-            UpdatePhase::Available(ref available) if available.version == update.version
+            UpdatePhase::Available(ref available) if available.version == Version::new(0, 4, 0)
         ));
         assert!(matches!(
-            resolve_checked_phase(true, &failure, Some(update.clone())),
+            resolve_checked_phase(true, &failure, update.update.clone()),
             UpdatePhase::Error(_)
         ));
         assert!(matches!(
@@ -164,9 +171,15 @@ mod tests {
             UpdatePhase::Idle
         ));
 
-        let up_to_date: std::result::Result<Option<AvailableUpdate>, UpdateText> = Ok(None);
+        let up_to_date: std::result::Result<FeedCheck, UpdateText> = Ok(FeedCheck {
+            update: None,
+            ai_plugin: Some(vrc_photon_update::AiPluginRelease {
+                version: "0.2.0".to_string(),
+                host_version_min: "0.14.0".to_string(),
+            }),
+        });
         assert!(matches!(
-            resolve_checked_phase(false, &up_to_date, Some(update)),
+            resolve_checked_phase(false, &up_to_date, update.update),
             UpdatePhase::UpToDate
         ));
     }
@@ -431,7 +444,7 @@ impl UpdateText {
 enum UpdateMessage {
     Checked {
         manual: bool,
-        result: std::result::Result<Option<AvailableUpdate>, UpdateText>,
+        result: std::result::Result<FeedCheck, UpdateText>,
     },
     DownloadProgress {
         received: u64,
@@ -483,12 +496,15 @@ fn phase_allows_auto_check(phase: &UpdatePhase) -> bool {
 
 fn resolve_checked_phase(
     manual: bool,
-    result: &std::result::Result<Option<AvailableUpdate>, UpdateText>,
+    result: &std::result::Result<FeedCheck, UpdateText>,
     resume: Option<AvailableUpdate>,
 ) -> UpdatePhase {
     match result {
-        Ok(Some(update)) => UpdatePhase::Available(update.clone()),
-        Ok(None) => UpdatePhase::UpToDate,
+        Ok(feed) => feed
+            .update
+            .clone()
+            .map(UpdatePhase::Available)
+            .unwrap_or(UpdatePhase::UpToDate),
         Err(message) if manual => UpdatePhase::Error(message.clone()),
         Err(_) => resume
             .map(UpdatePhase::Available)
@@ -593,6 +609,8 @@ pub struct UpdateState {
     pub install: InstallKind,
     /// Whether a system package can be downloaded and applied in-app.
     pub system_apply_available: bool,
+    /// The AI plugin release advertised by the most recent successful check.
+    pub(crate) ai_plugin: Option<vrc_photon_update::AiPluginRelease>,
     notice: Option<UpdateNotice>,
     resume_available: Option<AvailableUpdate>,
     tx: Sender<UpdateMessage>,
@@ -636,11 +654,15 @@ impl UpdateState {
         ) && !auth_unavailable;
         let notice = last_result
             .and_then(|result| result_notice(&result, vrc_photon_update::CURRENT_VERSION));
+        let ai_plugin = data_dir
+            .as_deref()
+            .and_then(|dir| ai_plugin::load(&UpdatePaths::new(dir)));
         let (tx, rx) = async_channel::unbounded();
         Self {
             phase: UpdatePhase::Idle,
             install,
             system_apply_available,
+            ai_plugin,
             notice,
             resume_available: None,
             tx,
@@ -1169,25 +1191,42 @@ impl App {
                 if let Err(error) = self.settings.save(&self.db) {
                     tracing::warn!(%error, "cannot save update check time");
                 }
+                if let Ok(feed) = &result {
+                    self.update.ai_plugin = feed.ai_plugin.clone();
+                    if !self.demo
+                        && let Some(dir) = self.update.data_dir.as_deref()
+                        && let Err(error) = ai_plugin::store(
+                            &UpdatePaths::new(dir),
+                            self.update.ai_plugin.as_ref(),
+                        )
+                    {
+                        tracing::warn!(%error, "cannot cache the AI plugin release");
+                    }
+                }
                 match &result {
-                    Ok(Some(update)) => {
-                        if !manual {
-                            self.toast_info(
-                                tr_args!("update.toast.available", version = update.version),
-                                cx,
-                            );
-                        } else {
-                            self.toast_info(
-                                tr_args!("update.toast.available_short", version = update.version),
-                                cx,
-                            );
+                    Ok(feed) => match &feed.update {
+                        Some(update) => {
+                            if !manual {
+                                self.toast_info(
+                                    tr_args!("update.toast.available", version = update.version),
+                                    cx,
+                                );
+                            } else {
+                                self.toast_info(
+                                    tr_args!(
+                                        "update.toast.available_short",
+                                        version = update.version
+                                    ),
+                                    cx,
+                                );
+                            }
                         }
-                    }
-                    Ok(None) => {
-                        if manual {
-                            self.toast_success(tr!("update.latest"), cx);
+                        None => {
+                            if manual {
+                                self.toast_success(tr!("update.latest"), cx);
+                            }
                         }
-                    }
+                    },
                     Err(message) => {
                         if manual {
                             self.toast_error(message.message(), cx);
