@@ -753,15 +753,17 @@ impl App {
                     .child(tr_args!("update.available", version = version)),
             )
             .child(
-                Button::new("notification-update-open-settings")
-                    .label(tr!("notifications.update.open_settings"))
-                    .small()
-                    .primary()
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.close_notification_modal(window, cx);
-                        this.switch_screen(Screen::Settings, cx);
-                        this.settings_scroll.scroll_to_bottom();
-                    })),
+                h_flex().flex_wrap().gap(px(6.)).child(
+                    Button::new("notification-update-open-settings")
+                        .label(tr!("notifications.update.open_settings"))
+                        .small()
+                        .primary()
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.close_notification_modal(window, cx);
+                            this.switch_screen(Screen::Settings, cx);
+                            this.settings_scroll.scroll_to_bottom();
+                        })),
+                ),
             )
             .into_any_element()
     }
