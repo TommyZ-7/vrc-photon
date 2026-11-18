@@ -444,7 +444,7 @@ impl UpdateText {
 enum UpdateMessage {
     Checked {
         manual: bool,
-        result: std::result::Result<FeedCheck, UpdateText>,
+        result: Box<std::result::Result<FeedCheck, UpdateText>>,
     },
     DownloadProgress {
         received: u64,
@@ -856,13 +856,16 @@ impl App {
                 let Ok(current) = Version::parse(vrc_photon_update::CURRENT_VERSION) else {
                     let _ = tx.send_blocking(UpdateMessage::Checked {
                         manual,
-                        result: Err(UpdateText::key("update.error.version_parse")),
+                        result: Box::new(Err(UpdateText::key("update.error.version_parse"))),
                     });
                     return;
                 };
                 let result = check(&client, &feed, &current, &install)
                     .map_err(|error| update_error_message(&error));
-                let _ = tx.send_blocking(UpdateMessage::Checked { manual, result });
+                let _ = tx.send_blocking(UpdateMessage::Checked {
+                    manual,
+                    result: Box::new(result),
+                });
             });
         if let Err(error) = spawned {
             self.update.in_flight = false;
@@ -1191,7 +1194,7 @@ impl App {
                 if let Err(error) = self.settings.save(&self.db) {
                     tracing::warn!(%error, "cannot save update check time");
                 }
-                if let Ok(feed) = &result {
+                if let Ok(feed) = result.as_ref() {
                     self.update.ai_plugin = feed.ai_plugin.clone();
                     if !self.demo
                         && let Some(dir) = self.update.data_dir.as_deref()
@@ -1201,7 +1204,7 @@ impl App {
                         tracing::warn!(%error, "cannot cache the AI plugin release");
                     }
                 }
-                match &result {
+                match result.as_ref() {
                     Ok(feed) => match &feed.update {
                         Some(update) => {
                             if !manual {
@@ -1233,7 +1236,7 @@ impl App {
                         }
                     }
                 }
-                self.update.phase = resolve_checked_phase(manual, &result, resume);
+                self.update.phase = resolve_checked_phase(manual, result.as_ref(), resume);
                 cx.notify();
             }
             UpdateMessage::DownloadProgress { received, total } => {
