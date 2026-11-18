@@ -118,11 +118,10 @@
   .progress-percent { flex: none; color: var(--text); font-size: 10px; font-weight: 600; font-variant-numeric: tabular-nums; }
   .breakdown-row { display: flex; align-items: center; gap: 6px; min-height: 18px; }
   .breakdown { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dim); font-size: 9px; }
-  .badge { padding: 2px 7px; border-radius: 8px; font-size: 10px; font-weight: 500; white-space: nowrap; }
-  .badge.paused { color: var(--amber); background: rgba(244,200,120,.12); }
   .empty-state { width: 100%; text-align: center; color: var(--dim); font-size: 13px; }
 
-  .status-foot { display: flex; align-items: center; height: 24px; }
+  .status-foot { display: flex; align-items: center; gap: 7px; height: 24px; }
+  .paused-note { color: var(--amber); font-size: 9.5px; }
   .btn { display: inline-flex; align-items: center; justify-content: center; height: 22px; padding: 0 9px; border-radius: 7px; border: 1px solid var(--line); color: var(--muted); font-size: 10px; font-weight: 500; }
   .btn.primary { border-color: rgba(139,203,255,.3); background: rgba(139,203,255,.16); color: var(--accent); }
   .btn.disabled { opacity: .42; border-color: var(--line); background: transparent; color: var(--dim); }
@@ -204,7 +203,7 @@
   <div class="section-label"><h2>状態別の表示</h2><span>238 px サイドバー / 実装前の確認用</span></div>
   <p class="section-note">
     本文は現行の46 pxを維持する。上段は <b>2 px バー + 右端のパーセント</b>、
-    下段は <b>待機・実行待ちの1行</b>。一時停止中は下段の右端に「一時停止中」を足す。
+    下段は <b>待機・実行待ちの1行</b>。一時停止中はフッターの開始ボタンの右に「一時停止中」を足す。
     タブ右上の4 pxドットは実行中・実行待ち・待機のみで、失敗では付かない。
   </p>
 
@@ -312,16 +311,15 @@
               </div>
               <div class="breakdown-row">
                 <div class="breakdown">待機 3 ・ 実行待ち 0</div>
-                <span class="badge paused">一時停止中</span>
               </div>
             </div>
-            <div class="status-foot"><span class="btn disabled">未実行を開始</span></div>
+            <div class="status-foot"><span class="btn disabled">未実行を開始</span><span class="paused-note">一時停止中</span></div>
           </section>
           <div class="library-card"><div class="library-label">ライブラリ</div><div class="library-count">3,757 枚</div><div class="library-size">38.6 GB</div></div>
           <div class="sidebar-foot"><span class="daemon-pill"><i></i>監視中</span><span class="version">v0.14.4</span></div>
         </aside>
       </div>
-      <div class="annotation"><b>0%:</b> 完了0・待機3 → 0 ÷ 3。バーは空で0%。一時停止中は「未実行を開始」を無効にし、内訳行の右端に「一時停止中」。ドットは待機のアンバー。</div>
+      <div class="annotation"><b>0%:</b> 完了0・待機3 → 0 ÷ 3。バーは空で0%。一時停止中は「未実行を開始」を無効にし、フッターの右側に「一時停止中」。本文はバー・パーセント・内訳だけにする。ドットは待機のアンバー。</div>
     </div>
 
     <div class="specimen">
@@ -358,7 +356,7 @@
   <div class="section-label"><h2>実装メモ</h2><span>今回変えないもの</span></div>
   <div class="rules">
     <div class="rule"><h3>タブとドット</h3><p>タブは「自動圧縮 / Discord / AIタグ」の3項目。有効な機能だけを表示し、選択中のタブが無効なら先頭へフォールバックする。右上の4 pxドットは実行中・実行待ち・待機のみで、失敗では付かない。</p></div>
-    <div class="rule"><h3>開始と一時停止</h3><p>待機があるときは「未実行を開始」、ないときは「キューを開く」。一時停止中は開始ボタンを無効にし、「一時停止中」を表示する。押したときの動作は現行の <code>release_waiting_queue</code> のまま。</p></div>
+    <div class="rule"><h3>開始と一時停止</h3><p>待機があるときは「未実行を開始」、ないときは「キューを開く」。一時停止中は開始ボタンを無効にし、フッターに「一時停止中」を表示する。押したときの動作は現行の <code>release_waiting_queue</code> のまま。</p></div>
     <div class="rule"><h3>全体の区切り</h3><p>キューが空の状態から最初のジョブが入った時点で全体を開始する。途中で追加されたジョブは同じ全体の未完了数に加算し、キューが空になった後の最初のジョブから完了数を0に戻す。失敗・取消はどちらの件数にも入れない。</p></div>
   </div>
 
