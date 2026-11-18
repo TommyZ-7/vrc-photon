@@ -1,3 +1,5 @@
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
 //! VRC PhotoN desktop entry point.
 //!
 //! At most one UI process may run per OS user and database path. A second
