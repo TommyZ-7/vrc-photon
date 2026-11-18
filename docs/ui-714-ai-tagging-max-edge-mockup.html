@@ -1,0 +1,440 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VRC PhotoN — AIタグ付け推論用画像の長辺モック (#714)</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%230d1420'/%3E%3Ccircle cx='16' cy='16' r='7' fill='none' stroke='%238bcbff' stroke-width='2'/%3E%3C/svg%3E">
+<style>
+  :root {
+    color-scheme: dark;
+    --font: "Inter", "Noto Sans JP", "Hiragino Sans", "Yu Gothic UI", system-ui, -apple-system, sans-serif;
+    --text: #eef4ff;
+    --muted: #a8b4ca;
+    --dim: #7f8ba3;
+    --faint: #5e6a81;
+    --accent: #8bcbff;
+    --green: #7ee2b8;
+    --rose: #ff94a8;
+    --amber: #f4c878;
+    --line: rgba(255, 255, 255, 0.105);
+    --line-soft: rgba(255, 255, 255, 0.065);
+    --panel: #0d1420;
+    --panel-deep: #080d15;
+    --panel-2: #151f2f;
+    --accent-soft: rgba(139, 203, 255, 0.14);
+    --r-card: 22px;
+  }
+
+  * { box-sizing: border-box; }
+  html { overflow-x: hidden; }
+  body {
+    margin: 0;
+    min-width: 320px;
+    background: #05070d;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -2;
+    background:
+      radial-gradient(ellipse 58% 54% at 10% 2%, rgba(54, 107, 255, 0.28), transparent 66%),
+      radial-gradient(ellipse 46% 52% at 92% 6%, rgba(255, 86, 181, 0.12), transparent 68%),
+      radial-gradient(ellipse 52% 48% at 64% 104%, rgba(30, 202, 178, 0.10), transparent 68%),
+      linear-gradient(140deg, #04060c 0%, #0a0f1e 44%, #060811 100%);
+  }
+
+  .page { width: min(1440px, calc(100% - 48px)); margin: 0 auto; padding: 44px 0 80px; }
+  .masthead { display: flex; align-items: flex-start; justify-content: space-between; gap: 28px; margin-bottom: 28px; }
+  .eyebrow { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; }
+  .issue-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border: 1px solid rgba(139,203,255,.24); border-radius: 999px; background: rgba(139,203,255,.08); color: var(--accent); font-size: 10px; letter-spacing: .08em; }
+  h1 { margin: 11px 0 9px; font-size: clamp(25px, 3vw, 36px); line-height: 1.22; letter-spacing: -.035em; font-weight: 620; }
+  .lede { max-width: 880px; margin: 0; color: var(--muted); font-size: 13px; }
+  .lede b { color: var(--text); font-weight: 560; }
+  .meta-card { flex: none; min-width: 300px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 16px; background: rgba(13,20,32,.72); }
+  .meta-row { display: flex; justify-content: space-between; gap: 18px; padding: 4px 0; color: var(--dim); font-size: 11px; }
+  .meta-row b { color: var(--text); font-weight: 550; }
+  .meta-row + .meta-row { border-top: 1px solid var(--line-soft); }
+
+  .section-label { display: flex; align-items: baseline; gap: 12px; margin: 44px 0 14px; }
+  .section-label h2 { margin: 0; font-size: 15px; font-weight: 580; letter-spacing: -.01em; }
+  .section-label span { color: var(--dim); font-size: 11px; }
+  .section-note { max-width: 1000px; margin: -4px 0 18px; color: var(--dim); font-size: 11.5px; }
+  .section-note b { color: var(--muted); font-weight: 560; }
+
+  .decision-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 18px 0 6px; }
+  .decision { padding: 13px 14px; border: 1px solid var(--line); border-radius: 14px; background: rgba(14,21,34,.72); }
+  .decision .q { color: var(--accent); font-size: 10px; letter-spacing: .08em; }
+  .decision h3 { margin: 5px 0 6px; font-size: 12px; font-weight: 580; }
+  .decision p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
+  .decision .ok { display: inline-block; margin-top: 8px; padding: 2px 7px; border-radius: 999px; color: var(--green); background: rgba(126,226,184,.07); border: 1px solid rgba(126,226,184,.18); font-size: 9.5px; }
+
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .panel { border: 1px solid var(--line); border-radius: var(--r-card); background: linear-gradient(180deg, rgba(17,25,39,.78), rgba(9,14,23,.9)); padding: 16px; box-shadow: 0 20px 60px rgba(0,0,0,.22); }
+  .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 2px 4px 13px; }
+  .panel-title { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 560; }
+  .tag { padding: 2px 7px; border-radius: 999px; font-size: 9.5px; letter-spacing: .04em; }
+  .tag.after { color: var(--green); background: rgba(126,226,184,.07); border: 1px solid rgba(126,226,184,.18); }
+  .state-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
+  .state-dot.after { background: var(--green); box-shadow: 0 0 0 4px rgba(126,226,184,.09); }
+  .annotation { display: block; margin-top: 10px; color: var(--dim); font-size: 10px; line-height: 1.55; }
+  .annotation p { margin: 0 0 3px; }
+  .annotation p:last-child { margin-bottom: 0; }
+  .annotation b { color: var(--muted); font-weight: 560; }
+  .annotation .warn { color: var(--amber); }
+
+  /* App surfaces */
+  .app-screen { padding: 12px; border: 1px solid var(--line-soft); border-radius: 16px; background: #070b12; }
+  .integrations { display: flex; gap: 12px; align-items: stretch; }
+  .int-list { flex: none; width: 190px; padding: 8px; border: 1px solid rgba(255,255,255,.1); border-radius: 17px; background: #0d1420; }
+  .int-row { display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px solid transparent; border-radius: 9px; }
+  .int-row + .int-row { margin-top: 4px; }
+  .int-row.active { border-color: rgba(139,203,255,.4); background: var(--accent-soft); }
+  .int-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
+  .int-dot.on { background: var(--green); }
+  .int-name { font-size: 12px; font-weight: 600; color: var(--text); }
+  .int-detail { flex: 1; min-width: 0; }
+  .int-card { padding: 14px; border: 1px solid rgba(255,255,255,.1); border-radius: 17px; background: #0d1420; }
+  .int-head { display: flex; align-items: center; gap: 12px; }
+  .int-title { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; }
+  .int-body { display: flex; flex-direction: column; gap: 12px; padding-top: 12px; }
+  .divider { height: 1px; width: 100%; background: rgba(255,255,255,.065); }
+  .control-label { font-size: 12px; font-weight: 600; color: var(--text); }
+  .section-stack { display: flex; flex-direction: column; gap: 7px; }
+  .segment { display: flex; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
+  .segment > span { flex: 1; height: 27px; display: flex; align-items: center; justify-content: center; border-radius: 7px; font-size: 10.5px; font-weight: 500; color: var(--muted); background: #1a2536; }
+  .segment > span.active { color: var(--accent); background: var(--accent-soft); }
+  .scale-line { font-size: 10px; color: var(--muted); }
+  .chip-row { display: flex; flex-wrap: wrap; gap: 4px; }
+  .chip { padding: 3px 8px; border-radius: 999px; font-size: 10px; font-weight: 500; color: var(--muted); background: #1a2536; }
+  .chip.active { color: var(--accent); background: var(--accent-soft); }
+  .switch { position: relative; flex: none; width: 36px; height: 20px; border-radius: 999px; background: #263246; }
+  .switch.on { background: rgba(139,203,255,.75); }
+  .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; }
+  .switch.on::after { left: 18px; }
+  .bulk-button { display: flex; align-items: center; justify-content: center; height: 24px; border: 1px solid rgba(139,203,255,.28); border-radius: 7px; background: rgba(139,203,255,.1); color: var(--accent); font-size: 9px; }
+  .queue-head { display: flex; align-items: center; gap: 8px; }
+  .queue-title { font-size: 12px; font-weight: 600; }
+  .badge { padding: 2px 6px; border-radius: 999px; font-size: 9px; }
+  .badge.amber { color: var(--amber); background: rgba(244,200,120,.08); border: 1px solid rgba(244,200,120,.18); }
+  .badge.muted { color: var(--muted); background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.08); }
+  .badge.accent { color: var(--accent); background: rgba(139,203,255,.08); border: 1px solid rgba(139,203,255,.18); }
+  .queue-actions { display: flex; flex-wrap: wrap; gap: 5px; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; height: 24px; padding: 0 8px; border: 1px solid rgba(255,255,255,.12); border-radius: 7px; background: rgba(255,255,255,.04); color: var(--muted); font-size: 9px; white-space: nowrap; }
+  .btn.primary { border-color: rgba(139,203,255,.28); background: rgba(139,203,255,.1); color: var(--accent); }
+  .btn.disabled { opacity: .45; }
+  .queue-empty { padding: 8px 4px; color: var(--faint); font-size: 10px; }
+  .body-inert { opacity: .5; }
+
+  .footer-note { margin-top: 40px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 16px; background: rgba(13,20,32,.7); color: var(--muted); font-size: 11.5px; }
+  .footer-note b { color: var(--text); }
+  .footer-note ul { margin: 8px 0 0; padding-left: 18px; }
+  .footer-note li { margin: 3px 0; }
+  code { padding: 1px 5px; border-radius: 5px; background: rgba(255,255,255,.05); color: var(--muted); font-size: 10.5px; }
+
+  @media (max-width: 1200px) {
+    .grid { grid-template-columns: 1fr; }
+    .decision-grid { grid-template-columns: 1fr 1fr; }
+  }
+  @media (max-width: 900px) {
+    .masthead { flex-direction: column; }
+    .meta-card { width: 100%; }
+    .decision-grid { grid-template-columns: 1fr; }
+    .integrations { flex-direction: column; }
+    .int-list { width: 100%; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="masthead">
+    <div>
+      <div class="eyebrow"><span class="issue-chip">#714</span><span>AI tagging · settings</span></div>
+      <h1>AIタグ付け 推論用画像の長辺</h1>
+      <p class="lede">
+        推論用スナップショットの長辺を、<b>標準 1024px / 高精細 1536px / 最大 2048px</b> から選べるようにする。
+        既定は標準。元画像が設定値以下なら拡大しない。設定変更は次回のタグ付けから適用する。
+      </p>
+    </div>
+    <div class="meta-card">
+      <div class="meta-row"><span>設定場所</span><b>連携・自動 / AI タグ付け</b></div>
+      <div class="meta-row"><span>保存形式</span><b>ai_tagging_max_edge: u32</b></div>
+      <div class="meta-row"><span>既定</span><b>1024px</b></div>
+      <div class="meta-row"><span>変更範囲</span><b>本体のみ</b></div>
+    </div>
+  </header>
+
+  <div class="decision-grid">
+    <div class="decision">
+      <div class="q">保存形式</div>
+      <h3>ピクセル数 u32</h3>
+      <p>1024 / 1536 / 2048 に正規化。既存の thumbnail_size と同じ方式。</p>
+      <span class="ok">決定</span>
+    </div>
+    <div class="decision">
+      <div class="q">UI 部品</div>
+      <h3>3分割セグメント</h3>
+      <p>自動動作と同じ見た目。バックエンド選択の直下に置く。</p>
+      <span class="ok">決定</span>
+    </div>
+    <div class="decision">
+      <div class="q">既存写真</div>
+      <h3>次回から適用のみ</h3>
+      <p>既存の AI タグ済み写真は自動で再処理しない。UI に注記は置かない。</p>
+      <span class="ok">決定</span>
+    </div>
+    <div class="decision">
+      <div class="q">表示条件</div>
+      <h3>常に表示</h3>
+      <p>バックエンド行だけ準備完了時。未導入時はカード全体が淡色・操作不可。</p>
+      <span class="ok">決定</span>
+    </div>
+  </div>
+
+  <div class="section-label"><h2>1. 連携・自動 / AI タグ付け</h2><span>4状態</span></div>
+  <p class="section-note">
+    バックエンド選択の直下に「推論用画像の長辺」を追加する。セグメントの下の
+    <code>1024 / 1536 / 2048 px</code> は、各選択肢の対応値を示す補足行。
+    その下に既存の自動動作・一括処理・キューが続く。
+  </p>
+
+  <div class="grid">
+
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title"><span class="state-dot after"></span>準備完了 · 標準（既定）</div><span class="tag after">DEFAULT</span></div>
+      <div class="app-screen">
+        <div class="integrations">
+          <div class="int-list">
+            <div class="int-row"><span class="int-dot on"></span><span class="int-name">Discord 連携</span></div>
+            <div class="int-row"><span class="int-dot on"></span><span class="int-name">自動圧縮</span></div>
+            <div class="int-row active"><span class="int-dot on"></span><span class="int-name">AI タグ付け</span></div>
+            <div class="int-row"><span class="int-dot on"></span><span class="int-name">クリップボード</span></div>
+          </div>
+          <div class="int-detail">
+            <div class="int-card">
+              <div class="int-head">
+                <div class="int-title">AI タグ付け</div>
+                <span class="switch on"></span>
+              </div>
+              <div class="int-body">
+                <div class="divider"></div>
+                <div class="section-stack">
+                  <div class="control-label">バックエンド</div>
+                  <div class="chip-row"><span class="chip active">自動</span><span class="chip">Vulkan</span><span class="chip">CPU</span></div>
+                </div>
+                <div class="divider"></div>
+                <div class="section-stack">
+                  <div class="control-label">推論用画像の長辺</div>
+                  <div class="segment"><span class="active">標準</span><span>高精細</span><span>最大</span></div>
+                  <div class="scale-line">1024 / 1536 / 2048 px</div>
+                </div>
+                <div class="divider"></div>
+                <div class="section-stack">
+                  <div class="control-label">自動動作</div>
+                  <div class="segment"><span>しない</span><span class="active">即時</span><span>待機</span></div>
+                </div>
+                <div class="divider"></div>
+                <div class="section-stack">
+                  <div class="control-label">一括処理</div>
+                  <div class="segment"><span class="active">有効化以降の新規のみ</span><span>既存の未処理分も含める</span></div>
+                  <div class="bulk-button">未タグ付けのものを一括処理</div>
+                </div>
+                <div class="divider"></div>
+                <div class="section-stack">
+                  <div class="queue-head"><span class="queue-title">キュー</span><span style="flex:1"></span><span class="btn">一時停止</span></div>
+                  <div class="chip-row"><span class="badge amber">待機 0</span><span class="badge muted">実行待ち 0</span><span class="badge accent">実行中 0</span></div>
+                  <div class="queue-actions"><span class="btn primary disabled">待機をすべて開始</span><span class="btn disabled">待機をすべて削除</span></div>
+                  <div class="queue-empty">キューは空です</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="annotation"><b>既定:</b> 保存値がない初回・旧設定・不正値は「標準」にフォールバックする。</div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title"><span class="state-dot after"></span>準備完了 · 高精細</div><span class="tag after">1536px</span></div>
+      <div class="app-screen">
+        <div class="integrations">
+          <div class="int-list">
+            <div class="int-row"><span class="int-dot on"></span><span class="int-name">Discord 連携</span></div>
+            <div class="int-row"><span class="int-dot on"></span><span class="int-name">自動圧縮</span></div>
+            <div class="int-row active"><span class="int-dot on"></span><span class="int-name">AI タグ付け</span></div>
+            <div class="int-row"><span class="int-dot on"></span><span class="int-name">クリップボード</span></div>
+          </div>
+          <div class="int-detail">
+            <div class="int-card">
+              <div class="int-head">
+                <div class="int-title">AI タグ付け</div>
+                <span class="switch on"></span>
+              </div>
+              <div class="int-body">
+                <div class="divider"></div>
+                <div class="section-stack">
+                  <div class="control-label">バックエンド</div>
+                  <div class="chip-row"><span class="chip active">自動</span><span class="chip">Vulkan</span><span class="chip">CPU</span></div>
+                </div>
+                <div class="divider"></div>
+                <div class="section-stack">
+                  <div class="control-label">推論用画像の長辺</div>
+                  <div class="segment"><span>標準</span><span class="active">高精細</span><span>最大</span></div>
+                  <div class="scale-line">1024 / 1536 / 2048 px</div>
+                </div>
+                <div class="divider"></div>
+                <div class="section-stack">
+                  <div class="control-label">自動動作</div>
+                  <div class="segment"><span>しない</span><span class="active">即時</span><span>待機</span></div>
+                </div>
+                <div class="divider"></div>
+                <div class="section-stack">
+                  <div class="control-label">一括処理</div>
+                  <div class="segment"><span class="active">有効化以降の新規のみ</span><span>既存の未処理分も含める</span></div>
+                  <div class="bulk-button">未タグ付けのものを一括処理</div>
+                </div>
+                <div class="divider"></div>
+                <div class="section-stack">
+                  <div class="queue-head"><span class="queue-title">キュー</span><span style="flex:1"></span><span class="btn">一時停止</span></div>
+                  <div class="chip-row"><span class="badge amber">待機 0</span><span class="badge muted">実行待ち 0</span><span class="badge accent">実行中 0</span></div>
+                  <div class="queue-actions"><span class="btn primary disabled">待機をすべて開始</span><span class="btn disabled">待機をすべて削除</span></div>
+                  <div class="queue-empty">キューは空です</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="annotation"><b>高精細:</b> 次に開始するジョブから 1536px のスナップショットを使う。</div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title"><span class="state-dot after"></span>準備完了 · 最大</div><span class="tag after">2048px</span></div>
+      <div class="app-screen">
+        <div class="integrations">
+          <div class="int-list">
+            <div class="int-row"><span class="int-dot on"></span><span class="int-name">Discord 連携</span></div>
+            <div class="int-row"><span class="int-dot on"></span><span class="int-name">自動圧縮</span></div>
+            <div class="int-row active"><span class="int-dot on"></span><span class="int-name">AI タグ付け</span></div>
+            <div class="int-row"><span class="int-dot on"></span><span class="int-name">クリップボード</span></div>
+          </div>
+          <div class="int-detail">
+            <div class="int-card">
+              <div class="int-head">
+                <div class="int-title">AI タグ付け</div>
+                <span class="switch on"></span>
+              </div>
+              <div class="int-body">
+                <div class="divider"></div>
+                <div class="section-stack">
+                  <div class="control-label">バックエンド</div>
+                  <div class="chip-row"><span class="chip active">自動</span><span class="chip">Vulkan</span><span class="chip">CPU</span></div>
+                </div>
+                <div class="divider"></div>
+                <div class="section-stack">
+                  <div class="control-label">推論用画像の長辺</div>
+                  <div class="segment"><span>標準</span><span>高精細</span><span class="active">最大</span></div>
+                  <div class="scale-line">1024 / 1536 / 2048 px</div>
+                </div>
+                <div class="divider"></div>
+                <div class="section-stack">
+                  <div class="control-label">自動動作</div>
+                  <div class="segment"><span>しない</span><span class="active">即時</span><span>待機</span></div>
+                </div>
+                <div class="divider"></div>
+                <div class="section-stack">
+                  <div class="control-label">一括処理</div>
+                  <div class="segment"><span class="active">有効化以降の新規のみ</span><span>既存の未処理分も含める</span></div>
+                  <div class="bulk-button">未タグ付けのものを一括処理</div>
+                </div>
+                <div class="divider"></div>
+                <div class="section-stack">
+                  <div class="queue-head"><span class="queue-title">キュー</span><span style="flex:1"></span><span class="btn">一時停止</span></div>
+                  <div class="chip-row"><span class="badge amber">待機 0</span><span class="badge muted">実行待ち 0</span><span class="badge accent">実行中 0</span></div>
+                  <div class="queue-actions"><span class="btn primary disabled">待機をすべて開始</span><span class="btn disabled">待機をすべて削除</span></div>
+                  <div class="queue-empty">キューは空です</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="annotation"><b>最大:</b> 既定の 1024 に縮小されず、2048px がそのまま使われること。</div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title"><span class="state-dot after"></span>導入済み · モデル未準備</div><span class="tag after">NOT READY</span></div>
+      <div class="app-screen">
+        <div class="integrations">
+          <div class="int-list">
+            <div class="int-row"><span class="int-dot on"></span><span class="int-name">Discord 連携</span></div>
+            <div class="int-row"><span class="int-dot on"></span><span class="int-name">自動圧縮</span></div>
+            <div class="int-row active"><span class="int-dot on"></span><span class="int-name">AI タグ付け</span></div>
+            <div class="int-row"><span class="int-dot on"></span><span class="int-name">クリップボード</span></div>
+          </div>
+          <div class="int-detail">
+            <div class="int-card">
+              <div class="int-head">
+                <div class="int-title">AI タグ付け</div>
+                <span class="switch on"></span>
+              </div>
+              <div class="int-body">
+                <div class="divider"></div>
+                <div class="section-stack">
+                  <div class="control-label">推論用画像の長辺</div>
+                  <div class="segment"><span class="active">標準</span><span>高精細</span><span>最大</span></div>
+                  <div class="scale-line">1024 / 1536 / 2048 px</div>
+                </div>
+                <div class="divider"></div>
+                <div class="section-stack">
+                  <div class="control-label">自動動作</div>
+                  <div class="segment"><span>しない</span><span class="active">即時</span><span>待機</span></div>
+                </div>
+                <div class="divider"></div>
+                <div class="section-stack">
+                  <div class="control-label">一括処理</div>
+                  <div class="segment"><span class="active">有効化以降の新規のみ</span><span>既存の未処理分も含める</span></div>
+                  <div class="bulk-button disabled">未タグ付けのものを一括処理</div>
+                </div>
+                <div class="divider"></div>
+                <div class="section-stack">
+                  <div class="queue-head"><span class="queue-title">キュー</span><span style="flex:1"></span><span class="btn">一時停止</span></div>
+                  <div class="chip-row"><span class="badge amber">待機 0</span><span class="badge muted">実行待ち 0</span><span class="badge accent">実行中 0</span></div>
+                  <div class="queue-actions"><span class="btn primary disabled">待機をすべて開始</span><span class="btn disabled">待機をすべて削除</span></div>
+                  <div class="queue-empty">キューは空です</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="annotation">
+        <p><b>バックエンド:</b> <code>ready()</code> ではないため非表示。現行条件を変えない。</p>
+        <p><b>長辺:</b> 準備状況に依存しないため表示する。未導入時はカード全体の淡色・操作不可に従う。</p>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="footer-note">
+    <b>挙動の注記（UI 本文には出さない）</b>
+    <ul>
+      <li>設定変更は次回のタグ付けから適用し、既存の AI タグ済み写真は自動で再処理しない。</li>
+      <li>元画像の長辺が設定値以下なら拡大しない。EXIF orientation は縮小前に適用する。</li>
+      <li>1つのジョブでは開始時に読んだ長辺を全推論で使う。実行中ジョブのスナップショットは作り直さない。</li>
+      <li>JPEG 品質 90、一時ファイルの作成・削除、sidecar のプロトコルは変更しない。</li>
+      <li>未導入時はカード全体が淡色・操作不可になり、長辺の設定行自体は残る。</li>
+    </ul>
+  </div>
+
+</div>
+</body>
+</html>
