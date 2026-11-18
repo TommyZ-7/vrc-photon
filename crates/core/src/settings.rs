@@ -474,7 +474,7 @@ impl Default for AppSettings {
             language: "ja".to_string(),
             autostart: true,
             tray: true,
-            auto_compress_enabled: true,
+            auto_compress_enabled: false,
             auto_compress: AutoBehavior::immediate(),
             auto_compress_queue_paused: false,
             auto_compress_keep_original: true,
@@ -695,7 +695,10 @@ impl AppSettings {
             }
             None => {
                 let mut settings = Self::default();
-                settings.auto_compress.activated_at = Some(chrono::Utc::now().timestamp());
+                if settings.auto_compress_enabled {
+                    settings.auto_compress.activated_at =
+                        Some(chrono::Utc::now().timestamp());
+                }
                 let detected = detect_vrchat_paths();
                 settings.photo_roots = detected
                     .photo_roots
@@ -1965,14 +1968,11 @@ mod tests {
     }
 
     #[test]
-    fn fresh_settings_start_the_compression_activation_at_now() {
+    fn fresh_settings_start_with_auto_compression_disabled() {
         let db = crate::db::Db::open_in_memory().unwrap();
-        let before = chrono::Utc::now().timestamp();
         let settings = AppSettings::load(&db).unwrap();
-        let after = chrono::Utc::now().timestamp();
-        assert!(settings.auto_compress_enabled);
-        let activated = settings.auto_compress.activated_at.unwrap();
-        assert!(activated >= before && activated <= after);
+        assert!(!settings.auto_compress_enabled);
+        assert_eq!(settings.auto_compress.activated_at, None);
     }
 
     #[test]
