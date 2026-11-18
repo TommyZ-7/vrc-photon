@@ -1,5 +1,5 @@
 use super::*;
-use crate::queue::{QueueCounts, QueueEntry, QueueFeature};
+use crate::queue::{QueueCounts, QueueEntry, QueueFeature, QueueProgress};
 
 impl Db {
     /// Active rows for one feature, oldest first.
@@ -37,6 +37,20 @@ impl Db {
             QueueFeature::Discord => self.send_queue_counts(),
             QueueFeature::Tagging => self.tagging_queue_counts(AI_PLUGIN_ID),
         }
+    }
+
+    /// Completion progress for the feature's current queue run.
+    pub fn queue_progress(&self, feature: QueueFeature) -> Result<QueueProgress> {
+        let completed = self
+            .conn
+            .query_row(
+                "SELECT completed FROM queue_progress WHERE feature = ?1",
+                params![feature.as_str()],
+                |row| row.get(0),
+            )
+            .optional()?
+            .unwrap_or(0);
+        Ok(QueueProgress { completed })
     }
 
     /// Deletes one waiting row. Pending and processing rows are never removed.

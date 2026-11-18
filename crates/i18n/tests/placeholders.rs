@@ -196,6 +196,7 @@ const CALL_SITES: &[(&str, &[&str])] = &[
     ("settings.thumbnail.usage", &["files", "size"]),
     ("sidebar.photo_count", &["count"]),
     ("sidebar.photo_count_short", &["count"]),
+    ("sidebar.status.breakdown", &["pending", "waiting"]),
     ("sidebar.scan_index", &["indexed", "root", "roots", "total"]),
     ("sidebar.scan_progress", &["count", "root", "roots"]),
     ("sidebar.waiting_jobs", &["count"]),

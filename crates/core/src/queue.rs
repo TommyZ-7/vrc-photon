@@ -117,6 +117,17 @@ impl QueueCounts {
     }
 }
 
+/// Completion progress for the current run of one feature queue.
+///
+/// The database also stores the run start time; the UI contract only needs
+/// the number of successful completions since that start.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct QueueProgress {
+    /// Completed jobs in the current run. Failed and cancelled jobs are not
+    /// counted.
+    pub completed: i64,
+}
+
 /// One failed row shown in the notification modal. Failed rows are not part
 /// of the active queue.
 #[derive(Debug, Clone, PartialEq)]
