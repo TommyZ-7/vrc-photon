@@ -61,7 +61,7 @@ use crate::app::daemon::start_daemon;
 use crate::app::demo::{DemoAssets, open_database};
 use crate::app::import::{ImportDialogState, ImportReportView};
 use crate::app::lifecycle::ScanProgressView;
-use crate::app::live::LiveRefreshGate;
+use crate::app::live::{LiveRefreshGate, should_announce_empty_library};
 use crate::app::photos::PendingFullImage;
 use crate::state::display_image::{DecodeQueue, DisplayKey};
 use crate::state::full_image::FullImageTexture;
@@ -1439,7 +1439,8 @@ impl App {
                 app.toast_error(message, cx);
             }
         }
-        if !app.library_loading
+        if should_announce_empty_library(app.setup.open, app.settings.photo_roots.is_empty())
+            && !app.library_loading
             && app.library_error.is_none()
             && app.library.borrow().index.total == 0
         {
