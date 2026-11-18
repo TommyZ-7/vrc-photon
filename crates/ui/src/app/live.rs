@@ -151,7 +151,6 @@ pub(crate) struct JobSnapshot {
     waiting_jobs: Option<Vec<CompressionJob>>,
     failed_jobs: Option<Vec<CompressionJob>>,
     failed_job_names: Option<HashMap<i64, String>>,
-    active_job_count: Option<i64>,
     waiting_job_count: Option<i64>,
     failed_job_count: Option<i64>,
     retryable_failed_count: Option<i64>,
@@ -346,9 +345,6 @@ impl App {
                 .as_ref()
                 .is_some_and(|names| names != &self.failed_job_names)
             || snapshot
-                .active_job_count
-                .is_some_and(|count| count != self.active_job_count)
-            || snapshot
                 .waiting_job_count
                 .is_some_and(|count| count != self.waiting_job_count)
             || failed_count.is_some_and(|count| count != self.failed_job_count)
@@ -405,9 +401,6 @@ impl App {
             }
             if let Some(names) = snapshot.failed_job_names {
                 self.failed_job_names = names;
-            }
-            if let Some(count) = snapshot.active_job_count {
-                self.active_job_count = count;
             }
             if let Some(count) = snapshot.waiting_job_count {
                 self.waiting_job_count = count;
@@ -816,7 +809,6 @@ pub(crate) fn collect_jobs(db: &Db) -> JobSnapshot {
         waiting_jobs: db.list_jobs_by_status(QueueStatus::Waiting, 100).ok(),
         failed_jobs,
         failed_job_names,
-        active_job_count: db.count_active_jobs().ok(),
         waiting_job_count: db.count_jobs(QueueStatus::Waiting).ok(),
         failed_job_count: db.count_jobs(QueueStatus::Failed).ok(),
         retryable_failed_count: db.count_retryable_failed_jobs().ok(),

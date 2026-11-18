@@ -47,11 +47,8 @@ impl App {
     ) -> AnyElement {
         let p = self.palette;
         let collapsed = self.sidebar_collapsed;
-        let update_badge = self.update.nav_badge();
         let motion = self.sidebar_motion;
         let photo_count = format_count(self.stats.photo_count);
-        let compression_count =
-            (self.active_job_count > 0).then(|| format_count(self.active_job_count));
         let status_tabs = sidebar_status_tabs(
             self.settings.auto_compress_enabled,
             self.settings.discord_enabled,
@@ -93,7 +90,6 @@ impl App {
                         tr!("nav.photos"),
                         Screen::Photos,
                         IconName::GalleryVerticalEnd,
-                        Some(photo_count.clone()),
                         cx,
                     ))
                     .child(self.nav_item(
@@ -101,7 +97,6 @@ impl App {
                         tr!("nav.search"),
                         Screen::Search,
                         IconName::Search,
-                        None,
                         cx,
                     ))
                     .child(self.nav_item(
@@ -109,7 +104,6 @@ impl App {
                         tr!("nav.compression_short"),
                         Screen::Compression,
                         IconName::Minimize,
-                        compression_count,
                         cx,
                     ))
                     .child(self.nav_item(
@@ -117,7 +111,6 @@ impl App {
                         tr!("nav.dashboard"),
                         Screen::Dashboard,
                         IconName::LayoutDashboard,
-                        None,
                         cx,
                     ))
                     .child(self.nav_item(
@@ -125,7 +118,6 @@ impl App {
                         tr!("nav.integrations"),
                         Screen::Integrations,
                         IconName::Bot,
-                        None,
                         cx,
                     ))
                     .child(self.nav_item(
@@ -133,7 +125,6 @@ impl App {
                         tr!("nav.settings"),
                         Screen::Settings,
                         IconName::Settings,
-                        update_badge,
                         cx,
                     )),
             )
@@ -492,7 +483,6 @@ impl App {
         label: impl Into<SharedString>,
         screen: Screen,
         icon: IconName,
-        count: Option<String>,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let label = label.into();
@@ -526,7 +516,6 @@ impl App {
         let label_block = h_flex()
             .min_w_0()
             .items_center()
-            .justify_between()
             .overflow_hidden()
             .whitespace_nowrap()
             .child(
@@ -539,26 +528,6 @@ impl App {
                         move |el, t| el.text_color(rgb(lerp_color(label_from, label_to, t))),
                     ),
             )
-            .when_some(count, |this, count| {
-                this.child(
-                    div()
-                        .text_size(px(10.))
-                        .font_family("monospace")
-                        .child(count)
-                        .with_animation(
-                            SharedString::from(format!("nav-count-{label}-{nav_epoch}")),
-                            color_anim(),
-                            move |el, t| {
-                                if hovered && !active {
-                                    return el.text_color(rgb(p.text));
-                                }
-                                let from = if was_active { p.accent } else { p.muted_2 };
-                                let to = if active { p.accent } else { p.muted_2 };
-                                el.text_color(rgb(lerp_color(from, to, t)))
-                            },
-                        ),
-                )
-            })
             .w(px(sidebar_reveal_width(reveal_progress)))
             .opacity(1.0 - reveal_progress);
 
