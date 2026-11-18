@@ -100,9 +100,9 @@ const _: () = assert!(gpui_kit::GPUI_FAST);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum SidebarStatusTab {
-    Compression,
-    Import,
-    Scan,
+    AutoCompression,
+    Discord,
+    AiTagging,
 }
 
 pub(crate) type BoundsFrame = (u64, Bounds<Pixels>);
@@ -1141,7 +1141,7 @@ impl App {
             library_reader,
             screen: Screen::Photos,
             sidebar_collapsed: initial_settings.ui_sidebar_collapsed,
-            sidebar_status_tab: SidebarStatusTab::Compression,
+            sidebar_status_tab: SidebarStatusTab::AutoCompression,
             sidebar_motion: ToggleMotion::settled(if initial_settings.ui_sidebar_collapsed {
                 1.0
             } else {
