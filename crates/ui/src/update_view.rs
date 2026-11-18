@@ -200,6 +200,19 @@ mod tests {
     }
 
     #[test]
+    fn keeps_a_detected_update_when_the_feed_is_unverified() {
+        let unverified: std::result::Result<FeedCheck, UpdateText> = Ok(FeedCheck {
+            update: None,
+            ai_plugin: None,
+            verified: false,
+        });
+        assert_eq!(
+            next_pending_version(&unverified, Some(&Version::new(0, 4, 0))),
+            Some(Version::new(0, 4, 0))
+        );
+    }
+
+    #[test]
     fn clears_the_detected_update_when_the_feed_is_up_to_date() {
         let up_to_date: std::result::Result<FeedCheck, UpdateText> = Ok(FeedCheck {
             update: None,
@@ -550,15 +563,16 @@ fn resolve_checked_phase(
     }
 }
 
-/// The version to keep for the notification section. A failed check keeps the
-/// previously detected version; only a successful up-to-date result clears it.
+/// The version to keep for the notification section. A failed or unverified
+/// check keeps the previously detected version; only a verified up-to-date
+/// result clears it.
 fn next_pending_version(
     result: &std::result::Result<FeedCheck, UpdateText>,
     current: Option<&Version>,
 ) -> Option<Version> {
     match result {
-        Ok(feed) => feed.update.as_ref().map(|update| update.version.clone()),
-        Err(_) => current.cloned(),
+        Ok(feed) if feed.verified => feed.update.as_ref().map(|update| update.version.clone()),
+        _ => current.cloned(),
     }
 }
 
