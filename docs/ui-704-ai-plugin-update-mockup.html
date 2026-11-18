@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VRC PhotoN — AIプラグイン更新通知モック (#704)</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%230d1420'/%3E%3Ccircle cx='16' cy='16' r='7' fill='none' stroke='%238bcbff' stroke-width='2'/%3E%3C/svg%3E">
+<style>
+  :root {
+    color-scheme: dark;
+    --font: "Inter", "Noto Sans JP", "Hiragino Sans", "Yu Gothic UI", system-ui, -apple-system, sans-serif;
+    --text: #eef4ff;
+    --muted: #a8b4ca;
+    --dim: #7f8ba3;
+    --faint: #5e6a81;
+    --accent: #8bcbff;
+    --green: #7ee2b8;
+    --rose: #ff94a8;
+    --amber: #f4c878;
+    --line: rgba(255, 255, 255, 0.105);
+    --line-soft: rgba(255, 255, 255, 0.065);
+    --panel: #0d1420;
+    --panel-deep: #080d15;
+    --panel-2: #151f2f;
+    --accent-soft: rgba(139, 203, 255, 0.14);
+    --r-card: 22px;
+  }
+
+  * { box-sizing: border-box; }
+  html { overflow-x: hidden; }
+  body {
+    margin: 0;
+    min-width: 320px;
+    background: #05070d;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -2;
+    background:
+      radial-gradient(ellipse 58% 54% at 10% 2%, rgba(54, 107, 255, 0.28), transparent 66%),
+      radial-gradient(ellipse 46% 52% at 92% 6%, rgba(255, 86, 181, 0.12), transparent 68%),
+      radial-gradient(ellipse 52% 48% at 64% 104%, rgba(30, 202, 178, 0.10), transparent 68%),
+      linear-gradient(140deg, #04060c 0%, #0a0f1e 44%, #060811 100%);
+  }
+
+  .page { width: min(1440px, calc(100% - 48px)); margin: 0 auto; padding: 44px 0 80px; }
+  .masthead { display: flex; align-items: flex-start; justify-content: space-between; gap: 28px; margin-bottom: 28px; }
+  .eyebrow { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; }
+  .issue-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border: 1px solid rgba(139,203,255,.24); border-radius: 999px; background: rgba(139,203,255,.08); color: var(--accent); font-size: 10px; letter-spacing: .08em; }
+  h1 { margin: 11px 0 9px; font-size: clamp(25px, 3vw, 36px); line-height: 1.22; letter-spacing: -.035em; font-weight: 620; }
+  .lede { max-width: 900px; margin: 0; color: var(--muted); font-size: 13px; }
+  .lede b { color: var(--text); font-weight: 560; }
+  .meta-card { flex: none; min-width: 310px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 16px; background: rgba(13,20,32,.72); }
+  .meta-row { display: flex; justify-content: space-between; gap: 18px; padding: 4px 0; color: var(--dim); font-size: 11px; }
+  .meta-row b { color: var(--text); font-weight: 550; }
+  .meta-row + .meta-row { border-top: 1px solid var(--line-soft); }
+
+  .section-label { display: flex; align-items: baseline; gap: 12px; margin: 44px 0 14px; }
+  .section-label h2 { margin: 0; font-size: 15px; font-weight: 580; letter-spacing: -.01em; }
+  .section-label span { color: var(--dim); font-size: 11px; }
+  .section-note { max-width: 1000px; margin: -4px 0 18px; color: var(--dim); font-size: 11.5px; }
+  .section-note b { color: var(--muted); font-weight: 560; }
+
+  .decision-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 18px 0 6px; }
+  .decision { padding: 13px 14px; border: 1px solid var(--line); border-radius: 14px; background: rgba(14,21,34,.72); }
+  .decision .q { color: var(--accent); font-size: 10px; letter-spacing: .08em; }
+  .decision h3 { margin: 5px 0 6px; font-size: 12px; font-weight: 580; }
+  .decision p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
+  .decision .ok { display: inline-block; margin-top: 8px; padding: 2px 7px; border-radius: 999px; color: var(--green); background: rgba(126,226,184,.07); border: 1px solid rgba(126,226,184,.18); font-size: 9.5px; }
+
+  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 10px; }
+  .panel { border: 1px solid var(--line); border-radius: var(--r-card); background: linear-gradient(180deg, rgba(17,25,39,.78), rgba(9,14,23,.9)); padding: 16px; box-shadow: 0 20px 60px rgba(0,0,0,.22); }
+  .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 2px 4px 13px; }
+  .panel-title { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 560; }
+  .tag { padding: 2px 7px; border-radius: 999px; font-size: 9.5px; letter-spacing: .04em; }
+  .tag.before { color: var(--dim); background: rgba(255,255,255,.04); border: 1px solid var(--line-soft); }
+  .tag.after { color: var(--green); background: rgba(126,226,184,.07); border: 1px solid rgba(126,226,184,.18); }
+  .tag.same { color: var(--muted); background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.09); }
+  .state-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
+  .state-dot.after { background: var(--green); box-shadow: 0 0 0 4px rgba(126,226,184,.09); }
+  .stage { border: 1px solid var(--line-soft); border-radius: 16px; background: var(--panel-deep); padding: 16px; }
+
+  .annotation { display: block; margin-top: 10px; color: var(--dim); font-size: 10px; line-height: 1.55; }
+  .annotation p { margin: 0 0 3px; }
+  .annotation p:last-child { margin-bottom: 0; }
+  .annotation b { color: var(--muted); font-weight: 560; }
+  .annotation .del { color: var(--rose); }
+  .annotation .keep { color: var(--green); }
+  .annotation .new { color: var(--accent); }
+
+  /* AI plugin card, matching the settings screen */
+
+  .settings-column { width: 620px; max-width: 100%; margin: 0 auto; }
+  .ai-card {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px;
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: 17px;
+    background: linear-gradient(180deg, rgba(17,25,39,.82), rgba(9,14,23,.92));
+    box-shadow: 0 18px 44px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.04);
+  }
+  .ai-card-title { font-size: 13px; font-weight: 600; }
+  .divider { height: 1px; width: 100%; background: rgba(255,255,255,.065); }
+  .meta-stack { display: flex; flex-direction: column; gap: 4px; }
+  .meta-line { display: flex; align-items: baseline; gap: 10px; font-size: 10px; }
+  .meta-line .k { width: 92px; flex: none; color: var(--dim); }
+  .meta-line .v { color: var(--text); }
+  .update-note {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--accent);
+    font-size: 10px;
+    font-weight: 500;
+  }
+  .update-note::before {
+    content: "";
+    width: 3px;
+    height: 12px;
+    border-radius: 999px;
+    background: var(--accent);
+  }
+  .section-head { display: flex; align-items: center; gap: 8px; }
+  .section-head .name { font-size: 10px; color: var(--dim); }
+  .badge { padding: 1px 6px; border-radius: 999px; font-size: 9px; color: var(--muted); background: var(--panel-2); border: 1px solid var(--line-soft); }
+  .variant-row { display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 8px; background: var(--accent-soft); }
+  .variant-row + .variant-row { margin-top: 4px; }
+  .variant-name { font-size: 11px; font-weight: 500; color: var(--accent); }
+  .variant-sub { font-size: 9px; color: var(--dim); }
+  .variant-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .model-box { display: flex; flex-direction: column; gap: 4px; }
+  .path { padding: 8px; border-radius: 8px; background: var(--panel-2); color: var(--muted); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; height: 24px; padding: 0 8px; border: 1px solid rgba(255,255,255,.12); border-radius: 7px; background: rgba(255,255,255,.04); color: var(--muted); font-size: 9px; white-space: nowrap; }
+  .btn.primary { border-color: rgba(139,203,255,.32); background: rgba(139,203,255,.12); color: var(--accent); }
+  .btn.danger { border-color: rgba(255,148,168,.26); background: rgba(255,148,168,.06); color: var(--rose); }
+  .btn.ghost { background: transparent; }
+  .btn.changed { border-color: rgba(139,203,255,.5); background: rgba(139,203,255,.14); color: var(--accent); }
+  .install-copy { font-size: 10px; color: var(--muted); }
+  .empty-stack { display: flex; flex-direction: column; gap: 12px; }
+
+  .change-mark { position: relative; }
+  .change-mark::after {
+    content: "変更";
+    position: absolute;
+    top: -9px;
+    right: -8px;
+    padding: 1px 5px;
+    border: 1px solid rgba(139,203,255,.4);
+    border-radius: 999px;
+    background: #0d1420;
+    color: var(--accent);
+    font-size: 8px;
+    letter-spacing: .05em;
+  }
+
+  .keep-list { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 22px; margin: 4px 0 10px; padding: 0; list-style: none; color: var(--muted); font-size: 11px; }
+  .keep-list li { position: relative; padding-left: 13px; }
+  .keep-list li::before { content: ""; position: absolute; left: 0; top: 8px; width: 5px; height: 5px; border-radius: 50%; background: var(--green); }
+  .keep-list li.warn::before { background: var(--amber); }
+
+  .rule-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  .rule-table th { text-align: left; padding: 7px 10px; color: var(--dim); font-weight: 560; border-bottom: 1px solid var(--line); }
+  .rule-table td { padding: 7px 10px; color: var(--muted); border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+  .rule-table td:first-child { color: var(--text); white-space: nowrap; }
+  .rule-table tr:last-child td { border-bottom: 0; }
+  .code { padding: 1px 5px; border-radius: 5px; background: rgba(255,255,255,.06); color: var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 10px; }
+
+  .footer-note { margin-top: 40px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 16px; background: rgba(13,20,32,.7); color: var(--muted); font-size: 11.5px; }
+  .footer-note b { color: var(--text); }
+  .footer-note ul { margin: 8px 0 0; padding-left: 18px; }
+  .footer-note li { margin: 3px 0; }
+
+  @media (max-width: 1200px) {
+    .compare { grid-template-columns: 1fr; }
+    .decision-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 900px) {
+    .masthead { flex-direction: column; }
+    .meta-card { width: 100%; }
+    .decision-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="masthead">
+    <div>
+      <div class="eyebrow"><span class="issue-chip">#704</span><span>AI plugin update notice · display only</span></div>
+      <h1>AIプラグインの更新通知</h1>
+      <p class="lede">
+        本体の更新確認で取得した <b>latest.json の <code>ai_plugin</code></b> と、導入済みプラグインの版を比較する。
+        新しい版があり、かつ現在の本体版が <code>host_version_min</code> 以上なら、設定画面の AI タグ付けカードに
+        <b>表示だけ</b>の通知を出す。ダウンロード・自動更新・追加通信は行わない。導入済みの状態では
+        <code>.vpp</code> 取込ボタンを「プラグインを更新」に切り替える。
+      </p>
+    </div>
+    <div class="meta-card">
+      <div class="meta-row"><span>対象</span><b>設定 / AI タグ付けカード</b></div>
+      <div class="meta-row"><span>更新情報</span><b>latest.json の任意欄 ai_plugin</b></div>
+      <div class="meta-row"><span>通知条件</span><b>新バージョン + 本体互換</b></div>
+      <div class="meta-row"><span>今回の値</span><b>v0.5.1 / host 0.14.4</b></div>
+      <div class="meta-row"><span>状態</span><b>承認待ち</b></div>
+    </div>
+  </header>
+
+  <div class="section-label"><h2>承認ポイント</h2><span>実装前に確認する判断</span></div>
+  <div class="decision-grid">
+    <div class="decision">
+      <div class="q">Q1 · 情報源</div>
+      <h3>latest.json の任意欄だけを使う</h3>
+      <p>プラグイン配布サーバーへの問い合わせや GitHub API は追加しない。本体の更新確認で取得した署名済みマニフェストを再利用する。</p>
+      <span class="ok">追加通信なし</span>
+    </div>
+    <div class="decision">
+      <div class="q">Q2 · 通知条件</div>
+      <h3>新しい版 + 本体が対応</h3>
+      <p><code>ai_plugin.version</code> がアクティブな導入版より新しく、<code>ai_plugin.host_version_min</code> が現在の本体版以下であること。両方を満たすときだけ出す。</p>
+      <span class="ok">表示のみ</span>
+    </div>
+    <div class="decision">
+      <div class="q">Q3 · 再起動後</div>
+      <h3>updates 配下のキャッシュを使う</h3>
+      <p>更新確認は24時間に1回。取得した <code>ai_plugin</code> を <code>updates/ai-plugin.json</code> に保存し、確認が走らない起動でも通知できる。</p>
+      <span class="ok">通信なしで復元</span>
+    </div>
+    <div class="decision">
+      <div class="q">Q4 · ボタン文言</div>
+      <h3>導入済みは「プラグインを更新」</h3>
+      <p>未導入は現行の「プラグイン (.vpp) を取り込む」のまま。導入済みは Ready だけでなく、モデル未取得などアクティブな導入がある全状態で切り替える。</p>
+      <span class="ok">状態に追従</span>
+    </div>
+  </div>
+
+  <div class="section-label"><h2>1. 未導入</h2><span>変更なし · 回帰確認の基準</span></div>
+  <p class="section-note">
+    アクティブなプラグインがないため、通知は出ない。本文とボタンは現行のまま。
+  </p>
+  <div class="panel">
+    <div class="panel-head"><div class="panel-title"><span class="state-dot"></span>未導入 · 変更なし</div><span class="tag same">UNCHANGED</span></div>
+    <div class="stage">
+      <div class="settings-column">
+        <div class="ai-card">
+          <div class="ai-card-title">AIタグ付け</div>
+          <div class="divider"></div>
+          <div class="install-copy">プラグイン (.vpp) を取り込むと、この端末だけでAIタグ付けを実行できます。写真や解析結果は外部へ送信されません。</div>
+          <div class="divider"></div>
+          <div class="actions">
+            <span class="btn primary">プラグイン (.vpp) を取り込む</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="annotation">
+      <p><b>通知:</b> アクティブな導入版がないため比較対象がなく、通知は出ない。</p>
+      <p><b>ボタン:</b> 現行の「プラグイン (.vpp) を取り込む」を維持する。</p>
+    </div>
+  </div>
+
+  <div class="section-label"><h2>2. 導入済み · Ready · 更新あり</h2><span>今回の主な変更</span></div>
+  <p class="section-note">
+    「バージョン v0.5.0」の直下に、アクセント色の静的な通知行を追加する。既存のメタ情報・variant 一覧・モデル情報の並びは変えない。
+    <code>.vpp</code> 取込ボタンは「プラグインを更新」に切り替えるが、主ボタンの「再確認」や「タグ別閾値」の位置は変えない。
+  </p>
+  <div class="panel">
+    <div class="panel-head"><div class="panel-title"><span class="state-dot after"></span>導入済み · Ready · v0.5.1 が利用可能</div><span class="tag after">AFTER</span></div>
+    <div class="stage">
+      <div class="settings-column">
+        <div class="ai-card">
+          <div class="ai-card-title">AIタグ付け</div>
+          <div class="divider"></div>
+          <div class="meta-stack">
+            <div class="meta-line"><span class="k">バージョン</span><span class="v">v0.5.0</span></div>
+            <div class="change-mark" style="width: max-content;">
+              <div class="update-note">新しいプラグイン版 v0.5.1 があります</div>
+            </div>
+            <div class="meta-line"><span class="k">使用中 variant</span><span class="v">linux-vulkan</span></div>
+            <div class="meta-line"><span class="k">バックエンド</span><span class="v">Vulkan</span></div>
+            <div class="meta-line"><span class="k">モデルサイズ</span><span class="v">1.9 GB</span></div>
+          </div>
+          <div class="divider"></div>
+          <div>
+            <div class="section-head"><span class="name">インストール済み variant</span><span class="badge">1</span></div>
+            <div style="height:6px"></div>
+            <div class="variant-row">
+              <div class="variant-main">
+                <div class="variant-name">linux-vulkan</div>
+                <div class="variant-sub">v0.5.0 · Vulkan</div>
+              </div>
+            </div>
+          </div>
+          <div class="divider"></div>
+          <div class="model-box">
+            <div class="section-head"><span class="name">モデル</span><span class="badge">1.9 GB</span></div>
+            <div class="path">~/.local/share/vrc-photon/plugins/vrc-photon-autotag/models/5ebcce3</div>
+          </div>
+          <div class="divider"></div>
+          <div class="actions">
+            <span class="btn primary">再確認</span>
+            <span class="btn">タグ別閾値</span>
+            <span class="btn changed">プラグインを更新</span>
+            <span class="btn">モデルを削除</span>
+            <span class="btn danger">アンインストール</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="annotation">
+      <p><b class="new">追加:</b> バージョン行の直下に「新しいプラグイン版 v0.5.1 があります」。アクセント色・10 px・クリック不可の静的な行。</p>
+      <p><b class="new">変更:</b> 「プラグイン (.vpp) を取り込む」→「プラグインを更新」。ボタンの種類・順序・幅は変えない。</p>
+      <p><b>通知の消え方:</b> 導入版が v0.5.1 以上になると、比較結果が「新しくない」になり自動的に消える。既読フラグや閉じるボタンは持たない。</p>
+    </div>
+  </div>
+
+  <div class="section-label"><h2>3. 導入済み · モデル未取得 · 更新あり</h2><span>Ready 以外でも通知する</span></div>
+  <p class="section-note">
+    アクティブな導入がある限り、モデルの準備状況にかかわらず通知と文言切替を行う。モデル未取得時は通知の下に
+    モデル取得の導線が続くが、プラグイン更新の通知とは独立している。
+  </p>
+  <div class="panel">
+    <div class="panel-head"><div class="panel-title"><span class="state-dot after"></span>導入済み · モデル未取得 · v0.5.1 が利用可能</div><span class="tag after">AFTER</span></div>
+    <div class="stage">
+      <div class="settings-column">
+        <div class="ai-card">
+          <div class="ai-card-title">AIタグ付け</div>
+          <div class="divider"></div>
+          <div class="meta-stack">
+            <div class="meta-line"><span class="k">バージョン</span><span class="v">v0.5.0</span></div>
+            <div class="update-note">新しいプラグイン版 v0.5.1 があります</div>
+            <div class="meta-line"><span class="k">使用中 variant</span><span class="v">linux-vulkan</span></div>
+            <div class="meta-line"><span class="k">バックエンド</span><span class="v">Vulkan</span></div>
+            <div class="meta-line"><span class="k">モデルサイズ</span><span class="v">未取得</span></div>
+          </div>
+          <div class="divider"></div>
+          <div>
+            <div class="section-head"><span class="name">インストール済み variant</span><span class="badge">1</span></div>
+            <div style="height:6px"></div>
+            <div class="variant-row">
+              <div class="variant-main">
+                <div class="variant-name">linux-vulkan</div>
+                <div class="variant-sub">v0.5.0 · Vulkan</div>
+              </div>
+            </div>
+          </div>
+          <div class="divider"></div>
+          <div class="model-box">
+            <div class="section-head"><span class="name">モデル</span><span class="badge">未取得</span></div>
+            <div class="path">~/.local/share/vrc-photon/plugins/vrc-photon-autotag/models</div>
+          </div>
+          <div class="divider"></div>
+          <div class="actions">
+            <span class="btn primary">モデルをダウンロード</span>
+            <span class="btn">ファイルから取り込む</span>
+            <span class="btn">再確認</span>
+            <span class="btn changed">プラグインを更新</span>
+            <span class="btn danger">アンインストール</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="annotation">
+      <p><b class="new">通知:</b> Ready と同じ位置・同じ文言。モデル未取得でもアクティブな導入版があれば比較する。</p>
+      <p><b class="new">ボタン:</b> モデル取得の主ボタンはそのまま。その右の <code>.vpp</code> 取込だけ「プラグインを更新」にする。</p>
+      <p><b>順序:</b> モデル取得 → ファイルから取り込む → 再確認 → プラグインを更新 → アンインストール。既存の並びを変えない。</p>
+    </div>
+  </div>
+
+  <div class="section-label"><h2>4. 導入済み · 更新なし</h2><span>通知を出さない条件</span></div>
+  <p class="section-note">
+    フィードの <code>ai_plugin.version</code> が導入版以下、または <code>host_version_min</code> が現在の本体版より新しい場合は通知を出さない。
+    後者では「本体を更新してください」などの代替表示をせず、現状のままにする。通知がなくても、導入済みなら
+    <code>.vpp</code> ボタンは「プラグインを更新」のまま。
+  </p>
+  <div class="panel">
+    <div class="panel-head"><div class="panel-title"><span class="state-dot after"></span>導入済み · Ready · 通知なし</div><span class="tag after">AFTER</span></div>
+    <div class="stage">
+      <div class="settings-column">
+        <div class="ai-card">
+          <div class="ai-card-title">AIタグ付け</div>
+          <div class="divider"></div>
+          <div class="meta-stack">
+            <div class="meta-line"><span class="k">バージョン</span><span class="v">v0.5.1</span></div>
+            <div class="meta-line"><span class="k">使用中 variant</span><span class="v">linux-vulkan</span></div>
+            <div class="meta-line"><span class="k">バックエンド</span><span class="v">Vulkan</span></div>
+            <div class="meta-line"><span class="k">モデルサイズ</span><span class="v">1.9 GB</span></div>
+          </div>
+          <div class="divider"></div>
+          <div>
+            <div class="section-head"><span class="name">インストール済み variant</span><span class="badge">1</span></div>
+            <div style="height:6px"></div>
+            <div class="variant-row">
+              <div class="variant-main">
+                <div class="variant-name">linux-vulkan</div>
+                <div class="variant-sub">v0.5.1 · Vulkan</div>
+              </div>
+            </div>
+          </div>
+          <div class="divider"></div>
+          <div class="model-box">
+            <div class="section-head"><span class="name">モデル</span><span class="badge">1.9 GB</span></div>
+            <div class="path">~/.local/share/vrc-photon/plugins/vrc-photon-autotag/models/5ebcce3</div>
+          </div>
+          <div class="divider"></div>
+          <div class="actions">
+            <span class="btn primary">再確認</span>
+            <span class="btn">タグ別閾値</span>
+            <span class="btn">プラグインを更新</span>
+            <span class="btn">モデルを削除</span>
+            <span class="btn danger">アンインストール</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="annotation">
+      <p><b>通知なし:</b> 導入版 v0.5.1 はフィードの v0.5.1 と同じなので通知しない。</p>
+      <p><b>ボタン:</b> 通知がなくても導入済みなので「プラグインを更新」のまま。未導入のときだけ「プラグイン (.vpp) を取り込む」になる。</p>
+      <p><b>本体互換なし:</b> 例としてフィードが v0.6.0 / <code>host_version_min</code> 0.15.0、本体が 0.14.4 の場合も通知しない。</p>
+    </div>
+  </div>
+
+  <div class="section-label"><h2>5. 表示ルールと変更しないもの</h2><span>回帰確認の対象</span></div>
+  <div class="panel" style="padding:18px 20px;">
+    <table class="rule-table">
+      <thead><tr><th>状態</th><th>通知</th><th>.vpp ボタン</th></tr></thead>
+      <tbody>
+        <tr><td>未導入</td><td>出さない</td><td>プラグイン (.vpp) を取り込む</td></tr>
+        <tr><td>導入済み · 新バージョンあり · 本体互換</td><td>「新しいプラグイン版 vX.Y.Z があります」</td><td>プラグインを更新</td></tr>
+        <tr><td>導入済み · 新バージョンあり · 本体非互換</td><td>出さない</td><td>プラグインを更新</td></tr>
+        <tr><td>導入済み · 新バージョンなし</td><td>出さない</td><td>プラグインを更新</td></tr>
+      </tbody>
+    </table>
+    <div class="annotation">
+      <p><b>比較対象:</b> アクティブな導入版のみ。別 variant に新しい版があっても、使用中でなければ通知しない。</p>
+      <p><b>キャッシュ:</b> 最後に取得した <code>ai_plugin</code> を <code>updates/ai-plugin.json</code> に保存。フィードから欄が消えたら削除する。壊れたキャッシュは無視する。</p>
+      <p><b>不正な値:</b> 非 semver・型違い・キー欠落の <code>ai_plugin</code> は通知だけを出さず、本体の更新確認は継続する。</p>
+    </div>
+    <div class="divider" style="margin:14px 0;"></div>
+    <ul class="keep-list">
+      <li>カードのタイトル・メタ情報・variant 一覧・モデル情報の並び</li>
+      <li>モデルのダウンロード、取込、削除、再確認の動作</li>
+      <li>プラグインの取込ダイアログとインストール処理</li>
+      <li>タグ別閾値、アンインストール、ダッシュボードの AI カード</li>
+      <li>本体の更新確認・更新通知・更新適用</li>
+      <li class="warn">プラグインのダウンロード・自動更新・追加の通信は追加しない</li>
+    </ul>
+    <div class="annotation">
+      <p><b>翻訳:</b> <code>settings.ai.update</code>（プラグインを更新 / Update plugin）と <code>settings.ai.update_available</code>（新しいプラグイン版 v%{version} があります）を追加する。</p>
+      <p><b>実装前:</b> このモックの承認後に UI 実装を開始する。update / release-tool の非 UI 部分は承認待ちの間に先行してよい。</p>
+    </div>
+  </div>
+
+  <div class="footer-note">
+    <b>承認時にお願いしたいこと</b>
+    <ul>
+      <li>通知は「バージョン」行の直下に、アクセント色・10 px・クリック不可の1行で置く。</li>
+      <li>通知条件は「新バージョン」かつ「host_version_min が本体版以下」の両方。片方だけでは出さない。</li>
+      <li>導入済みの全状態で <code>.vpp</code> ボタンを「プラグインを更新」にし、未導入は現行文言のままにする。</li>
+      <li>プラグインのダウンロード・自動更新・追加通信は行わない。通知は表示のみ。</li>
+    </ul>
+  </div>
+
+</div>
+</body>
+</html>
