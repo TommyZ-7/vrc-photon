@@ -702,6 +702,8 @@ impl App {
                                 img(developer_avatar())
                                     .size(px(64.))
                                     .rounded_full()
+                                    .border_1()
+                                    .border_color(rgb(p.border))
                                     .object_fit(ObjectFit::Cover),
                             )
                             .child(
@@ -730,6 +732,7 @@ impl App {
         let key_focus = focus.clone();
         div()
             .id(id)
+            .self_start()
             .text_size(px(12.))
             .text_color(rgb(p.accent))
             .cursor_pointer()
