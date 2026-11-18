@@ -10,15 +10,14 @@ use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::*;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
-use vrc_photon_core::importer::ImportProgress;
+use vrc_photon_core::queue::{QueueCounts, QueueFeature};
 use vrc_photon_i18n::{tr, tr_args};
 use vrc_photon_ipc::ScanPhase as IpcScanPhase;
 
-use crate::app::import::{ImportDialogPhase, ImportDialogState, ImportReportView};
+use crate::app::ai::effective_ai_tagging_enabled;
 use crate::app::lifecycle::ScanProgressView;
 use crate::app::{App, Screen, SidebarStatusTab};
-use crate::ui::components::status_progress_bar;
-use crate::ui::import::import_progress_ratio;
+use crate::ui::queue::queue_action_availability;
 use crate::ui::theme::*;
 
 const NAV_ITEM_HEIGHT: f32 = 40.0;
@@ -26,30 +25,17 @@ const NAV_ITEM_GAP: f32 = 3.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum StatusTone {
-    Idle,
     Running,
     Waiting,
-    Failed,
-    Success,
 }
 
 impl StatusTone {
     fn color(self, p: &Palette) -> u32 {
         match self {
-            Self::Idle => p.muted_2,
             Self::Running => p.accent,
             Self::Waiting => p.amber,
-            Self::Failed => p.red,
-            Self::Success => p.green,
         }
     }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct CardStatus {
-    headline: String,
-    detail: String,
-    tone: StatusTone,
 }
 
 impl App {
@@ -66,8 +52,14 @@ impl App {
         let photo_count = format_count(self.stats.photo_count);
         let compression_count =
             (self.active_job_count > 0).then(|| format_count(self.active_job_count));
-        let status_card = (!collapsed && sidebar_status_visible(content_height))
-            .then(|| self.sidebar_status_card(cx));
+        let status_tabs = sidebar_status_tabs(
+            self.settings.auto_compress_enabled,
+            self.settings.discord_enabled,
+            effective_ai_tagging_enabled(self.settings.ai_tagging_enabled, self.ai.installed()),
+        );
+        let status_card =
+            (!collapsed && sidebar_status_visible(content_height) && !status_tabs.is_empty())
+                .then(|| self.sidebar_status_card(&status_tabs, cx));
 
         let body = v_flex()
             .relative()
@@ -278,213 +270,119 @@ impl App {
             .into_any_element()
     }
 
-    fn sidebar_status_card(&self, cx: &mut Context<Self>) -> AnyElement {
+    fn sidebar_status_card(&self, tabs: &[SidebarStatusTab], cx: &mut Context<Self>) -> AnyElement {
         let p = self.palette;
-        let import_progress = import_running_progress(self.import_dialog.as_ref());
-        let compression = compression_card_status(
-            self.active_job_count,
-            self.waiting_job_count,
-            self.failed_job_count,
-        );
-        let import = import_card_status(import_progress, self.import_report.as_deref());
-        let scan = scan_card_status(
-            self.scan_progress.as_ref(),
-            self.daemon_active,
-            self.daemon_paused,
-        );
-        let compression_attention = compression_attention(
-            self.active_job_count,
-            self.waiting_job_count,
-            self.failed_job_count,
-        );
-        let import_attention = import_attention(import_progress, self.import_report.as_deref());
-        let scan_attention = scan_attention(
-            self.scan_progress.as_ref(),
-            self.daemon_active,
-            self.daemon_paused,
-        );
-        let tab = self.sidebar_status_tab;
-        let (status, ratio) = match tab {
-            SidebarStatusTab::Compression => (&compression, None),
-            SidebarStatusTab::Import => (&import, import_bar_ratio(import_progress)),
-            SidebarStatusTab::Scan => (&scan, scan_bar_ratio(self.scan_progress.as_ref())),
+        let Some(active_tab) = resolve_status_tab(self.sidebar_status_tab, tabs) else {
+            return div().into_any_element();
         };
-        let import_has_report = self.import_report.is_some();
+        let (counts, paused) = self.status_tab_state(active_tab);
 
-        let tabs = [
-            (
-                SidebarStatusTab::Compression,
-                tr!("sidebar.tab.compression"),
-                "sidebar-status-tab-compression",
-                compression_attention,
-            ),
-            (
-                SidebarStatusTab::Import,
-                tr!("sidebar.tab.import"),
-                "sidebar-status-tab-import",
-                import_attention,
-            ),
-            (
-                SidebarStatusTab::Scan,
-                tr!("sidebar.tab.scan"),
-                "sidebar-status-tab-scan",
-                scan_attention,
-            ),
-        ];
-        let tab_row =
-            h_flex()
-                .gap(px(4.))
-                .children(tabs.into_iter().map(|(tab, label, id, attention)| {
-                    let active = self.sidebar_status_tab == tab;
-                    h_flex()
-                        .id(id)
-                        .relative()
-                        .flex_1()
-                        .h(px(20.))
-                        .justify_center()
-                        .items_center()
-                        .rounded(px(6.))
-                        .border_1()
-                        .border_color(if active {
-                            rgba(with_alpha(p.accent, 0x33))
-                        } else {
-                            rgba(0x00000000)
-                        })
-                        .text_size(px(10.))
-                        .font_medium()
-                        .cursor_pointer()
-                        .when(active, |this| {
-                            this.bg(rgb(p.accent_soft)).text_color(rgb(p.accent))
-                        })
-                        .when(!active, |this| {
-                            this.text_color(rgb(p.muted_2))
-                                .hover(|this| this.bg(rgb(p.panel_2)).text_color(rgb(p.text)))
-                        })
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.sidebar_status_tab = tab;
-                            cx.notify();
-                        }))
-                        .when_some(attention, |this, tone| {
-                            this.child(
-                                div()
-                                    .absolute()
-                                    .top(px(3.))
-                                    .right(px(4.))
-                                    .size(px(4.))
-                                    .rounded_full()
-                                    .bg(rgb(tone.color(&p))),
-                            )
-                        })
-                        .child(label)
-                }));
+        let tab_row = h_flex()
+            .gap(px(4.))
+            .children(tabs.iter().copied().map(|tab| {
+                let active = tab == active_tab;
+                let (tab_counts, _) = self.status_tab_state(tab);
+                h_flex()
+                    .id(status_tab_element_id(tab))
+                    .relative()
+                    .flex_1()
+                    .h(px(20.))
+                    .justify_center()
+                    .items_center()
+                    .rounded(px(6.))
+                    .border_1()
+                    .border_color(if active {
+                        rgba(with_alpha(p.accent, 0x33))
+                    } else {
+                        rgba(0x00000000)
+                    })
+                    .text_size(px(10.))
+                    .font_medium()
+                    .cursor_pointer()
+                    .when(active, |this| {
+                        this.bg(rgb(p.accent_soft)).text_color(rgb(p.accent))
+                    })
+                    .when(!active, |this| {
+                        this.text_color(rgb(p.muted_2))
+                            .hover(|this| this.bg(rgb(p.panel_2)).text_color(rgb(p.text)))
+                    })
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.sidebar_status_tab = tab;
+                        cx.notify();
+                    }))
+                    .when_some(queue_attention(tab_counts), |this, tone| {
+                        this.child(
+                            div()
+                                .absolute()
+                                .top(px(3.))
+                                .right(px(4.))
+                                .size(px(4.))
+                                .rounded_full()
+                                .bg(rgb(tone.color(&p))),
+                        )
+                    })
+                    .child(status_tab_label(tab))
+            }));
 
-        let mut body = v_flex()
-            .h(px(46.))
-            .justify_center()
-            .gap(px(2.))
-            .child(
+        let body = if counts.total() == 0 {
+            v_flex().h(px(46.)).items_center().justify_center().child(
                 div()
                     .text_size(px(13.))
-                    .font_semibold()
-                    .text_color(rgb(status.tone.color(&p)))
-                    .child(status.headline.clone()),
+                    .text_color(rgb(p.muted_2))
+                    .child(tr!("sidebar.status.idle.headline")),
             )
-            .when(!status.detail.is_empty(), |this| {
-                this.child(
-                    div()
-                        .text_size(px(10.))
-                        .text_color(rgb(p.muted))
-                        .truncate()
-                        .child(status.detail.clone()),
-                )
-            });
-        if let Some(ratio) = ratio {
-            body = body.child(status_progress_bar(&self.palette, ratio));
-        }
+        } else {
+            h_flex()
+                .h(px(46.))
+                .items_center()
+                .flex_wrap()
+                .gap(px(4.))
+                .child(self.badge(
+                    tr_args!("queue.count.waiting", count = counts.waiting),
+                    p.amber,
+                    p.amber_soft,
+                ))
+                .child(self.badge(
+                    tr_args!("queue.count.pending", count = counts.pending),
+                    p.muted,
+                    p.panel_2,
+                ))
+                .child(self.badge(
+                    tr_args!("queue.count.processing", count = counts.processing),
+                    p.accent,
+                    p.accent_soft,
+                ))
+                .when(paused, |this| {
+                    this.child(self.badge(tr!("queue.paused"), p.amber, p.amber_soft))
+                })
+        };
 
-        let footer = match tab {
-            SidebarStatusTab::Compression => {
-                let mut row = h_flex().items_center().h(px(24.)).gap(px(6.));
-                let retry_available = sidebar_retry_available(self.retryable_failed_count);
-                if self.waiting_job_count > 0 {
-                    row = row.child(
-                        Button::new("sidebar-status-release-waiting")
-                            .label(tr!("sidebar.start_waiting"))
-                            .small()
-                            .primary()
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.request_release_waiting_jobs(window, cx)
-                            })),
-                    );
-                }
-                if retry_available {
-                    row = row.child(
-                        Button::new("sidebar-status-retry-failed")
-                            .label(tr!("common.retry"))
-                            .small()
-                            .ghost()
-                            .tooltip(tr!("sidebar.retry_hint"))
-                            .on_click(cx.listener(|this, _, _, cx| this.retry_all_failed_jobs(cx))),
-                    );
-                }
-                if self.waiting_job_count == 0 && !retry_available {
-                    row = row.child(
-                        Button::new("sidebar-status-open-queue")
-                            .label(tr!("sidebar.open_queue"))
-                            .small()
-                            .ghost()
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.switch_screen(Screen::Dashboard, cx)
-                            })),
-                    );
-                }
-                row
-            }
-            SidebarStatusTab::Import => {
-                h_flex()
-                    .items_center()
-                    .h(px(24.))
-                    .gap(px(6.))
-                    .child(if import_has_report {
-                        Button::new("sidebar-status-import-result")
-                            .label(tr!("sidebar.view_result"))
-                            .small()
-                            .ghost()
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.open_notification_modal(window, cx)
-                            }))
-                    } else {
-                        Button::new("sidebar-status-photos")
-                            .label(tr!("sidebar.open_photos"))
-                            .small()
-                            .ghost()
-                            .on_click(
-                                cx.listener(|this, _, _, cx| {
-                                    this.switch_screen(Screen::Photos, cx)
-                                }),
-                            )
-                    })
-            }
-            SidebarStatusTab::Scan => {
-                let can_rescan =
-                    self.scan_progress.is_none() && self.daemon_active && !self.daemon_paused;
-                let button = if can_rescan {
-                    Button::new("sidebar-status-rescan")
-                        .label(tr!("sidebar.rescan"))
-                        .small()
-                        .ghost()
-                        .on_click(cx.listener(|this, _, _, cx| this.request_daemon_rescan(cx)))
-                } else {
-                    Button::new("sidebar-status-dashboard")
-                        .label(tr!("sidebar.open_dashboard"))
-                        .small()
-                        .ghost()
-                        .on_click(
-                            cx.listener(|this, _, _, cx| this.switch_screen(Screen::Dashboard, cx)),
-                        )
-                };
-                h_flex().items_center().h(px(24.)).gap(px(6.)).child(button)
-            }
+        let footer = if counts.waiting > 0 {
+            let feature = status_tab_feature(active_tab);
+            let start_enabled = queue_action_availability(!paused, counts.waiting).start_waiting;
+            h_flex().items_center().h(px(24.)).gap(px(6.)).child(
+                Button::new("sidebar-status-start-waiting")
+                    .label(tr!("sidebar.start_waiting"))
+                    .small()
+                    .primary()
+                    .disabled(!start_enabled)
+                    .tab_stop(start_enabled)
+                    .when(start_enabled, |button| {
+                        button.on_click(cx.listener(move |this, _, window, cx| {
+                            this.release_waiting_queue(feature, window, cx)
+                        }))
+                    }),
+            )
+        } else {
+            h_flex().items_center().h(px(24.)).gap(px(6.)).child(
+                Button::new("sidebar-status-open-queue")
+                    .label(tr!("sidebar.open_queue"))
+                    .small()
+                    .ghost()
+                    .on_click(
+                        cx.listener(|this, _, _, cx| this.switch_screen(Screen::Dashboard, cx)),
+                    ),
+            )
         };
 
         v_flex()
@@ -496,29 +394,35 @@ impl App {
             .border_1()
             .border_color(rgba(with_alpha(p.text, 0x0f)))
             .child(
-                h_flex()
-                    .items_center()
-                    .h(px(12.))
-                    .gap(px(6.))
-                    .child(
-                        div()
-                            .text_size(px(10.))
-                            .font_semibold()
-                            .text_color(rgb(p.muted_2))
-                            .child(tr!("sidebar.progress")),
-                    )
-                    .child(div().flex_1())
-                    .child(
-                        div()
-                            .size(px(6.))
-                            .rounded_full()
-                            .bg(rgb(status.tone.color(&p))),
-                    ),
+                h_flex().items_center().h(px(12.)).child(
+                    div()
+                        .text_size(px(10.))
+                        .font_semibold()
+                        .text_color(rgb(p.muted_2))
+                        .child(tr!("sidebar.progress")),
+                ),
             )
             .child(tab_row)
             .child(body)
             .child(footer)
             .into_any_element()
+    }
+
+    fn status_tab_state(&self, tab: SidebarStatusTab) -> (QueueCounts, bool) {
+        match tab {
+            SidebarStatusTab::AutoCompression => (
+                self.compression_queue_counts,
+                self.settings.auto_compress_queue_paused,
+            ),
+            SidebarStatusTab::Discord => (
+                self.discord_queue_counts,
+                self.settings.discord_queue_paused,
+            ),
+            SidebarStatusTab::AiTagging => (
+                self.tagging_queue_counts,
+                self.settings.ai_tagging_queue_paused,
+            ),
+        }
     }
 
     fn nav_highlight(&self, window: &Window, cx: &Context<Self>) -> AnyElement {
@@ -759,6 +663,64 @@ impl App {
     }
 }
 
+fn sidebar_status_tabs(auto: bool, discord: bool, ai: bool) -> Vec<SidebarStatusTab> {
+    let mut tabs = Vec::with_capacity(3);
+    if auto {
+        tabs.push(SidebarStatusTab::AutoCompression);
+    }
+    if discord {
+        tabs.push(SidebarStatusTab::Discord);
+    }
+    if ai {
+        tabs.push(SidebarStatusTab::AiTagging);
+    }
+    tabs
+}
+
+fn resolve_status_tab(
+    selected: SidebarStatusTab,
+    visible: &[SidebarStatusTab],
+) -> Option<SidebarStatusTab> {
+    visible
+        .contains(&selected)
+        .then_some(selected)
+        .or_else(|| visible.first().copied())
+}
+
+fn queue_attention(counts: QueueCounts) -> Option<StatusTone> {
+    if counts.processing > 0 || counts.pending > 0 {
+        Some(StatusTone::Running)
+    } else if counts.waiting > 0 {
+        Some(StatusTone::Waiting)
+    } else {
+        None
+    }
+}
+
+fn status_tab_feature(tab: SidebarStatusTab) -> QueueFeature {
+    match tab {
+        SidebarStatusTab::AutoCompression => QueueFeature::Compression,
+        SidebarStatusTab::Discord => QueueFeature::Discord,
+        SidebarStatusTab::AiTagging => QueueFeature::Tagging,
+    }
+}
+
+fn status_tab_label(tab: SidebarStatusTab) -> String {
+    match tab {
+        SidebarStatusTab::AutoCompression => tr!("sidebar.tab.auto_compression"),
+        SidebarStatusTab::Discord => tr!("sidebar.tab.discord"),
+        SidebarStatusTab::AiTagging => tr!("sidebar.tab.ai_tagging"),
+    }
+}
+
+fn status_tab_element_id(tab: SidebarStatusTab) -> &'static str {
+    match tab {
+        SidebarStatusTab::AutoCompression => "sidebar-status-tab-auto-compression",
+        SidebarStatusTab::Discord => "sidebar-status-tab-discord",
+        SidebarStatusTab::AiTagging => "sidebar-status-tab-ai-tagging",
+    }
+}
+
 pub(crate) fn scan_progress_label(progress: &ScanProgressView) -> String {
     match progress.phase {
         IpcScanPhase::Walking => tr_args!(
@@ -792,257 +754,6 @@ pub(crate) fn scan_progress_ratio(progress: &ScanProgressView) -> f32 {
     ratio.clamp(0.0, 1.0)
 }
 
-fn running_job_count(active: i64, waiting: i64) -> i64 {
-    (active - waiting).max(0)
-}
-
-fn compression_card_status(active: i64, waiting: i64, failed: i64) -> CardStatus {
-    let running = running_job_count(active, waiting);
-    if waiting > 0 {
-        let mut parts = Vec::new();
-        if running > 0 {
-            parts.push(tr_args!("sidebar.status.item.running", count = running));
-        }
-        if failed > 0 {
-            parts.push(tr_args!("sidebar.status.item.failed", count = failed));
-        }
-        CardStatus {
-            headline: tr_args!("sidebar.status.waiting.headline", waiting = waiting),
-            detail: parts.join(" · "),
-            tone: StatusTone::Waiting,
-        }
-    } else if running > 0 {
-        CardStatus {
-            headline: tr_args!("sidebar.status.running.headline", running = running),
-            detail: if failed > 0 {
-                tr_args!("sidebar.status.item.failed", count = failed)
-            } else {
-                String::new()
-            },
-            tone: StatusTone::Running,
-        }
-    } else if failed > 0 {
-        CardStatus {
-            headline: tr_args!("sidebar.status.failed.headline", failed = failed),
-            detail: String::new(),
-            tone: StatusTone::Failed,
-        }
-    } else {
-        CardStatus {
-            headline: tr!("sidebar.status.idle.headline"),
-            detail: String::new(),
-            tone: StatusTone::Idle,
-        }
-    }
-}
-
-fn import_card_status(
-    progress: Option<&ImportProgress>,
-    report: Option<&ImportReportView>,
-) -> CardStatus {
-    if let Some(progress) = progress {
-        return CardStatus {
-            headline: tr!("sidebar.import.running.headline"),
-            detail: tr_args!(
-                "sidebar.import.running.detail",
-                processed = progress.processed,
-                total = progress.total,
-                imported = progress.imported,
-                failed = progress.failed
-            ),
-            tone: StatusTone::Running,
-        };
-    }
-    let Some(report) = report else {
-        return CardStatus {
-            headline: tr!("sidebar.import.none.headline"),
-            detail: String::new(),
-            tone: StatusTone::Idle,
-        };
-    };
-    let (failed, partial) = report.issue_counts();
-    let scan_failed = import_scan_failure_count(report);
-    let failed_total = failed + scan_failed;
-    if !report.remaining.is_empty() {
-        return CardStatus {
-            headline: tr_args!(
-                "sidebar.import.pending.headline",
-                remaining = report.remaining.len()
-            ),
-            detail: tr_args!(
-                "sidebar.import.pending.detail",
-                imported = report.imported,
-                total = report.total,
-                failed = failed_total
-            ),
-            tone: StatusTone::Waiting,
-        };
-    }
-    if failed_total > 0 {
-        return CardStatus {
-            headline: tr_args!("sidebar.import.failed.headline", failed = failed_total),
-            detail: if scan_failed > 0 {
-                tr_args!(
-                    "sidebar.import.scan_failed.detail",
-                    imported = report.imported,
-                    total = report.total,
-                    scan_failed = scan_failed
-                )
-            } else {
-                tr_args!(
-                    "sidebar.import.failed.detail",
-                    imported = report.imported,
-                    total = report.total
-                )
-            },
-            tone: StatusTone::Failed,
-        };
-    }
-    if partial > 0 {
-        return CardStatus {
-            headline: tr_args!("sidebar.import.partial.headline", partial = partial),
-            detail: tr_args!(
-                "sidebar.import.partial.detail",
-                imported = report.imported,
-                total = report.total
-            ),
-            tone: StatusTone::Waiting,
-        };
-    }
-    CardStatus {
-        headline: tr_args!("sidebar.import.done.headline", count = report.imported),
-        detail: if report.renamed.is_empty() {
-            tr!("sidebar.import.done.detail")
-        } else {
-            tr_args!(
-                "sidebar.import.done_renamed.detail",
-                count = report.renamed.len()
-            )
-        },
-        tone: StatusTone::Success,
-    }
-}
-
-fn import_scan_failure_count(report: &ImportReportView) -> usize {
-    report.scan_failures.len() + report.scan_errors.len()
-}
-
-fn scan_card_status(
-    progress: Option<&ScanProgressView>,
-    daemon_active: bool,
-    daemon_paused: bool,
-) -> CardStatus {
-    if let Some(progress) = progress {
-        let detail = scan_progress_label(progress);
-        let has_total = progress.total.is_some_and(|total| total > 0);
-        let headline = if progress.phase == IpcScanPhase::Indexing && has_total {
-            format!(
-                "{}%",
-                (scan_progress_ratio(progress) * 100.0).round() as i32
-            )
-        } else {
-            tr!("sidebar.scan.walking.headline")
-        };
-        return CardStatus {
-            headline,
-            detail,
-            tone: StatusTone::Running,
-        };
-    }
-    if !daemon_active {
-        return CardStatus {
-            headline: tr!("sidebar.scan.paused.headline"),
-            detail: tr!("sidebar.scan.paused.detail"),
-            tone: StatusTone::Idle,
-        };
-    }
-    if daemon_paused {
-        return CardStatus {
-            headline: tr!("sidebar.scan.paused_watch.headline"),
-            detail: tr!("sidebar.scan.paused_watch.detail"),
-            tone: StatusTone::Waiting,
-        };
-    }
-    CardStatus {
-        headline: tr!("sidebar.scan.idle.headline"),
-        detail: String::new(),
-        tone: StatusTone::Idle,
-    }
-}
-
-/// Whether the sidebar compression card offers its retry action. The
-/// input is the DB aggregate of retryable failures, not the loaded page
-/// of failed jobs: when every failure is at the retry cap the action
-/// would retry nothing, so the card offers the queue instead — the same
-/// gate the dashboard applies.
-fn sidebar_retry_available(retryable_failed: i64) -> bool {
-    retryable_failed > 0
-}
-
-fn compression_attention(active: i64, waiting: i64, failed: i64) -> Option<StatusTone> {
-    if failed > 0 {
-        Some(StatusTone::Failed)
-    } else if running_job_count(active, waiting) > 0 {
-        Some(StatusTone::Running)
-    } else if waiting > 0 {
-        Some(StatusTone::Waiting)
-    } else {
-        None
-    }
-}
-
-fn import_attention(
-    progress: Option<&ImportProgress>,
-    report: Option<&ImportReportView>,
-) -> Option<StatusTone> {
-    if progress.is_some() {
-        return Some(StatusTone::Running);
-    }
-    let report = report?;
-    let (failed, partial) = report.issue_counts();
-    if failed > 0 || import_scan_failure_count(report) > 0 {
-        Some(StatusTone::Failed)
-    } else if !report.remaining.is_empty() || partial > 0 {
-        Some(StatusTone::Waiting)
-    } else {
-        None
-    }
-}
-
-fn scan_attention(
-    progress: Option<&ScanProgressView>,
-    daemon_active: bool,
-    daemon_paused: bool,
-) -> Option<StatusTone> {
-    if progress.is_some() {
-        Some(StatusTone::Running)
-    } else if daemon_active && daemon_paused {
-        Some(StatusTone::Waiting)
-    } else {
-        None
-    }
-}
-
-/// The import bar shows its track even before any file has moved, so
-/// the card reads as present-but-empty at ratio 0.
-fn import_bar_ratio(progress: Option<&ImportProgress>) -> Option<f32> {
-    progress.map(import_progress_ratio)
-}
-
-/// The scan bar stays hidden at ratio 0: a scan that has not processed
-/// anything yet shows its label only.
-fn scan_bar_ratio(progress: Option<&ScanProgressView>) -> Option<f32> {
-    progress
-        .map(scan_progress_ratio)
-        .filter(|ratio| *ratio > 0.0)
-}
-
-fn import_running_progress(dialog: Option<&ImportDialogState>) -> Option<&ImportProgress> {
-    match dialog.map(|dialog| &dialog.phase) {
-        Some(ImportDialogPhase::Running { progress, .. }) => Some(progress),
-        _ => None,
-    }
-}
 fn nav_index(screen: Screen) -> usize {
     match screen {
         Screen::Photos => 0,
@@ -1103,26 +814,16 @@ pub(crate) fn screen_enter_offset(direction: f32, progress: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::{
-        NAV_ITEM_GAP, NAV_ITEM_HEIGHT, StatusTone, compression_attention, compression_card_status,
-        import_attention, import_bar_ratio, import_card_status, import_running_progress, nav_index,
-        nav_item_insets, nav_item_top, nav_tooltip_origin, rail_toggle_origin, running_job_count,
-        scan_attention, scan_bar_ratio, scan_card_status, scan_progress_label, scan_progress_ratio,
-        screen_direction, screen_enter_offset, sidebar_retry_available,
+        NAV_ITEM_GAP, NAV_ITEM_HEIGHT, StatusTone, nav_index, nav_item_insets, nav_item_top,
+        nav_tooltip_origin, queue_attention, rail_toggle_origin, resolve_status_tab,
+        scan_progress_label, scan_progress_ratio, screen_direction, screen_enter_offset,
+        sidebar_status_tabs,
     };
     use crate::app::Screen;
-    use crate::app::import::{
-        ImportDialogOrigin, ImportDialogPhase, ImportDialogState, ImportReportView,
-    };
+    use crate::app::SidebarStatusTab;
     use crate::app::lifecycle::ScanProgressView;
     use crate::ui::theme::SCREEN_SLIDE;
-    use std::cell::Cell;
-    use std::path::PathBuf;
-    use std::sync::Arc;
-    use std::sync::atomic::AtomicBool;
-    use vrc_photon_core::importer::{
-        ImportIssue, ImportIssueKind, ImportMode, ImportOptions, ImportProgress, ImportRename,
-    };
-    use vrc_photon_core::scanner::ScanFailure;
+    use vrc_photon_core::queue::QueueCounts;
     use vrc_photon_ipc::ScanPhase as IpcScanPhase;
 
     #[test]
@@ -1194,437 +895,51 @@ mod tests {
         assert_eq!(scan_progress_label(&progress), "フォルダ 2/3 · 索引 50/100");
         assert_eq!(scan_progress_ratio(&progress), 0.5);
     }
-    fn progress_fixture(processed: usize, total: usize) -> ImportProgress {
-        ImportProgress {
-            processed,
-            total,
-            imported: processed.saturating_sub(1),
-            skipped: 0,
-            failed: 0,
-            partial: 0,
-            last_source: None,
-        }
-    }
-    fn import_report_fixture() -> ImportReportView {
-        ImportReportView {
-            mode: ImportMode::Copy,
-            dest: PathBuf::from("/dest"),
-            source_root: None,
-            options: ImportOptions::default(),
-            total: 0,
-            processed: 0,
-            imported: 0,
-            skipped: 0,
-            issues: Vec::new(),
-            renamed: Vec::new(),
-            remaining: Vec::new(),
-            cancelled: false,
-            scan_failures: Vec::new(),
-            scan_errors: Vec::new(),
-            issue_counts: Cell::new(None),
-        }
-    }
-    fn import_dialog_fixture() -> ImportDialogState {
-        ImportDialogState {
-            origin: ImportDialogOrigin::New,
-            mode: ImportMode::Copy,
-            dest: PathBuf::from("/dest"),
-            source_root: None,
-            options: ImportOptions::default(),
-            source: None,
-            error: None,
-            phase: ImportDialogPhase::Ready,
-        }
-    }
-    fn retryable_issue(source: &str) -> ImportIssue {
-        ImportIssue {
-            source: PathBuf::from(source),
-            target: None,
-            message: "copy failed".to_string(),
-            kind: ImportIssueKind::Failed,
-            retryable: true,
-        }
-    }
 
-    fn non_retryable_issue(source: &str) -> ImportIssue {
-        ImportIssue {
-            retryable: false,
-            ..retryable_issue(source)
-        }
-    }
+    #[test]
+    fn sidebar_status_tabs_follow_feature_switches() {
+        use SidebarStatusTab::{AiTagging, AutoCompression, Discord};
 
-    fn partial_issue(source: &str) -> ImportIssue {
-        ImportIssue {
-            kind: ImportIssueKind::PartialMove,
-            ..non_retryable_issue(source)
-        }
-    }
-
-    fn rename_fixture(source: &str, target: &str) -> ImportRename {
-        ImportRename {
-            source: PathBuf::from(source),
-            target: PathBuf::from(target),
-        }
-    }
-
-    fn indexing_fixture() -> ScanProgressView {
-        ScanProgressView {
-            phase: IpcScanPhase::Indexing,
-            processed: 12,
-            total: Some(20),
-            indexed: 12,
-            root: 1,
-            roots: 1,
-        }
+        assert_eq!(
+            sidebar_status_tabs(true, true, true),
+            vec![AutoCompression, Discord, AiTagging]
+        );
+        assert_eq!(sidebar_status_tabs(false, true, false), vec![Discord]);
+        assert_eq!(sidebar_status_tabs(false, false, true), vec![AiTagging]);
+        assert!(sidebar_status_tabs(false, false, false).is_empty());
     }
 
     #[test]
-    fn running_job_count_clamps_waiting_above_active() {
-        assert_eq!(running_job_count(6, 2), 4);
-        assert_eq!(running_job_count(2, 6), 0);
-        assert_eq!(running_job_count(0, 0), 0);
+    fn resolve_status_tab_falls_back_to_the_first_visible() {
+        use SidebarStatusTab::{AiTagging, AutoCompression, Discord};
+
+        let all = [AutoCompression, Discord, AiTagging];
+        assert_eq!(resolve_status_tab(Discord, &all), Some(Discord));
+        assert_eq!(
+            resolve_status_tab(AiTagging, &[AutoCompression, Discord]),
+            Some(AutoCompression)
+        );
+        assert_eq!(resolve_status_tab(Discord, &[]), None);
     }
 
     #[test]
-    fn sidebar_retry_needs_a_retryable_failure() {
-        // The aggregate count excludes failures at the retry cap, so any
-        // positive count means the retry action has work to do.
-        assert!(!sidebar_retry_available(0));
-        assert!(sidebar_retry_available(1));
-        assert!(sidebar_retry_available(120));
+    fn queue_attention_prioritizes_active_over_waiting() {
+        let counts = |waiting, pending, processing| QueueCounts {
+            waiting,
+            pending,
+            processing,
+        };
+
+        assert_eq!(queue_attention(counts(1, 0, 1)), Some(StatusTone::Running));
+        assert_eq!(queue_attention(counts(1, 1, 0)), Some(StatusTone::Running));
+        assert_eq!(queue_attention(counts(1, 0, 0)), Some(StatusTone::Waiting));
+        assert_eq!(queue_attention(counts(0, 0, 0)), None);
     }
 
-    #[test]
-    fn compression_card_status_prioritizes_waiting_running_and_failed() {
-        let waiting = compression_card_status(6, 5, 2);
-        assert_eq!(waiting.headline, "未実行 5");
-        assert_eq!(waiting.detail, "実行中 1 · 失敗 2");
-        assert_eq!(waiting.tone, StatusTone::Waiting);
-
-        let running = compression_card_status(3, 0, 0);
-        assert_eq!(running.headline, "実行中 3");
-        assert_eq!(running.detail, "");
-        assert_eq!(running.tone, StatusTone::Running);
-
-        let failed = compression_card_status(0, 0, 2);
-        assert_eq!(failed.headline, "失敗 2");
-        assert_eq!(failed.detail, "");
-        assert_eq!(failed.tone, StatusTone::Failed);
-
-        let idle = compression_card_status(0, 0, 0);
-        assert_eq!(idle.headline, "キューは空です");
-        assert_eq!(idle.detail, "");
-        assert_eq!(idle.tone, StatusTone::Idle);
-    }
-    #[test]
-    fn import_card_status_covers_running_remaining_failed_partial_and_success() {
-        let mut progress = progress_fixture(42, 100);
-        progress.imported = 40;
-        progress.failed = 1;
-        let running = import_card_status(Some(&progress), None);
-        assert_eq!(running.headline, "取り込み中");
-        assert_eq!(running.detail, "42/100 · 取込 40 · 失敗 1");
-        assert_eq!(running.tone, StatusTone::Running);
-
-        let pending = ImportReportView {
-            total: 100,
-            processed: 40,
-            imported: 40,
-            issues: vec![non_retryable_issue("/bad.png")],
-            remaining: vec![PathBuf::from("/next.png")],
-            ..import_report_fixture()
-        };
-        let pending = import_card_status(None, Some(&pending));
-        assert_eq!(pending.headline, "未処理 1");
-        assert_eq!(pending.detail, "取込 40/100 · 失敗 1");
-        assert_eq!(pending.tone, StatusTone::Waiting);
-
-        let failed = ImportReportView {
-            total: 10,
-            processed: 10,
-            imported: 8,
-            issues: vec![non_retryable_issue("/a.png"), non_retryable_issue("/b.png")],
-            ..import_report_fixture()
-        };
-        let failed = import_card_status(None, Some(&failed));
-        assert_eq!(failed.headline, "失敗 2");
-        assert_eq!(failed.detail, "取込 8/10");
-        assert_eq!(failed.tone, StatusTone::Failed);
-
-        let partial = ImportReportView {
-            total: 10,
-            processed: 10,
-            imported: 9,
-            issues: vec![partial_issue("/c.png")],
-            ..import_report_fixture()
-        };
-        let partial = import_card_status(None, Some(&partial));
-        assert_eq!(partial.headline, "部分移動 1");
-        assert_eq!(partial.detail, "取込 9/10 · 完了");
-        assert_eq!(partial.tone, StatusTone::Waiting);
-
-        let success = ImportReportView {
-            total: 10,
-            processed: 10,
-            imported: 10,
-            renamed: vec![rename_fixture("/a.png", "/dest/a-1.png")],
-            ..import_report_fixture()
-        };
-        let success = import_card_status(None, Some(&success));
-        assert_eq!(success.headline, "完了 10 枚");
-        assert_eq!(success.detail, "前回の取り込み · 連番 1");
-        assert_eq!(success.tone, StatusTone::Success);
-
-        let none = import_card_status(None, None);
-        assert_eq!(none.headline, "履歴なし");
-        assert_eq!(none.detail, "");
-        assert_eq!(none.tone, StatusTone::Idle);
-    }
-
-    #[test]
-    fn import_card_status_surfaces_scan_failures_and_unprocessed_priority() {
-        let scan_only = ImportReportView {
-            total: 10,
-            processed: 10,
-            imported: 10,
-            scan_failures: vec![ScanFailure {
-                path: PathBuf::from("/dest"),
-                message: "scan failed".to_string(),
-            }],
-            ..import_report_fixture()
-        };
-        let scan_only_status = import_card_status(None, Some(&scan_only));
-        assert_eq!(scan_only_status.headline, "失敗 1");
-        assert_eq!(scan_only_status.detail, "取込 10/10 · スキャン失敗 1");
-        assert_eq!(scan_only_status.tone, StatusTone::Failed);
-        assert_eq!(
-            import_attention(None, Some(&scan_only)),
-            Some(StatusTone::Failed)
-        );
-
-        let hard_error = ImportReportView {
-            scan_errors: vec!["cannot index".to_string()],
-            ..import_report_fixture()
-        };
-        let hard_error_status = import_card_status(None, Some(&hard_error));
-        assert_eq!(hard_error_status.headline, "失敗 1");
-        assert_eq!(hard_error_status.detail, "取込 0/0 · スキャン失敗 1");
-        assert_eq!(hard_error_status.tone, StatusTone::Failed);
-
-        let triple = ImportReportView {
-            total: 10,
-            processed: 8,
-            imported: 7,
-            issues: vec![non_retryable_issue("/a.png"), partial_issue("/b.png")],
-            remaining: vec![PathBuf::from("/c.png")],
-            scan_failures: vec![ScanFailure {
-                path: PathBuf::from("/dest"),
-                message: "scan failed".to_string(),
-            }],
-            ..import_report_fixture()
-        };
-        let triple_status = import_card_status(None, Some(&triple));
-        assert_eq!(triple_status.headline, "未処理 1");
-        assert_eq!(triple_status.detail, "取込 7/10 · 失敗 2");
-        assert_eq!(triple_status.tone, StatusTone::Waiting);
-        assert_eq!(
-            import_attention(None, Some(&triple)),
-            Some(StatusTone::Failed)
-        );
-    }
-    #[test]
-    fn scan_card_status_handles_percent_walking_paused_and_stopped() {
-        let indexing = ScanProgressView {
-            phase: IpcScanPhase::Indexing,
-            processed: 50,
-            total: Some(100),
-            indexed: 49,
-            root: 2,
-            roots: 3,
-        };
-        let indexing = scan_card_status(Some(&indexing), true, false);
-        assert_eq!(indexing.headline, "50%");
-        assert_eq!(indexing.detail, "フォルダ 2/3 · 索引 50/100");
-        assert_eq!(indexing.tone, StatusTone::Running);
-
-        let walking = ScanProgressView {
-            phase: IpcScanPhase::Walking,
-            processed: 12,
-            total: None,
-            indexed: 0,
-            root: 1,
-            roots: 2,
-        };
-        let walking = scan_card_status(Some(&walking), true, false);
-        assert_eq!(walking.headline, "走査中…");
-        assert_eq!(walking.detail, "フォルダ 1/2 · 検索 12 件");
-        assert_eq!(walking.tone, StatusTone::Running);
-
-        let unknown_total = ScanProgressView {
-            total: None,
-            ..indexing_fixture()
-        };
-        assert_eq!(
-            scan_card_status(Some(&unknown_total), true, false).headline,
-            "走査中…"
-        );
-
-        let zero_total = ScanProgressView {
-            total: Some(0),
-            ..indexing_fixture()
-        };
-        assert_eq!(
-            scan_card_status(Some(&zero_total), true, false).headline,
-            "走査中…"
-        );
-
-        let paused = scan_card_status(None, true, true);
-        assert_eq!(paused.headline, "一時停止中");
-        assert_eq!(paused.detail, "監視を再開すると走査します");
-        assert_eq!(paused.tone, StatusTone::Waiting);
-
-        let stopped = scan_card_status(None, false, false);
-        assert_eq!(stopped.headline, "停止中");
-        assert_eq!(stopped.detail, "デーモンは接続されていません");
-        assert_eq!(stopped.tone, StatusTone::Idle);
-
-        let idle = scan_card_status(None, true, false);
-        assert_eq!(idle.headline, "待機中");
-        assert_eq!(idle.detail, "");
-        assert_eq!(idle.tone, StatusTone::Idle);
-    }
-    #[test]
-    fn attention_dots_prioritize_failures_over_running_and_waiting() {
-        assert_eq!(compression_attention(6, 5, 2), Some(StatusTone::Failed));
-        assert_eq!(compression_attention(4, 1, 0), Some(StatusTone::Running));
-        assert_eq!(compression_attention(2, 2, 0), Some(StatusTone::Waiting));
-        assert_eq!(compression_attention(0, 0, 0), None);
-
-        let progress = progress_fixture(1, 10);
-        assert_eq!(
-            import_attention(Some(&progress), None),
-            Some(StatusTone::Running)
-        );
-
-        let failed = ImportReportView {
-            total: 2,
-            processed: 2,
-            imported: 1,
-            issues: vec![non_retryable_issue("/a.png")],
-            remaining: vec![PathBuf::from("/b.png")],
-            ..import_report_fixture()
-        };
-        assert_eq!(
-            import_attention(None, Some(&failed)),
-            Some(StatusTone::Failed)
-        );
-
-        let pending = ImportReportView {
-            remaining: vec![PathBuf::from("/b.png")],
-            ..import_report_fixture()
-        };
-        assert_eq!(
-            import_attention(None, Some(&pending)),
-            Some(StatusTone::Waiting)
-        );
-
-        assert_eq!(import_attention(None, None), None);
-
-        let scanning = ScanProgressView {
-            phase: IpcScanPhase::Indexing,
-            processed: 1,
-            total: Some(10),
-            indexed: 1,
-            root: 1,
-            roots: 1,
-        };
-        assert_eq!(
-            scan_attention(Some(&scanning), true, false),
-            Some(StatusTone::Running)
-        );
-        assert_eq!(scan_attention(None, true, true), Some(StatusTone::Waiting));
-        assert_eq!(scan_attention(None, true, false), None);
-        assert_eq!(scan_attention(None, false, false), None);
-    }
-
-    #[test]
-    fn attention_dots_cover_partial_only_success_only_and_paused_scan() {
-        // A report whose only blemish is a partial move waits for the
-        // user's attention without counting as a failure.
-        let partial_only = ImportReportView {
-            total: 1,
-            processed: 1,
-            imported: 1,
-            issues: vec![partial_issue("/a.png")],
-            ..import_report_fixture()
-        };
-        assert_eq!(
-            import_attention(None, Some(&partial_only)),
-            Some(StatusTone::Waiting)
-        );
-
-        // A fully successful import needs no attention dot.
-        let success_only = ImportReportView {
-            total: 2,
-            processed: 2,
-            imported: 2,
-            ..import_report_fixture()
-        };
-        assert_eq!(import_attention(None, Some(&success_only)), None);
-
-        // Scan progress outranks the paused state: a paused daemon that
-        // is mid-scan still reads as running.
-        let scanning = indexing_fixture();
-        assert_eq!(
-            scan_attention(Some(&scanning), true, true),
-            Some(StatusTone::Running)
-        );
-    }
-
-    #[test]
-    fn bar_ratios_show_the_import_track_at_zero_but_hide_the_scan_bar() {
-        let import_progress = progress_fixture(0, 10);
-        assert_eq!(import_bar_ratio(Some(&import_progress)), Some(0.0));
-        assert_eq!(import_bar_ratio(None), None);
-
-        let scan_idle = ScanProgressView {
-            processed: 0,
-            ..indexing_fixture()
-        };
-        assert_eq!(scan_bar_ratio(Some(&scan_idle)), None);
-        let scan_running = indexing_fixture();
-        assert_eq!(
-            scan_bar_ratio(Some(&scan_running)),
-            Some(scan_progress_ratio(&scan_running))
-        );
-        assert_eq!(scan_bar_ratio(None), None);
-    }
-
-    #[test]
-    fn import_running_progress_only_reads_the_running_phase() {
-        assert!(import_running_progress(None).is_none());
-
-        let ready = import_dialog_fixture();
-        assert!(import_running_progress(Some(&ready)).is_none());
-
-        let mut running = import_dialog_fixture();
-        running.phase = ImportDialogPhase::Running {
-            progress: progress_fixture(1, 2),
-            cancel: Arc::new(AtomicBool::new(false)),
-            cancel_requested: false,
-        };
-        assert_eq!(
-            import_running_progress(Some(&running)).map(|progress| progress.processed),
-            Some(1)
-        );
-    }
     #[test]
     fn tone_colors_use_the_sidebar_palette() {
         let p = crate::ui::palette::resolve("charcoal", "sky");
-        assert_eq!(StatusTone::Idle.color(&p), p.muted_2);
         assert_eq!(StatusTone::Running.color(&p), p.accent);
         assert_eq!(StatusTone::Waiting.color(&p), p.amber);
-        assert_eq!(StatusTone::Failed.color(&p), p.red);
-        assert_eq!(StatusTone::Success.color(&p), p.green);
     }
 }
