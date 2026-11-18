@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VRC PhotoN — 設定画面の開発者情報カード モック (#737)</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%230d1420'/%3E%3Ccircle cx='16' cy='16' r='7' fill='none' stroke='%238bcbff' stroke-width='2'/%3E%3C/svg%3E">
+<style>
+  :root {
+    color-scheme: dark;
+    --font: "Inter", "Noto Sans JP", "Hiragino Sans", "Yu Gothic UI", system-ui, -apple-system, sans-serif;
+    --text: #eef4ff;
+    --muted: #a8b4ca;
+    --dim: #7f8ba3;
+    --faint: #5e6a81;
+    --accent: #8bcbff;
+    --green: #7ee2b8;
+    --rose: #ff94a8;
+    --amber: #f4c878;
+    --line: rgba(255, 255, 255, 0.105);
+    --line-soft: rgba(255, 255, 255, 0.065);
+    --panel: #0d1420;
+    --panel-deep: #080d15;
+    --panel-2: #151f2f;
+    --panel-sidebar: #101827;
+    --panel-card: #0d1420;
+    --accent-soft: rgba(139, 203, 255, 0.14);
+    --r-card: 22px;
+  }
+
+  * { box-sizing: border-box; }
+  html { overflow-x: hidden; }
+  body {
+    margin: 0;
+    min-width: 320px;
+    background: #05070d;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -2;
+    background:
+      radial-gradient(ellipse 58% 54% at 10% 2%, rgba(54, 107, 255, 0.28), transparent 66%),
+      radial-gradient(ellipse 46% 52% at 92% 6%, rgba(255, 86, 181, 0.12), transparent 68%),
+      radial-gradient(ellipse 52% 48% at 64% 104%, rgba(30, 202, 178, 0.10), transparent 68%),
+      linear-gradient(140deg, #04060c 0%, #0a0f1e 44%, #060811 100%);
+  }
+
+  .page { width: min(1360px, calc(100% - 48px)); margin: 0 auto; padding: 44px 0 80px; }
+  .masthead { display: flex; align-items: flex-start; justify-content: space-between; gap: 28px; margin-bottom: 28px; }
+  .eyebrow { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; }
+  .issue-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border: 1px solid rgba(139,203,255,.24); border-radius: 999px; background: rgba(139,203,255,.08); color: var(--accent); font-size: 10px; letter-spacing: .08em; }
+  h1 { margin: 11px 0 9px; font-size: clamp(25px, 3vw, 36px); line-height: 1.22; letter-spacing: -.035em; font-weight: 620; }
+  .lede { max-width: 860px; margin: 0; color: var(--muted); font-size: 13px; }
+  .lede b { color: var(--text); font-weight: 560; }
+  .meta-card { flex: none; min-width: 300px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 16px; background: rgba(13,20,32,.72); }
+  .meta-row { display: flex; justify-content: space-between; gap: 18px; padding: 4px 0; color: var(--dim); font-size: 11px; }
+  .meta-row b { color: var(--text); font-weight: 550; text-align: right; }
+  .meta-row + .meta-row { border-top: 1px solid var(--line-soft); }
+
+  .section-label { display: flex; align-items: baseline; gap: 12px; margin: 42px 0 14px; }
+  .section-label h2 { margin: 0; font-size: 15px; font-weight: 580; letter-spacing: -.01em; }
+  .section-label span { color: var(--dim); font-size: 11px; }
+  .section-note { max-width: 1000px; margin: -4px 0 18px; color: var(--dim); font-size: 11.5px; }
+  .section-note b { color: var(--muted); font-weight: 560; }
+
+  .decision-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 18px 0 6px; }
+  .decision { padding: 13px 14px; border: 1px solid var(--line); border-radius: 14px; background: rgba(14,21,34,.72); }
+  .decision .q { color: var(--accent); font-size: 10px; letter-spacing: .08em; }
+  .decision h3 { margin: 5px 0 6px; font-size: 12px; font-weight: 580; }
+  .decision p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
+  .decision .ok { display: inline-block; margin-top: 8px; padding: 2px 7px; border-radius: 999px; color: var(--green); background: rgba(126,226,184,.07); border: 1px solid rgba(126,226,184,.18); font-size: 9.5px; }
+
+  .specimen-grid { display: grid; grid-template-columns: 1fr; gap: 18px; }
+  .specimen { border: 1px solid var(--line); border-radius: var(--r-card); background: linear-gradient(180deg, rgba(17,25,39,.78), rgba(9,14,23,.9)); padding: 16px; box-shadow: 0 20px 60px rgba(0,0,0,.22); }
+  .specimen-head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .specimen-title { font-size: 12px; font-weight: 580; }
+  .tag { margin-left: auto; padding: 2px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--dim); font-size: 9px; letter-spacing: .08em; }
+  .specimen-stage { display: flex; justify-content: center; padding: 14px 0 4px; }
+  .annotation { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line-soft); color: var(--dim); font-size: 10.5px; line-height: 1.65; }
+  .annotation b { color: var(--muted); font-weight: 560; }
+  .annotation code { color: var(--accent); font-size: 10px; }
+
+  /* ---------- Fake app shell ---------- */
+  .app-frame {
+    position: relative; width: min(980px, 100%); min-height: 560px; overflow: hidden;
+    border: 1px solid var(--line-soft); border-radius: 22px;
+    background: linear-gradient(145deg, #0a1120, #060a12 58%, #080d18);
+    box-shadow: 0 24px 70px rgba(0,0,0,.34), inset 0 1px rgba(255,255,255,.05);
+  }
+  .app-frame.light {
+    border-color: rgba(20,30,50,.12);
+    background: linear-gradient(145deg, #f6f9ff, #eef2fa 58%, #f4f7fd);
+    box-shadow: 0 24px 70px rgba(20,30,50,.16), inset 0 1px rgba(255,255,255,.8);
+    color-scheme: light;
+  }
+  .light {
+    --text: #1d2635;
+    --muted: #59657a;
+    --dim: #7a8699;
+    --faint: #9aa4b5;
+    --accent: #2f6fd0;
+    --green: #1f8f66;
+    --rose: #c14760;
+    --amber: #a8741c;
+    --line: rgba(20, 30, 50, 0.14);
+    --line-soft: rgba(20, 30, 50, 0.085);
+    --panel: #fbfcff;
+    --panel-deep: #eef2f9;
+    --panel-2: #edf1f8;
+    --panel-sidebar: #f3f6fc;
+    --panel-card: #fbfcff;
+    --accent-soft: rgba(47, 111, 208, 0.12);
+  }
+  .titlebar { height: 46px; display: flex; align-items: center; gap: 9px; padding: 0 14px; border-bottom: 1px solid var(--line-soft); }
+  .app-glyph { width: 22px; height: 22px; border-radius: 7px; border: 1px solid rgba(139,203,255,.38); background: rgba(139,203,255,.08); position: relative; }
+  .light .app-glyph { border-color: rgba(47,111,208,.34); background: rgba(47,111,208,.08); }
+  .app-glyph::after { content: ""; position: absolute; inset: 6px; border: 1.5px solid var(--accent); border-radius: 50%; }
+  .app-name { color: var(--muted); font-size: 11px; }
+  .title-divider { width: 1px; height: 14px; background: var(--line); }
+  .screen-name { color: var(--text); font-size: 11.5px; font-weight: 600; }
+  .titlebar-spacer { flex: 1; }
+  .titlebar-btn { width: 26px; height: 26px; border-radius: 6px; display: grid; place-items: center; color: var(--dim); position: relative; }
+  .titlebar-btn svg { width: 15px; height: 15px; }
+  .app-body { display: flex; min-height: 514px; }
+  .sidebar {
+    width: 180px; flex: none; display: flex; flex-direction: column; gap: 2px;
+    padding: 12px 10px; border-right: 1px solid var(--line-soft);
+    background: linear-gradient(180deg, rgba(16,24,39,.9), rgba(8,13,21,.9));
+  }
+  .light .sidebar { background: linear-gradient(180deg, #f3f6fc, #edf1f9); }
+  .nav-item { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 9px; border-radius: 9px; color: var(--muted); font-size: 11px; }
+  .nav-item .ico { width: 15px; text-align: center; color: var(--dim); font-size: 12px; }
+  .nav-item.active { background: var(--accent-soft); color: var(--text); box-shadow: inset 2px 0 var(--accent); }
+  .nav-item.active .ico { color: var(--accent); }
+  .nav-spacer { flex: 1; }
+  .sidebar-foot { display: flex; align-items: center; padding: 10px 0 0; color: var(--faint); font-size: 10px; }
+  .daemon-pill { display: inline-flex; align-items: center; gap: 5px; }
+  .daemon-pill i { width: 5px; height: 5px; border-radius: 50%; background: var(--green); }
+  .version { margin-left: auto; }
+
+  .settings-content { flex: 1; min-width: 0; padding: 14px; display: flex; flex-direction: column; gap: 12px; position: relative; overflow: hidden; }
+  .scrolled-fade { position: absolute; top: 0; left: 0; right: 0; height: 26px; z-index: 1; background: linear-gradient(180deg, rgba(6,10,18,.95), rgba(6,10,18,0)); pointer-events: none; }
+  .light .scrolled-fade { background: linear-gradient(180deg, rgba(242,246,252,.95), rgba(242,246,252,0)); }
+  .settings-card { border: 1px solid var(--line-soft); border-radius: 17px; background: var(--panel-card); padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+  .settings-card h3 { margin: 0; font-size: 13px; font-weight: 600; }
+  .divider { height: 1px; background: var(--line-soft); }
+  .meta-row-settings { display: flex; justify-content: space-between; gap: 12px; font-size: 10px; color: var(--dim); }
+  .meta-row-settings b { color: var(--text); font-weight: 500; }
+  .switch-row { display: flex; align-items: center; gap: 10px; font-size: 10.5px; color: var(--text); }
+  .switch { margin-left: auto; width: 28px; height: 16px; border-radius: 999px; background: rgba(139,203,255,.28); position: relative; }
+  .light .switch { background: rgba(47,111,208,.24); }
+  .switch::after { content: ""; position: absolute; top: 2px; right: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--accent); }
+  .btn { display: inline-flex; align-items: center; justify-content: center; height: 24px; padding: 0 10px; border-radius: 7px; border: 1px solid var(--line); color: var(--muted); font-size: 10px; font-weight: 500; white-space: nowrap; }
+  .btn.ghost { border-color: transparent; color: var(--dim); }
+  .reload-row { display: flex; gap: 8px; }
+  .settings-scroll-note { position: absolute; right: 22px; bottom: 12px; z-index: 1; padding: 3px 8px; border-radius: 999px; background: rgba(139,203,255,.1); border: 1px solid rgba(139,203,255,.22); color: var(--accent); font-size: 9px; letter-spacing: .06em; }
+  .light .settings-scroll-note { background: rgba(47,111,208,.08); border-color: rgba(47,111,208,.2); }
+
+  /* ---------- Developer card ---------- */
+  .dev-card { border: 1px solid var(--line-soft); border-radius: 17px; background: var(--panel-card); padding: 14px; display: flex; align-items: stretch; gap: 14px; box-shadow: 0 18px 44px rgba(0,0,0,.18), inset 0 1px rgba(255,255,255,.05); }
+  .light .dev-card { box-shadow: 0 18px 44px rgba(20,30,50,.08), inset 0 1px rgba(255,255,255,.8); }
+  .dev-left { flex: none; width: 148px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; }
+  .dev-avatar { width: 64px; height: 64px; border-radius: 50%; object-fit: cover; border: 1px solid var(--line); display: block; }
+  .dev-name { font-size: 12px; font-weight: 600; color: var(--text); line-height: 1.3; }
+  .dev-divider { flex: none; width: 1px; align-self: stretch; background: var(--line-soft); }
+  .dev-info { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .dev-row { padding: 7px 0; display: flex; flex-direction: column; gap: 1px; }
+  .dev-row:first-child { padding-top: 0; }
+  .dev-row:last-child { padding-bottom: 0; }
+  .dev-label { font-size: 9.5px; color: var(--dim); letter-spacing: .02em; line-height: 1.5; }
+  .dev-value { font-size: 12px; color: var(--text); line-height: 1.5; }
+  .dev-value.link { color: var(--accent); cursor: pointer; width: fit-content; }
+  .dev-value.link:hover { text-decoration: underline; }
+  .dev-sep { height: 1px; background: var(--line-soft); }
+
+  .rules { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 18px; }
+  .rule { padding: 13px 14px; border: 1px solid var(--line); border-radius: 14px; background: rgba(14,21,34,.6); }
+  .rule h3 { margin: 0 0 6px; font-size: 12px; font-weight: 580; }
+  .rule p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
+  .rule code { color: var(--accent); font-size: 10px; }
+
+  .zoom-stage { width: min(760px, 100%); }
+  .measure { position: relative; }
+  .measure::before { content: ""; position: absolute; left: -12px; top: 0; bottom: 0; width: 1px; background: repeating-linear-gradient(180deg, rgba(139,203,255,.5) 0 3px, transparent 3px 6px); }
+  .measure::after { content: ""; position: absolute; right: -12px; top: 0; bottom: 0; width: 1px; background: repeating-linear-gradient(180deg, rgba(139,203,255,.5) 0 3px, transparent 3px 6px); }
+
+  .light-grid { display: grid; grid-template-columns: 1fr; gap: 18px; }
+
+  @media (max-width: 1100px) {
+    .decision-grid { grid-template-columns: repeat(2, 1fr); }
+    .rules { grid-template-columns: 1fr; }
+    .masthead { flex-direction: column; }
+    .meta-card { width: 100%; }
+  }
+  @media (max-width: 720px) {
+    .decision-grid { grid-template-columns: 1fr; }
+    .sidebar { display: none; }
+    .app-body { min-height: 460px; }
+    .dev-card { flex-direction: column; }
+    .dev-left { width: 100%; flex-direction: row; justify-content: flex-start; }
+    .dev-divider { width: 100%; height: 1px; align-self: auto; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="masthead">
+    <div>
+      <div class="eyebrow"><span class="issue-chip">#737</span><span>UI mockup · developer card</span></div>
+      <h1>設定画面の下部に開発者情報カードを追加</h1>
+      <p class="lede">
+        設定画面の最下部、「設定を再読込」の下に1枚のカードを置く。左に丸型の開発者画像と名前、
+        縦の区切り線を挟んだ右に<b>バージョン / ライセンス / リポジトリ / X</b>を
+        小ラベル＋値で縦に並べる。リポジトリと X の値はクリックでブラウザを開く。
+      </p>
+    </div>
+    <div class="meta-card">
+      <div class="meta-row"><span>対象</span><b>設定画面の最下部</b></div>
+      <div class="meta-row"><span>構成</span><b>左右分割の1枚カード</b></div>
+      <div class="meta-row"><span>情報</span><b>4項目（バージョン / ライセンス / リポジトリ / X）</b></div>
+      <div class="meta-row"><span>画像</span><b>devinfo-avatar.jpg を同梱</b></div>
+      <div class="meta-row"><span>状態</span><b>承認待ち</b></div>
+    </div>
+  </header>
+
+  <div class="section-label"><h2>承認ポイント</h2><span>実装前に確認する決定</span></div>
+  <div class="decision-grid">
+    <div class="decision">
+      <div class="q">Q1 · 位置</div>
+      <h3>「設定を再読込」の直下</h3>
+      <p>設定カード列の最末尾に置く。再読込ボタンとの間隔は、他のカードと同じ 12 px のギャップを保つ。</p>
+      <span class="ok">末尾に固定</span>
+    </div>
+    <div class="decision">
+      <div class="q">Q2 · 構成</div>
+      <h3>見出しなしの左右2列</h3>
+      <p>カード見出しは置かない。左に丸型画像と名前、縦区切り線、右に4項目。各項目は小ラベル＋値で、項目間に1 pxの区切り線を入れる。</p>
+      <span class="ok">issue の構成どおり</span>
+    </div>
+    <div class="decision">
+      <div class="q">Q3 · リンク</div>
+      <h3>値だけをリンクにする</h3>
+      <p>リポジトリと X は値の文字だけをアクセント色にし、ホバーで下線を出す。クリックで既定のブラウザを開く。ラベルはリンクにしない。</p>
+      <span class="ok">値だけクリック可能</span>
+    </div>
+    <div class="decision">
+      <div class="q">Q4 · 画像</div>
+      <h3>64 px の丸型</h3>
+      <p><code>~/devinfo-avatar.jpg</code>（400×399）をアセットとして同梱し、64 px の円形に切り抜く。画像の比率は Cover で維持する。</p>
+      <span class="ok">64 px / Cover</span>
+    </div>
+  </div>
+
+  <div class="section-label"><h2>設定画面での見え方</h2><span>1280×820 相当 / 最下部までスクロールした状態</span></div>
+  <p class="section-note">
+    カードは既存の設定カードと同じ <b>glass_panel</b>（不透明なパネル色、角丸17 px、1 px境界、上辺ハイライト、弱い影）に合わせる。
+    バッジ・アイコン類は置かない。
+  </p>
+
+  <div class="specimen-grid">
+    <div class="specimen">
+      <div class="specimen-head"><div class="specimen-title">1. 設定画面の最下部</div><span class="tag">DEFAULT</span></div>
+      <div class="specimen-stage">
+        <div class="app-frame">
+          <div class="titlebar">
+            <div class="app-glyph"></div>
+            <span class="app-name">VRC PhotoN</span>
+            <span class="title-divider"></span>
+            <span class="screen-name">設定</span>
+            <span class="titlebar-spacer"></span>
+            <span class="titlebar-btn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+            </span>
+          </div>
+          <div class="app-body">
+            <aside class="sidebar">
+              <div class="nav-item"><span class="ico">▦</span><span>写真</span></div>
+              <div class="nav-item"><span class="ico">⌕</span><span>検索</span></div>
+              <div class="nav-item"><span class="ico">≡</span><span>圧縮</span></div>
+              <div class="nav-item"><span class="ico">◫</span><span>ダッシュボード</span></div>
+              <div class="nav-item"><span class="ico">⇄</span><span>連携・自動</span></div>
+              <div class="nav-item active"><span class="ico">⚙</span><span>設定</span></div>
+              <div class="nav-spacer"></div>
+              <div class="sidebar-foot"><span class="daemon-pill"><i></i>監視中</span><span class="version">v0.14.5</span></div>
+            </aside>
+            <div class="settings-content">
+              <div class="scrolled-fade"></div>
+              <div class="settings-card">
+                <h3>ログ</h3>
+                <div class="divider"></div>
+                <div class="meta-row-settings"><span>出力先</span><b>~/.local/share/vrc-photon/logs</b></div>
+                <div class="divider"></div>
+                <div class="reload-row"><span class="btn">ログフォルダを開く</span></div>
+              </div>
+              <div class="reload-row">
+                <span class="btn ghost">設定を再読込</span>
+              </div>
+              <section class="dev-card">
+                <div class="dev-left">
+                  <img class="dev-avatar" src="images/devinfo-avatar.jpg" alt="TommyZ7 の開発者画像">
+                  <div class="dev-name">TommyZ7</div>
+                </div>
+                <div class="dev-divider" aria-hidden="true"></div>
+                <div class="dev-info">
+                  <div class="dev-row">
+                    <div class="dev-label">バージョン</div>
+                    <div class="dev-value">v0.14.5</div>
+                  </div>
+                  <div class="dev-sep" aria-hidden="true"></div>
+                  <div class="dev-row">
+                    <div class="dev-label">ライセンス</div>
+                    <div class="dev-value">GPL-3.0-or-later</div>
+                  </div>
+                  <div class="dev-sep" aria-hidden="true"></div>
+                  <div class="dev-row">
+                    <div class="dev-label">リポジトリ</div>
+                    <div class="dev-value link">github.com/TommyZ-7/vrc-photon</div>
+                  </div>
+                  <div class="dev-sep" aria-hidden="true"></div>
+                  <div class="dev-row">
+                    <div class="dev-label">X</div>
+                    <div class="dev-value link">x.com/TommyZ794685</div>
+                  </div>
+                </div>
+              </section>
+              <span class="settings-scroll-note">最下部までスクロール済み</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="annotation"><b>位置:</b> ログカード → 「設定を再読込」 → 開発者情報カードの順。再読込ボタンはカード列の子として左寄せのまま残し、その直下にカードを置く。</div>
+    </div>
+
+    <div class="specimen">
+      <div class="specimen-head"><div class="specimen-title">2. カード単体（等倍）</div><span class="tag">DETAIL</span></div>
+      <div class="specimen-stage">
+        <div class="zoom-stage">
+          <section class="dev-card measure">
+            <div class="dev-left">
+              <img class="dev-avatar" src="images/devinfo-avatar.jpg" alt="TommyZ7 の開発者画像">
+              <div class="dev-name">TommyZ7</div>
+            </div>
+            <div class="dev-divider" aria-hidden="true"></div>
+            <div class="dev-info">
+              <div class="dev-row">
+                <div class="dev-label">バージョン</div>
+                <div class="dev-value">v0.14.5</div>
+              </div>
+              <div class="dev-sep" aria-hidden="true"></div>
+              <div class="dev-row">
+                <div class="dev-label">ライセンス</div>
+                <div class="dev-value">GPL-3.0-or-later</div>
+              </div>
+              <div class="dev-sep" aria-hidden="true"></div>
+              <div class="dev-row">
+                <div class="dev-label">リポジトリ</div>
+                <div class="dev-value link">github.com/TommyZ-7/vrc-photon</div>
+              </div>
+              <div class="dev-sep" aria-hidden="true"></div>
+              <div class="dev-row">
+                <div class="dev-label">X</div>
+                <div class="dev-value link">x.com/TommyZ794685</div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+      <div class="annotation">
+        <b>寸法:</b> カード内余白 14 px、左右の間隔 14 px、左カラム 148 px、画像 64 px、名前 12 px。
+        縦区切り線はカード内側の高さいっぱいに伸ばす。右カラムは 1 px の区切り線で4項目を分け、ラベル 9.5 px・値 12 px。
+      </div>
+    </div>
+
+    <div class="specimen">
+      <div class="specimen-head"><div class="specimen-title">3. ライトテーマ</div><span class="tag">LIGHT</span></div>
+      <div class="specimen-stage">
+        <div class="app-frame light">
+          <div class="titlebar">
+            <div class="app-glyph"></div>
+            <span class="app-name">VRC PhotoN</span>
+            <span class="title-divider"></span>
+            <span class="screen-name">設定</span>
+            <span class="titlebar-spacer"></span>
+            <span class="titlebar-btn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+            </span>
+          </div>
+          <div class="app-body">
+            <aside class="sidebar">
+              <div class="nav-item"><span class="ico">▦</span><span>写真</span></div>
+              <div class="nav-item"><span class="ico">⌕</span><span>検索</span></div>
+              <div class="nav-item"><span class="ico">≡</span><span>圧縮</span></div>
+              <div class="nav-item"><span class="ico">◫</span><span>ダッシュボード</span></div>
+              <div class="nav-item"><span class="ico">⇄</span><span>連携・自動</span></div>
+              <div class="nav-item active"><span class="ico">⚙</span><span>設定</span></div>
+              <div class="nav-spacer"></div>
+              <div class="sidebar-foot"><span class="daemon-pill"><i></i>監視中</span><span class="version">v0.14.5</span></div>
+            </aside>
+            <div class="settings-content" style="justify-content:flex-end;">
+              <div class="reload-row">
+                <span class="btn ghost">設定を再読込</span>
+              </div>
+              <section class="dev-card">
+                <div class="dev-left">
+                  <img class="dev-avatar" src="images/devinfo-avatar.jpg" alt="TommyZ7 の開発者画像">
+                  <div class="dev-name">TommyZ7</div>
+                </div>
+                <div class="dev-divider" aria-hidden="true"></div>
+                <div class="dev-info">
+                  <div class="dev-row">
+                    <div class="dev-label">バージョン</div>
+                    <div class="dev-value">v0.14.5</div>
+                  </div>
+                  <div class="dev-sep" aria-hidden="true"></div>
+                  <div class="dev-row">
+                    <div class="dev-label">ライセンス</div>
+                    <div class="dev-value">GPL-3.0-or-later</div>
+                  </div>
+                  <div class="dev-sep" aria-hidden="true"></div>
+                  <div class="dev-row">
+                    <div class="dev-label">リポジトリ</div>
+                    <div class="dev-value link">github.com/TommyZ-7/vrc-photon</div>
+                  </div>
+                  <div class="dev-sep" aria-hidden="true"></div>
+                  <div class="dev-row">
+                    <div class="dev-label">X</div>
+                    <div class="dev-value link">x.com/TommyZ794685</div>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="annotation"><b>テーマ:</b> 色は固定値ではなく既存の <code>Palette</code> から取る。左カラムの文字・右カラムのラベルと値・区切り線が、暗系と白系の両方で読めることを確認する。</div>
+    </div>
+  </div>
+
+  <div class="section-label"><h2>文言とリンク先</h2><span>確定させる内容</span></div>
+  <div class="rules">
+    <div class="rule">
+      <h3>表示文言</h3>
+      <p>ラベルは ja: <code>バージョン / ライセンス / リポジトリ / X</code>、en: <code>Version / License / Repository / X</code>。値は <code>v0.14.5</code>、<code>GPL-3.0-or-later</code>、<code>github.com/TommyZ-7/vrc-photon</code>、<code>x.com/TommyZ794685</code>。</p>
+    </div>
+    <div class="rule">
+      <h3>リンクの動作</h3>
+      <p>リポジトリは <code>https://github.com/TommyZ-7/vrc-photon</code>、X は <code>https://x.com/TommyZ794685</code> を既定のブラウザで開く。既存の <code>open_path</code> を使い、失敗時はトーストで知らせる。</p>
+    </div>
+    <div class="rule">
+      <h3>バージョンの取得元</h3>
+      <p><code>vrc_photon_update::CURRENT_VERSION</code> に <code>v</code> を付けて表示する。設定画面のアップデートカードと同じ値を参照し、別の定数を増やさない。</p>
+    </div>
+  </div>
+
+  <div class="section-label"><h2>実装メモ</h2><span>今回変えないもの</span></div>
+  <div class="rules">
+    <div class="rule"><h3>画像の同梱</h3><p><code>~/devinfo-avatar.jpg</code> を <code>crates/ui/assets/devinfo-avatar.jpg</code> としてコピーし、<code>include_bytes!</code> で埋め込む。実行時に外部ファイルを読まない。</p></div>
+    <div class="rule"><h3>既存カードとの整合</h3><p>新しいカード部品は増やさず、設定画面の既存 <code>glass_panel</code> と <code>card_divider</code> の組み合わせで作る。角丸は既存カードと同じ17 px。</p></div>
+    <div class="rule"><h3>スコープ外</h3><p>ライセンス全文へのリンク、リポジトリのスター数や最終更新、X のタイムライン埋め込み、画像の変更機能は置かない。クリックできるのはリポジトリと X の値だけ。</p></div>
+  </div>
+
+</div>
+</body>
+</html>
