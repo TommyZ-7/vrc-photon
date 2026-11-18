@@ -53,9 +53,13 @@ pub struct FeedCheck {
     pub update: Option<AvailableUpdate>,
     /// The AI plugin release the feed advertises, when present and valid.
     pub ai_plugin: Option<AiPluginRelease>,
+    /// True only after the detached signature verified. A missing feed is
+    /// unverified and must not clear local state.
+    pub verified: bool,
 }
 
-/// Fetches, verifies, and parses the signed feed, returning a newer release.
+/// Fetches, verifies, and parses the signed feed. A missing feed is an
+/// unverified, empty result; malformed or unsigned feeds are errors.
 pub fn check(
     client: &dyn HttpClient,
     feed: &FeedConfig,
@@ -93,6 +97,7 @@ pub fn check(
         return Ok(FeedCheck {
             update: None,
             ai_plugin,
+            verified: true,
         });
     }
 
@@ -109,6 +114,7 @@ pub fn check(
             },
         }),
         ai_plugin,
+        verified: true,
     })
 }
 
@@ -360,6 +366,7 @@ mod tests {
             false,
         );
         let checked = check(&client, &feed, &Version::new(0, 4, 0), &appimage()).unwrap();
+        assert!(checked.verified);
         assert!(checked.update.is_none());
         assert_eq!(
             checked.ai_plugin.unwrap().versions(),
@@ -504,17 +511,16 @@ mod tests {
             vec![fixture.public_key.clone()],
             false,
         );
-        assert!(
-            check(
-                &missing_manifest,
-                &feed,
-                &Version::new(0, 3, 0),
-                &appimage()
-            )
-            .unwrap()
-            .update
-            .is_none()
-        );
+        let checked = check(
+            &missing_manifest,
+            &feed,
+            &Version::new(0, 3, 0),
+            &appimage(),
+        )
+        .unwrap();
+        assert!(!checked.verified);
+        assert!(checked.update.is_none());
+        assert!(checked.ai_plugin.is_none());
 
         let missing_signature = FakeHttpClient::new(HashMap::from([(
             fixture.manifest_url.clone(),

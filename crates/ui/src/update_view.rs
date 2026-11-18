@@ -148,6 +148,7 @@ mod tests {
                 },
             }),
             ai_plugin: None,
+            verified: true,
         }
     }
 
@@ -177,6 +178,7 @@ mod tests {
                 version: "0.2.0".to_string(),
                 host_version_min: "0.14.0".to_string(),
             }),
+            verified: true,
         });
         assert!(matches!(
             resolve_checked_phase(false, &up_to_date, update.update),
@@ -1194,7 +1196,9 @@ impl App {
                 if let Err(error) = self.settings.save(&self.db) {
                     tracing::warn!(%error, "cannot save update check time");
                 }
-                if let Ok(feed) = result.as_ref() {
+                if let Ok(feed) = result.as_ref()
+                    && feed.verified
+                {
                     self.update.ai_plugin = feed.ai_plugin.clone();
                     if !self.demo
                         && let Some(dir) = self.update.data_dir.as_deref()
