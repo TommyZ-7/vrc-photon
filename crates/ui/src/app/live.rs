@@ -20,7 +20,7 @@ use vrc_photon_core::model::{
     CompressionJob, CompressionProfile, DaemonError, DeletionCounts, DeletionRequest, Derivative,
     LibraryStats, Photo, PhotoPlayer, PhotoSort, QueueStatus, SendHistoryEntry,
 };
-use vrc_photon_core::queue::{QueueCounts, QueueEntry, QueueFeature};
+use vrc_photon_core::queue::{QueueCounts, QueueEntry, QueueFeature, QueueProgress};
 use vrc_photon_core::settings::AppSettings;
 use vrc_photon_i18n::tr_args;
 
@@ -162,6 +162,9 @@ pub(crate) struct JobSnapshot {
     discord_queue_counts: Option<QueueCounts>,
     tagging_queue_counts: Option<QueueCounts>,
     mixed_queue_counts: Option<QueueCounts>,
+    compression_queue_progress: Option<QueueProgress>,
+    discord_queue_progress: Option<QueueProgress>,
+    tagging_queue_progress: Option<QueueProgress>,
     job_failures: Option<NotificationSnapshot>,
     daemon_errors: Option<Vec<DaemonError>>,
 }
@@ -379,6 +382,15 @@ impl App {
             || snapshot
                 .mixed_queue_counts
                 .is_some_and(|counts| counts != self.mixed_queue_counts)
+            || snapshot
+                .compression_queue_progress
+                .is_some_and(|progress| progress != self.compression_queue_progress)
+            || snapshot
+                .discord_queue_progress
+                .is_some_and(|progress| progress != self.discord_queue_progress)
+            || snapshot
+                .tagging_queue_progress
+                .is_some_and(|progress| progress != self.tagging_queue_progress)
             || snapshot.job_failures.as_ref().is_some_and(|failures| {
                 failures.compression_failed != self.job_failures.compression_failed
                     || failures.discord_failed != self.job_failures.discord_failed
@@ -434,6 +446,15 @@ impl App {
             }
             if let Some(counts) = snapshot.mixed_queue_counts {
                 self.mixed_queue_counts = counts;
+            }
+            if let Some(progress) = snapshot.compression_queue_progress {
+                self.compression_queue_progress = progress;
+            }
+            if let Some(progress) = snapshot.discord_queue_progress {
+                self.discord_queue_progress = progress;
+            }
+            if let Some(progress) = snapshot.tagging_queue_progress {
+                self.tagging_queue_progress = progress;
             }
             if let Some(failures) = snapshot.job_failures {
                 self.job_failures = failures;
@@ -773,6 +794,9 @@ pub(crate) fn collect_jobs(db: &Db) -> JobSnapshot {
     let compression_queue_counts = db.queue_counts(QueueFeature::Compression).ok();
     let discord_queue_counts = db.queue_counts(QueueFeature::Discord).ok();
     let tagging_queue_counts = db.queue_counts(QueueFeature::Tagging).ok();
+    let compression_queue_progress = db.queue_progress(QueueFeature::Compression).ok();
+    let discord_queue_progress = db.queue_progress(QueueFeature::Discord).ok();
+    let tagging_queue_progress = db.queue_progress(QueueFeature::Tagging).ok();
     let compression_failed = db.count_jobs(QueueStatus::Failed).ok().unwrap_or(0);
     let discord_failed = db.count_failed_sends().ok().unwrap_or(0);
     let tagging_failed = db.failed_tagging_job_count(AI_PLUGIN_ID).ok().unwrap_or(0);
@@ -820,6 +844,9 @@ pub(crate) fn collect_jobs(db: &Db) -> JobSnapshot {
         discord_queue_counts,
         tagging_queue_counts,
         mixed_queue_counts,
+        compression_queue_progress,
+        discord_queue_progress,
+        tagging_queue_progress,
         job_failures: Some(job_failures),
         daemon_errors: db.daemon_errors().ok(),
     }
@@ -871,8 +898,9 @@ mod tests {
     use vrc_photon_core::db::Db;
     use vrc_photon_core::model::{
         CompressionOrigin, DeletionCounts, DeletionReason, DeletionRequest, DeletionStatus,
-        NewPhoto,
+        NewPhoto, QueueStatus,
     };
+    use vrc_photon_core::queue::QueueProgress;
 
     #[test]
     fn deletion_update_keeps_the_baseline_when_the_snapshot_is_missing() {
@@ -1021,6 +1049,35 @@ mod tests {
         assert_eq!(snapshot.photo_count, Some(1));
         assert!(snapshot.stats.is_some());
         assert!(snapshot.jobs.daemon_errors.is_some());
+    }
+
+    #[test]
+    fn snapshot_reports_queue_progress_for_active_jobs() {
+        let db = Db::open_in_memory().unwrap();
+        let photo = seed_photo(&db);
+        assert!(
+            db.enqueue_auto_job_with_status(photo, "keep", QueueStatus::Processing)
+                .unwrap()
+        );
+
+        let snapshot = collect_live_snapshot(&db, -1, None);
+        assert_eq!(
+            snapshot.jobs.compression_queue_progress,
+            Some(QueueProgress::default())
+        );
+
+        let job = db
+            .active_queue_entries(vrc_photon_core::queue::QueueFeature::Compression, 10)
+            .unwrap()
+            .remove(0);
+        db.update_job(&job.job_id, QueueStatus::Completed, 1.0, None, None)
+            .unwrap();
+
+        let snapshot = collect_live_snapshot(&db, -1, None);
+        assert_eq!(
+            snapshot.jobs.compression_queue_progress,
+            Some(QueueProgress { completed: 1 })
+        );
     }
 
     #[test]
