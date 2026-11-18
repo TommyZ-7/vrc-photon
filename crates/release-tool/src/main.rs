@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use vrc_photon_release_tool::{
-    build_manifest, collect_files, load_secret_key, sign_file, verify_file,
+    build_manifest, collect_files, load_secret_key, read_ai_plugin, sign_file, verify_file,
 };
 
 #[derive(Debug, Parser)]
@@ -28,6 +28,9 @@ enum Command {
         repo: String,
         #[arg(long)]
         notes_url: String,
+        /// Latest AI plugin release metadata checked into the repository.
+        #[arg(long)]
+        ai_plugin: Option<PathBuf>,
         #[arg(long)]
         output: PathBuf,
     },
@@ -59,9 +62,11 @@ fn main() -> Result<()> {
             tag,
             repo,
             notes_url,
+            ai_plugin,
             output,
         } => {
-            let manifest = build_manifest(&dist, &tag, &repo, &notes_url)?;
+            let ai_plugin = ai_plugin.as_deref().map(read_ai_plugin).transpose()?;
+            let manifest = build_manifest(&dist, &tag, &repo, &notes_url, ai_plugin)?;
             if let Some(parent) = output.parent()
                 && !parent.as_os_str().is_empty()
             {

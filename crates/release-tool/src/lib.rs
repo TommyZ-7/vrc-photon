@@ -9,10 +9,30 @@ use anyhow::{Context, Result, bail};
 use base64::Engine;
 use sha2::{Digest, Sha256};
 use url::Url;
-use vrc_photon_update::{Manifest, PlatformAsset, UpdateFormat};
+use vrc_photon_update::{AiPluginRelease, Manifest, PlatformAsset, UpdateFormat};
+
+/// Reads and validates the checked-in AI plugin release file.
+pub fn read_ai_plugin(path: &Path) -> Result<AiPluginRelease> {
+    let bytes = std::fs::read(path).with_context(|| format!("cannot read {}", path.display()))?;
+    let release: AiPluginRelease = serde_json::from_slice(&bytes)
+        .with_context(|| format!("invalid JSON in {}", path.display()))?;
+    if release.versions().is_none() {
+        bail!(
+            "{}: version and host_version_min must be semver",
+            path.display()
+        );
+    }
+    Ok(release)
+}
 
 /// Builds the signed-feed manifest from the packaged artifacts.
-pub fn build_manifest(dist: &Path, tag: &str, repo: &str, notes_url: &str) -> Result<Manifest> {
+pub fn build_manifest(
+    dist: &Path,
+    tag: &str,
+    repo: &str,
+    notes_url: &str,
+    ai_plugin: Option<AiPluginRelease>,
+) -> Result<Manifest> {
     let version = tag.strip_prefix('v').unwrap_or(tag);
     if version.is_empty() {
         bail!("tag has no version");
@@ -60,7 +80,7 @@ pub fn build_manifest(dist: &Path, tag: &str, repo: &str, notes_url: &str) -> Re
         notes_url: Some(notes_url.to_string()),
         platforms,
         system_packages,
-        ai_plugin: None,
+        ai_plugin,
     })
 }
 
@@ -210,6 +230,7 @@ mod tests {
             "v0.4.0",
             "TommyZ-7/vrc-photon",
             "https://github.com/TommyZ-7/vrc-photon/releases/tag/v0.4.0",
+            None,
         )
         .unwrap();
         assert_eq!(manifest.schema, 1);
@@ -259,6 +280,7 @@ mod tests {
             "v0.4.0",
             "TommyZ-7/vrc-photon",
             "https://example.com/notes",
+            None,
         )
         .unwrap();
         assert_eq!(manifest.platforms.len(), 2);
@@ -281,11 +303,72 @@ mod tests {
     }
 
     #[test]
+    fn builds_a_manifest_with_an_ai_plugin() {
+        let dir = tempfile::tempdir().unwrap();
+        write_artifact(dir.path(), "vrc-photon_0.4.0_x86_64.AppImage", b"appimage");
+        write_artifact(dir.path(), "vrc-photon_0.4.0_x64-setup.exe", b"installer");
+        write_artifact(
+            dir.path(),
+            "vrc-photon-0.4.0-1-x86_64.pkg.tar.zst",
+            b"pacman",
+        );
+        write_artifact(dir.path(), "vrc-photon_0.4.0_amd64.deb", b"deb");
+        let ai_plugin = AiPluginRelease {
+            version: "0.2.0".to_string(),
+            host_version_min: "0.15.0".to_string(),
+        };
+        let manifest = build_manifest(
+            dir.path(),
+            "v0.4.0",
+            "TommyZ-7/vrc-photon",
+            "https://example.com/notes",
+            Some(ai_plugin.clone()),
+        )
+        .unwrap();
+        assert_eq!(manifest.ai_plugin, Some(ai_plugin));
+
+        let json = serde_json::to_vec(&manifest).unwrap();
+        let (parsed, _) = Manifest::parse_and_validate(&json, false).unwrap();
+        assert_eq!(
+            parsed
+                .ai_plugin
+                .unwrap()
+                .versions()
+                .map(|(version, host_min)| (version.to_string(), host_min.to_string())),
+            Some(("0.2.0".to_string(), "0.15.0".to_string()))
+        );
+    }
+
+    #[test]
+    fn reads_and_validates_the_ai_plugin_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("ai-plugin.json");
+        std::fs::write(
+            &path,
+            br#"{"version":"0.2.0","host_version_min":"0.15.0"}"#,
+        )
+        .unwrap();
+        assert_eq!(read_ai_plugin(&path).unwrap().version, "0.2.0");
+    }
+
+    #[test]
+    fn rejects_an_ai_plugin_file_with_a_non_semver_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("ai-plugin.json");
+        std::fs::write(
+            &path,
+            br#"{"version":"latest","host_version_min":"0.15.0"}"#,
+        )
+        .unwrap();
+        assert!(read_ai_plugin(&path).is_err());
+    }
+
+    #[test]
     fn rejects_a_missing_system_package() {
         let dir = tempfile::tempdir().unwrap();
         write_artifact(dir.path(), "vrc-photon_0.4.0_x86_64.AppImage", b"appimage");
         write_artifact(dir.path(), "vrc-photon_0.4.0_x64-setup.exe", b"installer");
-        assert!(build_manifest(dir.path(), "v0.4.0", "x/y", "https://example.com").is_err());
+        assert!(build_manifest(dir.path(), "v0.4.0", "x/y", "https://example.com", None).is_err());
     }
 
     #[test]
@@ -304,7 +387,7 @@ mod tests {
             b"other pacman",
         );
         write_artifact(dir.path(), "vrc-photon_0.4.0_amd64.deb", b"deb");
-        assert!(build_manifest(dir.path(), "v0.4.0", "x/y", "https://example.com").is_err());
+        assert!(build_manifest(dir.path(), "v0.4.0", "x/y", "https://example.com", None).is_err());
     }
 
     #[test]
@@ -314,7 +397,7 @@ mod tests {
         write_artifact(dir.path(), "vrc-photon_0.4.0_x64-setup.exe", b"installer");
         write_artifact(dir.path(), "vrc-photon-x86_64.pkg.tar.zst", b"pacman");
         write_artifact(dir.path(), "vrc-photon_0.4.0_amd64.deb", b"deb");
-        assert!(build_manifest(dir.path(), "v0.4.0", "x/y", "https://example.com").is_err());
+        assert!(build_manifest(dir.path(), "v0.4.0", "x/y", "https://example.com", None).is_err());
     }
 
     #[test]
@@ -332,7 +415,7 @@ mod tests {
             b"pacman",
         );
         write_artifact(dir.path(), "vrc-photon_0.4.0_amd64.deb", b"deb");
-        assert!(build_manifest(dir.path(), "v0.4.0", "x/y", "https://example.com").is_err());
+        assert!(build_manifest(dir.path(), "v0.4.0", "x/y", "https://example.com", None).is_err());
     }
 
     #[test]
@@ -346,7 +429,7 @@ mod tests {
             b"pacman",
         );
         write_artifact(dir.path(), "vrc-photon_0.4.0_amd64.deb", b"deb");
-        assert!(build_manifest(dir.path(), "v0.4.0", "x/y", "https://example.com").is_err());
+        assert!(build_manifest(dir.path(), "v0.4.0", "x/y", "https://example.com", None).is_err());
     }
 
     #[test]
@@ -361,7 +444,7 @@ mod tests {
             b"pacman",
         );
         write_artifact(dir.path(), "vrc-photon_0.4.0_amd64.deb", b"deb");
-        assert!(build_manifest(dir.path(), "v0.4.0", "x/y", "https://example.com").is_err());
+        assert!(build_manifest(dir.path(), "v0.4.0", "x/y", "https://example.com", None).is_err());
     }
 
     #[test]
