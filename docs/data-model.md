@@ -29,11 +29,11 @@ PRAGMA busy_timeout = 5000;
 ```
 
 - `user_version` でスキーマバージョンを管理する。
-- 現在のバージョンは **20**。このビルドが理解できる最大値でもあり、
-  `user_version` が 21 以上の DB は `Db::open` / `Db::open_read_only` の
+- 現在のバージョンは **21**。このビルドが理解できる最大値でもあり、
+  `user_version` が 22 以上の DB は `Db::open` / `Db::open_read_only` の
   どちらでも型付きエラーで拒否する（古いアプリで新スキーマを書き換えない）。
-- 新規 DB は `SCHEMA_LATEST` を 1 トランザクションで実行して v20 にする。
-- v1〜v19 の既存 DB は自動移行しない。`Db::open` は明示エラーを返し、
+- 新規 DB は `SCHEMA_LATEST` を 1 トランザクションで実行して v21 にする。
+- v1〜v20 の既存 DB は自動移行しない。`Db::open` は明示エラーを返し、
   ファイルを変更しない。バックアップして新しいライブラリを作成する。
 - 詳細は [`docs/database-initialization.md`](database-initialization.md) を参照。
 
@@ -738,6 +738,23 @@ Discord 関連の既定値:
 - `discord_queue_paused = false`
 - `discord_consent_at = None`（初回同意の記録）
 
+### `queue_progress`
+
+サイドバーの進行状況カードが使う、機能ごとの一連の仕事の進捗。
+
+| 列 | 意味 |
+|---|---|
+| `feature` | `compression` / `discord` / `tagging` の主キー |
+| `run_started_at` | 現在の一連の仕事の開始時刻。実行がないときは NULL |
+| `completed` | 現在の一連の仕事で成功した件数 |
+
+- schema 初期化時に3機能の行を作る。
+- `compression_jobs` / `send_outbox` / `tagging_jobs` の INSERT と status 更新に付けたトリガーが維持する。
+  - アクティブ行（`waiting` / `pending` / `processing`）が1件もない状態でアクティブ行が入ると、`run_started_at` を現在時刻にし `completed` を0へ戻す。
+  - 成功終了（`completed` / `sent`）へ遷移すると `completed` を1増やす。
+  - 失敗・取消は増やさない。
+- 行の削除や写真の CASCADE では `completed` を減らさない。履歴削除・UI再読み込み・再起動で完了数が失われないための独立カウンタ。
+
 ## 4. 不変条件
 
 1. `photos.abs_path` は一意。移動はBLAKE3またはファイル名・サイズ・寸法・撮影時刻の一致で同じ `id` に再結合する。コピーは別写真として残す。
@@ -766,6 +783,7 @@ Discord 関連の既定値:
 24. キュー UI は3機能の `waiting` / `pending` / `processing` だけを表示する。`completed` / `sent` / `failed` / `cancelled` などの terminal 行は通知・テスト送信の結果解決のために DB に残すが、履歴 UI には表示しない。
 25. 待機行の削除は行そのものを消し、部分ユニークインデックスを空けて同じ写真を再投入できるようにする。`pending` / `processing` は削除しない。
 26. 機能別の一時停止は `auto_compress_queue_paused` / `discord_queue_paused` / `ai_tagging_queue_paused` に保存する。停止中はワーカーが新しいジョブを取得せず、実行中のジョブは完了する。自動投入は止めない。
+27. `queue_progress` は機能ごとに現在の一連の仕事の開始時刻と成功件数を保持する。アクティブ行が空の状態からジョブが入ると開始し、成功終了で加算する。失敗・取消は加算せず、履歴削除や写真削除で完了数は減らない。
 24. モデルの readiness 判定はファイルの存在とサイズだけを見る。SHA-256 はダウンロード / オフライン取込のときだけ検証する。
 
 ## 5. タイムゾーンと時刻
@@ -778,17 +796,17 @@ Discord 関連の既定値:
 ## 6. schema の初期化
 
 新規 DB は `crates/core/src/db/schema.rs` の `SCHEMA_LATEST` を 1 回の
-`IMMEDIATE` トランザクションで実行し、`user_version = 20` にする。
+`IMMEDIATE` トランザクションで実行し、`user_version = 21` にする。
 `schema_migrations` テーブルと `migrate_v*` は持たない。
 
-既存 DB は v20 のみ受け付ける。v1〜v19 は自動移行せず、`CoreError::Invalid`
+既存 DB は v21 のみ受け付ける。v1〜v20 は自動移行せず、`CoreError::Invalid`
 で「このビルドでは移行できない」と返す。このとき `user_version` もファイル内容も
-変更しない。v20 より新しい DB は、このビルドの最大値（20）を超えるため、
+変更しない。v21 より新しい DB は、このビルドの最大値（21）を超えるため、
 書き込みを始める前に `CoreError::Invalid` で拒否する。読み取り専用の
 `open_read_only` も同じ検査を行う。
 
 schema を変更するときは `SCHEMA_LATEST` と `SCHEMA_VERSION` を同時に更新し、
-新規 DB の初期化テストと v18 既存 DB の拒否テストを追加する。過去バージョン向けの
+新規 DB の初期化テストと v20 既存 DB の拒否テストを追加する。過去バージョン向けの
 移行コードは追加しない。
 
 ## 7. クエリと性能

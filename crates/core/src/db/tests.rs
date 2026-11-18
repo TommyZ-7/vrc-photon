@@ -7772,7 +7772,7 @@ fn bundled_sqlite_supports_strftime_in_stored_generated_columns() {
 }
 
 #[test]
-fn fresh_database_is_initialized_to_v20() {
+fn fresh_database_is_initialized_to_v21() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("library.db");
     let db = Db::open(&path).unwrap();
@@ -7781,18 +7781,35 @@ fn fresh_database_is_initialized_to_v20() {
         .connection()
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 20);
+    assert_eq!(version, 21);
 
     let tables: i64 = db
         .connection()
         .query_row(
             "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' \
-             AND name IN ('photos', 'library_roots', 'photo_ai', 'send_outbox')",
+             AND name IN ('photos', 'library_roots', 'photo_ai', 'send_outbox', 'queue_progress')",
             [],
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(tables, 4);
+    assert_eq!(tables, 5);
+
+    let progress_rows: i64 = db
+        .connection()
+        .query_row("SELECT COUNT(*) FROM queue_progress", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(progress_rows, 3);
+
+    let progress_triggers: i64 = db
+        .connection()
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' \
+             AND name LIKE '%_progress_%'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(progress_triggers, 9);
 
     let generated: i64 = db
         .connection()
@@ -7818,7 +7835,7 @@ fn fresh_database_is_initialized_to_v20() {
 }
 
 #[test]
-fn existing_v20_database_opens_without_reinitializing() {
+fn existing_v21_database_opens_without_reinitializing() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("library.db");
     let db = Db::open(&path).unwrap();
@@ -7841,6 +7858,35 @@ fn existing_v20_database_opens_without_reinitializing() {
         )
         .unwrap();
     assert_eq!(value, "keep");
+}
+
+#[test]
+fn v20_database_is_rejected_without_modification() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("library.db");
+    {
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE legacy_marker(value TEXT); \
+             INSERT INTO legacy_marker(value) VALUES ('keep');",
+        )
+        .unwrap();
+        conn.pragma_update(None, "user_version", 20).unwrap();
+    }
+    let before = std::fs::read(&path).unwrap();
+
+    let error = match Db::open(&path) {
+        Ok(_) => panic!("expected the v20 database to be rejected"),
+        Err(error) => error,
+    };
+    let CoreError::Invalid(message) = error else {
+        panic!("expected an explicit schema error, got {error:?}");
+    };
+    assert!(message.contains("20"), "{message}");
+    assert!(message.contains("cannot be migrated"), "{message}");
+
+    let after = std::fs::read(&path).unwrap();
+    assert_eq!(before, after, "the rejected database must not be modified");
 }
 
 #[test]
@@ -8222,6 +8268,413 @@ fn deleting_a_waiting_row_allows_the_same_photo_to_be_enqueued_again() {
     );
     assert_eq!(
         db.queue_counts(QueueFeature::Compression).unwrap().waiting,
+        1
+    );
+}
+
+fn send_completion() -> SendCompletion {
+    SendCompletion {
+        source: None,
+        profile_id: None,
+        destination: "D".to_string(),
+        message_id: None,
+        channel_id: None,
+        guild_id: None,
+    }
+}
+
+#[test]
+fn queue_progress_counts_successful_completions_per_feature() {
+    let db = Db::open_in_memory().unwrap();
+    let compression_photo = seed_photo(&db);
+    let send_photo = seed_other_photo(&db);
+    let tagging_photo = seed_photo_at(&db, "/photos/c.png");
+
+    assert!(
+        db.enqueue_auto_job_with_status(compression_photo, "keep", QueueStatus::Processing)
+            .unwrap()
+    );
+    let job = db
+        .active_queue_entries(QueueFeature::Compression, 10)
+        .unwrap()
+        .remove(0);
+    db.update_job(&job.job_id, QueueStatus::Completed, 1.0, None, None)
+        .unwrap();
+
+    assert!(
+        db.enqueue_send(
+            send_photo,
+            SendKind::Photo,
+            SendOrigin::Manual,
+            SendStatus::Pending,
+        )
+        .unwrap()
+        .is_some()
+    );
+    let send = db.claim_next_send(0).unwrap().unwrap();
+    db.complete_send(send.id, &send_completion()).unwrap();
+
+    db.enqueue_tagging_jobs(&[tagging_photo], AI_PLUGIN, TaggingJobStatus::Pending)
+        .unwrap();
+    let tagging = db.next_pending_tagging_job().unwrap().unwrap();
+    db.complete_tagging_job(&tagging.id).unwrap();
+
+    assert_eq!(
+        db.queue_progress(QueueFeature::Compression)
+            .unwrap()
+            .completed,
+        1
+    );
+    assert_eq!(
+        db.queue_progress(QueueFeature::Discord).unwrap().completed,
+        1
+    );
+    assert_eq!(
+        db.queue_progress(QueueFeature::Tagging).unwrap().completed,
+        1
+    );
+}
+
+#[test]
+fn queue_progress_restarts_when_an_empty_queue_gets_new_work() {
+    let db = Db::open_in_memory().unwrap();
+    let first = seed_photo(&db);
+    let second = seed_other_photo(&db);
+
+    assert!(
+        db.enqueue_send(
+            first,
+            SendKind::Photo,
+            SendOrigin::Manual,
+            SendStatus::Pending,
+        )
+        .unwrap()
+        .is_some()
+    );
+    let send = db.claim_next_send(0).unwrap().unwrap();
+    db.complete_send(send.id, &send_completion()).unwrap();
+    assert_eq!(
+        db.queue_progress(QueueFeature::Discord).unwrap().completed,
+        1
+    );
+    assert_eq!(db.queue_counts(QueueFeature::Discord).unwrap().total(), 0);
+
+    assert!(
+        db.enqueue_send(
+            second,
+            SendKind::Photo,
+            SendOrigin::Manual,
+            SendStatus::Pending,
+        )
+        .unwrap()
+        .is_some()
+    );
+    assert_eq!(
+        db.queue_progress(QueueFeature::Discord).unwrap().completed,
+        0
+    );
+}
+
+#[test]
+fn queue_progress_restarts_for_compression_and_tagging() {
+    let db = Db::open_in_memory().unwrap();
+    let first = seed_photo(&db);
+    let second = seed_other_photo(&db);
+    let third = seed_photo_at(&db, "/photos/c.png");
+
+    assert!(
+        db.enqueue_auto_job_with_status(first, "keep", QueueStatus::Processing)
+            .unwrap()
+    );
+    assert!(
+        db.enqueue_auto_job_with_status(second, "keep", QueueStatus::Processing)
+            .unwrap()
+    );
+    let jobs = db
+        .active_queue_entries(QueueFeature::Compression, 10)
+        .unwrap();
+    db.update_job(&jobs[0].job_id, QueueStatus::Completed, 1.0, None, None)
+        .unwrap();
+    db.fail_job_if_active(&jobs[1].job_id, "boom").unwrap();
+    assert_eq!(
+        db.queue_progress(QueueFeature::Compression)
+            .unwrap()
+            .completed,
+        1
+    );
+    assert!(
+        db.enqueue_auto_job_with_status(third, "keep", QueueStatus::Waiting)
+            .unwrap()
+    );
+    assert_eq!(
+        db.queue_progress(QueueFeature::Compression)
+            .unwrap()
+            .completed,
+        0
+    );
+
+    let first_tag_photo = seed_photo_at(&db, "/photos/d.png");
+    let second_tag_photo = seed_photo_at(&db, "/photos/e.png");
+    let third_tag_photo = seed_photo_at(&db, "/photos/f.png");
+    db.enqueue_tagging_jobs(
+        &[first_tag_photo, second_tag_photo],
+        AI_PLUGIN,
+        TaggingJobStatus::Pending,
+    )
+    .unwrap();
+    let first_tag = db.next_pending_tagging_job().unwrap().unwrap();
+    db.complete_tagging_job(&first_tag.id).unwrap();
+    let second_tag = db.next_pending_tagging_job().unwrap().unwrap();
+    db.cancel_tagging_job(&second_tag.id).unwrap();
+    assert_eq!(
+        db.queue_progress(QueueFeature::Tagging).unwrap().completed,
+        1
+    );
+    db.enqueue_tagging_jobs(&[third_tag_photo], AI_PLUGIN, TaggingJobStatus::Pending)
+        .unwrap();
+    assert_eq!(
+        db.queue_progress(QueueFeature::Tagging).unwrap().completed,
+        0
+    );
+}
+
+#[test]
+fn queue_progress_keeps_completed_work_when_jobs_are_added_mid_run() {
+    let db = Db::open_in_memory().unwrap();
+    let first = seed_photo(&db);
+    let second = seed_other_photo(&db);
+    let third = seed_photo_at(&db, "/photos/c.png");
+
+    for photo in [first, second] {
+        assert!(
+            db.enqueue_send(
+                photo,
+                SendKind::Photo,
+                SendOrigin::Manual,
+                SendStatus::Pending,
+            )
+            .unwrap()
+            .is_some()
+        );
+    }
+    let send = db.claim_next_send(0).unwrap().unwrap();
+    db.complete_send(send.id, &send_completion()).unwrap();
+    assert_eq!(
+        db.queue_progress(QueueFeature::Discord).unwrap().completed,
+        1
+    );
+
+    assert!(
+        db.enqueue_send(
+            third,
+            SendKind::Photo,
+            SendOrigin::Manual,
+            SendStatus::Pending,
+        )
+        .unwrap()
+        .is_some()
+    );
+    assert_eq!(
+        db.queue_progress(QueueFeature::Discord).unwrap().completed,
+        1
+    );
+    assert_eq!(db.queue_counts(QueueFeature::Discord).unwrap().total(), 2);
+}
+
+#[test]
+fn queue_progress_ignores_failed_and_cancelled_jobs() {
+    let db = Db::open_in_memory().unwrap();
+    let first = seed_photo(&db);
+    let second = seed_other_photo(&db);
+    let third = seed_photo_at(&db, "/photos/c.png");
+    let fourth = seed_photo_at(&db, "/photos/d.png");
+
+    assert!(
+        db.enqueue_auto_job_with_status(first, "keep", QueueStatus::Processing)
+            .unwrap()
+    );
+    assert!(
+        db.enqueue_auto_job_with_status(second, "keep", QueueStatus::Processing)
+            .unwrap()
+    );
+    let jobs = db
+        .active_queue_entries(QueueFeature::Compression, 10)
+        .unwrap();
+    db.update_job(&jobs[0].job_id, QueueStatus::Completed, 1.0, None, None)
+        .unwrap();
+    db.fail_job_if_active(&jobs[1].job_id, "boom").unwrap();
+    assert_eq!(
+        db.queue_progress(QueueFeature::Compression)
+            .unwrap()
+            .completed,
+        1
+    );
+    assert_eq!(
+        db.queue_counts(QueueFeature::Compression).unwrap().total(),
+        0
+    );
+
+    db.enqueue_tagging_jobs(&[third, fourth], AI_PLUGIN, TaggingJobStatus::Pending)
+        .unwrap();
+    let first_tag = db.next_pending_tagging_job().unwrap().unwrap();
+    db.complete_tagging_job(&first_tag.id).unwrap();
+    let second_tag = db.next_pending_tagging_job().unwrap().unwrap();
+    db.cancel_tagging_job(&second_tag.id).unwrap();
+    assert_eq!(
+        db.queue_progress(QueueFeature::Tagging).unwrap().completed,
+        1
+    );
+    assert_eq!(db.queue_counts(QueueFeature::Tagging).unwrap().total(), 0);
+}
+
+#[test]
+fn queue_progress_restarts_when_a_failed_job_is_retried_into_an_empty_queue() {
+    let db = Db::open_in_memory().unwrap();
+    let first = seed_photo(&db);
+    let second = seed_other_photo(&db);
+
+    assert!(
+        db.enqueue_auto_job_with_status(first, "keep", QueueStatus::Processing)
+            .unwrap()
+    );
+    assert!(
+        db.enqueue_auto_job_with_status(second, "keep", QueueStatus::Processing)
+            .unwrap()
+    );
+    let jobs = db
+        .active_queue_entries(QueueFeature::Compression, 10)
+        .unwrap();
+    db.update_job(&jobs[0].job_id, QueueStatus::Completed, 1.0, None, None)
+        .unwrap();
+    db.fail_job_if_active(&jobs[1].job_id, "boom").unwrap();
+    assert_eq!(
+        db.queue_progress(QueueFeature::Compression)
+            .unwrap()
+            .completed,
+        1
+    );
+
+    assert_eq!(db.retry_failed_jobs().unwrap(), 1);
+    assert_eq!(
+        db.queue_progress(QueueFeature::Compression)
+            .unwrap()
+            .completed,
+        0
+    );
+}
+
+#[test]
+fn queue_progress_restarts_after_every_waiting_row_is_deleted() {
+    let db = Db::open_in_memory().unwrap();
+    let first = seed_photo(&db);
+    let second = seed_other_photo(&db);
+    let third = seed_photo_at(&db, "/photos/c.png");
+
+    assert!(
+        db.enqueue_auto_job_with_status(first, "keep", QueueStatus::Processing)
+            .unwrap()
+    );
+    assert!(
+        db.enqueue_auto_job_with_status(second, "keep", QueueStatus::Waiting)
+            .unwrap()
+    );
+    let job = db
+        .active_queue_entries(QueueFeature::Compression, 10)
+        .unwrap()
+        .into_iter()
+        .find(|entry| entry.state == QueueState::Processing)
+        .unwrap();
+    db.update_job(&job.job_id, QueueStatus::Completed, 1.0, None, None)
+        .unwrap();
+    assert_eq!(
+        db.queue_progress(QueueFeature::Compression)
+            .unwrap()
+            .completed,
+        1
+    );
+
+    assert_eq!(
+        db.delete_all_waiting_entries(QueueFeature::Compression)
+            .unwrap(),
+        1
+    );
+    assert!(
+        db.enqueue_auto_job_with_status(third, "keep", QueueStatus::Waiting)
+            .unwrap()
+    );
+    assert_eq!(
+        db.queue_progress(QueueFeature::Compression)
+            .unwrap()
+            .completed,
+        0
+    );
+}
+
+#[test]
+fn discord_progress_survives_clearing_send_history() {
+    let db = Db::open_in_memory().unwrap();
+    let first = seed_photo(&db);
+    let second = seed_other_photo(&db);
+
+    for photo in [first, second] {
+        assert!(
+            db.enqueue_send(
+                photo,
+                SendKind::Photo,
+                SendOrigin::Manual,
+                SendStatus::Pending,
+            )
+            .unwrap()
+            .is_some()
+        );
+    }
+    let send = db.claim_next_send(0).unwrap().unwrap();
+    db.complete_send(send.id, &send_completion()).unwrap();
+    assert_eq!(
+        db.queue_progress(QueueFeature::Discord).unwrap().completed,
+        1
+    );
+
+    assert_eq!(db.clear_send_history().unwrap(), 1);
+    assert_eq!(
+        db.queue_progress(QueueFeature::Discord).unwrap().completed,
+        1
+    );
+    assert_eq!(db.queue_counts(QueueFeature::Discord).unwrap().total(), 1);
+}
+
+#[test]
+fn queue_progress_survives_reopening_the_database() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("library.db");
+    {
+        let db = Db::open(&path).unwrap();
+        let first = seed_photo(&db);
+        let second = seed_other_photo(&db);
+        assert!(
+            db.enqueue_auto_job_with_status(first, "keep", QueueStatus::Processing)
+                .unwrap()
+        );
+        assert!(
+            db.enqueue_auto_job_with_status(second, "keep", QueueStatus::Processing)
+                .unwrap()
+        );
+        let jobs = db
+            .active_queue_entries(QueueFeature::Compression, 10)
+            .unwrap();
+        db.update_job(&jobs[0].job_id, QueueStatus::Completed, 1.0, None, None)
+            .unwrap();
+    }
+
+    let db = Db::open(&path).unwrap();
+    assert_eq!(
+        db.queue_progress(QueueFeature::Compression)
+            .unwrap()
+            .completed,
+        1
+    );
+    assert_eq!(
+        db.queue_counts(QueueFeature::Compression).unwrap().total(),
         1
     );
 }
