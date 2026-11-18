@@ -127,10 +127,10 @@ systemctl --user add-wants default.target vrc-photon-daemon.service
 
 ### マイグレーションに失敗する
 
-- このビルドは schema v18 のみを扱う。v1〜v17 の DB は自動移行しない。
+- このビルドは schema v21 のみを扱う。v1〜v20 の DB は自動移行しない。
 - `PRAGMA user_version` を確認する。
 - 既存DBのバックアップを取り、`library.db` を削除して新しいライブラリを作成する。写真ファイルは削除しない。
-- v18 より新しい DB は、このビルドを更新するまで開かない。古いアプリで書き換えないこと。
+- v21 より新しい DB は、このビルドを更新するまで開かない。古いアプリで書き換えないこと。
 
 ## 6. 圧縮
 

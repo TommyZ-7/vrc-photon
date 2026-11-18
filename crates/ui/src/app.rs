@@ -45,7 +45,7 @@ use vrc_photon_core::model::{
     CompressionJob, CompressionProfile, DaemonError, DeletionCounts, DeletionRequest, Derivative,
     LibraryStats, Photo, PhotoPlayer, PhotoTextFilter, SendHistoryEntry,
 };
-use vrc_photon_core::queue::{QueueCounts, QueueEntry};
+use vrc_photon_core::queue::{QueueCounts, QueueEntry, QueueProgress};
 use vrc_photon_core::settings::{
     AppSettings, UI_CARD_RADIUS_MAX, UI_CARD_RADIUS_MIN, UI_GRID_GAP_MAX, UI_GRID_GAP_MIN,
     clamp_card_radius, clamp_grid_gap, load_discord_webhook,
@@ -396,6 +396,9 @@ pub struct App {
     pub(crate) discord_queue_counts: QueueCounts,
     pub(crate) tagging_queue_counts: QueueCounts,
     pub(crate) mixed_queue_counts: QueueCounts,
+    pub(crate) compression_queue_progress: QueueProgress,
+    pub(crate) discord_queue_progress: QueueProgress,
+    pub(crate) tagging_queue_progress: QueueProgress,
     pub(crate) waiting_job_count: i64,
     pub(crate) daemon_errors: Vec<DaemonError>,
     pub(crate) failed_job_count: i64,
@@ -1326,6 +1329,9 @@ impl App {
             discord_queue_counts: QueueCounts::default(),
             tagging_queue_counts: QueueCounts::default(),
             mixed_queue_counts: QueueCounts::default(),
+            compression_queue_progress: QueueProgress::default(),
+            discord_queue_progress: QueueProgress::default(),
+            tagging_queue_progress: QueueProgress::default(),
             waiting_job_count: 0,
             daemon_errors: Vec::new(),
             failed_job_count: 0,

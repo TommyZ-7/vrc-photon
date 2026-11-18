@@ -5,7 +5,7 @@ use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::*;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
-use vrc_photon_core::queue::{QueueCounts, QueueEntry, QueueFeature, QueueState};
+use vrc_photon_core::queue::{QueueCounts, QueueEntry, QueueFeature, QueueProgress, QueueState};
 use vrc_photon_i18n::{tr, tr_args};
 
 use crate::app::App;
@@ -48,6 +48,29 @@ pub(crate) fn queue_action_availability(
 
 pub(crate) fn queue_row_delete_available(card_enabled: bool, state: QueueState) -> bool {
     card_enabled && waiting_delete_available(state)
+}
+
+/// Integer percentage of the current run, or `None` when the queue has no
+/// active work to show.
+pub(crate) fn queue_progress_percent(counts: QueueCounts, progress: QueueProgress) -> Option<u8> {
+    let remaining = counts.total();
+    if remaining == 0 {
+        return None;
+    }
+    let completed = progress.completed.max(0);
+    let total = completed + remaining;
+    let percent = (completed as f64 * 100.0 / total as f64).round();
+    Some(percent.clamp(0.0, 100.0) as u8)
+}
+
+/// The one-line breakdown under the sidebar progress bar. Both counts are
+/// always shown so the card keeps a stable shape.
+pub(crate) fn queue_status_breakdown(counts: QueueCounts) -> String {
+    tr_args!(
+        "sidebar.status.breakdown",
+        waiting = tr_args!("queue.count.waiting", count = counts.waiting),
+        pending = tr_args!("queue.count.pending", count = counts.pending),
+    )
 }
 
 fn feature_label(feature: QueueFeature) -> String {
@@ -415,9 +438,11 @@ pub(crate) fn mixed_queue_panel(app: &App, cx: &mut Context<App>) -> AnyElement 
 #[cfg(test)]
 mod tests {
     use super::{
-        QueueEntry, QueueFeature, QueueState, queue_action_availability,
-        queue_row_delete_available, sort_mixed_queue, waiting_delete_available,
+        QueueEntry, QueueFeature, QueueState, queue_action_availability, queue_progress_percent,
+        queue_row_delete_available, queue_status_breakdown, sort_mixed_queue,
+        waiting_delete_available,
     };
+    use vrc_photon_core::queue::{QueueCounts, QueueProgress};
 
     fn entry(feature: QueueFeature, created_at: &str) -> QueueEntry {
         QueueEntry {
@@ -467,6 +492,45 @@ mod tests {
         assert!(actions.pause);
         assert!(actions.start_waiting);
         assert!(actions.delete_waiting);
+    }
+
+    #[test]
+    fn queue_progress_percent_rounds_completed_over_the_current_run() {
+        let counts = |waiting, pending, processing| QueueCounts {
+            waiting,
+            pending,
+            processing,
+        };
+        let progress = |completed| QueueProgress { completed };
+
+        assert_eq!(
+            queue_progress_percent(counts(3, 2, 1), progress(4)),
+            Some(40)
+        );
+        assert_eq!(
+            queue_progress_percent(counts(2, 0, 0), progress(1)),
+            Some(33)
+        );
+        assert_eq!(
+            queue_progress_percent(counts(1, 0, 0), progress(2)),
+            Some(67)
+        );
+        assert_eq!(
+            queue_progress_percent(counts(1, 0, 0), progress(0)),
+            Some(0)
+        );
+        assert_eq!(queue_progress_percent(counts(0, 0, 0), progress(0)), None);
+        assert_eq!(queue_progress_percent(counts(0, 0, 0), progress(5)), None);
+    }
+
+    #[test]
+    fn queue_status_breakdown_always_lists_waiting_and_pending() {
+        let counts = QueueCounts {
+            waiting: 0,
+            pending: 2,
+            processing: 1,
+        };
+        assert_eq!(queue_status_breakdown(counts), "待機 0 ・ 実行待ち 2");
     }
 
     #[test]

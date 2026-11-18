@@ -62,6 +62,12 @@ grep -Fq "\`user_version\` が $((schema + 1)) 以上" docs/data-model.md \
     || fail "docs/data-model.md must reject user_version $((schema + 1)) 以上"
 grep -Fq "最大値（${schema}）" docs/data-model.md \
     || fail "docs/data-model.md must say 最大値（${schema}）"
+grep -Fq "| ${schema} | そのまま開く。" docs/database-initialization.md \
+    || fail "docs/database-initialization.md must say ${schema} opens as-is"
+grep -Fq "| 1〜$((schema - 1)) |" docs/database-initialization.md \
+    || fail "docs/database-initialization.md must reject 1〜$((schema - 1))"
+grep -Fq "| $((schema + 1)) 以上 |" docs/database-initialization.md \
+    || fail "docs/database-initialization.md must reject $((schema + 1)) 以上"
 
 # ai-host gained a core dependency for the shared AI types. Keep the
 # dependency diagram honest when that changes.

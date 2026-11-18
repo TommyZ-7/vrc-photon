@@ -1,10 +1,10 @@
 /// Highest schema version this build understands.
-pub(crate) const SCHEMA_VERSION: i64 = 20;
+pub(crate) const SCHEMA_VERSION: i64 = 21;
 
-/// Integrated schema for a new v20 database.
+/// Integrated schema for a new v21 database.
 ///
 /// This is the schema produced by the previous migration chain. Existing
-/// v20 databases are opened as-is; older schemas are rejected without
+/// v21 databases are opened as-is; older schemas are rejected without
 /// modification instead of being migrated in place.
 pub(crate) const SCHEMA_LATEST: &str = r##"
 CREATE TABLE ai_tag_definitions (
@@ -31,6 +31,13 @@ CREATE TABLE app_settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+CREATE TABLE queue_progress (
+    feature TEXT PRIMARY KEY,
+    run_started_at TEXT,
+    completed INTEGER NOT NULL DEFAULT 0
+);
+INSERT INTO queue_progress(feature) VALUES
+    ('compression'), ('discord'), ('tagging');
 CREATE TABLE compression_jobs (
     id TEXT PRIMARY KEY,
     photo_id INTEGER NOT NULL REFERENCES photos(id) ON DELETE CASCADE,
@@ -349,6 +356,114 @@ CREATE INDEX idx_tagging_jobs_status
     ON tagging_jobs(status);
 CREATE INDEX idx_world_name_lookups_due
     ON world_name_lookups(status, next_attempt_at);
+
+CREATE TRIGGER compression_jobs_progress_start
+AFTER INSERT ON compression_jobs
+WHEN NEW.status IN ('waiting', 'pending', 'processing')
+BEGIN
+    UPDATE queue_progress
+    SET run_started_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), completed = 0
+    WHERE feature = 'compression'
+      AND NOT EXISTS (
+          SELECT 1 FROM compression_jobs
+          WHERE status IN ('waiting', 'pending', 'processing') AND id <> NEW.id
+      );
+END;
+
+CREATE TRIGGER compression_jobs_progress_resume
+AFTER UPDATE OF status ON compression_jobs
+WHEN NEW.status IN ('waiting', 'pending', 'processing')
+ AND OLD.status NOT IN ('waiting', 'pending', 'processing')
+BEGIN
+    UPDATE queue_progress
+    SET run_started_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), completed = 0
+    WHERE feature = 'compression'
+      AND NOT EXISTS (
+          SELECT 1 FROM compression_jobs
+          WHERE status IN ('waiting', 'pending', 'processing') AND id <> NEW.id
+      );
+END;
+
+CREATE TRIGGER compression_jobs_progress_complete
+AFTER UPDATE OF status ON compression_jobs
+WHEN NEW.status = 'completed' AND OLD.status <> 'completed'
+BEGIN
+    UPDATE queue_progress
+    SET completed = completed + 1
+    WHERE feature = 'compression' AND run_started_at IS NOT NULL;
+END;
+
+CREATE TRIGGER send_outbox_progress_start
+AFTER INSERT ON send_outbox
+WHEN NEW.status IN ('waiting', 'pending', 'processing')
+BEGIN
+    UPDATE queue_progress
+    SET run_started_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), completed = 0
+    WHERE feature = 'discord'
+      AND NOT EXISTS (
+          SELECT 1 FROM send_outbox
+          WHERE status IN ('waiting', 'pending', 'processing') AND id <> NEW.id
+      );
+END;
+
+CREATE TRIGGER send_outbox_progress_resume
+AFTER UPDATE OF status ON send_outbox
+WHEN NEW.status IN ('waiting', 'pending', 'processing')
+ AND OLD.status NOT IN ('waiting', 'pending', 'processing')
+BEGIN
+    UPDATE queue_progress
+    SET run_started_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), completed = 0
+    WHERE feature = 'discord'
+      AND NOT EXISTS (
+          SELECT 1 FROM send_outbox
+          WHERE status IN ('waiting', 'pending', 'processing') AND id <> NEW.id
+      );
+END;
+
+CREATE TRIGGER send_outbox_progress_complete
+AFTER UPDATE OF status ON send_outbox
+WHEN NEW.status = 'sent' AND OLD.status <> 'sent'
+BEGIN
+    UPDATE queue_progress
+    SET completed = completed + 1
+    WHERE feature = 'discord' AND run_started_at IS NOT NULL;
+END;
+
+CREATE TRIGGER tagging_jobs_progress_start
+AFTER INSERT ON tagging_jobs
+WHEN NEW.status IN ('waiting', 'pending', 'processing')
+BEGIN
+    UPDATE queue_progress
+    SET run_started_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), completed = 0
+    WHERE feature = 'tagging'
+      AND NOT EXISTS (
+          SELECT 1 FROM tagging_jobs
+          WHERE status IN ('waiting', 'pending', 'processing') AND id <> NEW.id
+      );
+END;
+
+CREATE TRIGGER tagging_jobs_progress_resume
+AFTER UPDATE OF status ON tagging_jobs
+WHEN NEW.status IN ('waiting', 'pending', 'processing')
+ AND OLD.status NOT IN ('waiting', 'pending', 'processing')
+BEGIN
+    UPDATE queue_progress
+    SET run_started_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), completed = 0
+    WHERE feature = 'tagging'
+      AND NOT EXISTS (
+          SELECT 1 FROM tagging_jobs
+          WHERE status IN ('waiting', 'pending', 'processing') AND id <> NEW.id
+      );
+END;
+
+CREATE TRIGGER tagging_jobs_progress_complete
+AFTER UPDATE OF status ON tagging_jobs
+WHEN NEW.status = 'completed' AND OLD.status <> 'completed'
+BEGIN
+    UPDATE queue_progress
+    SET completed = completed + 1
+    WHERE feature = 'tagging' AND run_started_at IS NOT NULL;
+END;
 "##;
 
 use rusqlite::{Connection, Transaction, TransactionBehavior};
