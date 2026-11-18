@@ -29,8 +29,8 @@ use crate::app::App;
 use crate::app::ai::{
     AI_PLUGIN_ID, AiErrorInfo, AiErrorKind, AiManifestView, AiPluginAction, AiPluginCardState,
     AiPluginCardView, ModelDownloadView, UninstallTarget, ai_error_code_is_stable,
-    ai_error_detail_in, ai_error_summary_in, ai_manifest_view, installation_row_id,
-    is_active_installation, model_progress_ratio, variant_backend_label,
+    ai_error_detail_in, ai_error_summary_in, ai_manifest_view, ai_plugin_update_notice,
+    installation_row_id, is_active_installation, model_progress_ratio, variant_backend_label,
 };
 use crate::app::daemon::open_path;
 use crate::ipc_bridge;
@@ -1039,6 +1039,11 @@ impl App {
         let view = AiPluginCardView::from(&self.ai);
         let state = view.state;
         let has_active = self.ai.active.is_some();
+        let update_notice = ai_plugin_update_notice(
+            self.ai.active.as_ref(),
+            self.update.ai_plugin.as_ref(),
+            vrc_photon_update::CURRENT_VERSION,
+        );
         let mut card = glass_panel(&self.palette)
             .flex()
             .flex_col()
@@ -1106,9 +1111,11 @@ impl App {
             .map(format_bytes)
             .unwrap_or_else(|| tr!("settings.ai.not_downloaded"));
 
-        card = card
-            .child(card_divider(&p))
-            .child(self.ai_install_meta(&install, &size_label));
+        card = card.child(card_divider(&p)).child(self.ai_install_meta(
+            &install,
+            &size_label,
+            update_notice.as_ref(),
+        ));
         if !matches!(
             state,
             AiPluginCardState::Downloading | AiPluginCardState::Verifying
@@ -1161,7 +1168,7 @@ impl App {
                     .child(self.ai_action_button(
                         "ai-import-zip",
                         AiPluginAction::InstallZip,
-                        tr!("settings.ai.install"),
+                        tr!("settings.ai.update"),
                         false,
                         false,
                         cx,
@@ -1263,7 +1270,7 @@ impl App {
                         .child(self.ai_action_button(
                             "ai-import-zip",
                             AiPluginAction::InstallZip,
-                            tr!("settings.ai.install"),
+                            tr!("settings.ai.update"),
                             false,
                             false,
                             cx,
@@ -1294,10 +1301,34 @@ impl App {
         card
     }
 
-    fn ai_install_meta(&self, install: &PluginInstallation, size_label: &str) -> impl IntoElement {
+    fn ai_install_meta(
+        &self,
+        install: &PluginInstallation,
+        size_label: &str,
+        update: Option<&semver::Version>,
+    ) -> impl IntoElement {
+        let p = self.palette;
         v_flex()
             .gap(px(4.))
             .child(self.meta_row(tr!("settings.ai.version"), format!("v{}", install.version)))
+            .when_some(update.cloned(), |this, version| {
+                this.child(
+                    h_flex()
+                        .items_center()
+                        .gap(px(6.))
+                        .child(div().w(px(3.)).h(px(12.)).rounded_full().bg(rgb(p.accent)))
+                        .child(
+                            div()
+                                .text_size(px(10.))
+                                .font_medium()
+                                .text_color(rgb(p.accent))
+                                .child(tr_args!(
+                                    "settings.ai.update_available",
+                                    version = version.to_string()
+                                )),
+                        ),
+                )
+            })
             .child(self.meta_row(tr!("settings.ai.variant"), install.variant.clone()))
             .child(self.meta_row(
                 tr!("settings.ai.backend"),

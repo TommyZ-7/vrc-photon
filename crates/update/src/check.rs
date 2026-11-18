@@ -4,7 +4,8 @@ use crate::error::{Result, UpdateError};
 use crate::fetch::HttpClient;
 use crate::install::InstallKind;
 use crate::manifest::{
-    AvailableUpdate, MAX_MANIFEST_BYTES, MAX_SIGNATURE_BYTES, Manifest, SignedManifest,
+    AiPluginRelease, AvailableUpdate, MAX_MANIFEST_BYTES, MAX_SIGNATURE_BYTES, Manifest,
+    SignedManifest,
 };
 use crate::verify::{effective_public_keys, verify_bytes};
 
@@ -45,18 +46,31 @@ impl FeedConfig {
     }
 }
 
-/// Fetches, verifies, and parses the signed feed, returning a newer release.
+/// The outcome of one signed-feed check.
+#[derive(Debug, Clone, Default)]
+pub struct FeedCheck {
+    /// A newer app release, when the feed advertises one.
+    pub update: Option<AvailableUpdate>,
+    /// The AI plugin release the feed advertises, when present and valid.
+    pub ai_plugin: Option<AiPluginRelease>,
+    /// True only after the detached signature verified. A missing feed is
+    /// unverified and must not clear local state.
+    pub verified: bool,
+}
+
+/// Fetches, verifies, and parses the signed feed. A missing feed is an
+/// unverified, empty result; malformed or unsigned feeds are errors.
 pub fn check(
     client: &dyn HttpClient,
     feed: &FeedConfig,
     current: &Version,
     kind: &InstallKind,
-) -> Result<Option<AvailableUpdate>> {
+) -> Result<FeedCheck> {
     crate::manifest::validate_url(&feed.manifest_url, feed.allow_http, "feed URL")?;
 
     let manifest_bytes = match client.get_bytes(&feed.manifest_url, MAX_MANIFEST_BYTES) {
         Ok(bytes) => bytes,
-        Err(UpdateError::NotFound) => return Ok(None),
+        Err(UpdateError::NotFound) => return Ok(FeedCheck::default()),
         Err(error) => return Err(error),
     };
     if manifest_bytes.len() as u64 > MAX_MANIFEST_BYTES {
@@ -78,21 +92,30 @@ pub fn check(
 
     verify_bytes(&manifest_bytes, &signature_text, &feed.public_keys)?;
     let (manifest, version) = Manifest::parse_and_validate(&manifest_bytes, feed.allow_http)?;
+    let ai_plugin = manifest.ai_plugin.clone();
     if version <= *current {
-        return Ok(None);
+        return Ok(FeedCheck {
+            update: None,
+            ai_plugin,
+            verified: true,
+        });
     }
 
     let asset = manifest.asset_for(kind).cloned();
-    Ok(Some(AvailableUpdate {
-        version,
-        notes_url: manifest.notes_url,
-        asset,
-        public_keys: feed.public_keys.clone(),
-        signed_manifest: SignedManifest {
-            bytes: manifest_bytes,
-            signature: signature_text,
-        },
-    }))
+    Ok(FeedCheck {
+        update: Some(AvailableUpdate {
+            version,
+            notes_url: manifest.notes_url,
+            asset,
+            public_keys: feed.public_keys.clone(),
+            signed_manifest: SignedManifest {
+                bytes: manifest_bytes,
+                signature: signature_text,
+            },
+        }),
+        ai_plugin,
+        verified: true,
+    })
 }
 
 #[cfg(test)]
@@ -220,6 +243,21 @@ mod tests {
         fixture_with_keypair(&keypair, version, platforms)
     }
 
+    fn fixture_with_ai_plugin(version: &str, plugin_version: &str, host_min: &str) -> Fixture {
+        fixture_from_body(
+            &KeyPair::generate_unencrypted_keypair().unwrap(),
+            serde_json::json!({
+                "schema": 1,
+                "version": version,
+                "platforms": linux_platform(),
+                "ai_plugin": {
+                    "version": plugin_version,
+                    "host_version_min": host_min,
+                },
+            }),
+        )
+    }
+
     /// Builds a fixture from a `platforms` map that may also carry a
     /// `system_packages` entry at the same level.
     fn fixture_with_system_packages(version: &str, mut body: serde_json::Value) -> Fixture {
@@ -301,6 +339,7 @@ mod tests {
         );
         let update = check(&client, &feed, &Version::new(0, 3, 0), &appimage())
             .unwrap()
+            .update
             .unwrap();
         assert_eq!(update.version, Version::new(0, 4, 0));
         assert_eq!(update.public_keys, feed.public_keys);
@@ -309,6 +348,70 @@ mod tests {
             client.requests.lock().unwrap().as_slice(),
             &[fixture.manifest_url, fixture.signature_url]
         );
+    }
+
+    #[test]
+    fn keeps_the_ai_plugin_when_the_app_is_up_to_date() {
+        let fixture = fixture_with_ai_plugin("0.4.0", "0.2.0", "0.14.0");
+        let client = FakeHttpClient::new(HashMap::from([
+            (fixture.manifest_url.clone(), Ok(fixture.manifest.clone())),
+            (
+                fixture.signature_url.clone(),
+                Ok(fixture.signature.clone().into_bytes()),
+            ),
+        ]));
+        let feed = FeedConfig::for_tests(
+            fixture.manifest_url.clone(),
+            vec![fixture.public_key.clone()],
+            false,
+        );
+        let checked = check(&client, &feed, &Version::new(0, 4, 0), &appimage()).unwrap();
+        assert!(checked.verified);
+        assert!(checked.update.is_none());
+        assert_eq!(
+            checked.ai_plugin.unwrap().versions(),
+            Some((Version::new(0, 2, 0), Version::new(0, 14, 0)))
+        );
+    }
+
+    #[test]
+    fn returns_the_ai_plugin_with_a_newer_app_release() {
+        let fixture = fixture_with_ai_plugin("0.5.0", "0.2.0", "0.14.0");
+        let client = FakeHttpClient::new(HashMap::from([
+            (fixture.manifest_url.clone(), Ok(fixture.manifest.clone())),
+            (
+                fixture.signature_url.clone(),
+                Ok(fixture.signature.clone().into_bytes()),
+            ),
+        ]));
+        let feed = FeedConfig::for_tests(
+            fixture.manifest_url.clone(),
+            vec![fixture.public_key.clone()],
+            false,
+        );
+        let checked = check(&client, &feed, &Version::new(0, 4, 0), &appimage()).unwrap();
+        assert_eq!(checked.update.unwrap().version, Version::new(0, 5, 0));
+        assert!(checked.ai_plugin.is_some());
+    }
+
+    #[test]
+    fn ignores_a_malformed_ai_plugin_without_losing_the_app_update() {
+        let fixture = fixture_with_ai_plugin("0.5.0", "latest", "0.14.0");
+        let client = FakeHttpClient::new(HashMap::from([
+            (fixture.manifest_url.clone(), Ok(fixture.manifest.clone())),
+            (
+                fixture.signature_url.clone(),
+                Ok(fixture.signature.clone().into_bytes()),
+            ),
+        ]));
+        let feed = FeedConfig::for_tests(
+            fixture.manifest_url.clone(),
+            vec![fixture.public_key.clone()],
+            false,
+        );
+        let checked = check(&client, &feed, &Version::new(0, 4, 0), &appimage()).unwrap();
+        assert_eq!(checked.update.unwrap().version, Version::new(0, 5, 0));
+        assert!(checked.ai_plugin.is_none());
     }
 
     #[test]
@@ -344,6 +447,7 @@ mod tests {
 
         let update = check(&client, &feed, &Version::new(0, 3, 0), &appimage())
             .unwrap()
+            .update
             .unwrap();
         assert_eq!(update.public_keys, feed.public_keys);
 
@@ -392,6 +496,7 @@ mod tests {
             assert!(
                 check(&client, &feed, &Version::new(0, 3, 0), &appimage())
                     .unwrap()
+                    .update
                     .is_none()
             );
         }
@@ -406,16 +511,16 @@ mod tests {
             vec![fixture.public_key.clone()],
             false,
         );
-        assert!(
-            check(
-                &missing_manifest,
-                &feed,
-                &Version::new(0, 3, 0),
-                &appimage()
-            )
-            .unwrap()
-            .is_none()
-        );
+        let checked = check(
+            &missing_manifest,
+            &feed,
+            &Version::new(0, 3, 0),
+            &appimage(),
+        )
+        .unwrap();
+        assert!(!checked.verified);
+        assert!(checked.update.is_none());
+        assert!(checked.ai_plugin.is_none());
 
         let missing_signature = FakeHttpClient::new(HashMap::from([(
             fixture.manifest_url.clone(),
@@ -494,6 +599,7 @@ mod tests {
             },
         )
         .unwrap()
+        .update
         .unwrap();
         assert_eq!(update.asset.unwrap().format, UpdateFormat::Pacman);
         assert_eq!(update.signed_manifest.bytes, fixture.manifest);
@@ -525,6 +631,7 @@ mod tests {
             },
         )
         .unwrap()
+        .update
         .unwrap();
         assert_eq!(update.version, Version::new(0, 4, 0));
         assert_eq!(update.asset.unwrap().format, UpdateFormat::Pacman);
@@ -555,6 +662,7 @@ mod tests {
             },
         )
         .unwrap()
+        .update
         .unwrap();
         assert_eq!(update.asset.unwrap().format, UpdateFormat::Deb);
     }
@@ -584,6 +692,7 @@ mod tests {
             },
         )
         .unwrap()
+        .update
         .unwrap();
         assert_eq!(update.version, Version::new(0, 4, 0));
         assert!(update.asset.is_none());
@@ -617,6 +726,7 @@ mod tests {
         );
         let update = check(&client, &feed, &Version::new(0, 3, 0), &appimage())
             .unwrap()
+            .update
             .unwrap();
         assert!(update.asset.is_none());
     }
@@ -657,6 +767,7 @@ mod tests {
         let client = UreqClient::new(true);
         let update = check(&client, &feed, &Version::new(0, 3, 0), &appimage())
             .unwrap()
+            .update
             .unwrap();
         assert!(update.asset.is_some());
         server.join().unwrap();
@@ -700,6 +811,7 @@ mod tests {
         assert!(
             check(&client, &loopback, &Version::new(0, 3, 0), &appimage())
                 .unwrap()
+                .update
                 .is_some()
         );
     }

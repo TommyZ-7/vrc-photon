@@ -3,6 +3,7 @@
 //! The crate is intentionally independent of the UI, the daemon, and SQLite.
 //! The UI drives checks and downloads; the helper binary applies them.
 
+pub mod ai_plugin;
 pub mod check;
 mod command;
 pub mod download;
@@ -14,7 +15,7 @@ pub mod manifest;
 pub mod native;
 pub mod verify;
 
-pub use check::{FeedConfig, check};
+pub use check::{FeedCheck, FeedConfig, check};
 pub use download::download;
 pub use error::{IoOperation, LastErrorCode, Result, UpdateError};
 pub use fetch::{HttpClient, UreqClient};
@@ -27,8 +28,8 @@ pub use install::{
     prepare_apply, start_apply, system_helper_available, system_policy_available,
 };
 pub use manifest::{
-    AvailableUpdate, MANIFEST_SCHEMA, MAX_ARTIFACT_BYTES, MAX_MANIFEST_BYTES, MAX_SIGNATURE_BYTES,
-    Manifest, PlatformAsset, SignedManifest, UpdateFormat,
+    AiPluginRelease, AvailableUpdate, MANIFEST_SCHEMA, MAX_ARTIFACT_BYTES, MAX_MANIFEST_BYTES,
+    MAX_SIGNATURE_BYTES, Manifest, PlatformAsset, SignedManifest, UpdateFormat,
 };
 pub use native::NativeString;
 pub use verify::{

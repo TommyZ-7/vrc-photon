@@ -379,10 +379,11 @@ jobs:
             --tag "$TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --notes-url "https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}" \
+            --ai-plugin packaging/ai-plugin.json \
             --output dist/latest.json
           ./target/debug/vrc-photon-update-manifest sign --key "$KEY" --file dist/latest.json
           ./target/debug/vrc-photon-update-manifest verify "${PUB_ARGS[@]}" --file dist/latest.json
-          jq -e '.schema == 1 and (.platforms | length == 2) and (.system_packages | length == 2) and (.system_packages | has("pacman") and has("deb")) and (.system_packages.pacman.format == "pacman") and (.system_packages.deb.format == "deb")' dist/latest.json
+          jq -e '.schema == 1 and (.platforms | length == 2) and (.system_packages | length == 2) and (.system_packages | has("pacman") and has("deb")) and (.system_packages.pacman.format == "pacman") and (.system_packages.deb.format == "deb") and ((.ai_plugin.version | type) == "string") and ((.ai_plugin.host_version_min | type) == "string")' dist/latest.json
 
       - name: Publish release (tags only)
         env:

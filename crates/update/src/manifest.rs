@@ -29,6 +29,40 @@ pub struct Manifest {
     /// Optional system package artifacts keyed by package family.
     #[serde(default)]
     pub system_packages: BTreeMap<String, PlatformAsset>,
+    /// Optional AI plugin release advertised with this app release.
+    #[serde(default, deserialize_with = "deserialize_lenient_ai_plugin")]
+    pub ai_plugin: Option<AiPluginRelease>,
+}
+
+/// An AI plugin release advertised alongside an app release.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AiPluginRelease {
+    pub version: String,
+    pub host_version_min: String,
+}
+
+impl AiPluginRelease {
+    /// Returns both versions when they are semver. Invalid entries are
+    /// ignored by the client instead of rejecting the whole manifest.
+    pub fn versions(&self) -> Option<(Version, Version)> {
+        Some((
+            parse_version(&self.version).ok()?,
+            parse_version(&self.host_version_min).ok()?,
+        ))
+    }
+}
+
+/// Reads `ai_plugin` without letting a malformed object reject the manifest.
+/// The value is buffered first so a failed nested deserialize cannot leave
+/// the outer JSON parser at an inconsistent position.
+fn deserialize_lenient_ai_plugin<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Option<AiPluginRelease>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(value.and_then(|value| serde_json::from_value(value).ok()))
 }
 
 /// One downloadable artifact in the manifest.
@@ -85,7 +119,7 @@ impl Manifest {
             ));
         }
 
-        let manifest: Self = serde_json::from_slice(bytes)
+        let mut manifest: Self = serde_json::from_slice(bytes)
             .map_err(|error| UpdateError::InvalidManifest(error.to_string()))?;
 
         if manifest.schema != MANIFEST_SCHEMA {
@@ -96,6 +130,15 @@ impl Manifest {
         }
 
         let version = parse_version(&manifest.version)?;
+
+        if manifest
+            .ai_plugin
+            .as_ref()
+            .is_some_and(|release| release.versions().is_none())
+        {
+            tracing::warn!("ignoring an invalid ai_plugin entry in the update manifest");
+            manifest.ai_plugin = None;
+        }
 
         for (platform, asset) in &manifest.platforms {
             if platform != LINUX_PLATFORM && platform != WINDOWS_PLATFORM {
@@ -344,6 +387,46 @@ mod tests {
     fn parse(value: &Value, allow_http: bool) -> Result<(Manifest, semver::Version)> {
         let bytes = serde_json::to_vec(value).unwrap();
         Manifest::parse_and_validate(&bytes, allow_http)
+    }
+
+    #[test]
+    fn parses_an_optional_ai_plugin_release() {
+        let mut value = valid_manifest();
+        value["ai_plugin"] = serde_json::json!({
+            "version": "0.2.0",
+            "host_version_min": "0.15.0",
+        });
+        let (manifest, _) = parse(&value, false).unwrap();
+        let release = manifest.ai_plugin.unwrap();
+        assert_eq!(
+            release.versions(),
+            Some((
+                semver::Version::new(0, 2, 0),
+                semver::Version::new(0, 15, 0)
+            ))
+        );
+    }
+
+    #[test]
+    fn ignores_an_ai_plugin_with_a_non_semver_version() {
+        let mut value = valid_manifest();
+        value["ai_plugin"] = serde_json::json!({
+            "version": "latest",
+            "host_version_min": "0.15.0",
+        });
+        let (manifest, _) = parse(&value, false).unwrap();
+        assert!(manifest.ai_plugin.is_none());
+    }
+
+    #[test]
+    fn ignores_an_ai_plugin_with_the_wrong_type() {
+        let mut value = valid_manifest();
+        value["ai_plugin"] = serde_json::json!({
+            "version": 3,
+            "host_version_min": ["0.15.0"],
+        });
+        let (manifest, _) = parse(&value, false).unwrap();
+        assert!(manifest.ai_plugin.is_none());
     }
 
     fn system_packages() -> Value {
