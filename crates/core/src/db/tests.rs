@@ -8528,6 +8528,133 @@ fn queue_progress_ignores_failed_and_cancelled_jobs() {
 }
 
 #[test]
+fn queue_progress_survives_photo_cascade() {
+    let db = Db::open_in_memory().unwrap();
+    let first = seed_photo(&db);
+    let second = seed_other_photo(&db);
+
+    assert!(
+        db.enqueue_auto_job_with_status(first, "keep", QueueStatus::Processing)
+            .unwrap()
+    );
+    assert!(
+        db.enqueue_auto_job_with_status(second, "keep", QueueStatus::Processing)
+            .unwrap()
+    );
+    let jobs = db
+        .active_queue_entries(QueueFeature::Compression, 10)
+        .unwrap();
+    db.update_job(&jobs[0].job_id, QueueStatus::Completed, 1.0, None, None)
+        .unwrap();
+    assert_eq!(
+        db.queue_progress(QueueFeature::Compression)
+            .unwrap()
+            .completed,
+        1
+    );
+
+    let active_photo = db
+        .active_queue_entries(QueueFeature::Compression, 10)
+        .unwrap()
+        .first()
+        .and_then(|entry| entry.photo_id)
+        .unwrap();
+    db.connection()
+        .execute("DELETE FROM photos WHERE id = ?1", params![active_photo])
+        .unwrap();
+
+    assert_eq!(
+        db.queue_progress(QueueFeature::Compression)
+            .unwrap()
+            .completed,
+        1
+    );
+    assert_eq!(
+        db.queue_counts(QueueFeature::Compression).unwrap().total(),
+        0
+    );
+}
+
+#[test]
+fn queue_progress_keeps_completed_work_when_processing_is_resumed() {
+    let db = Db::open_in_memory().unwrap();
+    let first = seed_photo(&db);
+    let second = seed_other_photo(&db);
+
+    assert!(
+        db.enqueue_auto_job_with_status(first, "keep", QueueStatus::Processing)
+            .unwrap()
+    );
+    assert!(
+        db.enqueue_auto_job_with_status(second, "keep", QueueStatus::Processing)
+            .unwrap()
+    );
+    let jobs = db
+        .active_queue_entries(QueueFeature::Compression, 10)
+        .unwrap();
+    db.update_job(&jobs[0].job_id, QueueStatus::Completed, 1.0, None, None)
+        .unwrap();
+    assert_eq!(
+        db.queue_progress(QueueFeature::Compression)
+            .unwrap()
+            .completed,
+        1
+    );
+
+    assert_eq!(db.resume_interrupted_compression_jobs().unwrap(), 1);
+    assert_eq!(
+        db.queue_progress(QueueFeature::Compression)
+            .unwrap()
+            .completed,
+        1
+    );
+    assert_eq!(
+        db.queue_counts(QueueFeature::Compression).unwrap().pending,
+        1
+    );
+}
+
+#[test]
+fn queue_progress_bulk_insert_starts_a_new_run() {
+    let db = Db::open_in_memory().unwrap();
+    let first = seed_photo(&db);
+    let second = seed_other_photo(&db);
+    let _third = seed_photo_at(&db, "/photos/c.png");
+    let _fourth = seed_photo_at(&db, "/photos/d.png");
+
+    assert!(
+        db.enqueue_auto_job_with_status(first, "keep", QueueStatus::Processing)
+            .unwrap()
+    );
+    assert!(
+        db.enqueue_auto_job_with_status(second, "keep", QueueStatus::Processing)
+            .unwrap()
+    );
+    let jobs = db
+        .active_queue_entries(QueueFeature::Compression, 10)
+        .unwrap();
+    db.update_job(&jobs[0].job_id, QueueStatus::Completed, 1.0, None, None)
+        .unwrap();
+    db.fail_job_if_active(&jobs[1].job_id, "boom").unwrap();
+    assert_eq!(
+        db.queue_progress(QueueFeature::Compression)
+            .unwrap()
+            .completed,
+        1
+    );
+
+    let inserted = db.enqueue_auto_jobs_for_uncompressed("keep", None).unwrap();
+    assert_eq!(inserted, 2);
+    assert!(
+        db.queue_progress(QueueFeature::Compression)
+            .unwrap()
+            .completed
+            == 0,
+        "the first row of a bulk insert must start a new run"
+    );
+}
+
+#[test]
 fn queue_progress_restarts_when_a_failed_job_is_retried_into_an_empty_queue() {
     let db = Db::open_in_memory().unwrap();
     let first = seed_photo(&db);
