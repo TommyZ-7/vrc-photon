@@ -55,3 +55,29 @@ fn arguments_are_replaced() {
         "3 selected"
     );
 }
+
+#[test]
+fn sidebar_breakdown_keeps_the_locale_separator() {
+    assert_eq!(
+        tr_args_in(
+            "ja",
+            "sidebar.status.breakdown",
+            &[
+                ("waiting", "待機 3".to_string()),
+                ("pending", "実行待ち 2".to_string()),
+            ],
+        ),
+        "待機 3 ・ 実行待ち 2"
+    );
+    assert_eq!(
+        tr_args_in(
+            "en",
+            "sidebar.status.breakdown",
+            &[
+                ("waiting", "Waiting 3".to_string()),
+                ("pending", "Pending 2".to_string()),
+            ],
+        ),
+        "Waiting 3 · Pending 2"
+    );
+}
