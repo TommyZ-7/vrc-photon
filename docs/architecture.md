@@ -482,7 +482,8 @@ crates/ui/src/
    partial unique index で重複しない。
    `--once` のメンテナンス実行ではタグ付けワーカーを起動しない。
 4. `TaggingWorker` は `pending` を1件ずつ原子的に取得し、`variant` を確定する。
-   写真の表示用パスから長辺 1024px の一時 JPEG を作り、sidecar を遅延起動して
+   写真の表示用パスから設定された長辺（既定 1024px、1536px / 2048px も選択可）
+   の一時 JPEG を作り、sidecar を遅延起動して
    presence → people_count → place_class → place_tags の順に要求する。
    presence が閾値未満なら人数推論をスキップする。
 5. 結果は `photo_ai` と `photo_ai_tags` に1トランザクションで書く。書き込み前に

@@ -153,7 +153,7 @@ fn scope_segment(
         .on_click(cx.listener(move |this, _, window, cx| on_scope(this, scope, window, cx)))
 }
 
-fn segment(palette: &Palette, id: String, label: String, active: bool) -> Stateful<Div> {
+pub(crate) fn segment(palette: &Palette, id: String, label: String, active: bool) -> Stateful<Div> {
     let p = palette;
     div()
         .id(SharedString::from(id))

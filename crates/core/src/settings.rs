@@ -304,6 +304,10 @@ pub struct AppSettings {
     /// Inference backend: `auto`, `vulkan`, `cuda`, `roc`, or `cpu`.
     #[serde(default = "default_ai_backend")]
     pub ai_tagging_backend: String,
+    /// Longest edge of the JPEG snapshot passed to the sidecar
+    /// (1024, 1536, or 2048).
+    #[serde(default = "default_ai_tagging_max_edge")]
+    pub ai_tagging_max_edge: u32,
     /// Seconds of inactivity before the sidecar stops (30–3600).
     #[serde(default = "default_ai_idle_timeout")]
     pub ai_tagging_idle_timeout_sec: u64,
@@ -360,6 +364,10 @@ fn default_discord_destination() -> String {
 
 fn default_ai_backend() -> String {
     "auto".to_string()
+}
+
+fn default_ai_tagging_max_edge() -> u32 {
+    crate::tagging_image::TAGGING_MAX_EDGE_DEFAULT
 }
 
 fn default_ai_idle_timeout() -> u64 {
@@ -490,6 +498,7 @@ impl Default for AppSettings {
             ai_tagging_queue_paused: false,
             ai_presence_threshold: None,
             ai_tagging_backend: default_ai_backend(),
+            ai_tagging_max_edge: default_ai_tagging_max_edge(),
             ai_tagging_idle_timeout_sec: default_ai_idle_timeout(),
             ai_model_license_consent_at: None,
             setup_completed: false,
@@ -717,6 +726,8 @@ impl AppSettings {
             } else {
                 default_ai_backend()
             };
+        self.ai_tagging_max_edge =
+            crate::tagging_image::normalize_tagging_max_edge(self.ai_tagging_max_edge);
         self.ai_tagging_idle_timeout_sec = self.ai_tagging_idle_timeout_sec.clamp(30, 3600);
     }
 
@@ -1536,6 +1547,7 @@ mod tests {
         assert!(!settings.ai_tagging_enabled);
         assert_eq!(settings.ai_tagging_auto.mode, AutoMode::Off);
         assert_eq!(settings.ai_tagging_backend, "auto");
+        assert_eq!(settings.ai_tagging_max_edge, 1024);
         assert_eq!(settings.ai_tagging_idle_timeout_sec, 600);
         assert!(settings.ai_presence_threshold.is_none());
         assert!(settings.ai_model_license_consent_at.is_none());
@@ -1550,6 +1562,7 @@ mod tests {
         assert!(!old.ai_tagging_enabled);
         assert_eq!(old.ai_tagging_auto.mode, AutoMode::Off);
         assert_eq!(old.ai_tagging_backend, "auto");
+        assert_eq!(old.ai_tagging_max_edge, 1024);
         assert_eq!(old.ai_tagging_idle_timeout_sec, 600);
         assert!(old.ai_presence_threshold.is_none());
         assert!(old.ai_model_license_consent_at.is_none());
@@ -1592,6 +1605,20 @@ mod tests {
     }
 
     #[test]
+    fn ai_tagging_max_edge_normalizes_to_supported_values() {
+        let db = Db::open_in_memory().unwrap();
+        let mut value = serde_json::to_value(AppSettings::default()).unwrap();
+
+        value["ai_tagging_max_edge"] = serde_json::json!(4096);
+        db.set_setting("app_settings", &value.to_string()).unwrap();
+        assert_eq!(AppSettings::load(&db).unwrap().ai_tagging_max_edge, 1024);
+
+        value["ai_tagging_max_edge"] = serde_json::json!(1536);
+        db.set_setting("app_settings", &value.to_string()).unwrap();
+        assert_eq!(AppSettings::load(&db).unwrap().ai_tagging_max_edge, 1536);
+    }
+
+    #[test]
     fn ai_settings_roundtrip() {
         let db = Db::open_in_memory().unwrap();
         let settings = AppSettings {
@@ -1599,6 +1626,7 @@ mod tests {
             ai_tagging_auto: AutoBehavior::immediate(),
             ai_presence_threshold: Some(0.85),
             ai_tagging_backend: "vulkan".to_string(),
+            ai_tagging_max_edge: 2048,
             ai_tagging_idle_timeout_sec: 120,
             ai_model_license_consent_at: Some(1_700_000_000),
             ..Default::default()
@@ -1609,6 +1637,7 @@ mod tests {
         assert_eq!(loaded.ai_tagging_auto.mode, AutoMode::Immediate);
         assert_eq!(loaded.ai_presence_threshold, Some(0.85));
         assert_eq!(loaded.ai_tagging_backend, "vulkan");
+        assert_eq!(loaded.ai_tagging_max_edge, 2048);
         assert_eq!(loaded.ai_tagging_idle_timeout_sec, 120);
         assert_eq!(loaded.ai_model_license_consent_at, Some(1_700_000_000));
     }
