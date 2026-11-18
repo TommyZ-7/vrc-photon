@@ -179,7 +179,11 @@ impl App {
 
     fn start_setup_page_motion(&mut self, direction: f32) {
         self.setup.direction = direction;
-        self.setup.motion = ToggleMotion::settled(1.0);
+        // Keep the epoch monotonic: the page animation id embeds it, and GPUI
+        // reuses the previous animation state for an unchanged id. Rebuilding
+        // the motion with `settled` resets the epoch, so every transition after
+        // the first would reuse a stale start time and skip its frames.
+        self.setup.motion.jump_to(1.0);
         self.setup
             .motion
             .animate_to(0.0, Duration::from_millis(180));

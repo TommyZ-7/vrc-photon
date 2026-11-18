@@ -38,6 +38,17 @@ impl ToggleMotion {
         self.animate_to_at(target, duration, Instant::now());
     }
 
+    /// Jumps to `value` without animation and keeps the epoch, so a following
+    /// [`Self::animate_to`] still bumps it and restarts any animation id that
+    /// embeds the epoch.
+    pub(crate) fn jump_to(&mut self, value: f32) {
+        let value = value.clamp(0.0, 1.0);
+        self.started_at = Instant::now();
+        self.duration = Duration::ZERO;
+        self.from = value;
+        self.to = value;
+    }
+
     /// Animates from the value at `now` to `target`, starting at `now`.
     pub(crate) fn animate_to_at(&mut self, target: f32, duration: Duration, now: Instant) {
         let target = target.clamp(0.0, 1.0);
@@ -190,6 +201,20 @@ mod tests {
         assert!(motion.from > 0.0 && motion.from < 1.0);
         assert_eq!(motion.to, 0.0);
         assert_eq!(motion.value_at(motion.started_at), motion.from);
+    }
+
+    #[test]
+    fn restarting_from_a_fixed_value_bumps_the_epoch() {
+        let mut motion = ToggleMotion::settled(1.0);
+        let mut epochs = Vec::new();
+        for _ in 0..2 {
+            motion.jump_to(1.0);
+            motion.animate_to(0.0, Duration::from_millis(100));
+            epochs.push(motion.epoch());
+            assert_eq!(motion.value_at(motion.started_at), 1.0);
+        }
+
+        assert_eq!(epochs, vec![1, 2]);
     }
 
     #[test]

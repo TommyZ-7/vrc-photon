@@ -51,6 +51,17 @@ pub(crate) fn live_poll_interval(ipc_connected: bool) -> Duration {
     }
 }
 
+/// Whether the startup empty-library toast should be announced.
+///
+/// With a photo folder configured, an empty index only means the daemon has
+/// not finished its first scan; the gallery's inline empty state already
+/// explains the situation. A toast queued while the setup wizard is open would
+/// also flush immediately after the wizard closes, right after the folder was
+/// configured.
+pub(crate) fn should_announce_empty_library(setup_open: bool, photo_roots_empty: bool) -> bool {
+    !setup_open && photo_roots_empty
+}
+
 /// Coalescing gate shared by the three-second poller and event-driven
 /// refreshes.
 ///
@@ -315,7 +326,12 @@ impl App {
             if let Some(id) = first_id {
                 self.select_photo(id, cx);
                 self.initial_focus_pending = true;
-            } else if self.library_error.is_none() {
+            } else if self.library_error.is_none()
+                && should_announce_empty_library(
+                    self.setup.open,
+                    self.settings.photo_roots.is_empty(),
+                )
+            {
                 self.toast_info(vrc_photon_i18n::tr!("app.empty_library"), cx);
             }
         }
@@ -893,6 +909,7 @@ mod tests {
     use super::{
         DeletionSnapshot, LiveRefreshGate, LiveRefreshRequest, apply_deletion_snapshot,
         collect_library_snapshot, collect_live_snapshot, deletion_update, live_poll_interval,
+        should_announce_empty_library,
     };
     use std::time::Duration;
     use vrc_photon_core::db::Db;
@@ -997,6 +1014,13 @@ mod tests {
             blake3: None,
         })
         .unwrap()
+    }
+
+    #[test]
+    fn empty_library_toast_needs_no_folder_and_a_closed_wizard() {
+        assert!(!should_announce_empty_library(true, true));
+        assert!(!should_announce_empty_library(false, false));
+        assert!(should_announce_empty_library(false, true));
     }
 
     #[test]
