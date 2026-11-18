@@ -609,7 +609,6 @@ update.error.file_save_past: "更新ファイルを保存できませんでし�
 update.error.invalid_job: "更新の適用情報が不正です"
 update.error.other: "更新処理に失敗しました: %{message}"
 update.phase.available: "更新あり"
-update.badge: "更新"
 update.error.database: "データベースを開けなかったため、更新を確定できません"
 update.error.token: "更新用トークンがありません"
 update.error.data_dir: "データディレクトリを特定できません"
