@@ -474,7 +474,7 @@ impl Default for AppSettings {
             language: "ja".to_string(),
             autostart: true,
             tray: true,
-            auto_compress_enabled: true,
+            auto_compress_enabled: false,
             auto_compress: AutoBehavior::immediate(),
             auto_compress_queue_paused: false,
             auto_compress_keep_original: true,
@@ -1359,7 +1359,7 @@ mod tests {
             "compression_workers": 1
         }"#;
         let settings: AppSettings = serde_json::from_str(json).unwrap();
-        assert_eq!(settings.thumbnail_size, 384);
+        assert_eq!(settings.thumbnail_size, 256);
         assert_eq!(settings.thumbnail_cache_mb, 2048);
     }
 
@@ -1965,12 +1965,12 @@ mod tests {
     }
 
     #[test]
-    fn fresh_settings_start_the_compression_activation_at_now() {
+    fn fresh_settings_start_with_automatic_compression_off() {
         let db = crate::db::Db::open_in_memory().unwrap();
         let before = chrono::Utc::now().timestamp();
         let settings = AppSettings::load(&db).unwrap();
         let after = chrono::Utc::now().timestamp();
-        assert!(settings.auto_compress_enabled);
+        assert!(!settings.auto_compress_enabled);
         let activated = settings.auto_compress.activated_at.unwrap();
         assert!(activated >= before && activated <= after);
     }
