@@ -2307,6 +2307,20 @@ mod tests {
     }
 
     #[test]
+    fn plugin_update_notice_accepts_v_prefixes() {
+        let mut active = sample_install();
+        active.version = "v1.0.0".to_string();
+        assert_eq!(
+            ai_plugin_update_notice(
+                Some(&active),
+                Some(&advertised("v1.1.0", "0.14.0")),
+                "v0.15.0"
+            ),
+            Some(Version::new(1, 1, 0))
+        );
+    }
+
+    #[test]
     fn plugin_update_notice_ignores_non_semver_versions() {
         let mut active = sample_install();
         active.version = "dev".to_string();
