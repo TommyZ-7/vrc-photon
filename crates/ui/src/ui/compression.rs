@@ -692,20 +692,6 @@ impl App {
                                                     ),
                                                 ),
                                         )
-                                        .child(
-                                            div()
-                                                .pl(px(104.))
-                                                .text_size(px(10.))
-                                                .text_color(rgb(p.muted_2))
-                                                .child(match profile.resize_mode {
-                                                    ResizeMode::DownscaleOnly => {
-                                                        tr!("compression.resize.shrink_hint")
-                                                    }
-                                                    ResizeMode::Always => {
-                                                        tr!("compression.resize.always_hint")
-                                                    }
-                                                }),
-                                        ),
                                 )
                             })
                             .when(profile.resize_enabled, |this| {
@@ -852,13 +838,7 @@ impl App {
                                             .text_color(rgb(p.muted_2))
                                             .child(tr!("compression.suffix")),
                                     )
-                                    .child(Input::new(&self.profile_suffix_input).small().flex_1())
-                                    .child(
-                                        div()
-                                            .text_size(px(9.5))
-                                            .text_color(rgb(p.muted_2))
-                                            .child(tr!("compression.empty_ok")),
-                                    ),
+                                    .child(Input::new(&self.profile_suffix_input).small().flex_1()),
                             ),
                     )
                     .child(section_divider(&p))
