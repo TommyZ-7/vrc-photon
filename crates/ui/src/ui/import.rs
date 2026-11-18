@@ -68,12 +68,7 @@ impl App {
         let Some(dialog) = self.import_dialog.as_ref() else {
             return div().into_any_element();
         };
-        let title = match &dialog.origin {
-            ImportDialogOrigin::New => tr!("import.dialog.title"),
-            ImportDialogOrigin::Retry { .. } => tr!("import.dialog.retry"),
-            ImportDialogOrigin::Resume { .. } => tr!("import.dialog.resume"),
-        };
-        let mode = import_mode_label(dialog.mode);
+        let title = import_dialog_title(&dialog.origin, dialog.mode);
         let dest = dialog.dest.to_string_lossy().to_string();
 
         let mut panel = dialog_panel(&self.palette)
@@ -95,7 +90,6 @@ impl App {
                             .text_color(rgb(p.text))
                             .child(title),
                     )
-                    .child(self.badge(mode, p.accent, p.accent_soft))
                     .when_some(dialog.origin.run_summary(), |this, summary| {
                         this.child(self.badge(&summary, p.muted, p.panel_2))
                     })
@@ -129,12 +123,6 @@ impl App {
                                         this.pick_import_folder(window, cx)
                                     })),
                             ),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(10.))
-                            .text_color(rgb(p.muted_2))
-                            .child(tr!("import.folder_hint")),
                     )
                     .when_some(source.map(|source| source.summary()), |this, summary| {
                         this.child(
@@ -665,6 +653,21 @@ pub(crate) fn import_mode_label(mode: ImportMode) -> String {
         ImportMode::Copy => tr!("import.mode.copy"),
         ImportMode::Move => tr!("import.mode.move"),
     }
+}
+
+/// Dialog title carries the mode and, for retry/resume, the pending action.
+/// The mode used to be a separate badge next to the title.
+pub(crate) fn import_dialog_title(origin: &ImportDialogOrigin, mode: ImportMode) -> String {
+    let base = match mode {
+        ImportMode::Copy => tr!("import.dialog.title.copy"),
+        ImportMode::Move => tr!("import.dialog.title.move"),
+    };
+    let suffix = match origin {
+        ImportDialogOrigin::New => return base,
+        ImportDialogOrigin::Retry { .. } => tr!("import.dialog.retry_suffix"),
+        ImportDialogOrigin::Resume { .. } => tr!("import.dialog.resume_suffix"),
+    };
+    format!("{base} · {suffix}")
 }
 
 pub(crate) fn import_progress_label(progress: &ImportProgress) -> String {

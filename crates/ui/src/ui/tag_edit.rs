@@ -6,7 +6,7 @@ use gpui_kit::component::input::Input;
 use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::*;
 use gpui_kit::*;
-use vrc_photon_i18n::{tr, tr_args};
+use vrc_photon_i18n::tr;
 
 use crate::app::App;
 use crate::ui::components::dialog_panel;
@@ -23,19 +23,6 @@ impl App {
         }
 
         let p = self.palette;
-        let subtitle = if self.tag_edit.is_multi {
-            tr_args!(
-                "photos.tag_edit.subtitle_multi",
-                count = self.tag_edit.photo_ids.len()
-            )
-        } else {
-            tr!("photos.tag_edit.subtitle_single")
-        };
-        let note = if self.tag_edit.is_multi {
-            tr!("photos.tag_edit.common_note")
-        } else {
-            tr!("photos.tag_edit.single_note")
-        };
         let empty = if self.tag_edit.is_multi {
             tr!("photos.tag_edit.empty_multi")
         } else {
@@ -69,24 +56,6 @@ impl App {
             .gap(px(10.))
             .max_h(px(430.))
             .overflow_y_scrollbar()
-            .child(
-                h_flex()
-                    .items_start()
-                    .gap(px(8.))
-                    .p(px(9.))
-                    .rounded(px(9.))
-                    .border_1()
-                    .border_color(rgba(with_alpha(p.accent, 0x2e)))
-                    .bg(rgba(with_alpha(p.accent, 0x0f)))
-                    .child(Icon::new(IconName::Info).xsmall().text_color(rgb(p.accent)))
-                    .child(
-                        div()
-                            .text_size(px(10.))
-                            .line_height(relative(1.5))
-                            .text_color(rgb(p.muted))
-                            .child(note),
-                    ),
-            )
             .child(tags)
             .child(
                 h_flex()
@@ -100,12 +69,6 @@ impl App {
                                 this.add_tag_from_dialog(window, cx)
                             })),
                     ),
-            )
-            .child(
-                div()
-                    .text_size(px(9.))
-                    .text_color(rgb(p.muted_2))
-                    .child(tr!("photos.tag_edit.hint")),
             );
 
         let panel = dialog_panel(&p)
@@ -122,23 +85,13 @@ impl App {
                     .items_start()
                     .gap(px(10.))
                     .child(
-                        v_flex()
-                            .flex_1()
-                            .min_w_0()
-                            .gap(px(2.))
-                            .child(
-                                div()
-                                    .text_size(px(16.))
-                                    .font_semibold()
-                                    .text_color(rgb(p.text))
-                                    .child(tr!("photos.tag_edit.title")),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(10.))
-                                    .text_color(rgb(p.muted_2))
-                                    .child(subtitle),
-                            ),
+                        v_flex().flex_1().min_w_0().gap(px(2.)).child(
+                            div()
+                                .text_size(px(16.))
+                                .font_semibold()
+                                .text_color(rgb(p.text))
+                                .child(tr!("photos.tag_edit.title")),
+                        ),
                     )
                     .child(
                         Button::new("tag-edit-close")
