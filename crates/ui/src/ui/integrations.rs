@@ -18,8 +18,11 @@ use crate::app::ai::{
 };
 use crate::app::compression::FeatureCompressionTarget;
 use vrc_photon_core::queue::QueueFeature;
+use vrc_photon_core::tagging_image::TAGGING_MAX_EDGES;
 
-use crate::ui::auto_behavior::{auto_mode_segmented, bulk_action_available, bulk_action_block};
+use crate::ui::auto_behavior::{
+    auto_mode_segmented, bulk_action_available, bulk_action_block, segment,
+};
 use crate::ui::components::{card_divider, chip, compression_policy_warning, glass_panel};
 use crate::ui::queue::queue_section;
 use crate::ui::theme::*;
@@ -326,12 +329,46 @@ impl App {
                     })),
             );
 
+        let max_edge_section =
+            v_flex()
+                .gap(px(7.))
+                .child(
+                    div()
+                        .text_size(px(12.))
+                        .font_semibold()
+                        .text_color(rgb(p.text))
+                        .child(tr!("integrations.ai.max_edge")),
+                )
+                .child(
+                    h_flex()
+                        .gap(px(2.))
+                        .p(px(3.))
+                        .rounded(px(10.))
+                        .border_1()
+                        .border_color(rgb(p.border))
+                        .bg(rgb(p.panel_inner))
+                        .children(TAGGING_MAX_EDGES.into_iter().map(|edge| {
+                            let active = self.settings.ai_tagging_max_edge == edge;
+                            segment(
+                                &p,
+                                format!("integrations-ai-max-edge-{edge}"),
+                                max_edge_label(edge),
+                                active,
+                            )
+                            .on_click(cx.listener(
+                                move |this, _, _, cx| this.set_ai_tagging_max_edge(edge, cx),
+                            ))
+                        })),
+                );
+
         let body = v_flex()
             .pt(px(12.))
             .gap(px(12.))
             .when(ready, |this| {
                 this.child(card_divider(&p)).child(backend_section)
             })
+            .child(card_divider(&p))
+            .child(max_edge_section)
             .child(card_divider(&p))
             .child(auto_mode_segmented(
                 &p,
@@ -450,6 +487,14 @@ impl App {
     }
 }
 
+fn max_edge_label(edge: u32) -> String {
+    match edge {
+        1536 => tr!("integrations.ai.max_edge.high"),
+        2048 => tr!("integrations.ai.max_edge.max"),
+        _ => tr!("integrations.ai.max_edge.standard"),
+    }
+}
+
 /// The localized stage description shown under one job's progress bar.
 pub(crate) fn ai_stage_label(stage: Option<TaggingStage>) -> String {
     match stage {
@@ -467,8 +512,9 @@ pub(crate) fn ai_stage_label(stage: Option<TaggingStage>) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::ai_stage_label;
+    use super::{ai_stage_label, max_edge_label};
     use vrc_photon_ai_protocol::TaggingStage;
+    use vrc_photon_core::tagging_image::TAGGING_MAX_EDGES;
 
     #[test]
     fn atmosphere_stage_has_a_label() {
@@ -476,5 +522,12 @@ mod tests {
             ai_stage_label(Some(TaggingStage::AtmosphereTags)),
             "雰囲気タグを生成中"
         );
+    }
+
+    #[test]
+    fn max_edge_labels_cover_the_supported_values() {
+        assert_eq!(max_edge_label(TAGGING_MAX_EDGES[0]), "標準");
+        assert_eq!(max_edge_label(TAGGING_MAX_EDGES[1]), "高精細");
+        assert_eq!(max_edge_label(TAGGING_MAX_EDGES[2]), "最大");
     }
 }

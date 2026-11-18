@@ -1,4 +1,4 @@
-//! Preparation of the 1024px JPEG snapshot handed to tagging sidecars.
+//! Preparation of the JPEG snapshot handed to tagging sidecars.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -9,10 +9,21 @@ use image::DynamicImage;
 use crate::compressor::encode_jpeg;
 use crate::error::{CoreError, Result};
 
-/// Longest edge of a tagging snapshot, in pixels.
-pub const TAGGING_MAX_EDGE: u32 = 1024;
+/// Longest-edge choices for tagging snapshots, in pixels.
+pub const TAGGING_MAX_EDGES: [u32; 3] = [1024, 1536, 2048];
+/// Default longest edge of a tagging snapshot, in pixels.
+pub const TAGGING_MAX_EDGE_DEFAULT: u32 = TAGGING_MAX_EDGES[0];
 /// JPEG quality used for tagging snapshots.
 pub const TAGGING_JPEG_QUALITY: u8 = 90;
+
+/// Returns the supported long edge matching `edge`, falling back to the
+/// default for unknown values.
+pub fn normalize_tagging_max_edge(edge: u32) -> u32 {
+    TAGGING_MAX_EDGES
+        .into_iter()
+        .find(|candidate| *candidate == edge)
+        .unwrap_or(TAGGING_MAX_EDGE_DEFAULT)
+}
 
 /// An encoded JPEG snapshot ready to be passed to the tagging sidecar.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,16 +39,18 @@ pub fn tagging_cache_dir(data_dir: &Path) -> PathBuf {
 }
 
 /// Decodes `source`, applies EXIF orientation when the format carries it,
-/// downscales the long edge to [`TAGGING_MAX_EDGE`], and writes a
+/// downscales the long edge to `max_edge`, and writes a
 /// quality-[`TAGGING_JPEG_QUALITY`] JPEG to `cache_dir/<job_id>.jpg`.
 ///
-/// The JPEG is written to `<job_id>.jpg.tmp` first and renamed into place, so
-/// readers never observe a partial file. Re-running the same job replaces its
+/// `max_edge` is normalized to one of [`TAGGING_MAX_EDGES`]. The JPEG is
+/// written to `<job_id>.jpg.tmp` first and renamed into place, so readers
+/// never observe a partial file. Re-running the same job replaces its
 /// snapshot.
 pub fn prepare_tagging_snapshot(
     source: &Path,
     cache_dir: &Path,
     job_id: &str,
+    max_edge: u32,
 ) -> Result<TaggingSnapshot> {
     let (output, temp) = snapshot_paths(cache_dir, job_id)?;
     if !source.is_file() {
@@ -49,7 +62,7 @@ pub fn prepare_tagging_snapshot(
     let image = crate::image_decode::decode_image(source).ok_or_else(|| {
         CoreError::Invalid(format!("cannot decode tagging source {}", source.display()))
     })?;
-    let image = apply_tagging_transform(image);
+    let image = apply_tagging_transform(image, max_edge);
     let bytes = encode_jpeg(&image, TAGGING_JPEG_QUALITY)?;
 
     fs::create_dir_all(cache_dir)?;
@@ -88,18 +101,16 @@ pub fn prepare_tagging_snapshot(
     })
 }
 
-/// Downscales an image so its longest edge fits [`TAGGING_MAX_EDGE`].
+/// Downscales an image so its longest edge fits `max_edge`.
 ///
-/// Images that already fit are returned unchanged; this never upscales.
-pub fn apply_tagging_transform(image: DynamicImage) -> DynamicImage {
-    if image.width() <= TAGGING_MAX_EDGE && image.height() <= TAGGING_MAX_EDGE {
+/// `max_edge` is normalized to one of [`TAGGING_MAX_EDGES`]. Images that
+/// already fit are returned unchanged; this never upscales.
+pub fn apply_tagging_transform(image: DynamicImage, max_edge: u32) -> DynamicImage {
+    let max_edge = normalize_tagging_max_edge(max_edge);
+    if image.width() <= max_edge && image.height() <= max_edge {
         return image;
     }
-    image.resize(
-        TAGGING_MAX_EDGE,
-        TAGGING_MAX_EDGE,
-        image::imageops::FilterType::Lanczos3,
-    )
+    image.resize(max_edge, max_edge, image::imageops::FilterType::Lanczos3)
 }
 
 fn snapshot_paths(cache_dir: &Path, job_id: &str) -> Result<(PathBuf, PathBuf)> {
@@ -170,7 +181,7 @@ mod tests {
         write_source(&source, 2048, 1024, Rgba([1, 2, 3, 255]));
         let cache = dir.path().join("cache");
 
-        let snapshot = prepare_tagging_snapshot(&source, &cache, "job-1").unwrap();
+        let snapshot = prepare_tagging_snapshot(&source, &cache, "job-1", 1024).unwrap();
 
         let image = image::open(&snapshot.path).unwrap();
         assert_eq!(image.dimensions(), (1024, 512));
@@ -196,7 +207,7 @@ mod tests {
             .unwrap();
         let cache = dir.path().join("cache");
 
-        let snapshot = prepare_tagging_snapshot(&source, &cache, "job-1").unwrap();
+        let snapshot = prepare_tagging_snapshot(&source, &cache, "job-1", 1024).unwrap();
 
         let image = image::open(&snapshot.path).unwrap();
         assert_eq!(image.dimensions(), (1024, 512));
@@ -207,9 +218,66 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_uses_the_configured_long_edge() {
+        let dir = tempdir().unwrap();
+        let source = dir.path().join("source.png");
+        write_source(&source, 2048, 1024, Rgba([1, 2, 3, 255]));
+        let cache = dir.path().join("cache");
+
+        let snapshot = prepare_tagging_snapshot(&source, &cache, "job-1", 1536).unwrap();
+
+        assert_eq!(
+            image::image_dimensions(&snapshot.path).unwrap(),
+            (1536, 768)
+        );
+    }
+
+    #[test]
+    fn snapshot_uses_the_maximum_long_edge() {
+        let dir = tempdir().unwrap();
+        let source = dir.path().join("source.png");
+        write_source(&source, 4000, 2000, Rgba([1, 2, 3, 255]));
+        let cache = dir.path().join("cache");
+
+        let snapshot = prepare_tagging_snapshot(&source, &cache, "job-1", 2048).unwrap();
+
+        assert_eq!(
+            image::image_dimensions(&snapshot.path).unwrap(),
+            (2048, 1024)
+        );
+    }
+
+    #[test]
+    fn tagging_max_edge_normalizes_to_supported_choices() {
+        assert_eq!(normalize_tagging_max_edge(1024), 1024);
+        assert_eq!(normalize_tagging_max_edge(1536), 1536);
+        assert_eq!(normalize_tagging_max_edge(2048), 2048);
+        assert_eq!(normalize_tagging_max_edge(0), 1024);
+        assert_eq!(normalize_tagging_max_edge(4096), 1024);
+    }
+
+    #[test]
+    fn snapshot_rewrites_the_same_job_at_a_new_long_edge() {
+        let dir = tempdir().unwrap();
+        let source = dir.path().join("source.png");
+        write_source(&source, 3000, 1500, Rgba([1, 2, 3, 255]));
+        let cache = dir.path().join("cache");
+
+        let first = prepare_tagging_snapshot(&source, &cache, "job-1", 1024).unwrap();
+        assert_eq!(image::image_dimensions(&first.path).unwrap(), (1024, 512));
+
+        let second = prepare_tagging_snapshot(&source, &cache, "job-1", 1536).unwrap();
+        assert_eq!(image::image_dimensions(&second.path).unwrap(), (1536, 768));
+        assert!(!cache.join("job-1.jpg.tmp").exists());
+    }
+
+    #[test]
     fn snapshot_never_upscales_small_images() {
         let image = DynamicImage::new_rgb8(640, 480);
-        assert_eq!(apply_tagging_transform(image).dimensions(), (640, 480));
+        assert_eq!(
+            apply_tagging_transform(image, 2048).dimensions(),
+            (640, 480)
+        );
     }
 
     #[test]
@@ -219,7 +287,10 @@ mod tests {
         oriented.apply_orientation(Orientation::Rotate90);
         assert_eq!(oriented.dimensions(), (640, 1280));
 
-        assert_eq!(apply_tagging_transform(oriented).dimensions(), (512, 1024));
+        assert_eq!(
+            apply_tagging_transform(oriented, 1024).dimensions(),
+            (512, 1024)
+        );
     }
 
     #[test]
@@ -229,7 +300,7 @@ mod tests {
         write_jpeg_with_orientation(&source, 200, 100, 6);
         let cache = dir.path().join("cache");
 
-        let snapshot = prepare_tagging_snapshot(&source, &cache, "job-1").unwrap();
+        let snapshot = prepare_tagging_snapshot(&source, &cache, "job-1", 1024).unwrap();
 
         assert_eq!(image::image_dimensions(&snapshot.path).unwrap(), (100, 200));
     }
@@ -241,7 +312,7 @@ mod tests {
         write_jpeg_with_orientation(&source, 2000, 1000, 6);
         let cache = dir.path().join("cache");
 
-        let snapshot = prepare_tagging_snapshot(&source, &cache, "job-1").unwrap();
+        let snapshot = prepare_tagging_snapshot(&source, &cache, "job-1", 1024).unwrap();
 
         assert_eq!(
             image::image_dimensions(&snapshot.path).unwrap(),
@@ -255,18 +326,18 @@ mod tests {
         let source = dir.path().join("source.png");
         let cache = dir.path().join("cache");
         write_source(&source, 64, 32, Rgba([1, 2, 3, 255]));
-        let first = prepare_tagging_snapshot(&source, &cache, "job-1").unwrap();
+        let first = prepare_tagging_snapshot(&source, &cache, "job-1", 1024).unwrap();
         let first_bytes = fs::read(&first.path).unwrap();
 
         // A failing run must leave the previous snapshot and no temporary
         // file behind for the same job.
         let missing = dir.path().join("missing.png");
-        assert!(prepare_tagging_snapshot(&missing, &cache, "job-1").is_err());
+        assert!(prepare_tagging_snapshot(&missing, &cache, "job-1", 1024).is_err());
         assert_eq!(fs::read(&first.path).unwrap(), first_bytes);
         assert!(!cache.join("job-1.jpg.tmp").exists());
 
         write_source(&source, 64, 32, Rgba([200, 100, 50, 255]));
-        let second = prepare_tagging_snapshot(&source, &cache, "job-1").unwrap();
+        let second = prepare_tagging_snapshot(&source, &cache, "job-1", 1024).unwrap();
 
         assert_eq!(second.path, first.path);
         assert_ne!(fs::read(&second.path).unwrap(), first_bytes);
@@ -293,7 +364,7 @@ mod tests {
             return;
         }
 
-        let result = prepare_tagging_snapshot(&source, &cache, "job-1");
+        let result = prepare_tagging_snapshot(&source, &cache, "job-1", 1024);
         fs::set_permissions(&cache, fs::Permissions::from_mode(0o700)).unwrap();
 
         assert!(result.is_err());
@@ -307,6 +378,7 @@ mod tests {
             &dir.path().join("missing.png"),
             &dir.path().join("cache"),
             "job-1",
+            1024,
         )
         .unwrap_err();
 
@@ -319,8 +391,8 @@ mod tests {
         let source = dir.path().join("broken.png");
         fs::write(&source, b"not an image").unwrap();
 
-        let error =
-            prepare_tagging_snapshot(&source, &dir.path().join("cache"), "job-1").unwrap_err();
+        let error = prepare_tagging_snapshot(&source, &dir.path().join("cache"), "job-1", 1024)
+            .unwrap_err();
 
         assert!(matches!(error, CoreError::Invalid(_)));
     }
@@ -333,7 +405,7 @@ mod tests {
         let cache = dir.path().join("cache");
 
         for job_id in ["", ".", "..", "../escape", "sub/job", "sub\\job"] {
-            let error = prepare_tagging_snapshot(&source, &cache, job_id).unwrap_err();
+            let error = prepare_tagging_snapshot(&source, &cache, job_id, 1024).unwrap_err();
             assert!(
                 matches!(error, CoreError::Invalid(_)),
                 "job id {job_id:?} should be rejected"
