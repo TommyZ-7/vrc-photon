@@ -1,0 +1,518 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VRC PhotoN — 通知モーダルのアップデート節モック (#707)</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%230d1420'/%3E%3Ccircle cx='16' cy='16' r='7' fill='none' stroke='%238bcbff' stroke-width='2'/%3E%3C/svg%3E">
+<style>
+  :root {
+    color-scheme: dark;
+    --font: "Inter", "Noto Sans JP", "Hiragino Sans", "Yu Gothic UI", system-ui, -apple-system, sans-serif;
+    --text: #eef4ff;
+    --muted: #a8b4ca;
+    --dim: #7f8ba3;
+    --faint: #5e6a81;
+    --accent: #8bcbff;
+    --green: #7ee2b8;
+    --rose: #ff94a8;
+    --amber: #f4c878;
+    --line: rgba(255, 255, 255, 0.105);
+    --line-soft: rgba(255, 255, 255, 0.065);
+    --panel: #0d1420;
+    --panel-deep: #080d15;
+    --panel-2: #151f2f;
+    --panel-sidebar: #101827;
+    --accent-soft: rgba(139, 203, 255, 0.14);
+    --r-card: 22px;
+  }
+
+  * { box-sizing: border-box; }
+  html { overflow-x: hidden; }
+  body {
+    margin: 0;
+    min-width: 320px;
+    background: #05070d;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -2;
+    background:
+      radial-gradient(ellipse 58% 54% at 10% 2%, rgba(54, 107, 255, 0.28), transparent 66%),
+      radial-gradient(ellipse 46% 52% at 92% 6%, rgba(255, 86, 181, 0.12), transparent 68%),
+      radial-gradient(ellipse 52% 48% at 64% 104%, rgba(30, 202, 178, 0.10), transparent 68%),
+      linear-gradient(140deg, #04060c 0%, #0a0f1e 44%, #060811 100%);
+  }
+
+  .page { width: min(1360px, calc(100% - 48px)); margin: 0 auto; padding: 44px 0 80px; }
+  .masthead { display: flex; align-items: flex-start; justify-content: space-between; gap: 28px; margin-bottom: 28px; }
+  .eyebrow { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; }
+  .issue-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border: 1px solid rgba(139,203,255,.24); border-radius: 999px; background: rgba(139,203,255,.08); color: var(--accent); font-size: 10px; letter-spacing: .08em; }
+  h1 { margin: 11px 0 9px; font-size: clamp(25px, 3vw, 36px); line-height: 1.22; letter-spacing: -.035em; font-weight: 620; }
+  .lede { max-width: 880px; margin: 0; color: var(--muted); font-size: 13px; }
+  .lede b { color: var(--text); font-weight: 560; }
+  .meta-card { flex: none; min-width: 300px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 16px; background: rgba(13,20,32,.72); }
+  .meta-row { display: flex; justify-content: space-between; gap: 18px; padding: 4px 0; color: var(--dim); font-size: 11px; }
+  .meta-row b { color: var(--text); font-weight: 550; }
+  .meta-row + .meta-row { border-top: 1px solid var(--line-soft); }
+
+  .section-label { display: flex; align-items: baseline; gap: 12px; margin: 42px 0 14px; }
+  .section-label h2 { margin: 0; font-size: 15px; font-weight: 580; letter-spacing: -.01em; }
+  .section-label span { color: var(--dim); font-size: 11px; }
+  .section-note { max-width: 1000px; margin: -4px 0 18px; color: var(--dim); font-size: 11.5px; }
+  .section-note b { color: var(--muted); font-weight: 560; }
+
+  .decision-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin: 18px 0 6px; }
+  .decision { padding: 13px 14px; border: 1px solid var(--line); border-radius: 14px; background: rgba(14,21,34,.72); }
+  .decision .q { color: var(--accent); font-size: 10px; letter-spacing: .08em; }
+  .decision h3 { margin: 5px 0 6px; font-size: 12px; font-weight: 580; }
+  .decision p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
+  .decision .ok { display: inline-block; margin-top: 8px; padding: 2px 7px; border-radius: 999px; color: var(--green); background: rgba(126,226,184,.07); border: 1px solid rgba(126,226,184,.18); font-size: 9.5px; }
+
+  .specimen-grid { display: grid; grid-template-columns: 1fr; gap: 18px; }
+  .specimen { border: 1px solid var(--line); border-radius: var(--r-card); background: linear-gradient(180deg, rgba(17,25,39,.78), rgba(9,14,23,.9)); padding: 16px; box-shadow: 0 20px 60px rgba(0,0,0,.22); }
+  .specimen-head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .specimen-title { font-size: 12px; font-weight: 580; }
+  .tag { margin-left: auto; padding: 2px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--dim); font-size: 9px; letter-spacing: .08em; }
+  .specimen-stage { display: flex; justify-content: center; padding: 14px 0 4px; }
+  .annotation { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line-soft); color: var(--dim); font-size: 10.5px; line-height: 1.65; }
+  .annotation b { color: var(--muted); font-weight: 560; }
+  .annotation code { color: var(--accent); font-size: 10px; }
+
+  /* ---------- Fake app shell ---------- */
+  .app-frame {
+    position: relative; width: min(980px, 100%); min-height: 560px; overflow: hidden;
+    border: 1px solid var(--line-soft); border-radius: 22px;
+    background: linear-gradient(145deg, #0a1120, #060a12 58%, #080d18);
+    box-shadow: 0 24px 70px rgba(0,0,0,.34), inset 0 1px rgba(255,255,255,.05);
+  }
+  .titlebar { height: 46px; display: flex; align-items: center; gap: 9px; padding: 0 14px; border-bottom: 1px solid var(--line-soft); }
+  .app-glyph { width: 22px; height: 22px; border-radius: 7px; border: 1px solid rgba(139,203,255,.38); background: rgba(139,203,255,.08); position: relative; }
+  .app-glyph::after { content: ""; position: absolute; inset: 6px; border: 1.5px solid var(--accent); border-radius: 50%; }
+  .app-name { color: var(--muted); font-size: 11px; }
+  .title-divider { width: 1px; height: 14px; background: var(--line); }
+  .screen-name { color: var(--text); font-size: 11.5px; font-weight: 600; }
+  .titlebar-spacer { flex: 1; }
+  .titlebar-btn { width: 26px; height: 26px; border-radius: 6px; display: grid; place-items: center; color: var(--dim); position: relative; }
+  .titlebar-btn svg { width: 15px; height: 15px; }
+  .attention-dot {
+    position: absolute; top: 5px; right: 5px; width: 4px; height: 4px; border-radius: 50%;
+    background: var(--amber); box-shadow: 0 0 6px rgba(244,200,120,.8);
+  }
+  .app-body { display: flex; min-height: 514px; }
+  .sidebar {
+    width: 180px; flex: none; display: flex; flex-direction: column; gap: 2px;
+    padding: 12px 10px; border-right: 1px solid var(--line-soft);
+    background: linear-gradient(180deg, rgba(16,24,39,.9), rgba(8,13,21,.9));
+  }
+  .nav-item { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 9px; border-radius: 9px; color: var(--muted); font-size: 11px; }
+  .nav-item .ico { width: 15px; text-align: center; color: var(--dim); font-size: 12px; }
+  .nav-item.active { background: var(--accent-soft); color: var(--text); box-shadow: inset 2px 0 var(--accent); }
+  .nav-item.active .ico { color: var(--accent); }
+  .app-content { flex: 1; min-width: 0; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+  .ghost-card { border: 1px solid var(--line-soft); border-radius: 17px; background: rgba(13,20,32,.55); padding: 14px; }
+  .ghost-line { height: 8px; border-radius: 999px; background: rgba(255,255,255,.075); margin-top: 8px; }
+  .ghost-line.short { width: 42%; }
+  .ghost-line.mid { width: 68%; }
+
+  /* ---------- Notification modal ---------- */
+  .scrim {
+    position: absolute; inset: 0; z-index: 2; display: flex; align-items: center; justify-content: center;
+    padding: 24px; background: rgba(3,6,12,.66);
+  }
+  .modal {
+    width: min(720px, 100%); max-height: 500px; overflow: hidden;
+    display: flex; flex-direction: column;
+    border: 1px solid rgba(255,255,255,.065); border-radius: 20px;
+    background: var(--panel-deep);
+    box-shadow: 0 24px 56px rgba(0,0,0,.55), inset 0 1px rgba(255,255,255,.06);
+  }
+  .modal-head { height: 52px; flex: none; display: flex; align-items: center; gap: 9px; padding: 0 18px; border-bottom: 1px solid rgba(255,255,255,.07); }
+  .modal-head svg { width: 16px; height: 16px; color: var(--accent); }
+  .modal-title { font-size: 14px; font-weight: 600; }
+  .modal-head .spacer { flex: 1; }
+  .modal-close { color: var(--muted); font-size: 12px; padding: 4px 8px; border-radius: 6px; border: 1px solid transparent; }
+  .modal-body { flex: 1; min-height: 0; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+  .notification-card { padding: 14px; display: flex; flex-direction: column; gap: 10px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); }
+  .notification-title { font-size: 12px; font-weight: 600; }
+  .notification-message { font-size: 11px; color: var(--muted); }
+  .notification-message strong { color: var(--text); font-weight: 560; }
+  .notification-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+  .badges { display: flex; flex-wrap: wrap; gap: 5px; }
+  .badge { padding: 2px 7px; border-radius: 8px; font-size: 10px; font-weight: 500; white-space: nowrap; }
+  .badge.green { color: var(--green); background: rgba(126,226,184,.12); }
+  .badge.red { color: var(--rose); background: rgba(255,148,168,.12); }
+  .badge.amber { color: var(--amber); background: rgba(244,200,120,.12); }
+  .badge.accent { color: var(--accent); background: var(--accent-soft); }
+  .badge.muted { color: var(--muted); background: var(--panel-2); }
+  .btn { display: inline-flex; align-items: center; justify-content: center; height: 24px; padding: 0 10px; border-radius: 7px; border: 1px solid var(--line); color: var(--muted); font-size: 10px; font-weight: 500; white-space: nowrap; }
+  .btn.primary { border-color: rgba(139,203,255,.3); background: rgba(139,203,255,.16); color: var(--accent); }
+  .btn.ghost { border-color: transparent; color: var(--dim); }
+  .failure-row { display: flex; align-items: center; gap: 7px; padding: 7px; border-radius: 8px; background: var(--panel-2); }
+  .failure-name { flex: 1; min-width: 0; }
+  .failure-name div:first-child { font-size: 10px; color: var(--text); }
+  .failure-name div:last-child { font-size: 9px; color: var(--dim); }
+
+  /* ---------- Settings specimen ---------- */
+  .settings-content { flex: 1; min-width: 0; padding: 14px; display: flex; flex-direction: column; gap: 12px; position: relative; overflow: hidden; }
+  .scrolled-fade { position: absolute; top: 0; left: 0; right: 0; height: 26px; z-index: 1; background: linear-gradient(180deg, rgba(6,10,18,.95), rgba(6,10,18,0)); pointer-events: none; }
+  .settings-card { border: 1px solid var(--line-soft); border-radius: 17px; background: rgba(13,20,32,.86); padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+  .settings-card h3 { margin: 0; font-size: 13px; font-weight: 600; }
+  .divider { height: 1px; background: var(--line-soft); }
+  .meta-row-settings { display: flex; justify-content: space-between; gap: 12px; font-size: 10px; color: var(--dim); }
+  .meta-row-settings b { color: var(--text); font-weight: 500; }
+  .switch-row { display: flex; align-items: center; gap: 10px; font-size: 11px; color: var(--text); }
+  .switch { margin-left: auto; width: 28px; height: 16px; border-radius: 999px; background: rgba(139,203,255,.28); position: relative; }
+  .switch::after { content: ""; position: absolute; top: 2px; right: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--accent); }
+  .phase-title { font-size: 13px; font-weight: 600; }
+  .error-text { font-size: 11px; color: var(--rose); }
+  .log-line { font-family: ui-monospace, monospace; font-size: 10px; color: var(--dim); }
+  .settings-scroll-note { position: absolute; right: 22px; bottom: 12px; z-index: 1; padding: 3px 8px; border-radius: 999px; background: rgba(139,203,255,.1); border: 1px solid rgba(139,203,255,.22); color: var(--accent); font-size: 9px; letter-spacing: .06em; }
+
+  .rules { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 18px; }
+  .rule { padding: 13px 14px; border: 1px solid var(--line); border-radius: 14px; background: rgba(14,21,34,.6); }
+  .rule h3 { margin: 0 0 6px; font-size: 12px; font-weight: 580; }
+  .rule p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
+  .rule code { color: var(--accent); font-size: 10px; }
+
+  @media (max-width: 1100px) {
+    .decision-grid { grid-template-columns: repeat(2, 1fr); }
+    .rules { grid-template-columns: 1fr; }
+    .masthead { flex-direction: column; }
+    .meta-card { width: 100%; }
+  }
+  @media (max-width: 720px) {
+    .decision-grid { grid-template-columns: 1fr; }
+    .sidebar { display: none; }
+    .app-body { min-height: 460px; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="masthead">
+    <div>
+      <div class="eyebrow"><span class="issue-chip">#707</span><span>UI mockup · update notification</span></div>
+      <h1>通知モーダルのアップデート節</h1>
+      <p class="lede">
+        本体の更新を検知したら、通知ベルの注意ドットを点け、通知モーダルの
+        <b>先頭</b>に「アップデート」節を出す。節は<b>新しい版番号</b>と
+        <b>設定のアップデートカードへの誘導</b>だけを持ち、
+        ダウンロードと適用は設定画面で行う。
+      </p>
+    </div>
+    <div class="meta-card">
+      <div class="meta-row"><span>対象</span><b>本体の更新（AIプラグインは対象外）</b></div>
+      <div class="meta-row"><span>節の位置</span><b>通知モーダルの先頭</b></div>
+      <div class="meta-row"><span>本文</span><b>状態共通の版番号表示</b></div>
+      <div class="meta-row"><span>保持</span><b>未適用の間（セッション内）</b></div>
+      <div class="meta-row"><span>状態</span><b>承認待ち</b></div>
+    </div>
+  </header>
+
+  <div class="section-label"><h2>承認ポイント</h2><span>実装前に確認する決定</span></div>
+  <div class="decision-grid">
+    <div class="decision">
+      <div class="q">Q1 · 位置</div>
+      <h3>モーダルの先頭</h3>
+      <p>ベルのドットが点いている理由を最初に見せる。取り込み結果・ライブラリ・処理の失敗・デーモンの節はその下に続く。</p>
+      <span class="ok">先頭</span>
+    </div>
+    <div class="decision">
+      <div class="q">Q2 · 文言</div>
+      <h3>状態にかかわらず共通</h3>
+      <p>利用可能・ダウンロード中・準備完了・エラーのどれでも「v0.4.0 が利用可能です」とだけ出す。専用バッジや進捗はモーダルに置かない。</p>
+      <span class="ok">共通文言</span>
+    </div>
+    <div class="decision">
+      <div class="q">Q3 · エラー</div>
+      <h3>未適用なら残す</h3>
+      <p>確認失敗やダウンロード失敗で設定カードがエラーになっても、節とベルのドットは残す。最新確認が返れば消す。</p>
+      <span class="ok">保持</span>
+    </div>
+    <div class="decision">
+      <div class="q">Q4 · 再起動</div>
+      <h3>セッション内のみ</h3>
+      <p>検知した版はメモリだけに保持し、再起動後は次の確認まで出さない。永続ファイルや既読管理は追加しない。</p>
+      <span class="ok">永続化なし</span>
+    </div>
+    <div class="decision">
+      <div class="q">Q5 · 誘導</div>
+      <h3>設定カードまでスクロール</h3>
+      <p>ボタンでモーダルを閉じ、設定画面へ切り替え、アップデートカードが見える位置までスクロールする。</p>
+      <span class="ok">画面切替＋スクロール</span>
+    </div>
+  </div>
+
+  <div class="section-label"><h2>状態別の表示</h2><span>1280×820 相当 / 実装前の確認用</span></div>
+  <p class="section-note">
+    モーダルは現行の幅720 px・最大高ビューポート80%を維持する。更新の節は
+    <b>他の通知セクションと同じカード構造</b>にし、強調はボタンだけに置く。
+  </p>
+
+  <div class="specimen-grid">
+
+    <div class="specimen">
+      <div class="specimen-head"><div class="specimen-title">1. 更新だけを検知した状態</div><span class="tag">UPDATE ONLY</span></div>
+      <div class="specimen-stage">
+        <div class="app-frame">
+          <div class="titlebar">
+            <div class="app-glyph"></div>
+            <span class="app-name">VRC PhotoN</span>
+            <span class="title-divider"></span>
+            <span class="screen-name">写真</span>
+            <span class="titlebar-spacer"></span>
+            <span class="titlebar-btn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+              <i class="attention-dot"></i>
+            </span>
+          </div>
+          <div class="app-body">
+            <aside class="sidebar">
+              <div class="nav-item active"><span class="ico">▦</span><span>写真</span></div>
+              <div class="nav-item"><span class="ico">⌕</span><span>検索</span></div>
+              <div class="nav-item"><span class="ico">≡</span><span>圧縮</span></div>
+              <div class="nav-item"><span class="ico">◫</span><span>ダッシュボード</span></div>
+              <div class="nav-item"><span class="ico">⇄</span><span>連携・自動</span></div>
+              <div class="nav-item"><span class="ico">⚙</span><span>設定</span></div>
+            </aside>
+            <div class="app-content">
+              <div class="ghost-card"><div class="ghost-line short"></div><div class="ghost-line"></div><div class="ghost-line mid"></div></div>
+              <div class="ghost-card"><div class="ghost-line mid"></div><div class="ghost-line"></div><div class="ghost-line short"></div></div>
+            </div>
+          </div>
+          <div class="scrim">
+            <div class="modal">
+              <div class="modal-head">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+                <span class="modal-title">通知</span>
+                <span class="spacer"></span>
+                <span class="modal-close">閉じる</span>
+              </div>
+              <div class="modal-body">
+                <section class="notification-card">
+                  <div class="notification-title">アップデート</div>
+                  <div class="notification-message"><strong>v0.4.0</strong> が利用可能です</div>
+                  <div class="notification-actions"><span class="btn primary">設定のアップデートを開く</span></div>
+                </section>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="annotation"><b>更新だけ:</b> 他の通知対象がなくてもベルからモーダルを開ける。節には版番号と設定への誘導だけを置き、ダウンロード・適用・再起動の操作は出さない。</div>
+    </div>
+
+    <div class="specimen">
+      <div class="specimen-head"><div class="specimen-title">2. 更新＋取り込み結果＋処理の失敗</div><span class="tag">WITH FAILURES</span></div>
+      <div class="specimen-stage">
+        <div class="app-frame">
+          <div class="titlebar">
+            <div class="app-glyph"></div>
+            <span class="app-name">VRC PhotoN</span>
+            <span class="title-divider"></span>
+            <span class="screen-name">写真</span>
+            <span class="titlebar-spacer"></span>
+            <span class="titlebar-btn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+              <i class="attention-dot"></i>
+            </span>
+          </div>
+          <div class="app-body">
+            <aside class="sidebar">
+              <div class="nav-item active"><span class="ico">▦</span><span>写真</span></div>
+              <div class="nav-item"><span class="ico">⌕</span><span>検索</span></div>
+              <div class="nav-item"><span class="ico">≡</span><span>圧縮</span></div>
+              <div class="nav-item"><span class="ico">◫</span><span>ダッシュボード</span></div>
+              <div class="nav-item"><span class="ico">⇄</span><span>連携・自動</span></div>
+              <div class="nav-item"><span class="ico">⚙</span><span>設定</span></div>
+            </aside>
+            <div class="app-content">
+              <div class="ghost-card"><div class="ghost-line short"></div><div class="ghost-line"></div><div class="ghost-line mid"></div></div>
+              <div class="ghost-card"><div class="ghost-line mid"></div><div class="ghost-line"></div><div class="ghost-line short"></div></div>
+            </div>
+          </div>
+          <div class="scrim">
+            <div class="modal">
+              <div class="modal-head">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+                <span class="modal-title">通知</span>
+                <span class="spacer"></span>
+                <span class="modal-close">閉じる</span>
+              </div>
+              <div class="modal-body">
+                <section class="notification-card">
+                  <div class="notification-title">アップデート</div>
+                  <div class="notification-message"><strong>v0.4.0</strong> が利用可能です</div>
+                  <div class="notification-actions"><span class="btn primary">設定のアップデートを開く</span></div>
+                </section>
+                <section class="notification-card">
+                  <div class="notification-title">取り込み結果</div>
+                  <div class="badges">
+                    <span class="badge green">取込 42</span>
+                    <span class="badge muted">スキップ 3</span>
+                    <span class="badge red">失敗 2</span>
+                  </div>
+                  <div class="notification-actions">
+                    <span class="btn primary">失敗分を再試行</span>
+                    <span class="btn ghost">結果を閉じる</span>
+                  </div>
+                </section>
+                <section class="notification-card">
+                  <div class="notification-title">処理の失敗</div>
+                  <div class="badges">
+                    <span class="badge accent">自動圧縮 1 件</span>
+                    <span class="badge amber">AIタグ 1 件</span>
+                  </div>
+                  <div class="failure-row">
+                    <span class="badge accent">圧縮</span>
+                    <div class="failure-name"><div>VRChat_2026-11-18_01.png</div><div>出力先に書き込めません</div></div>
+                    <span class="btn ghost">再試行</span>
+                  </div>
+                </section>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="annotation"><b>順序:</b> 更新の節を先頭に固定し、その下に既存の節を並べる。更新だけが「操作を要求しない」節なので、ダウンロード・適用は置かず、設定画面のカードへ渡す。</div>
+    </div>
+
+    <div class="specimen">
+      <div class="specimen-head"><div class="specimen-title">3. エラー後も未適用なら残る</div><span class="tag">ERROR KEPT</span></div>
+      <div class="specimen-stage">
+        <div class="app-frame">
+          <div class="titlebar">
+            <div class="app-glyph"></div>
+            <span class="app-name">VRC PhotoN</span>
+            <span class="title-divider"></span>
+            <span class="screen-name">設定</span>
+            <span class="titlebar-spacer"></span>
+            <span class="titlebar-btn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+              <i class="attention-dot"></i>
+            </span>
+          </div>
+          <div class="app-body">
+            <aside class="sidebar">
+              <div class="nav-item"><span class="ico">▦</span><span>写真</span></div>
+              <div class="nav-item"><span class="ico">⌕</span><span>検索</span></div>
+              <div class="nav-item"><span class="ico">≡</span><span>圧縮</span></div>
+              <div class="nav-item"><span class="ico">◫</span><span>ダッシュボード</span></div>
+              <div class="nav-item"><span class="ico">⇄</span><span>連携・自動</span></div>
+              <div class="nav-item active"><span class="ico">⚙</span><span>設定</span></div>
+            </aside>
+            <div class="settings-content">
+              <div class="scrolled-fade"></div>
+              <div class="settings-card">
+                <h3>アップデート</h3>
+                <div class="divider"></div>
+                <div class="meta-row-settings"><span>現在のバージョン</span><b>v0.3.1</b></div>
+                <div class="divider"></div>
+                <div class="meta-row-settings"><span>インストール形式</span><b>AppImage</b></div>
+                <div class="divider"></div>
+                <div class="error-text">更新を確認できませんでした（ネットワークまたはサーバーの問題）</div>
+                <div class="notification-actions"><span class="btn">今すぐ確認</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="scrim">
+            <div class="modal">
+              <div class="modal-head">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+                <span class="modal-title">通知</span>
+                <span class="spacer"></span>
+                <span class="modal-close">閉じる</span>
+              </div>
+              <div class="modal-body">
+                <section class="notification-card">
+                  <div class="notification-title">アップデート</div>
+                  <div class="notification-message"><strong>v0.4.0</strong> が利用可能です</div>
+                  <div class="notification-actions"><span class="btn primary">設定のアップデートを開く</span></div>
+                </section>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="annotation"><b>エラー時:</b> 設定カードが「更新を確認できませんでした」でも、検知済みの版は未適用なので節とベルのドットを残す。フィードが最新を返したときだけ消える。</div>
+    </div>
+
+    <div class="specimen">
+      <div class="specimen-head"><div class="specimen-title">4. 「設定のアップデートを開く」の遷移先</div><span class="tag">DESTINATION</span></div>
+      <div class="specimen-stage">
+        <div class="app-frame">
+          <div class="titlebar">
+            <div class="app-glyph"></div>
+            <span class="app-name">VRC PhotoN</span>
+            <span class="title-divider"></span>
+            <span class="screen-name">設定</span>
+            <span class="titlebar-spacer"></span>
+            <span class="titlebar-btn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+              <i class="attention-dot"></i>
+            </span>
+          </div>
+          <div class="app-body">
+            <aside class="sidebar">
+              <div class="nav-item"><span class="ico">▦</span><span>写真</span></div>
+              <div class="nav-item"><span class="ico">⌕</span><span>検索</span></div>
+              <div class="nav-item"><span class="ico">≡</span><span>圧縮</span></div>
+              <div class="nav-item"><span class="ico">◫</span><span>ダッシュボード</span></div>
+              <div class="nav-item"><span class="ico">⇄</span><span>連携・自動</span></div>
+              <div class="nav-item active"><span class="ico">⚙</span><span>設定</span></div>
+            </aside>
+            <div class="settings-content">
+              <div class="scrolled-fade"></div>
+              <div class="settings-card">
+                <h3>アップデート</h3>
+                <div class="divider"></div>
+                <div class="meta-row-settings"><span>現在のバージョン</span><b>v0.3.1</b></div>
+                <div class="divider"></div>
+                <div class="meta-row-settings"><span>インストール形式</span><b>AppImage</b></div>
+                <div class="divider"></div>
+                <div class="meta-row-settings"><span>最終確認</span><b>2026/11/18 13:40</b></div>
+                <div class="divider"></div>
+                <div class="switch-row"><span>アップデートを自動確認</span><i class="switch"></i></div>
+                <div class="divider"></div>
+                <div class="notification-actions"><span class="btn">今すぐ確認</span></div>
+                <div class="divider"></div>
+                <div class="phase-title">v0.4.0 が利用可能です</div>
+                <div class="notification-actions"><span class="btn primary">ダウンロード</span><span class="btn ghost">リリースノート</span></div>
+              </div>
+              <div class="settings-card">
+                <h3>ログ</h3>
+                <div class="divider"></div>
+                <div class="log-line">~/.local/share/vrc-photon/logs</div>
+                <div class="divider"></div>
+                <div class="notification-actions"><span class="btn">ログフォルダを開く</span></div>
+              </div>
+              <span class="settings-scroll-note">カードまでスクロール済み</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="annotation"><b>遷移:</b> モーダルを閉じ、設定画面へ切り替えてカードが見える位置までスクロールする。ダウンロード・適用・パッケージマネージャの案内は、既存どおりこのカードに置く。</div>
+    </div>
+
+  </div>
+
+  <div class="section-label"><h2>実装メモ</h2><span>今回変えないもの</span></div>
+  <div class="rules">
+    <div class="rule"><h3>単一の判定源</h3><p>節とベルのドットは、どちらも <code>pending_version</code> の有無で決める。状態ごとに別々の条件を書かない。</p></div>
+    <div class="rule"><h3>保持と解除</h3><p>更新確認が成功して更新ありなら版を置き換え、最新なら消す。確認失敗では保持する。適用して再起動すると新しいプロセスでは保持しない。</p></div>
+    <div class="rule"><h3>操作の分離</h3><p>モーダル内は表示と設定への誘導だけ。ダウンロード・適用・再起動・パッケージ操作は既存の設定カードに残す。既読や閉じる操作で節は消さない。</p></div>
+  </div>
+
+</div>
+</body>
+</html>
