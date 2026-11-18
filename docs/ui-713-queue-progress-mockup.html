@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VRC PhotoN — サイドバー進行状況カードの全体進捗モック (#713)</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%230d1420'/%3E%3Ccircle cx='16' cy='16' r='7' fill='none' stroke='%238bcbff' stroke-width='2'/%3E%3C/svg%3E">
+<style>
+  :root {
+    color-scheme: dark;
+    --font: "Inter", "Noto Sans JP", "Hiragino Sans", "Yu Gothic UI", system-ui, -apple-system, sans-serif;
+    --text: #eef4ff;
+    --muted: #a8b4ca;
+    --dim: #7f8ba3;
+    --faint: #5e6a81;
+    --accent: #8bcbff;
+    --green: #7ee2b8;
+    --rose: #ff94a8;
+    --amber: #f4c878;
+    --line: rgba(255, 255, 255, 0.105);
+    --line-soft: rgba(255, 255, 255, 0.065);
+    --panel: #0d1420;
+    --panel-deep: #080d15;
+    --panel-2: #151f2f;
+    --panel-sidebar: #101827;
+    --accent-soft: rgba(139, 203, 255, 0.14);
+    --r-card: 22px;
+  }
+
+  * { box-sizing: border-box; }
+  html { overflow-x: hidden; }
+  body {
+    margin: 0;
+    min-width: 320px;
+    background: #05070d;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -2;
+    background:
+      radial-gradient(ellipse 58% 54% at 10% 2%, rgba(54, 107, 255, 0.28), transparent 66%),
+      radial-gradient(ellipse 46% 52% at 92% 6%, rgba(255, 86, 181, 0.12), transparent 68%),
+      radial-gradient(ellipse 52% 48% at 64% 104%, rgba(30, 202, 178, 0.10), transparent 68%),
+      linear-gradient(140deg, #04060c 0%, #0a0f1e 44%, #060811 100%);
+  }
+
+  .page { width: min(1360px, calc(100% - 48px)); margin: 0 auto; padding: 44px 0 80px; }
+  .masthead { display: flex; align-items: flex-start; justify-content: space-between; gap: 28px; margin-bottom: 28px; }
+  .eyebrow { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; }
+  .issue-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border: 1px solid rgba(139,203,255,.24); border-radius: 999px; background: rgba(139,203,255,.08); color: var(--accent); font-size: 10px; letter-spacing: .08em; }
+  h1 { margin: 11px 0 9px; font-size: clamp(25px, 3vw, 36px); line-height: 1.22; letter-spacing: -.035em; font-weight: 620; }
+  .lede { max-width: 860px; margin: 0; color: var(--muted); font-size: 13px; }
+  .lede b { color: var(--text); font-weight: 560; }
+  .meta-card { flex: none; min-width: 300px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 16px; background: rgba(13,20,32,.72); }
+  .meta-row { display: flex; justify-content: space-between; gap: 18px; padding: 4px 0; color: var(--dim); font-size: 11px; }
+  .meta-row b { color: var(--text); font-weight: 550; }
+  .meta-row + .meta-row { border-top: 1px solid var(--line-soft); }
+
+  .section-label { display: flex; align-items: baseline; gap: 12px; margin: 42px 0 14px; }
+  .section-label h2 { margin: 0; font-size: 15px; font-weight: 580; letter-spacing: -.01em; }
+  .section-label span { color: var(--dim); font-size: 11px; }
+  .section-note { max-width: 1000px; margin: -4px 0 18px; color: var(--dim); font-size: 11.5px; }
+  .section-note b { color: var(--muted); font-weight: 560; }
+
+  .decision-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 18px 0 6px; }
+  .decision { padding: 13px 14px; border: 1px solid var(--line); border-radius: 14px; background: rgba(14,21,34,.72); }
+  .decision .q { color: var(--accent); font-size: 10px; letter-spacing: .08em; }
+  .decision h3 { margin: 5px 0 6px; font-size: 12px; font-weight: 580; }
+  .decision p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
+  .decision .ok { display: inline-block; margin-top: 8px; padding: 2px 7px; border-radius: 999px; color: var(--green); background: rgba(126,226,184,.07); border: 1px solid rgba(126,226,184,.18); font-size: 9.5px; }
+
+  .specimen-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+  .specimen { border: 1px solid var(--line); border-radius: var(--r-card); background: linear-gradient(180deg, rgba(17,25,39,.78), rgba(9,14,23,.9)); padding: 16px; box-shadow: 0 20px 60px rgba(0,0,0,.22); }
+  .specimen-head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .specimen-title { font-size: 12px; font-weight: 580; }
+  .tag { margin-left: auto; padding: 2px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--dim); font-size: 9px; letter-spacing: .08em; }
+  .specimen-stage { display: flex; justify-content: center; padding: 14px 0 4px; }
+  .annotation { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line-soft); color: var(--dim); font-size: 10.5px; line-height: 1.6; }
+  .annotation b { color: var(--muted); font-weight: 560; }
+
+  /* ---------- Sidebar specimen ---------- */
+  .sidebar {
+    width: 238px; flex: none; display: flex; flex-direction: column; gap: 3px;
+    min-height: 520px; padding: 16px 12px; border: 1px solid var(--line-soft); border-radius: 22px;
+    background: linear-gradient(180deg, var(--panel-sidebar), var(--panel-deep));
+    box-shadow: 0 18px 44px rgba(0,0,0,.28), inset 0 1px rgba(255,255,255,.05);
+  }
+  .nav-group { display: flex; flex-direction: column; gap: 3px; }
+  .nav-item { display: flex; align-items: center; gap: 9px; height: 40px; padding: 0 10px; border-radius: 11px; color: var(--muted); font-size: 12px; }
+  .nav-item .ico { width: 17px; text-align: center; color: var(--dim); font-size: 13px; }
+  .nav-item.active { background: var(--accent-soft); color: var(--text); box-shadow: inset 2px 0 var(--accent); }
+  .nav-item.active .ico { color: var(--accent); }
+  .nav-spacer { flex: 1; }
+
+  .status-card { flex: none; padding: 9px; display: flex; flex-direction: column; gap: 4px; border: 1px solid rgba(255,255,255,.06); border-radius: 13px; background: var(--panel); }
+  .status-head { display: flex; align-items: center; height: 12px; color: var(--muted); font-size: 10px; font-weight: 600; }
+  .status-tabs { display: flex; gap: 4px; }
+  .status-tab {
+    position: relative; flex: 1; height: 20px; display: flex; align-items: center; justify-content: center;
+    border: 1px solid transparent; border-radius: 6px; color: var(--dim); font-size: 10px; font-weight: 500;
+  }
+  .status-tab.active { background: var(--accent-soft); border-color: rgba(139,203,255,.2); color: var(--accent); }
+  .tab-dot { position: absolute; top: 3px; right: 4px; width: 4px; height: 4px; border-radius: 50%; background: var(--accent); }
+  .tab-dot.amber { background: var(--amber); }
+
+  .status-body { min-height: 46px; display: flex; flex-direction: column; justify-content: center; gap: 5px; }
+  .progress-row { display: flex; align-items: center; gap: 7px; }
+  .progress-track { flex: 1; min-width: 0; height: 2px; border-radius: 999px; background: var(--panel-2); overflow: hidden; }
+  .progress-fill { height: 100%; border-radius: 999px; background: var(--accent); }
+  .progress-percent { flex: none; color: var(--text); font-size: 10px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .breakdown-row { display: flex; align-items: center; gap: 6px; min-height: 18px; }
+  .breakdown { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dim); font-size: 9px; }
+  .empty-state { width: 100%; text-align: center; color: var(--dim); font-size: 13px; }
+
+  .status-foot { display: flex; align-items: center; gap: 7px; height: 24px; }
+  .paused-note { color: var(--amber); font-size: 9.5px; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; height: 22px; padding: 0 9px; border-radius: 7px; border: 1px solid var(--line); color: var(--muted); font-size: 10px; font-weight: 500; }
+  .btn.primary { border-color: rgba(139,203,255,.3); background: rgba(139,203,255,.16); color: var(--accent); }
+  .btn.disabled { opacity: .42; border-color: var(--line); background: transparent; color: var(--dim); }
+
+  .library-card { margin-top: 3px; padding: 11px; border-radius: 13px; border: 1px solid rgba(255,255,255,.06); background: var(--panel); }
+  .library-label { color: var(--faint); font-size: 10px; }
+  .library-count { margin-top: 2px; color: var(--text); font-size: 13px; font-weight: 600; }
+  .library-size { margin-top: 1px; color: var(--dim); font-size: 10px; }
+  .sidebar-foot { display: flex; align-items: center; padding: 10px 0 0; color: var(--faint); font-size: 10px; }
+  .daemon-pill { display: inline-flex; align-items: center; gap: 5px; }
+  .daemon-pill i { width: 5px; height: 5px; border-radius: 50%; background: var(--green); }
+  .version { margin-left: auto; }
+
+  .rules { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 18px; }
+  .rule { padding: 13px 14px; border: 1px solid var(--line); border-radius: 14px; background: rgba(14,21,34,.6); }
+  .rule h3 { margin: 0 0 6px; font-size: 12px; font-weight: 580; }
+  .rule p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
+  .rule code { color: var(--accent); font-size: 10px; }
+
+  @media (max-width: 900px) {
+    .decision-grid { grid-template-columns: repeat(2, 1fr); }
+    .specimen-grid { grid-template-columns: 1fr; }
+    .rules { grid-template-columns: 1fr; }
+    .masthead { flex-direction: column; }
+    .meta-card { width: 100%; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="masthead">
+    <div>
+      <div class="eyebrow"><span class="issue-chip">#713</span><span>UI mockup · sidebar queue progress</span></div>
+      <h1>進行状況カードの全体進捗</h1>
+      <p class="lede">
+        選択中機能のキュー全体を <b>進捗バーと整数パーセント</b> で示し、
+        バーの下に <b>待機・実行待ちの内訳</b> を1行で出す。
+        完了数は一連の仕事の開始後に成功した件数で、失敗・取消は含めない。
+        タブ・活動ドット・フッターの条件は #706 のまま。
+      </p>
+    </div>
+    <div class="meta-card">
+      <div class="meta-row"><span>対象</span><b>サイドバー進行状況カード</b></div>
+      <div class="meta-row"><span>本文</span><b>進捗バー + % + 内訳</b></div>
+      <div class="meta-row"><span>計算</span><b>完了 ÷（完了 + 未完了）</b></div>
+      <div class="meta-row"><span>状態</span><b>承認待ち</b></div>
+    </div>
+  </header>
+
+  <div class="section-label"><h2>承認ポイント</h2><span>実装前に確認する決定</span></div>
+  <div class="decision-grid">
+    <div class="decision">
+      <div class="q">Q1 · 本文</div>
+      <h3>バーとパーセント</h3>
+      <p>本文の上段に2 pxの進捗バーを置き、右端に整数パーセントを出す。キューが空ならバーを出さず「キューは空です」。</p>
+      <span class="ok">上段: バー + %</span>
+    </div>
+    <div class="decision">
+      <div class="q">Q2 · 計算</div>
+      <h3>完了 ÷ 全体</h3>
+      <p>完了数 ÷（完了 + 実行中 + 実行待ち + 待機）× 100 を四捨五入。失敗・取消は分子にも分母にも入れない。</p>
+      <span class="ok">整数に四捨五入</span>
+    </div>
+    <div class="decision">
+      <div class="q">Q3 · 内訳</div>
+      <h3>待機と実行待ち</h3>
+      <p>バーの下に「待機 N ・ 実行待ち N」を常に2項目で出す。0件も表示し、行の形を状態で変えない。</p>
+      <span class="ok">常に2項目</span>
+    </div>
+    <div class="decision">
+      <div class="q">Q4 · 継続</div>
+      <h3>再起動でも同じ全体</h3>
+      <p>完了数は DB に保持し、履歴削除・写真削除・UI再読み込みで失わない。キューが空になった後の最初のジョブから0%で数え直す。</p>
+      <span class="ok">DB に保持</span>
+    </div>
+  </div>
+
+  <div class="section-label"><h2>状態別の表示</h2><span>238 px サイドバー / 実装前の確認用</span></div>
+  <p class="section-note">
+    本文は現行の46 pxを維持する。上段は <b>2 px バー + 右端のパーセント</b>、
+    下段は <b>待機・実行待ちの1行</b>。一時停止中はフッターの開始ボタンの右に「一時停止中」を足す。
+    タブ右上の4 pxドットは実行中・実行待ち・待機のみで、失敗では付かない。
+  </p>
+
+  <div class="specimen-grid">
+    <div class="specimen">
+      <div class="specimen-head"><div class="specimen-title">1. 自動圧縮・進捗あり</div><span class="tag">RUNNING</span></div>
+      <div class="specimen-stage">
+        <aside class="sidebar">
+          <div class="nav-group">
+            <div class="nav-item active"><span class="ico">▦</span><span>写真</span></div>
+            <div class="nav-item"><span class="ico">⌕</span><span>検索</span></div>
+            <div class="nav-item"><span class="ico">≡</span><span>圧縮</span></div>
+            <div class="nav-item"><span class="ico">◫</span><span>ダッシュボード</span></div>
+            <div class="nav-item"><span class="ico">⇄</span><span>連携・自動</span></div>
+            <div class="nav-item"><span class="ico">⚙</span><span>設定</span></div>
+          </div>
+          <div class="nav-spacer"></div>
+          <section class="status-card">
+            <div class="status-head"><span>進行状況</span></div>
+            <div class="status-tabs">
+              <span class="status-tab active">自動圧縮<i class="tab-dot"></i></span>
+              <span class="status-tab">Discord</span>
+              <span class="status-tab">AIタグ</span>
+            </div>
+            <div class="status-body">
+              <div class="progress-row">
+                <div class="progress-track"><div class="progress-fill" style="width:40%"></div></div>
+                <div class="progress-percent">40%</div>
+              </div>
+              <div class="breakdown-row">
+                <div class="breakdown">待機 3 ・ 実行待ち 2</div>
+              </div>
+            </div>
+            <div class="status-foot"><span class="btn primary">未実行を開始</span></div>
+          </section>
+          <div class="library-card"><div class="library-label">ライブラリ</div><div class="library-count">3,757 枚</div><div class="library-size">38.6 GB</div></div>
+          <div class="sidebar-foot"><span class="daemon-pill"><i></i>監視中</span><span class="version">v0.14.4</span></div>
+        </aside>
+      </div>
+      <div class="annotation"><b>40%:</b> 完了4・待機3・実行待ち2・実行中1 → 4 ÷ 10。内訳は待機3と実行待ち2。待機があるので「未実行を開始」。アクティブタブの青ドットは実行中を示す。</div>
+    </div>
+
+    <div class="specimen">
+      <div class="specimen-head"><div class="specimen-title">2. Discord・待機なし</div><span class="tag">OPEN QUEUE</span></div>
+      <div class="specimen-stage">
+        <aside class="sidebar">
+          <div class="nav-group">
+            <div class="nav-item"><span class="ico">▦</span><span>写真</span></div>
+            <div class="nav-item"><span class="ico">⌕</span><span>検索</span></div>
+            <div class="nav-item"><span class="ico">≡</span><span>圧縮</span></div>
+            <div class="nav-item"><span class="ico">◫</span><span>ダッシュボード</span></div>
+            <div class="nav-item active"><span class="ico">⇄</span><span>連携・自動</span></div>
+            <div class="nav-item"><span class="ico">⚙</span><span>設定</span></div>
+          </div>
+          <div class="nav-spacer"></div>
+          <section class="status-card">
+            <div class="status-head"><span>進行状況</span></div>
+            <div class="status-tabs">
+              <span class="status-tab">自動圧縮</span>
+              <span class="status-tab active">Discord<i class="tab-dot"></i></span>
+              <span class="status-tab">AIタグ</span>
+            </div>
+            <div class="status-body">
+              <div class="progress-row">
+                <div class="progress-track"><div class="progress-fill" style="width:75%"></div></div>
+                <div class="progress-percent">75%</div>
+              </div>
+              <div class="breakdown-row">
+                <div class="breakdown">待機 0 ・ 実行待ち 1</div>
+              </div>
+            </div>
+            <div class="status-foot"><span class="btn">キューを開く</span></div>
+          </section>
+          <div class="library-card"><div class="library-label">ライブラリ</div><div class="library-count">3,757 枚</div><div class="library-size">38.6 GB</div></div>
+          <div class="sidebar-foot"><span class="daemon-pill"><i></i>監視中</span><span class="version">v0.14.4</span></div>
+        </aside>
+      </div>
+      <div class="annotation"><b>75%:</b> 完了6・待機0・実行待ち1・実行中1 → 6 ÷ 8。待機0も内訳に表示する。待機がないのでフッターは「キューを開く」。</div>
+    </div>
+
+    <div class="specimen">
+      <div class="specimen-head"><div class="specimen-title">3. AIタグ・一時停止中・待機のみ</div><span class="tag">PAUSED</span></div>
+      <div class="specimen-stage">
+        <aside class="sidebar">
+          <div class="nav-group">
+            <div class="nav-item"><span class="ico">▦</span><span>写真</span></div>
+            <div class="nav-item"><span class="ico">⌕</span><span>検索</span></div>
+            <div class="nav-item"><span class="ico">≡</span><span>圧縮</span></div>
+            <div class="nav-item"><span class="ico">◫</span><span>ダッシュボード</span></div>
+            <div class="nav-item"><span class="ico">⇄</span><span>連携・自動</span></div>
+            <div class="nav-item"><span class="ico">⚙</span><span>設定</span></div>
+          </div>
+          <div class="nav-spacer"></div>
+          <section class="status-card">
+            <div class="status-head"><span>進行状況</span></div>
+            <div class="status-tabs">
+              <span class="status-tab">自動圧縮</span>
+              <span class="status-tab">Discord</span>
+              <span class="status-tab active">AIタグ<i class="tab-dot amber"></i></span>
+            </div>
+            <div class="status-body">
+              <div class="progress-row">
+                <div class="progress-track"><div class="progress-fill" style="width:0%"></div></div>
+                <div class="progress-percent">0%</div>
+              </div>
+              <div class="breakdown-row">
+                <div class="breakdown">待機 3 ・ 実行待ち 0</div>
+              </div>
+            </div>
+            <div class="status-foot"><span class="btn disabled">未実行を開始</span><span class="paused-note">一時停止中</span></div>
+          </section>
+          <div class="library-card"><div class="library-label">ライブラリ</div><div class="library-count">3,757 枚</div><div class="library-size">38.6 GB</div></div>
+          <div class="sidebar-foot"><span class="daemon-pill"><i></i>監視中</span><span class="version">v0.14.4</span></div>
+        </aside>
+      </div>
+      <div class="annotation"><b>0%:</b> 完了0・待機3 → 0 ÷ 3。バーは空で0%。一時停止中は「未実行を開始」を無効にし、フッターの右側に「一時停止中」。本文はバー・パーセント・内訳だけにする。ドットは待機のアンバー。</div>
+    </div>
+
+    <div class="specimen">
+      <div class="specimen-head"><div class="specimen-title">4. キューが空</div><span class="tag">EMPTY</span></div>
+      <div class="specimen-stage">
+        <aside class="sidebar">
+          <div class="nav-group">
+            <div class="nav-item active"><span class="ico">▦</span><span>写真</span></div>
+            <div class="nav-item"><span class="ico">⌕</span><span>検索</span></div>
+            <div class="nav-item"><span class="ico">≡</span><span>圧縮</span></div>
+            <div class="nav-item"><span class="ico">◫</span><span>ダッシュボード</span></div>
+            <div class="nav-item"><span class="ico">⇄</span><span>連携・自動</span></div>
+            <div class="nav-item"><span class="ico">⚙</span><span>設定</span></div>
+          </div>
+          <div class="nav-spacer"></div>
+          <section class="status-card">
+            <div class="status-head"><span>進行状況</span></div>
+            <div class="status-tabs">
+              <span class="status-tab active">自動圧縮</span>
+              <span class="status-tab">Discord</span>
+              <span class="status-tab">AIタグ</span>
+            </div>
+            <div class="status-body"><div class="empty-state">キューは空です</div></div>
+            <div class="status-foot"><span class="btn">キューを開く</span></div>
+          </section>
+          <div class="library-card"><div class="library-label">ライブラリ</div><div class="library-count">3,757 枚</div><div class="library-size">38.6 GB</div></div>
+          <div class="sidebar-foot"><span class="daemon-pill"><i></i>監視中</span><span class="version">v0.14.4</span></div>
+        </aside>
+      </div>
+      <div class="annotation"><b>空:</b> 実行中・実行待ち・待機がすべて0なら、進捗バーと内訳を出さず現行の「キューは空です」に戻る。フッターは「キューを開く」。活動ドットは付かない。</div>
+    </div>
+  </div>
+
+  <div class="section-label"><h2>実装メモ</h2><span>今回変えないもの</span></div>
+  <div class="rules">
+    <div class="rule"><h3>タブとドット</h3><p>タブは「自動圧縮 / Discord / AIタグ」の3項目。有効な機能だけを表示し、選択中のタブが無効なら先頭へフォールバックする。右上の4 pxドットは実行中・実行待ち・待機のみで、失敗では付かない。</p></div>
+    <div class="rule"><h3>開始と一時停止</h3><p>待機があるときは「未実行を開始」、ないときは「キューを開く」。一時停止中は開始ボタンを無効にし、フッターに「一時停止中」を表示する。押したときの動作は現行の <code>release_waiting_queue</code> のまま。</p></div>
+    <div class="rule"><h3>全体の区切り</h3><p>キューが空の状態から最初のジョブが入った時点で全体を開始する。途中で追加されたジョブは同じ全体の未完了数に加算し、キューが空になった後の最初のジョブから完了数を0に戻す。失敗・取消はどちらの件数にも入れない。</p></div>
+  </div>
+
+</div>
+</body>
+</html>
