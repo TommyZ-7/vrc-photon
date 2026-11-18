@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>VRC PhotoN — AIタグ付け推論用画像の長辺モック (#714)</title>
+<title>VRC PhotoN — AIタグ付け推論精度モック (#714)</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%230d1420'/%3E%3Ccircle cx='16' cy='16' r='7' fill='none' stroke='%238bcbff' stroke-width='2'/%3E%3C/svg%3E">
 <style>
   :root {
@@ -111,7 +111,6 @@
   .segment { display: flex; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
   .segment > span { flex: 1; height: 27px; display: flex; align-items: center; justify-content: center; border-radius: 7px; font-size: 10.5px; font-weight: 500; color: var(--muted); background: #1a2536; }
   .segment > span.active { color: var(--accent); background: var(--accent-soft); }
-  .scale-line { font-size: 10px; color: var(--muted); }
   .chip-row { display: flex; flex-wrap: wrap; gap: 4px; }
   .chip { padding: 3px 8px; border-radius: 999px; font-size: 10px; font-weight: 500; color: var(--muted); background: #1a2536; }
   .chip.active { color: var(--accent); background: var(--accent-soft); }
@@ -158,7 +157,7 @@
   <header class="masthead">
     <div>
       <div class="eyebrow"><span class="issue-chip">#714</span><span>AI tagging · settings</span></div>
-      <h1>AIタグ付け 推論用画像の長辺</h1>
+      <h1>AIタグ付け 推論精度</h1>
       <p class="lede">
         推論用スナップショットの長辺を、<b>標準 1024px / 高精細 1536px / 最大 2048px</b> から選べるようにする。
         既定は標準。元画像が設定値以下なら拡大しない。設定変更は次回のタグ付けから適用する。
@@ -201,9 +200,8 @@
 
   <div class="section-label"><h2>1. 連携・自動 / AI タグ付け</h2><span>4状態</span></div>
   <p class="section-note">
-    バックエンド選択の直下に「推論用画像の長辺」を追加する。セグメントの下の
-    <code>1024 / 1536 / 2048 px</code> は、各選択肢の対応値を示す補足行。
-    その下に既存の自動動作・一括処理・キューが続く。
+    バックエンド選択の直下に「推論精度」を追加する。3分割セグメントの下に
+    既存の自動動作・一括処理・キューが続く。px の補足行は置かない。
   </p>
 
   <div class="grid">
@@ -232,9 +230,8 @@
                 </div>
                 <div class="divider"></div>
                 <div class="section-stack">
-                  <div class="control-label">推論用画像の長辺</div>
+                  <div class="control-label">推論精度</div>
                   <div class="segment"><span class="active">標準</span><span>高精細</span><span>最大</span></div>
-                  <div class="scale-line">1024 / 1536 / 2048 px</div>
                 </div>
                 <div class="divider"></div>
                 <div class="section-stack">
@@ -286,9 +283,8 @@
                 </div>
                 <div class="divider"></div>
                 <div class="section-stack">
-                  <div class="control-label">推論用画像の長辺</div>
+                  <div class="control-label">推論精度</div>
                   <div class="segment"><span>標準</span><span class="active">高精細</span><span>最大</span></div>
-                  <div class="scale-line">1024 / 1536 / 2048 px</div>
                 </div>
                 <div class="divider"></div>
                 <div class="section-stack">
@@ -340,9 +336,8 @@
                 </div>
                 <div class="divider"></div>
                 <div class="section-stack">
-                  <div class="control-label">推論用画像の長辺</div>
+                  <div class="control-label">推論精度</div>
                   <div class="segment"><span>標準</span><span>高精細</span><span class="active">最大</span></div>
-                  <div class="scale-line">1024 / 1536 / 2048 px</div>
                 </div>
                 <div class="divider"></div>
                 <div class="section-stack">
@@ -389,9 +384,8 @@
               <div class="int-body">
                 <div class="divider"></div>
                 <div class="section-stack">
-                  <div class="control-label">推論用画像の長辺</div>
+                  <div class="control-label">推論精度</div>
                   <div class="segment"><span class="active">標準</span><span>高精細</span><span>最大</span></div>
-                  <div class="scale-line">1024 / 1536 / 2048 px</div>
                 </div>
                 <div class="divider"></div>
                 <div class="section-stack">
