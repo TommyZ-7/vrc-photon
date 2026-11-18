@@ -770,6 +770,11 @@ impl UpdateState {
         self.notice.as_ref()
     }
 
+    /// The detected version that has not been applied yet, if any.
+    pub(crate) fn pending_version(&self) -> Option<&Version> {
+        self.pending_version.as_ref()
+    }
+
     fn write_health_marker(&self) -> std::result::Result<(), String> {
         if !self.database_ok || self.demo {
             return Err(tr!("update.error.database"));
