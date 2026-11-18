@@ -9,7 +9,7 @@ use crate::error::{CoreError, Result};
 use crate::fs_safe::{PlaceOutcome, write_bytes_no_clobber};
 
 pub const THUMBNAIL_SIZES: [u32; 3] = [256, 384, 512];
-pub const THUMBNAIL_SIZE_DEFAULT: u32 = 384;
+pub const THUMBNAIL_SIZE_DEFAULT: u32 = 256;
 pub const ACCESS_REFRESH_AFTER: Duration = Duration::from_secs(60 * 60);
 
 /// The fixed 16:9 canvas of every thumbnail.
@@ -891,8 +891,8 @@ mod tests {
 
     #[test]
     fn thumbnail_spec_normalizes_unknown_values() {
-        assert_eq!(ThumbnailSpec::new(999), ThumbnailSpec::new(384));
-        assert_eq!(ThumbnailSpec::default().dimensions(), (384, 216));
+        assert_eq!(ThumbnailSpec::new(999), ThumbnailSpec::default());
+        assert_eq!(ThumbnailSpec::default().dimensions(), (256, 144));
         assert_eq!(
             thumbnail_path_in(Path::new("/cache"), 7, ThumbnailSpec::new(512)),
             Path::new("/cache/7-s512x288.bc7")
@@ -1262,7 +1262,7 @@ mod tests {
         assert_eq!(ensured.bytes, fs::metadata(&ensured.path).unwrap().len());
         assert!(ensured.path.is_file());
         let blocks = ensured.blocks.expect("generated blocks are returned");
-        assert_eq!(blocks.len(), 384 * 216);
+        assert_eq!(blocks.len(), 256 * 144);
         assert!(ensured.color != 0 || ensured.color == 0);
     }
 
@@ -1305,7 +1305,7 @@ mod tests {
                 .expect("thumbnail");
 
         let blocks = ensured.blocks.expect("generated blocks are returned");
-        assert_eq!(blocks.len(), 384 * 216);
+        assert_eq!(blocks.len(), 256 * 144);
         assert!(
             ensured.rotated,
             "orientation 6 turns the landscape source portrait, so the canvas is rotated"

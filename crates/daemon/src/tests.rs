@@ -2484,6 +2484,7 @@ fn replace_test_daemon(dir: &tempfile::TempDir) -> Daemon {
     daemon.set_ipc_endpoint(None);
     daemon.set_thumbnail_dir(dir.path().join("thumbnails"));
     save_daemon_settings(&daemon, |settings| {
+        settings.auto_compress_enabled = true;
         settings.auto_compress = AutoBehavior::immediate();
         settings.auto_compress_keep_original = false;
     });
@@ -3761,6 +3762,7 @@ fn auto_replace_is_worker_count_independent() {
         let mut daemon = multi_profile_test_daemon(&dir);
         let db_path = dir.path().join("library.db");
         save_daemon_settings(&daemon, |settings| {
+            settings.auto_compress_enabled = true;
             settings.auto_compress = AutoBehavior::immediate();
             settings.auto_compress_keep_original = false;
         });
@@ -4189,6 +4191,7 @@ fn scan_root_command_enqueues_auto_jobs_without_backlog() {
     let mut daemon = Daemon::open(&db_path, Some(root_a), Some(log_dir)).unwrap();
     daemon.set_thumbnail_dir(dir.path().join("thumbnails"));
     save_daemon_settings(&daemon, |settings| {
+        settings.auto_compress_enabled = true;
         settings.auto_compress = AutoBehavior::immediate();
         settings
             .photo_roots
@@ -4224,6 +4227,7 @@ fn startup_scan_enqueues_imported_photos_before_backlog() {
     daemon.set_thumbnail_dir(dir.path().join("thumbnails"));
     daemon.set_ipc_endpoint(None);
     save_daemon_settings(&daemon, |settings| {
+        settings.auto_compress_enabled = true;
         settings.auto_compress = AutoBehavior::immediate();
         settings.photo_roots = vec![
             backlog_root.to_string_lossy().to_string(),
@@ -4277,6 +4281,7 @@ fn scan_root_finished_event_reports_auto_enqueued_jobs() {
     let mut daemon = Daemon::open(&db_path, Some(photo_dir.clone()), Some(log_dir)).unwrap();
     daemon.set_thumbnail_dir(dir.path().join("thumbnails"));
     daemon.set_ipc_endpoint(None);
+    save_daemon_settings(&daemon, |settings| settings.auto_compress_enabled = true);
     let events = daemon.events.subscribe();
     daemon.scan_root_photos(photo_dir.clone()).unwrap();
 
@@ -5077,6 +5082,7 @@ fn initial_scan_never_enqueues_auto_compression_for_any_scope() {
             .join("photos/VRChat_2026-10-21_21-14-03.221_4x3.png"),
     );
     save_daemon_settings(&daemon, |settings| {
+        settings.auto_compress_enabled = true;
         settings.auto_compress = AutoBehavior::immediate().with_scope(AutoScope::IncludeBacklog);
     });
     daemon.scan_photos_with_initial(Some(true)).unwrap();
@@ -5092,6 +5098,7 @@ fn initial_scan_never_enqueues_ai_or_discord_jobs() {
             .join("photos/VRChat_2026-10-21_21-14-03.221_4x3.png"),
     );
     save_daemon_settings(&daemon, |settings| {
+        settings.auto_compress_enabled = true;
         settings.auto_compress = AutoBehavior::immediate().with_scope(AutoScope::IncludeBacklog);
         settings.discord_enabled = true;
         settings.discord_auto = AutoBehavior::immediate();
@@ -5118,6 +5125,7 @@ fn scan_root_enqueues_waiting_auto_jobs() {
             .join("photos/VRChat_2026-10-21_21-14-03.221_4x3.png"),
     );
     save_daemon_settings(&daemon, |settings| {
+        settings.auto_compress_enabled = true;
         settings.auto_compress = AutoBehavior::waiting();
     });
     daemon.scan_root_photos(dir.path().join("photos")).unwrap();
@@ -5222,8 +5230,10 @@ fn auto_compression_enqueues_without_any_profiles() {
         .join("photos/VRChat_2026-10-21_21-24-00.000_4x3.png");
     write_photo(&photo);
     save_daemon_settings(&daemon, |settings| {
+        settings.auto_compress_enabled = true;
         settings.auto_compress = AutoBehavior::immediate();
     });
+    daemon.settings.auto_compress_enabled = true;
     daemon.settings.auto_compress = AutoBehavior::immediate();
 
     // The targeted scan itself must enqueue the job: no direct enqueue call.
@@ -5429,6 +5439,7 @@ fn refresh_compression_settings_applies_live_policy_and_waiting_mode() {
     {
         let db = Db::open(&db_path).unwrap();
         let mut settings = AppSettings::load(&db).unwrap_or_default();
+        settings.auto_compress_enabled = true;
         settings.auto_compress = AutoBehavior::waiting();
         settings.auto_compress_keep_original = false;
         settings.save(&db).unwrap();
@@ -5460,6 +5471,7 @@ fn auto_compress_holds_waiting_jobs_until_released() {
     let mut daemon = Daemon::open(&db_path, Some(photo_dir), Some(log_dir)).unwrap();
     daemon.set_thumbnail_dir(dir.path().join("thumbnails"));
     save_daemon_settings(&daemon, |settings| {
+        settings.auto_compress_enabled = true;
         settings.auto_compress = AutoBehavior::waiting();
     });
     daemon.scan_root_photos(dir.path().join("photos")).unwrap();
@@ -5491,6 +5503,7 @@ fn paused_compression_queue_does_not_claim_pending_jobs() {
     let mut daemon = Daemon::open(&db_path, Some(photo_dir.clone()), Some(log_dir)).unwrap();
     daemon.set_thumbnail_dir(dir.path().join("thumbnails"));
     save_daemon_settings(&daemon, |settings| {
+        settings.auto_compress_enabled = true;
         settings.auto_compress = AutoBehavior::immediate();
         settings.auto_compress_queue_paused = true;
     });
@@ -5519,6 +5532,7 @@ fn auto_replace_failure_leaves_the_original_in_place() {
     let mut daemon = Daemon::open(&db_path, Some(photo_dir), Some(log_dir)).unwrap();
     daemon.set_thumbnail_dir(dir.path().join("thumbnails"));
     save_daemon_settings(&daemon, |settings| {
+        settings.auto_compress_enabled = true;
         settings.auto_compress = AutoBehavior::immediate();
         settings.auto_compress_keep_original = false;
     });
@@ -5550,6 +5564,7 @@ fn end_to_end_auto_compress() {
     let mut daemon = Daemon::open(&db_path, Some(photo_dir), Some(log_dir)).unwrap();
     daemon.set_thumbnail_dir(dir.path().join("thumbnails"));
     save_daemon_settings(&daemon, |settings| {
+        settings.auto_compress_enabled = true;
         settings.auto_compress = AutoBehavior::immediate();
     });
     daemon.scan_root_photos(dir.path().join("photos")).unwrap();
@@ -5591,6 +5606,7 @@ fn auto_compression_always_writes_to_the_compressed_folder() {
     let mut daemon = Daemon::open(&db_path, Some(photo_dir.clone()), Some(log_dir)).unwrap();
     daemon.set_thumbnail_dir(dir.path().join("thumbnails"));
     save_daemon_settings(&daemon, |settings| {
+        settings.auto_compress_enabled = true;
         settings.auto_compress = AutoBehavior::immediate();
     });
     daemon.scan_root_photos(dir.path().join("photos")).unwrap();
@@ -5629,6 +5645,7 @@ fn initial_scan_skips_backlog_when_disabled() {
     let db_path = dir.path().join("library.db");
     let mut daemon = Daemon::open(&db_path, Some(photo_dir.clone()), Some(log_dir)).unwrap();
     daemon.set_thumbnail_dir(dir.path().join("thumbnails"));
+    save_daemon_settings(&daemon, |settings| settings.auto_compress_enabled = true);
     daemon.run_once().unwrap();
 
     let db = Db::open(&db_path).unwrap();
