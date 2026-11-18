@@ -60,6 +60,7 @@ pub fn build_manifest(dist: &Path, tag: &str, repo: &str, notes_url: &str) -> Re
         notes_url: Some(notes_url.to_string()),
         platforms,
         system_packages,
+        ai_plugin: None,
     })
 }
 

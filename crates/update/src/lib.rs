@@ -27,8 +27,8 @@ pub use install::{
     prepare_apply, start_apply, system_helper_available, system_policy_available,
 };
 pub use manifest::{
-    AvailableUpdate, MANIFEST_SCHEMA, MAX_ARTIFACT_BYTES, MAX_MANIFEST_BYTES, MAX_SIGNATURE_BYTES,
-    Manifest, PlatformAsset, SignedManifest, UpdateFormat,
+    AiPluginRelease, AvailableUpdate, MANIFEST_SCHEMA, MAX_ARTIFACT_BYTES, MAX_MANIFEST_BYTES,
+    MAX_SIGNATURE_BYTES, Manifest, PlatformAsset, SignedManifest, UpdateFormat,
 };
 pub use native::NativeString;
 pub use verify::{
