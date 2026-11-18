@@ -348,6 +348,10 @@ impl UpdatePaths {
         self.root.join("last-result.json")
     }
 
+    pub fn ai_plugin_file(&self) -> PathBuf {
+        self.root.join("ai-plugin.json")
+    }
+
     pub fn log_file(&self) -> PathBuf {
         self.root.join("updater.log")
     }

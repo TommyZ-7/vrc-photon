@@ -3,6 +3,7 @@
 //! The crate is intentionally independent of the UI, the daemon, and SQLite.
 //! The UI drives checks and downloads; the helper binary applies them.
 
+pub mod ai_plugin;
 pub mod check;
 mod command;
 pub mod download;
