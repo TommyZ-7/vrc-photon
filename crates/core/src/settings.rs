@@ -306,7 +306,10 @@ pub struct AppSettings {
     pub ai_tagging_backend: String,
     /// Longest edge of the JPEG snapshot passed to the sidecar
     /// (1024, 1536, or 2048).
-    #[serde(default = "default_ai_tagging_max_edge")]
+    #[serde(
+        default = "default_ai_tagging_max_edge",
+        deserialize_with = "deserialize_ai_tagging_max_edge"
+    )]
     pub ai_tagging_max_edge: u32,
     /// Seconds of inactivity before the sidecar stops (30–3600).
     #[serde(default = "default_ai_idle_timeout")]
@@ -368,6 +371,20 @@ fn default_ai_backend() -> String {
 
 fn default_ai_tagging_max_edge() -> u32 {
     crate::tagging_image::TAGGING_MAX_EDGE_DEFAULT
+}
+
+/// Accepts only non-negative integers that fit in `u32`; every other JSON
+/// type falls back to the default instead of failing the whole settings row.
+fn deserialize_ai_tagging_max_edge<'de, D>(deserializer: D) -> std::result::Result<u32, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(value
+        .as_u64()
+        .and_then(|value| u32::try_from(value).ok())
+        .map(crate::tagging_image::normalize_tagging_max_edge)
+        .unwrap_or(crate::tagging_image::TAGGING_MAX_EDGE_DEFAULT))
 }
 
 fn default_ai_idle_timeout() -> u64 {
@@ -1616,6 +1633,33 @@ mod tests {
         value["ai_tagging_max_edge"] = serde_json::json!(1536);
         db.set_setting("app_settings", &value.to_string()).unwrap();
         assert_eq!(AppSettings::load(&db).unwrap().ai_tagging_max_edge, 1536);
+    }
+
+    #[test]
+    fn wrong_typed_ai_tagging_max_edge_falls_back_without_resetting_settings() {
+        let db = Db::open_in_memory().unwrap();
+        let mut value = serde_json::to_value(AppSettings {
+            photo_roots: vec!["/photos".to_string()],
+            ..AppSettings::default()
+        })
+        .unwrap();
+
+        for bad in [
+            serde_json::json!("2048"),
+            serde_json::json!(null),
+            serde_json::json!(-1),
+            serde_json::json!(1024.5),
+            serde_json::json!(true),
+            serde_json::json!({}),
+            serde_json::json!([]),
+        ] {
+            value["ai_tagging_max_edge"] = bad;
+            db.set_setting("app_settings", &value.to_string()).unwrap();
+
+            let loaded = AppSettings::load(&db).unwrap();
+            assert_eq!(loaded.ai_tagging_max_edge, 1024);
+            assert_eq!(loaded.photo_roots, vec!["/photos".to_string()]);
+        }
     }
 
     #[test]
