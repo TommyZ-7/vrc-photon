@@ -10,14 +10,15 @@ use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::*;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
-use vrc_photon_core::queue::{QueueCounts, QueueFeature};
+use vrc_photon_core::queue::{QueueCounts, QueueFeature, QueueProgress};
 use vrc_photon_i18n::{tr, tr_args};
 use vrc_photon_ipc::ScanPhase as IpcScanPhase;
 
 use crate::app::ai::effective_ai_tagging_enabled;
 use crate::app::lifecycle::ScanProgressView;
 use crate::app::{App, Screen, SidebarStatusTab};
-use crate::ui::queue::queue_action_availability;
+use crate::ui::components::status_progress_bar;
+use crate::ui::queue::{queue_action_availability, queue_progress_percent, queue_status_breakdown};
 use crate::ui::theme::*;
 
 const NAV_ITEM_HEIGHT: f32 = 40.0;
@@ -266,13 +267,13 @@ impl App {
         let Some(active_tab) = resolve_status_tab(self.sidebar_status_tab, tabs) else {
             return div().into_any_element();
         };
-        let (counts, paused) = self.status_tab_state(active_tab);
+        let (counts, progress, paused) = self.status_tab_state(active_tab);
 
         let tab_row = h_flex()
             .gap(px(4.))
             .children(tabs.iter().copied().map(|tab| {
                 let active = tab == active_tab;
-                let (tab_counts, _) = self.status_tab_state(tab);
+                let (tab_counts, _, _) = self.status_tab_state(tab);
                 h_flex()
                     .id(status_tab_element_id(tab))
                     .relative()
@@ -315,55 +316,49 @@ impl App {
                     .child(status_tab_label(tab))
             }));
 
-        let body = if counts.total() == 0 {
-            v_flex().h(px(46.)).items_center().justify_center().child(
-                div()
-                    .text_size(px(13.))
-                    .text_color(rgb(p.muted_2))
-                    .child(tr!("sidebar.status.idle.headline")),
-            )
-        } else {
-            h_flex()
+        let body = match queue_progress_percent(counts, progress) {
+            Some(percent) => self.status_progress_body(counts, percent),
+            None => v_flex()
                 .h(px(46.))
                 .items_center()
-                .flex_wrap()
-                .gap(px(4.))
-                .child(self.badge(
-                    tr_args!("queue.count.waiting", count = counts.waiting),
-                    p.amber,
-                    p.amber_soft,
-                ))
-                .child(self.badge(
-                    tr_args!("queue.count.pending", count = counts.pending),
-                    p.muted,
-                    p.panel_2,
-                ))
-                .child(self.badge(
-                    tr_args!("queue.count.processing", count = counts.processing),
-                    p.accent,
-                    p.accent_soft,
-                ))
-                .when(paused, |this| {
-                    this.child(self.badge(tr!("queue.paused"), p.amber, p.amber_soft))
-                })
+                .justify_center()
+                .child(
+                    div()
+                        .text_size(px(13.))
+                        .text_color(rgb(p.muted_2))
+                        .child(tr!("sidebar.status.idle.headline")),
+                )
+                .into_any_element(),
         };
 
         let footer = if counts.waiting > 0 {
             let feature = status_tab_feature(active_tab);
             let start_enabled = queue_action_availability(!paused, counts.waiting).start_waiting;
-            h_flex().items_center().h(px(24.)).gap(px(6.)).child(
-                Button::new("sidebar-status-start-waiting")
-                    .label(tr!("sidebar.start_waiting"))
-                    .small()
-                    .primary()
-                    .disabled(!start_enabled)
-                    .tab_stop(start_enabled)
-                    .when(start_enabled, |button| {
-                        button.on_click(cx.listener(move |this, _, window, cx| {
-                            this.release_waiting_queue(feature, window, cx)
-                        }))
-                    }),
-            )
+            h_flex()
+                .items_center()
+                .h(px(24.))
+                .gap(px(6.))
+                .child(
+                    Button::new("sidebar-status-start-waiting")
+                        .label(tr!("sidebar.start_waiting"))
+                        .small()
+                        .primary()
+                        .disabled(!start_enabled)
+                        .tab_stop(start_enabled)
+                        .when(start_enabled, |button| {
+                            button.on_click(cx.listener(move |this, _, window, cx| {
+                                this.release_waiting_queue(feature, window, cx)
+                            }))
+                        }),
+                )
+                .when(paused, |this| {
+                    this.child(
+                        div()
+                            .text_size(px(9.5))
+                            .text_color(rgb(p.amber))
+                            .child(tr!("queue.paused")),
+                    )
+                })
         } else {
             h_flex().items_center().h(px(24.)).gap(px(6.)).child(
                 Button::new("sidebar-status-open-queue")
@@ -399,18 +394,60 @@ impl App {
             .into_any_element()
     }
 
-    fn status_tab_state(&self, tab: SidebarStatusTab) -> (QueueCounts, bool) {
+    fn status_progress_body(&self, counts: QueueCounts, percent: u8) -> AnyElement {
+        let p = self.palette;
+        v_flex()
+            .h(px(46.))
+            .justify_center()
+            .gap(px(5.))
+            .child(
+                h_flex()
+                    .items_center()
+                    .gap(px(7.))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .child(status_progress_bar(&p, percent as f32 / 100.0)),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(10.))
+                            .font_semibold()
+                            .text_color(rgb(p.text))
+                            .child(format!("{percent}%")),
+                    ),
+            )
+            .child(
+                h_flex().items_center().gap(px(6.)).child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .whitespace_nowrap()
+                        .text_size(px(9.))
+                        .text_color(rgb(p.muted_2))
+                        .child(queue_status_breakdown(counts)),
+                ),
+            )
+            .into_any_element()
+    }
+
+    fn status_tab_state(&self, tab: SidebarStatusTab) -> (QueueCounts, QueueProgress, bool) {
         match tab {
             SidebarStatusTab::AutoCompression => (
                 self.compression_queue_counts,
+                self.compression_queue_progress,
                 self.settings.auto_compress_queue_paused,
             ),
             SidebarStatusTab::Discord => (
                 self.discord_queue_counts,
+                self.discord_queue_progress,
                 self.settings.discord_queue_paused,
             ),
             SidebarStatusTab::AiTagging => (
                 self.tagging_queue_counts,
+                self.tagging_queue_progress,
                 self.settings.ai_tagging_queue_paused,
             ),
         }
