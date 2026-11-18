@@ -108,7 +108,7 @@ cargo run -p vrc-photon-daemon -- --no-tray
 - AI プラグイン / モデル: 同 `plugins/<plugin_id>/`
 - タグ付け用一時ファイル: 同 `cache/tagging/`
 - 更新: 同 `updates/`（ダウンロード、ジョブ、健康マーカー、結果、ログ、
-  旧版バックアップ）
+  旧版バックアップ、`ai-plugin.json`（最後に取得した AI プラグイン版のキャッシュ））
 
 更新フィードと署名鍵の設定は [release.md](release.md#10-自動アップデートの署名と配信)
 を参照する。ローカルで更新UIを試すときは、デバッグビルドで

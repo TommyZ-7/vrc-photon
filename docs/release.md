@@ -188,9 +188,12 @@ ls -lh dist
   `latest.json` を同じReleaseに添付する。`generate` は AppImage / NSIS に加えて
   `.pkg.tar.zst` と `.deb` が各1個あること、ファイル名にタグバージョンが
   含まれることを要求する
-- `jq -e '.schema == 1 and (.platforms | length == 2) and (.system_packages | length == 2) and (.system_packages | has("pacman") and has("deb")) and (.system_packages.pacman.format == "pacman") and (.system_packages.deb.format == "deb")' dist/latest.json`
-  で `system_packages` が pacman / deb の2件だけを持ち、`format` が一致することを
-  検査する
+- `generate --ai-plugin packaging/ai-plugin.json` は、最新の AI プラグイン版
+  （`version`）とその版が要求する本体の最小版（`host_version_min`）を
+  `latest.json` の任意欄 `ai_plugin` に埋め込む
+- `jq -e '.schema == 1 and (.platforms | length == 2) and (.system_packages | length == 2) and (.system_packages | has("pacman") and has("deb")) and (.system_packages.pacman.format == "pacman") and (.system_packages.deb.format == "deb") and ((.ai_plugin.version | type) == "string") and ((.ai_plugin.host_version_min | type) == "string")' dist/latest.json`
+  で `system_packages` が pacman / deb の2件だけを持ち、`format` が一致し、
+  `ai_plugin` の2フィールドが文字列であることを検査する
 
 Releaseノートの分類は `.github/release.yml` と GitHub の generate-notes API に従う。
 
@@ -221,6 +224,7 @@ Required check名を変更した場合は、GitHubのbranch protectionも更新�
 - [ ] deb / pacman に `usr/share/polkit-1/actions/com.tommyz.vrc-photon.update.policy` が入り、`exec.path` が `/usr/bin/vrc-photon-updater` である
 - [ ] `dist/*.pkg.tar.zst` が存在し、`LC_ALL=C pacman -Qip` で `Name: vrc-photon`、`Version: <version>-1`、`Architecture: x86_64` を返す
 - [ ] `latest.json` の `system_packages` が pacman / deb の2件で、両方に署名済みURL・サイズ・SHA-256・署名がある
+- [ ] `packaging/ai-plugin.json` が最新の AI プラグイン版と `host_version_min` を持ち、`latest.json` の `ai_plugin` と一致する
 - [ ] `MINISIGN_SECRET_KEY` が登録されている
 - [ ] `latest.json` と `latest.json.minisig` がReleaseに添付されている
 - [ ] リリースノートの分類が正しい
@@ -251,6 +255,24 @@ Required check名を変更した場合は、GitHubのbranch protectionも更新�
     検証は変わらないため、この機能より前のクライアントは更新確認を続けられる。
   - 新しいクライアントは `system_packages` がない旧フィードでは
     パッケージマネージャのコマンド表示にフォールバックする。
+- `latest.json` の `ai_plugin` は任意のオブジェクトで、`version`（最新の AI
+  プラグイン版）と `host_version_min`（その版が要求する本体の最小版）を持つ。
+  - 単一情報源は `packaging/ai-plugin.json`。autotag のリリース時に、リリースした
+    プラグインの `plugin_version` と manifest の `host_version_min` でこのファイルを
+    更新し、photon のリリース前に `main` へマージする。初期値は
+    `version: 0.5.1`、`host_version_min: 0.14.4`。
+  - `schema` は 1 のまま。`ai_plugin` を知らない旧クライアントは未知フィールドとして
+    無視する。
+  - `ai_plugin` が semver でない、型が違う、キーが欠落している場合は、プラグイン
+    通知だけを出さず、本体の更新確認は継続する。
+- クライアントは本体の更新確認で取得した `ai_plugin` を
+  `updates/ai-plugin.json` にキャッシュする。再起動後や24時間スロットル中も
+  追加通信なしで比較し、フィードから `ai_plugin` が消えたらキャッシュを削除する。
+- 通知条件は、`ai_plugin.version` がアクティブな導入版より新しいこと、かつ
+  `ai_plugin.host_version_min` が現在の本体版以下であること。設定画面の
+  AI タグ付けカードに表示するだけで、プラグインのダウンロード・自動更新は行わない。
+  導入済みの `.vpp` ボタンは「プラグインを更新」に切り替わり、未導入では
+  「プラグイン (.vpp) を取り込む」のまま。
 - クライアントはマニフェスト署名をJSONパース前に検証し、成果物は
   ダウンロードしながら署名とSHA-256を検証する。システムパッケージの適用時は
   特権ヘルパーが同じマニフェスト署名と成果物を再検証する。
