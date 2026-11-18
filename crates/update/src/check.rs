@@ -489,7 +489,8 @@ mod tests {
             assert!(
                 check(&client, &feed, &Version::new(0, 3, 0), &appimage())
                     .unwrap()
-                    .update.is_none()
+                    .update
+                    .is_none()
             );
         }
     }
@@ -511,7 +512,8 @@ mod tests {
                 &appimage()
             )
             .unwrap()
-            .update.is_none()
+            .update
+            .is_none()
         );
 
         let missing_signature = FakeHttpClient::new(HashMap::from([(
@@ -803,7 +805,8 @@ mod tests {
         assert!(
             check(&client, &loopback, &Version::new(0, 3, 0), &appimage())
                 .unwrap()
-                .update.is_some()
+                .update
+                .is_some()
         );
     }
 }

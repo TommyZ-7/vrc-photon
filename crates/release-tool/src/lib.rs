@@ -343,11 +343,7 @@ mod tests {
     fn reads_and_validates_the_ai_plugin_file() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("ai-plugin.json");
-        std::fs::write(
-            &path,
-            br#"{"version":"0.2.0","host_version_min":"0.15.0"}"#,
-        )
-        .unwrap();
+        std::fs::write(&path, br#"{"version":"0.2.0","host_version_min":"0.15.0"}"#).unwrap();
         assert_eq!(read_ai_plugin(&path).unwrap().version, "0.2.0");
     }
 

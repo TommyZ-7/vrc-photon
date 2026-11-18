@@ -1195,10 +1195,8 @@ impl App {
                     self.update.ai_plugin = feed.ai_plugin.clone();
                     if !self.demo
                         && let Some(dir) = self.update.data_dir.as_deref()
-                        && let Err(error) = ai_plugin::store(
-                            &UpdatePaths::new(dir),
-                            self.update.ai_plugin.as_ref(),
-                        )
+                        && let Err(error) =
+                            ai_plugin::store(&UpdatePaths::new(dir), self.update.ai_plugin.as_ref())
                     {
                         tracing::warn!(%error, "cannot cache the AI plugin release");
                     }
