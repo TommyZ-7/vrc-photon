@@ -72,6 +72,30 @@ pub(crate) struct LibraryPathChanges {
     pub(crate) any: bool,
 }
 
+pub(crate) const DEVELOPER_REPOSITORY_LABEL: &str = "github.com/TommyZ-7/vrc-photon";
+pub(crate) const DEVELOPER_REPOSITORY_URL: &str = "https://github.com/TommyZ-7/vrc-photon";
+pub(crate) const DEVELOPER_X_LABEL: &str = "x.com/TommyZ794685";
+pub(crate) const DEVELOPER_X_URL: &str = "https://x.com/TommyZ794685";
+
+/// The four developer-card rows, in display order: label then value.
+pub(crate) fn developer_info_rows() -> Vec<(String, String)> {
+    vec![
+        (
+            tr!("settings.developer.version"),
+            vrc_photon_update::CURRENT_VERSION.to_string(),
+        ),
+        (
+            tr!("settings.developer.license"),
+            "GPL-3.0-or-later".to_string(),
+        ),
+        (
+            tr!("settings.developer.repository"),
+            DEVELOPER_REPOSITORY_LABEL.to_string(),
+        ),
+        (tr!("settings.developer.x"), DEVELOPER_X_LABEL.to_string()),
+    ]
+}
+
 /// Applies the three path fields to the settings with the same trimming and
 /// blank-clearing rules as the settings screen.
 pub(crate) fn apply_library_path_inputs(
@@ -2144,5 +2168,27 @@ mod path_input_tests {
         let changes = apply_library_path_inputs(&mut settings, "/tmp/photos", "/tmp/logs", "");
         assert!(!changes.root);
         assert!(!changes.any);
+    }
+
+    #[test]
+    fn developer_info_rows_use_the_unprefixed_version_and_public_links() {
+        let rows = super::developer_info_rows();
+        assert_eq!(rows[0].1, vrc_photon_update::CURRENT_VERSION);
+        assert!(!rows[0].1.starts_with('v'));
+        assert_eq!(rows[1].1, "GPL-3.0-or-later");
+        assert_eq!(rows[2].1, super::DEVELOPER_REPOSITORY_LABEL);
+        assert_eq!(rows[3].1, super::DEVELOPER_X_LABEL);
+        assert_eq!(
+            super::DEVELOPER_REPOSITORY_URL,
+            "https://github.com/TommyZ-7/vrc-photon"
+        );
+        assert_eq!(super::DEVELOPER_X_URL, "https://x.com/TommyZ794685");
+    }
+
+    #[test]
+    fn developer_avatar_asset_is_a_jpeg() {
+        let bytes = include_bytes!("../../assets/devinfo-avatar.jpg");
+        assert!(bytes.len() > 2);
+        assert_eq!(&bytes[..2], &[0xff, 0xd8]);
     }
 }
