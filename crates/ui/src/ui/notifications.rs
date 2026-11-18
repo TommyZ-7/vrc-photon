@@ -14,6 +14,7 @@ use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::*;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
+use semver::Version;
 use vrc_photon_core::queue::{FailedJobEntry, QueueFeature};
 use vrc_photon_i18n::{tr, tr_args};
 
@@ -140,6 +141,7 @@ pub(crate) fn deletion_blocked_transition(
 /// order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum NotificationSection {
+    AppUpdate,
     Import,
     Library,
     JobFailures,
@@ -147,6 +149,7 @@ pub(crate) enum NotificationSection {
 }
 
 pub(crate) fn notification_sections(
+    update: bool,
     import: bool,
     library_error: bool,
     compression_failed: i64,
@@ -155,6 +158,9 @@ pub(crate) fn notification_sections(
     daemon_errors: usize,
 ) -> Vec<NotificationSection> {
     let mut sections = Vec::new();
+    if update {
+        sections.push(NotificationSection::AppUpdate);
+    }
     if import {
         sections.push(NotificationSection::Import);
     }
@@ -170,9 +176,11 @@ pub(crate) fn notification_sections(
     sections
 }
 
-/// Whether the open notification modal has lost its last actionable section.
+/// Whether the open notification modal has lost its last visible section.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn notification_modal_should_close(
     open: bool,
+    update: bool,
     import: bool,
     library_error: bool,
     compression_failed: i64,
@@ -181,6 +189,7 @@ pub(crate) fn notification_modal_should_close(
     daemon_errors: usize,
 ) -> bool {
     open && notification_sections(
+        update,
         import,
         library_error,
         compression_failed,
@@ -204,6 +213,17 @@ fn auto_compress_badge_label(count: usize) -> Option<String> {
 /// The notification modal must not stack over another modal.
 pub(crate) fn notification_modal_allowed(import_open: bool, manual_open: bool) -> bool {
     !import_open && !manual_open
+}
+
+/// Whether the bell should show its attention dot and open the modal.
+pub(crate) fn notification_attention_for(
+    update: bool,
+    import: bool,
+    library_error: bool,
+    failed_jobs: i64,
+    daemon_errors: usize,
+) -> bool {
+    update || import || library_error || failed_jobs > 0 || daemon_errors > 0
 }
 
 fn notification_for(spec: &ToastSpec, entity: WeakEntity<App>) -> Notification {
@@ -296,10 +316,13 @@ impl App {
     }
 
     pub(crate) fn notification_attention(&self) -> bool {
-        self.import_report.is_some()
-            || self.library_error.is_some()
-            || self.job_failures.total_jobs() > 0
-            || !self.daemon_errors.is_empty()
+        notification_attention_for(
+            self.update.pending_version().is_some(),
+            self.import_report.is_some(),
+            self.library_error.is_some(),
+            self.job_failures.total_jobs(),
+            self.daemon_errors.len(),
+        )
     }
 
     pub(crate) fn open_notification_modal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -393,8 +416,10 @@ impl App {
         if !self.notification_modal_open {
             return div().into_any_element();
         }
+        let update_version = self.update.pending_version().cloned();
         if notification_modal_should_close(
             self.notification_modal_open,
+            update_version.is_some(),
             self.import_report.is_some(),
             self.library_error.is_some(),
             self.job_failures.compression_failed,
@@ -410,6 +435,7 @@ impl App {
             return div().into_any_element();
         }
         let sections = notification_sections(
+            update_version.is_some(),
             self.import_report.is_some(),
             self.library_error.is_some(),
             self.job_failures.compression_failed,
@@ -428,6 +454,9 @@ impl App {
         let mut items = Vec::new();
         for section in sections {
             let item = match section {
+                NotificationSection::AppUpdate => update_version
+                    .as_ref()
+                    .map(|version| self.app_update_notification(version, cx)),
                 NotificationSection::Import => import_report
                     .as_ref()
                     .map(|report| self.import_notification(report, cx)),
@@ -701,6 +730,44 @@ impl App {
             .into_any_element()
     }
 
+    fn app_update_notification(&self, version: &Version, cx: &mut Context<Self>) -> AnyElement {
+        let p = self.palette;
+        v_flex()
+            .p(px(14.))
+            .gap(px(10.))
+            .rounded(px(14.))
+            .bg(rgb(p.panel))
+            .border_1()
+            .border_color(rgb(p.border))
+            .child(
+                div()
+                    .text_size(px(12.))
+                    .font_semibold()
+                    .text_color(rgb(p.text))
+                    .child(tr!("update.title")),
+            )
+            .child(
+                div()
+                    .text_size(px(11.))
+                    .text_color(rgb(p.muted))
+                    .child(tr_args!("update.available", version = version)),
+            )
+            .child(
+                h_flex().flex_wrap().gap(px(6.)).child(
+                    Button::new("notification-update-open-settings")
+                        .label(tr!("notifications.update.open_settings"))
+                        .small()
+                        .primary()
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.close_notification_modal(window, cx);
+                            this.switch_screen(Screen::Settings, cx);
+                            this.settings_scroll.scroll_to_bottom();
+                        })),
+                ),
+            )
+            .into_any_element()
+    }
+
     fn library_notification(&self, error: &str, cx: &mut Context<Self>) -> AnyElement {
         let p = self.palette;
         v_flex()
@@ -952,8 +1019,9 @@ impl App {
 mod tests {
     use super::{
         FailedJobEntry, NotificationSection, QueueFeature, auto_compress_badge_label,
-        deletion_blocked_transition, latest_failed_entries, notification_modal_allowed,
-        notification_modal_should_close, notification_sections, toast_flush_needed,
+        deletion_blocked_transition, latest_failed_entries, notification_attention_for,
+        notification_modal_allowed, notification_modal_should_close, notification_sections,
+        toast_flush_needed,
     };
 
     #[test]
@@ -973,7 +1041,7 @@ mod tests {
     #[test]
     fn notification_sections_follow_the_action_order() {
         assert_eq!(
-            notification_sections(true, true, 2, 1, 1, 3),
+            notification_sections(false, true, true, 2, 1, 1, 3),
             vec![
                 NotificationSection::Import,
                 NotificationSection::Library,
@@ -981,17 +1049,40 @@ mod tests {
                 NotificationSection::Daemon,
             ]
         );
-        assert!(notification_sections(false, false, 0, 0, 0, 0).is_empty());
+        assert!(notification_sections(false, false, false, 0, 0, 0, 0).is_empty());
+    }
+
+    #[test]
+    fn update_section_is_first_and_keeps_the_modal_open() {
+        use NotificationSection::{AppUpdate, Daemon, Import, JobFailures, Library};
+
+        assert_eq!(
+            notification_sections(true, true, true, 2, 1, 1, 3),
+            vec![AppUpdate, Import, Library, JobFailures, Daemon]
+        );
+        assert!(notification_sections(false, false, false, 0, 0, 0, 0).is_empty());
+        assert!(!notification_modal_should_close(
+            true, true, false, false, 0, 0, 0, 0
+        ));
+        assert!(notification_modal_should_close(
+            true, false, false, false, 0, 0, 0, 0
+        ));
+    }
+
+    #[test]
+    fn an_unapplied_update_alone_raises_attention() {
+        assert!(notification_attention_for(true, false, false, 0, 0));
+        assert!(!notification_attention_for(false, false, false, 0, 0));
     }
 
     #[test]
     fn job_failures_section_appears_only_when_a_feature_has_failures() {
         assert!(
-            !notification_sections(false, false, 0, 0, 0, 0)
+            !notification_sections(false, false, false, 0, 0, 0, 0)
                 .contains(&NotificationSection::JobFailures)
         );
         assert!(
-            notification_sections(false, false, 0, 0, 1, 0)
+            notification_sections(false, false, false, 0, 0, 1, 0)
                 .contains(&NotificationSection::JobFailures)
         );
     }
@@ -1032,19 +1123,19 @@ mod tests {
     #[test]
     fn notification_modal_closes_when_the_last_section_disappears() {
         assert!(notification_modal_should_close(
-            true, false, false, 0, 0, 0, 0
+            true, false, false, false, 0, 0, 0, 0
         ));
         assert!(!notification_modal_should_close(
-            false, false, false, 0, 0, 0, 0
+            false, false, false, false, 0, 0, 0, 0
         ));
         assert!(!notification_modal_should_close(
-            true, true, false, 0, 0, 0, 0
+            true, false, true, false, 0, 0, 0, 0
         ));
         assert!(!notification_modal_should_close(
-            true, false, false, 1, 0, 0, 0
+            true, false, false, false, 1, 0, 0, 0
         ));
         assert!(!notification_modal_should_close(
-            true, false, false, 0, 0, 0, 1
+            true, false, false, false, 0, 0, 0, 1
         ));
     }
 }

@@ -187,6 +187,55 @@ mod tests {
     }
 
     #[test]
+    fn keeps_a_detected_update_when_a_later_check_fails() {
+        let update: std::result::Result<FeedCheck, UpdateText> =
+            Ok(feed_with_update(Version::new(0, 4, 0)));
+        let failure: std::result::Result<FeedCheck, UpdateText> =
+            Err(UpdateText::key("update.error.network"));
+
+        let detected = next_pending_version(&update, None);
+        assert_eq!(detected, Some(Version::new(0, 4, 0)));
+        assert_eq!(next_pending_version(&failure, detected.as_ref()), detected);
+        assert_eq!(next_pending_version(&failure, None), None);
+    }
+
+    #[test]
+    fn keeps_a_detected_update_when_the_feed_is_unverified() {
+        let unverified: std::result::Result<FeedCheck, UpdateText> = Ok(FeedCheck {
+            update: None,
+            ai_plugin: None,
+            verified: false,
+        });
+        assert_eq!(
+            next_pending_version(&unverified, Some(&Version::new(0, 4, 0))),
+            Some(Version::new(0, 4, 0))
+        );
+    }
+
+    #[test]
+    fn clears_the_detected_update_when_the_feed_is_up_to_date() {
+        let up_to_date: std::result::Result<FeedCheck, UpdateText> = Ok(FeedCheck {
+            update: None,
+            ai_plugin: None,
+            verified: true,
+        });
+        assert_eq!(
+            next_pending_version(&up_to_date, Some(&Version::new(0, 4, 0))),
+            None
+        );
+    }
+
+    #[test]
+    fn replaces_the_detected_update_with_the_newest_feed_version() {
+        let update: std::result::Result<FeedCheck, UpdateText> =
+            Ok(feed_with_update(Version::new(0, 5, 0)));
+        assert_eq!(
+            next_pending_version(&update, Some(&Version::new(0, 4, 0))),
+            Some(Version::new(0, 5, 0))
+        );
+    }
+
+    #[test]
     fn only_self_update_capable_installs_with_assets_can_apply() {
         assert!(!can_apply(
             &InstallKind::SystemPackage {
@@ -514,6 +563,19 @@ fn resolve_checked_phase(
     }
 }
 
+/// The version to keep for the notification section. A failed or unverified
+/// check keeps the previously detected version; only a verified up-to-date
+/// result clears it.
+fn next_pending_version(
+    result: &std::result::Result<FeedCheck, UpdateText>,
+    current: Option<&Version>,
+) -> Option<Version> {
+    match result {
+        Ok(feed) if feed.verified => feed.update.as_ref().map(|update| update.version.clone()),
+        _ => current.cloned(),
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum UpdateNoticeKind {
     Success,
@@ -615,6 +677,7 @@ pub struct UpdateState {
     pub(crate) ai_plugin: Option<vrc_photon_update::AiPluginRelease>,
     notice: Option<UpdateNotice>,
     resume_available: Option<AvailableUpdate>,
+    pending_version: Option<Version>,
     tx: Sender<UpdateMessage>,
     rx: Option<Receiver<UpdateMessage>>,
     health_token: Option<String>,
@@ -667,6 +730,7 @@ impl UpdateState {
             ai_plugin,
             notice,
             resume_available: None,
+            pending_version: None,
             tx,
             rx: Some(rx),
             health_token,
@@ -710,6 +774,11 @@ impl UpdateState {
 
     pub(crate) fn notice(&self) -> Option<&UpdateNotice> {
         self.notice.as_ref()
+    }
+
+    /// The detected version that has not been applied yet, if any.
+    pub(crate) fn pending_version(&self) -> Option<&Version> {
+        self.pending_version.as_ref()
     }
 
     fn write_health_marker(&self) -> std::result::Result<(), String> {
@@ -1183,6 +1252,9 @@ impl App {
         match message {
             UpdateMessage::Checked { manual, result } => {
                 self.update.in_flight = false;
+                let pending =
+                    next_pending_version(result.as_ref(), self.update.pending_version.as_ref());
+                self.update.pending_version = pending;
                 let resume = self.update.resume_available.take();
                 self.settings.update_last_checked_at = Some(Utc::now().timestamp());
                 if let Err(error) = self.settings.save(&self.db) {
