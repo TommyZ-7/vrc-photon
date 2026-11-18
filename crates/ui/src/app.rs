@@ -353,6 +353,9 @@ pub struct App {
     /// Focus traps for the AI license and uninstall dialogs.
     pub(crate) ai_license_focus: FocusHandle,
     pub(crate) ai_uninstall_focus: FocusHandle,
+    /// Developer-card links, in display order: repository then X.
+    pub(crate) developer_repository_focus: FocusHandle,
+    pub(crate) developer_x_focus: FocusHandle,
     /// Focus restored after the AI dialog closes.
     pub(crate) ai_modal_return_focus: Option<FocusHandle>,
     /// The next render should move focus into the open AI dialog.
@@ -1034,6 +1037,8 @@ impl App {
         let notification_modal_focus = cx.focus_handle();
         let ai_license_focus = cx.focus_handle();
         let ai_uninstall_focus = cx.focus_handle();
+        let developer_repository_focus = cx.focus_handle();
+        let developer_x_focus = cx.focus_handle();
         let ribbon_collapse_focus = cx.focus_handle();
         let notification_bell_focus = cx.focus_handle();
         let ribbon_import_copy_focus = cx.focus_handle();
@@ -1297,6 +1302,8 @@ impl App {
             ai_tag_focused: None,
             ai_license_focus,
             ai_uninstall_focus,
+            developer_repository_focus,
+            developer_x_focus,
             ai_modal_return_focus: None,
             ai_modal_focus_pending: false,
             ai_tag_picker,
