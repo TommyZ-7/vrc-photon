@@ -14,7 +14,7 @@ pub mod manifest;
 pub mod native;
 pub mod verify;
 
-pub use check::{FeedConfig, check};
+pub use check::{FeedCheck, FeedConfig, check};
 pub use download::download;
 pub use error::{IoOperation, LastErrorCode, Result, UpdateError};
 pub use fetch::{HttpClient, UreqClient};
