@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VRC PhotoN — サイドバーナビ右側表示の廃止モック (#705)</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%230d1420'/%3E%3Ccircle cx='16' cy='16' r='7' fill='none' stroke='%238bcbff' stroke-width='2'/%3E%3C/svg%3E">
+<style>
+  :root {
+    color-scheme: dark;
+    --font: "Inter", "Noto Sans JP", "Hiragino Sans", "Yu Gothic UI", system-ui, -apple-system, sans-serif;
+    --text: #eef4ff;
+    --muted: #a8b4ca;
+    --dim: #7f8ba3;
+    --faint: #5e6a81;
+    --accent: #8bcbff;
+    --green: #7ee2b8;
+    --amber: #f4c878;
+    --line: rgba(255, 255, 255, 0.105);
+    --line-soft: rgba(255, 255, 255, 0.065);
+    --panel: #0d1420;
+    --panel-deep: #080d15;
+    --panel-2: #151f2f;
+    --panel-sidebar: #101827;
+    --accent-soft: rgba(139, 203, 255, 0.14);
+    --r-card: 22px;
+  }
+
+  * { box-sizing: border-box; }
+  html { overflow-x: hidden; }
+  body {
+    margin: 0;
+    min-width: 320px;
+    background: #05070d;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -2;
+    background:
+      radial-gradient(ellipse 58% 54% at 10% 2%, rgba(54, 107, 255, 0.28), transparent 66%),
+      radial-gradient(ellipse 46% 52% at 92% 6%, rgba(255, 86, 181, 0.12), transparent 68%),
+      radial-gradient(ellipse 52% 48% at 64% 104%, rgba(30, 202, 178, 0.10), transparent 68%),
+      linear-gradient(140deg, #04060c 0%, #0a0f1e 44%, #060811 100%);
+  }
+
+  .page { width: min(1360px, calc(100% - 48px)); margin: 0 auto; padding: 44px 0 80px; }
+  .masthead { display: flex; align-items: flex-start; justify-content: space-between; gap: 28px; margin-bottom: 28px; }
+  .eyebrow { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; }
+  .issue-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border: 1px solid rgba(139,203,255,.24); border-radius: 999px; background: rgba(139,203,255,.08); color: var(--accent); font-size: 10px; letter-spacing: .08em; }
+  h1 { margin: 11px 0 9px; font-size: clamp(25px, 3vw, 36px); line-height: 1.22; letter-spacing: -.035em; font-weight: 620; }
+  .lede { max-width: 860px; margin: 0; color: var(--muted); font-size: 13px; }
+  .lede b { color: var(--text); font-weight: 560; }
+  .meta-card { flex: none; min-width: 300px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 16px; background: rgba(13,20,32,.72); }
+  .meta-row { display: flex; justify-content: space-between; gap: 18px; padding: 4px 0; color: var(--dim); font-size: 11px; }
+  .meta-row b { color: var(--text); font-weight: 550; }
+  .meta-row + .meta-row { border-top: 1px solid var(--line-soft); }
+
+  .section-label { display: flex; align-items: baseline; gap: 12px; margin: 42px 0 14px; }
+  .section-label h2 { margin: 0; font-size: 15px; font-weight: 580; letter-spacing: -.01em; }
+  .section-label span { color: var(--dim); font-size: 11px; }
+  .section-note { max-width: 1000px; margin: -4px 0 18px; color: var(--dim); font-size: 11.5px; }
+  .section-note b { color: var(--muted); font-weight: 560; }
+
+  .specimen-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); gap: 18px; }
+  .specimen { border: 1px solid var(--line); border-radius: var(--r-card); background: linear-gradient(180deg, rgba(17,25,39,.78), rgba(9,14,23,.9)); padding: 16px; box-shadow: 0 20px 60px rgba(0,0,0,.22); }
+  .specimen-head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .specimen-title { font-size: 12px; font-weight: 580; }
+  .tag { margin-left: auto; padding: 2px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--dim); font-size: 9px; letter-spacing: .08em; }
+  .specimen-stage { display: flex; justify-content: center; padding: 14px 0 4px; }
+  .annotation { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line-soft); color: var(--dim); font-size: 10.5px; line-height: 1.6; }
+  .annotation b { color: var(--muted); font-weight: 560; }
+
+  /* ---------- Sidebar specimen ---------- */
+  .sidebar {
+    width: 238px; flex: none; display: flex; flex-direction: column; gap: 3px;
+    min-height: 520px; padding: 16px 12px; border: 1px solid var(--line-soft); border-radius: 22px;
+    background: linear-gradient(180deg, var(--panel-sidebar), var(--panel-deep));
+    box-shadow: 0 18px 44px rgba(0,0,0,.28), inset 0 1px rgba(255,255,255,.05);
+  }
+  .nav-group { display: flex; flex-direction: column; gap: 3px; }
+  .nav-item { display: flex; align-items: center; gap: 9px; height: 40px; padding: 0 10px; border-radius: 11px; color: var(--muted); font-size: 12px; }
+  .nav-item .ico { width: 17px; text-align: center; color: var(--dim); font-size: 13px; }
+  .nav-item.active { background: var(--accent-soft); color: var(--text); box-shadow: inset 2px 0 var(--accent); }
+  .nav-item.active .ico { color: var(--accent); }
+  .nav-spacer { flex: 1; }
+
+  .status-card { flex: none; padding: 9px; display: flex; flex-direction: column; gap: 4px; border: 1px solid rgba(255,255,255,.06); border-radius: 13px; background: var(--panel); }
+  .status-head { display: flex; align-items: center; height: 12px; color: var(--muted); font-size: 10px; font-weight: 600; }
+  .status-tabs { display: flex; gap: 4px; }
+  .status-tab {
+    position: relative; flex: 1; height: 20px; display: flex; align-items: center; justify-content: center;
+    border: 1px solid transparent; border-radius: 6px; color: var(--dim); font-size: 10px; font-weight: 500;
+  }
+  .status-tab.active { background: var(--accent-soft); border-color: rgba(139,203,255,.2); color: var(--accent); }
+  .tab-dot { position: absolute; top: 3px; right: 4px; width: 4px; height: 4px; border-radius: 50%; background: var(--accent); }
+  .tab-dot.amber { background: var(--amber); }
+  .status-body { min-height: 46px; display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+  .badge { padding: 2px 7px; border-radius: 8px; font-size: 10px; font-weight: 500; white-space: nowrap; }
+  .badge.waiting { color: var(--amber); background: rgba(244,200,120,.12); }
+  .badge.pending { color: var(--muted); background: var(--panel-2); }
+  .badge.processing { color: var(--accent); background: var(--accent-soft); }
+  .status-foot { display: flex; align-items: center; height: 24px; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; height: 22px; padding: 0 9px; border-radius: 7px; border: 1px solid var(--line); color: var(--muted); font-size: 10px; font-weight: 500; }
+  .btn.primary { border-color: rgba(139,203,255,.3); background: rgba(139,203,255,.16); color: var(--accent); }
+
+  .library-card { margin-top: 3px; padding: 11px; border-radius: 13px; border: 1px solid rgba(255,255,255,.06); background: var(--panel); }
+  .library-label { color: var(--faint); font-size: 10px; }
+  .library-count { margin-top: 2px; color: var(--text); font-size: 13px; font-weight: 600; }
+  .library-size { margin-top: 1px; color: var(--dim); font-size: 10px; }
+  .sidebar-foot { display: flex; align-items: center; padding: 10px 0 0; color: var(--faint); font-size: 10px; }
+  .daemon-pill { display: inline-flex; align-items: center; gap: 5px; }
+  .daemon-pill i { width: 5px; height: 5px; border-radius: 50%; background: var(--green); }
+  .version { margin-left: auto; }
+
+  /* ---------- Collapsed rail ---------- */
+  .sidebar.collapsed { width: 78px; align-items: center; padding: 16px 12px; }
+  .sidebar.collapsed .nav-group { width: 100%; }
+  .sidebar.collapsed .nav-item { width: 100%; justify-content: center; padding: 0; }
+  .sidebar.collapsed .nav-item .ico { width: auto; }
+  .compact-card {
+    width: 100%; padding: 6px; display: flex; flex-direction: column; gap: 3px;
+    border: 1px solid rgba(255,255,255,.06); border-radius: 10px; background: var(--panel);
+    text-align: center;
+  }
+  .compact-count { color: var(--text); font-size: 7.5px; white-space: nowrap; }
+  .compact-size { color: var(--dim); font-size: 7.5px; white-space: nowrap; }
+  .sidebar.collapsed .sidebar-foot { width: 100%; justify-content: center; padding-top: 10px; }
+  .sidebar.collapsed .version { margin-left: 0; }
+
+  /* ---------- State cards ---------- */
+  .state-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 18px 0 6px; }
+  .state { padding: 13px 14px; border: 1px solid var(--line); border-radius: 14px; background: rgba(14,21,34,.72); }
+  .state .where { color: var(--accent); font-size: 10px; letter-spacing: .08em; }
+  .state h3 { margin: 5px 0 6px; font-size: 12px; font-weight: 580; }
+  .state p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
+  .state .result { display: inline-block; margin-top: 8px; padding: 2px 7px; border-radius: 999px; color: var(--green); background: rgba(126,226,184,.07); border: 1px solid rgba(126,226,184,.18); font-size: 9.5px; }
+
+  .rules { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 18px; }
+  .rule { padding: 13px 14px; border: 1px solid var(--line); border-radius: 14px; background: rgba(14,21,34,.6); }
+  .rule h3 { margin: 0 0 6px; font-size: 12px; font-weight: 580; }
+  .rule p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
+  .rule code { color: var(--accent); font-size: 10px; }
+
+  .note { margin-top: 18px; padding: 13px 15px; border: 1px solid rgba(244,200,120,.18); border-radius: 14px; background: rgba(244,200,120,.06); color: var(--muted); font-size: 11.5px; }
+  .note b { color: var(--amber); font-weight: 580; }
+
+  @media (max-width: 900px) {
+    .specimen-grid, .state-grid, .rules { grid-template-columns: 1fr; }
+    .masthead { flex-direction: column; }
+    .meta-card { width: 100%; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="masthead">
+    <div>
+      <div class="eyebrow"><span class="issue-chip">#705</span><span>UI mockup · sidebar navigation</span></div>
+      <h1>サイドバーのナビ右側表示を廃止</h1>
+      <p class="lede">
+        写真の枚数、圧縮の未完了件数、設定の「更新」バッジをナビ項目の右側から削除する。
+        検索・ダッシュボード・連携・自動は現行どおり右側表示なし。
+        進行状況カードのタブ右上ドットと、下部のライブラリ情報は変更しない。
+      </p>
+    </div>
+    <div class="meta-card">
+      <div class="meta-row"><span>対象</span><b>写真 / 圧縮 / 設定</b></div>
+      <div class="meta-row"><span>変更</span><b>右側の件数・バッジを削除</b></div>
+      <div class="meta-row"><span>対象外</span><b>進行状況カード / ライブラリ情報</b></div>
+      <div class="meta-row"><span>状態</span><b>承認待ち</b></div>
+    </div>
+  </header>
+
+  <div class="section-label"><h2>変更後</h2><span>展開時 238 px / 折りたたみ時 78 px</span></div>
+  <p class="section-note">
+    ナビ項目はアイコンとラベルだけにする。<b>右側に件数・バッジを置く要素自体を残さない</b>ため、
+    枚数やジョブ件数が変わっても右端の表示は動かない。
+  </p>
+
+  <div class="specimen-grid">
+    <div class="specimen">
+      <div class="specimen-head"><div class="specimen-title">展開時</div><span class="tag">EXPANDED</span></div>
+      <div class="specimen-stage">
+        <aside class="sidebar">
+          <div class="nav-group">
+            <div class="nav-item active"><span class="ico">▦</span><span>写真</span></div>
+            <div class="nav-item"><span class="ico">⌕</span><span>検索</span></div>
+            <div class="nav-item"><span class="ico">≡</span><span>圧縮</span></div>
+            <div class="nav-item"><span class="ico">◫</span><span>ダッシュボード</span></div>
+            <div class="nav-item"><span class="ico">⇄</span><span>連携・自動</span></div>
+            <div class="nav-item"><span class="ico">⚙</span><span>設定</span></div>
+          </div>
+          <div class="nav-spacer"></div>
+
+          <!-- 進行状況カードは対象外。タブ右上のドットと件数バッジは現状維持。 -->
+          <section class="status-card">
+            <div class="status-head"><span>進行状況</span></div>
+            <div class="status-tabs">
+              <span class="status-tab active">自動圧縮<i class="tab-dot"></i></span>
+              <span class="status-tab">Discord</span>
+              <span class="status-tab">AIタグ</span>
+            </div>
+            <div class="status-body">
+              <span class="badge waiting">待機 4</span>
+              <span class="badge pending">実行待ち 2</span>
+              <span class="badge processing">実行中 1</span>
+            </div>
+            <div class="status-foot"><span class="btn primary">未実行を開始</span></div>
+          </section>
+
+          <div class="library-card"><div class="library-label">ライブラリ</div><div class="library-count">12,480 枚</div><div class="library-size">1.2 TB</div></div>
+          <div class="sidebar-foot"><span class="daemon-pill"><i></i>監視中</span><span class="version">v0.14.4</span></div>
+        </aside>
+      </div>
+      <div class="annotation"><b>ナビ:</b> 写真・圧縮・設定を含む6項目すべてで右側が空。アクティブ項目は従来どおり <b>ACCENT_SOFT</b> の背景と2 pxのアクセントバーで示す。<b>下部:</b> 進行状況カードとライブラリ情報は対象外としてそのまま残す。</div>
+    </div>
+
+    <div class="specimen">
+      <div class="specimen-head"><div class="specimen-title">折りたたみ時</div><span class="tag">COLLAPSED</span></div>
+      <div class="specimen-stage">
+        <aside class="sidebar collapsed">
+          <div class="nav-group">
+            <div class="nav-item active" title="写真"><span class="ico">▦</span></div>
+            <div class="nav-item" title="検索"><span class="ico">⌕</span></div>
+            <div class="nav-item" title="圧縮"><span class="ico">≡</span></div>
+            <div class="nav-item" title="ダッシュボード"><span class="ico">◫</span></div>
+            <div class="nav-item" title="連携・自動"><span class="ico">⇄</span></div>
+            <div class="nav-item" title="設定"><span class="ico">⚙</span></div>
+          </div>
+          <div class="nav-spacer"></div>
+          <div class="compact-card"><div class="compact-count">12,480枚</div><div class="compact-size">1.2 TB</div></div>
+          <div class="sidebar-foot"><span class="version">v0.14.4</span></div>
+        </aside>
+      </div>
+      <div class="annotation"><b>レール:</b> アイコンを中央揃えにし、右側表示は持たない。下部のコンパクトなライブラリ情報は対象外として維持する。ホバー時の画面名ツールチップも現行どおり。</div>
+    </div>
+  </div>
+
+  <div class="section-label"><h2>状態別の確認</h2><span>右側に出さない情報</span></div>
+  <div class="state-grid">
+    <div class="state">
+      <div class="where">写真</div>
+      <h3>ライブラリ 12,480 枚</h3>
+      <p>枚数が多くても、写真ナビの右側には枚数を出さない。総枚数は下部のライブラリ情報カードだけで確認する。</p>
+      <span class="result">ナビ右側は空</span>
+    </div>
+    <div class="state">
+      <div class="where">圧縮</div>
+      <h3>実行中 2 · 待機 5</h3>
+      <p>未完了ジョブがあっても、圧縮ナビの右側には件数を出さない。件数はダッシュボードと進行状況カードで確認する。</p>
+      <span class="result">ナビ右側は空</span>
+    </div>
+    <div class="state">
+      <div class="where">設定</div>
+      <h3>更新あり v0.9.0</h3>
+      <p>更新があっても、設定ナビの右側に「更新」バッジを出さない。更新は通知ベルと設定画面のアップデートカードで知らせる。</p>
+      <span class="result">バッジなし</span>
+    </div>
+    <div class="state">
+      <div class="where">検索・ダッシュボード・連携・自動</div>
+      <h3>現行どおり</h3>
+      <p>これら4項目は元から右側表示なし。今回の変更対象ではないため、見た目も挙動も変えない。</p>
+      <span class="result">変更なし</span>
+    </div>
+  </div>
+
+  <div class="section-label"><h2>変えないもの</h2><span>対象外の状態表示</span></div>
+  <div class="rules">
+    <div class="rule"><h3>進行状況カード</h3><p>タブ右上の4 pxドットは実行中・実行待ち・待機のみを知らせる。本文の件数バッジと「未実行を開始」も現状維持。</p></div>
+    <div class="rule"><h3>ライブラリ情報</h3><p>展開時の「N 枚」と総容量、折りたたみ時のコンパクト表示は対象外。ナビ右側の枚数とは別物として残す。</p></div>
+    <div class="rule"><h3>更新の知らせ方</h3><p>設定画面のアップデートカード、通知ベル、トーストは変更しない。ナビ右側のバッジだけを廃止する。</p></div>
+  </div>
+
+  <div class="note"><b>確認メモ:</b> 更新あり状態はデモで再現しにくいため、このモックとコード削除で確認する。圧縮ジョブありの状態は実DBで用意できる場合に、ナビ右側が空のままであることを追加確認する。</div>
+
+</div>
+</body>
+</html>
