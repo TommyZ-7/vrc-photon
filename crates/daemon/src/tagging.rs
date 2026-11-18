@@ -337,10 +337,20 @@ impl TaggingWorker {
             return Ok(Completion::Cancelled);
         }
 
+        // Read once at job start so every stage uses the same settings.
+        let settings = {
+            let db = self.db();
+            AppSettings::load(&db)?
+        };
+
         let cache_dir = tagging_cache_dir(&self.ai_data_dir);
-        let snapshot =
-            prepare_tagging_snapshot(Path::new(photo.effective_path()), &cache_dir, &job.id)
-                .map_err(map_snapshot_error)?;
+        let snapshot = prepare_tagging_snapshot(
+            Path::new(photo.effective_path()),
+            &cache_dir,
+            &job.id,
+            settings.ai_tagging_max_edge,
+        )
+        .map_err(map_snapshot_error)?;
         let image = ImageRef {
             path: snapshot.path.to_string_lossy().into_owned(),
             mtime_ms: snapshot.mtime_ms,
@@ -357,15 +367,11 @@ impl TaggingWorker {
             .map_err(map_plugin_error)?;
         let hello = client.hello().clone();
 
-        // The user may change the presence threshold between jobs; read it
-        // when this job starts rather than caching it in the worker.
-        let presence_threshold = {
-            let db = self.db();
-            let settings = AppSettings::load(&db)?;
-            settings
-                .ai_presence_threshold
-                .unwrap_or(hello.defaults.presence_threshold)
-        };
+        // Settings are read once when the job starts rather than cached in
+        // the worker, so a change applies to the next claimed job.
+        let presence_threshold = settings
+            .ai_presence_threshold
+            .unwrap_or(hello.defaults.presence_threshold);
 
         self.record_progress(job, 0.1, TaggingStage::Presence);
         if self.is_cancelled(job, cancel) {
@@ -1127,8 +1133,18 @@ mod tests {
     }
 
     fn add_photo(db: &Arc<Mutex<Db>>, photos_dir: &Path, name: &str) -> i64 {
+        add_photo_with_size(db, photos_dir, name, 32, 24)
+    }
+
+    fn add_photo_with_size(
+        db: &Arc<Mutex<Db>>,
+        photos_dir: &Path,
+        name: &str,
+        width: u32,
+        height: u32,
+    ) -> i64 {
         let path = photos_dir.join(name);
-        image::RgbaImage::from_pixel(32, 24, image::Rgba([10, 20, 30, 255]))
+        image::RgbaImage::from_pixel(width, height, image::Rgba([10, 20, 30, 255]))
             .save(&path)
             .expect("write the test photo");
         let metadata = fs::metadata(&path).expect("read the photo metadata");
@@ -1144,8 +1160,8 @@ mod tests {
             captured_at_utc: 1_700_000_000,
             captured_at_local: "2026-11-04 12:00:00".to_string(),
             tz_offset_sec: 9 * 3600,
-            width: 32,
-            height: 24,
+            width,
+            height,
             file_size: metadata.len(),
             mtime: 1_700_000_000,
             blake3: None,
@@ -1319,6 +1335,10 @@ mod tests {
             add_photo(&self.db, &self.photos_dir, name)
         }
 
+        fn add_photo_with_size(&self, name: &str, width: u32, height: u32) -> i64 {
+            add_photo_with_size(&self.db, &self.photos_dir, name, width, height)
+        }
+
         fn snapshot_path(&self, job_id: &str) -> PathBuf {
             tagging_cache_dir(&self.ai_data_dir).join(format!("{job_id}.jpg"))
         }
@@ -1370,6 +1390,40 @@ mod tests {
             thread::sleep(Duration::from_millis(5));
         }
         panic!("timed out waiting for {what}");
+    }
+
+    #[test]
+    fn tagging_uses_the_configured_snapshot_long_edge() {
+        let ctx = TaggingTestContext::with_scenario(
+            "slow",
+            presence_response(false, 0.02),
+            PeopleResponse::default(),
+            "other",
+            Some(5_000),
+            true,
+            test_config(),
+        );
+        AppSettings {
+            ai_tagging_max_edge: 1536,
+            ..AppSettings::default()
+        }
+        .save(&ctx.db())
+        .unwrap();
+        let photo_id = ctx.add_photo_with_size("large.png", 3000, 1500);
+        let job_id = ctx.enqueue(photo_id);
+        let events = ctx.events.subscribe();
+        let worker = ctx.worker.clone();
+        let handle = thread::spawn(move || worker.process_once());
+
+        wait_for_presence_stage(&events, &job_id);
+        assert_eq!(
+            image::image_dimensions(ctx.snapshot_path(&job_id)).unwrap(),
+            (1536, 768)
+        );
+
+        ctx.db().cancel_tagging_job(&job_id).unwrap();
+        assert!(ctx.control.cancel(&job_id));
+        assert!(handle.join().unwrap().unwrap());
     }
 
     #[test]
