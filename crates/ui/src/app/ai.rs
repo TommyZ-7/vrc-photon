@@ -624,6 +624,19 @@ impl From<&AiUiState> for AiPluginCardView {
     }
 }
 
+/// The newer AI plugin version the update feed advertises for the active
+/// installation, when this host version can run it.
+pub(crate) fn ai_plugin_update_notice(
+    active: Option<&PluginInstallation>,
+    advertised: Option<&vrc_photon_update::AiPluginRelease>,
+    host_version: &str,
+) -> Option<semver::Version> {
+    let installed = semver::Version::parse(active?.version.trim_start_matches('v')).ok()?;
+    let (version, host_min) = advertised?.versions()?;
+    let host = semver::Version::parse(host_version.trim_start_matches('v')).ok()?;
+    (version > installed && host_min <= host).then_some(version)
+}
+
 /// Whether an installation row is the active package. The version is part of
 /// the row identity, so two versions of one variant cannot both look active.
 pub(crate) fn is_active_installation(install: &PluginInstallation) -> bool {
@@ -1988,14 +2001,16 @@ mod tests {
         active_job_photo_label, ai_dashboard_view, ai_error_code_is_stable, ai_error_detail_in,
         ai_error_label_in, ai_error_summary_in, ai_error_toast_in, ai_job_error_is_notifiable,
         ai_manifest_view, ai_plugin_card_state, ai_plugin_package_dialog_filters,
-        ai_response_outcome, ai_tag_view, ai_tag_views, apply_install_event, backend_options,
-        backend_selection_is_disabled_when_not_ready, collect_ai_snapshot,
-        download_progress_bar_ratio, effective_ai_tagging_enabled, enqueue_manual_retag,
-        install_event_applies_to_ai, installation_row_id, is_active_installation, load_photo_ai,
-        model_progress_ratio, model_ready_toast_pending, needs_license_consent, people_label,
-        people_label_in, place_label, place_label_with_confidence, probe_failure_info,
-        request_error_kind, uninstall_request_args, variant_backend_label,
+        ai_plugin_update_notice, ai_response_outcome, ai_tag_view, ai_tag_views,
+        apply_install_event, backend_options, backend_selection_is_disabled_when_not_ready,
+        collect_ai_snapshot, download_progress_bar_ratio, effective_ai_tagging_enabled,
+        enqueue_manual_retag, install_event_applies_to_ai, installation_row_id,
+        is_active_installation, load_photo_ai, model_progress_ratio, model_ready_toast_pending,
+        needs_license_consent, people_label, people_label_in, place_label,
+        place_label_with_confidence, probe_failure_info, request_error_kind,
+        uninstall_request_args, variant_backend_label,
     };
+    use semver::Version;
     use vrc_photon_ai_protocol::{
         BackendInfo, Catalog, ModelState, PluginInstallStatus, Probe, TagDefinition,
         TaggingJobStatus,
@@ -2006,6 +2021,7 @@ mod tests {
     use vrc_photon_core::db::Db;
     use vrc_photon_core::model::{JobStatusCounts, NewPhoto};
     use vrc_photon_ipc::{ErrorCode, Request, Response};
+    use vrc_photon_update::AiPluginRelease;
 
     #[test]
     fn ai_plugin_install_dialog_accepts_only_vpp_packages() {
@@ -2216,6 +2232,105 @@ mod tests {
         let view = AiPluginCardView::from(&ready_state());
         assert_eq!(view.state, AiPluginCardState::Ready);
         assert_eq!(view.primary_action, AiPluginAction::Recheck);
+    }
+
+    fn advertised(version: &str, host_min: &str) -> AiPluginRelease {
+        AiPluginRelease {
+            version: version.to_string(),
+            host_version_min: host_min.to_string(),
+        }
+    }
+
+    #[test]
+    fn plugin_update_notice_requires_a_newer_compatible_release() {
+        let active = sample_install();
+        assert_eq!(
+            ai_plugin_update_notice(
+                Some(&active),
+                Some(&advertised("1.1.0", "0.14.0")),
+                "0.15.0"
+            ),
+            Some(Version::new(1, 1, 0))
+        );
+        assert_eq!(
+            ai_plugin_update_notice(
+                Some(&active),
+                Some(&advertised("1.0.0", "0.14.0")),
+                "0.15.0"
+            ),
+            None
+        );
+        assert_eq!(
+            ai_plugin_update_notice(
+                Some(&active),
+                Some(&advertised("0.9.0", "0.14.0")),
+                "0.15.0"
+            ),
+            None
+        );
+        assert_eq!(
+            ai_plugin_update_notice(
+                Some(&active),
+                Some(&advertised("1.1.0", "0.16.0")),
+                "0.15.0"
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn plugin_update_notice_compares_the_active_installation_only() {
+        let mut active = sample_install();
+        active.version = "1.0.0".to_string();
+        assert_eq!(
+            ai_plugin_update_notice(
+                Some(&active),
+                Some(&advertised("1.5.0", "0.14.0")),
+                "0.15.0"
+            ),
+            Some(Version::new(1, 5, 0))
+        );
+
+        active.version = "2.0.0".to_string();
+        assert_eq!(
+            ai_plugin_update_notice(
+                Some(&active),
+                Some(&advertised("1.5.0", "0.14.0")),
+                "0.15.0"
+            ),
+            None
+        );
+        assert_eq!(
+            ai_plugin_update_notice(None, Some(&advertised("1.5.0", "0.14.0")), "0.15.0"),
+            None
+        );
+    }
+
+    #[test]
+    fn plugin_update_notice_ignores_non_semver_versions() {
+        let mut active = sample_install();
+        active.version = "dev".to_string();
+        assert_eq!(
+            ai_plugin_update_notice(
+                Some(&active),
+                Some(&advertised("1.1.0", "0.14.0")),
+                "0.15.0"
+            ),
+            None
+        );
+        active.version = "v1.0.0".to_string();
+        assert_eq!(
+            ai_plugin_update_notice(
+                Some(&active),
+                Some(&advertised("latest", "0.14.0")),
+                "0.15.0"
+            ),
+            None
+        );
+        assert_eq!(
+            ai_plugin_update_notice(Some(&active), Some(&advertised("1.1.0", "0.14.0")), "dev"),
+            None
+        );
     }
 
     #[test]

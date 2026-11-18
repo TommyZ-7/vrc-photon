@@ -185,6 +185,7 @@ const CALL_SITES: &[(&str, &[&str])] = &[
     ("settings.language.save_failed", &["error"]),
     ("settings.save_failed", &["error"]),
     ("settings.ai.error_code", &["code"]),
+    ("settings.ai.update_available", &["version"]),
     ("settings.ai.thresholds.default", &["value"]),
     ("settings.ai.thresholds.save_failed", &["error"]),
     (
