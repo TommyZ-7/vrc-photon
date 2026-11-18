@@ -1699,6 +1699,15 @@ impl App {
         self.save_ai_runtime_settings(cx, |settings| settings.ai_tagging_auto.scope = scope);
     }
 
+    pub(crate) fn set_ai_tagging_max_edge(&mut self, edge: u32, cx: &mut Context<Self>) {
+        if self.settings.ai_tagging_max_edge == edge {
+            return;
+        }
+        self.save_ai_runtime_settings(cx, |settings| {
+            settings.ai_tagging_max_edge = edge;
+        });
+    }
+
     /// Enqueues ready tagging jobs for the given photos. The plugin must be
     /// enabled and have an active installation, a ready model, and a probe.
     pub(crate) fn enqueue_ai_tagging(&mut self, photo_ids: &[i64], cx: &mut Context<Self>) {
