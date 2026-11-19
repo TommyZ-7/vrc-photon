@@ -23,7 +23,7 @@ pub(crate) struct DemoAssets {
 }
 
 /// Bump whenever the fixture layout changes so existing demo roots rebuild.
-const DEMO_DATA_VERSION: u32 = 5;
+const DEMO_DATA_VERSION: u32 = 1;
 const DEMO_VERSION_FILE: &str = "demo.version";
 
 fn demo_data_is_current(root: &Path) -> bool {
@@ -33,12 +33,10 @@ fn demo_data_is_current(root: &Path) -> bool {
         == Some(DEMO_DATA_VERSION)
 }
 
-/// Entries a demo root may contain. `previews` is accepted only so roots
-/// created before the preview cache was removed can still be rebuilt safely.
-const DEMO_ROOT_ENTRIES: [&str; 9] = [
+/// Entries a demo root may contain.
+const DEMO_ROOT_ENTRIES: [&str; 8] = [
     "photos",
     "thumbnails",
-    "previews",
     "image_pool",
     "library.db",
     "library.db-wal",
@@ -556,6 +554,9 @@ mod tests {
         )
         .unwrap();
         assert!(!demo_data_is_current(temp.path()));
+
+        std::fs::write(temp.path().join(DEMO_VERSION_FILE), "0").unwrap();
+        assert!(!demo_data_is_current(temp.path()));
     }
 
     fn moment(reference: NaiveDate) -> DateTime<Local> {
@@ -690,7 +691,7 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().join("demo");
         std::fs::create_dir_all(root.join("photos")).unwrap();
-        std::fs::write(root.join(DEMO_VERSION_FILE), "1").unwrap();
+        std::fs::write(root.join(DEMO_VERSION_FILE), "0").unwrap();
         let now = moment(NaiveDate::from_ymd_opt(2026, 11, 2).unwrap());
 
         let (db, _assets) = prepare_demo_at(&root, false, now).unwrap();
@@ -706,7 +707,7 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().join("demo");
         std::fs::create_dir_all(&root).unwrap();
-        std::fs::write(root.join(DEMO_VERSION_FILE), "1").unwrap();
+        std::fs::write(root.join(DEMO_VERSION_FILE), "0").unwrap();
         let foreign = root.join("important.txt");
         std::fs::write(&foreign, b"keep me").unwrap();
         let now = moment(NaiveDate::from_ymd_opt(2026, 11, 2).unwrap());
@@ -749,7 +750,7 @@ mod tests {
         drop(db);
         std::fs::write(
             root.join(DEMO_VERSION_FILE),
-            (DEMO_DATA_VERSION - 1).to_string(),
+            DEMO_DATA_VERSION.saturating_sub(1).to_string(),
         )
         .unwrap();
 
