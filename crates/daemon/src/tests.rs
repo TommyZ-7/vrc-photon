@@ -4727,6 +4727,14 @@ fn min_wait_uses_the_earliest_deadline_and_caps_at_the_maximum() {
 }
 
 #[test]
+fn overdue_never_panics_and_is_not_in_the_future() {
+    let before = Instant::now();
+    let value = crate::lifecycle::overdue(Duration::from_secs(60));
+    assert!(value <= before);
+    let _ = crate::lifecycle::overdue(Duration::MAX);
+}
+
+#[test]
 fn headless_idle_wait_is_at_most_one_second() {
     let dir = tempfile::tempdir().unwrap();
     let mut daemon = test_daemon(&dir);

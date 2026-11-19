@@ -119,7 +119,7 @@ impl Daemon {
 
     /// Marks the aggregate counts for a refresh on the next loop iteration.
     pub(crate) fn invalidate_counts(&mut self) {
-        self.last_counts_status = Instant::now() - COUNTS_STATUS_INTERVAL;
+        self.last_counts_status = crate::lifecycle::overdue(COUNTS_STATUS_INTERVAL);
     }
 
     /// Publishes a status event only when the observable fields changed.

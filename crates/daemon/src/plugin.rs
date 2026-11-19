@@ -1719,7 +1719,7 @@ impl<'a> ModelProgress<'a> {
             plugin_id,
             revision,
             bytes: 0,
-            last_update: Instant::now() - PROGRESS_INTERVAL,
+            last_update: crate::lifecycle::overdue(PROGRESS_INTERVAL),
         }
     }
 

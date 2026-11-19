@@ -197,6 +197,14 @@ pub(crate) fn min_wait(waits: &[Duration], cap: Duration) -> Duration {
         .max(Duration::from_millis(10))
 }
 
+/// Returns `Instant::now() - interval`, clamped to now when the monotonic
+/// clock is younger than `interval` (fresh VM, container, or early boot).
+pub(crate) fn overdue(interval: Duration) -> Instant {
+    Instant::now()
+        .checked_sub(interval)
+        .unwrap_or_else(Instant::now)
+}
+
 impl Daemon {
     /// Opens the daemon as the deletion executor. The caller must own the
     /// single-instance lock so no other process can still be executing a
@@ -385,11 +393,11 @@ impl Daemon {
             vrchat_probe: VrchatProcessProbe::new(),
             vrchat_missing_polls: 0,
             vrchat_session_id: None,
-            last_presence_check: Instant::now() - PRESENCE_INTERVAL,
+            last_presence_check: overdue(PRESENCE_INTERVAL),
             workers: Vec::new(),
             dirty_paths: Vec::new(),
             deferred_commands: Vec::new(),
-            last_log_poll: std::time::Instant::now() - LOG_INTERVAL,
+            last_log_poll: overdue(LOG_INTERVAL),
             tray: None,
             tray_enabled,
             thumbnail_tx: None,
@@ -400,13 +408,13 @@ impl Daemon {
             owns_deletion_executor,
             deletion_handle: None,
             last_autostart_check: std::time::Instant::now(),
-            last_settings_check: Instant::now() - Duration::from_secs(2),
+            last_settings_check: overdue(Duration::from_secs(2)),
             last_data_version: None,
-            last_session_status: Instant::now() - SESSION_STATUS_INTERVAL,
-            last_counts_status: Instant::now() - COUNTS_STATUS_INTERVAL,
-            last_stale_job_sweep: Instant::now(),
+            last_session_status: overdue(SESSION_STATUS_INTERVAL),
+            last_counts_status: overdue(COUNTS_STATUS_INTERVAL),
+            last_stale_job_sweep: overdue(STALE_JOB_SWEEP_INTERVAL),
             last_published_status: None,
-            last_heartbeat: std::time::Instant::now() - Duration::from_secs(10),
+            last_heartbeat: overdue(Duration::from_secs(10)),
             last_asset_check: Instant::now(),
             full_asset_check_due: false,
             thumbnail_dir,
