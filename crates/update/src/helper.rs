@@ -1950,10 +1950,37 @@ pub(crate) fn write_atomic(path: &Path, bytes: &[u8], mode: u32) -> Result<()> {
 
     #[cfg(windows)]
     {
-        if path.exists() {
-            let _ = std::fs::remove_file(path);
+        use std::os::windows::ffi::OsStrExt;
+        use windows::Win32::Storage::FileSystem::{
+            MOVEFILE_REPLACE_EXISTING, MoveFileExW,
+        };
+        use windows::core::PCWSTR;
+
+        let wide = |path: &Path| -> Vec<u16> {
+            path.as_os_str()
+                .encode_wide()
+                .chain(std::iter::once(0))
+                .collect()
+        };
+        let from = wide(&temp);
+        let to = wide(path);
+        // SAFETY: both buffers are NUL-terminated UTF-16 and stay alive for
+        // the duration of the call.
+        return unsafe {
+            MoveFileExW(
+                PCWSTR(from.as_ptr()),
+                PCWSTR(to.as_ptr()),
+                MOVEFILE_REPLACE_EXISTING,
+            )
         }
+        .map_err(|error| {
+            UpdateError::Other(format!(
+                "cannot replace {} atomically: {error}",
+                path.display()
+            ))
+        });
     }
+    #[cfg(not(windows))]
     std::fs::rename(&temp, path).map_err(|error| UpdateError::io(path, error))
 }
 
