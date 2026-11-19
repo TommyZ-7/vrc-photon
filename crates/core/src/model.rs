@@ -104,7 +104,6 @@ pub const COMPRESSION_DIMENSION_MAX: u32 = 16_384;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResizeSettings {
     pub resize_enabled: bool,
-    #[serde(default)]
     pub resize_mode: ResizeMode,
     pub width: u32,
     pub height: u32,
@@ -263,7 +262,6 @@ pub struct CompressionProfile {
     pub quality: u8,
     pub lossless: bool,
     pub resize_enabled: bool,
-    #[serde(default)]
     pub resize_mode: ResizeMode,
     pub width: u32,
     pub height: u32,
@@ -1170,12 +1168,10 @@ mod tests {
     }
 
     #[test]
-    fn legacy_profile_json_defaults_to_downscale_only() {
-        let json = r#"{
-            "id": "legacy",
-            "name": "Legacy",
-            "enabled": true,
-            "auto_enabled": true,
+    fn resize_mode_is_required_in_profile_json() {
+        let json = serde_json::json!({
+            "id": "profile",
+            "name": "Profile",
             "format": "webp",
             "quality": 82,
             "lossless": false,
@@ -1186,11 +1182,8 @@ mod tests {
             "output_dir": null,
             "suffix": "_webp",
             "encode_speed": 6
-        }"#;
-
-        let profile: CompressionProfile = serde_json::from_str(json).unwrap();
-
-        assert_eq!(profile.resize_mode, ResizeMode::DownscaleOnly);
+        });
+        assert!(serde_json::from_value::<CompressionProfile>(json).is_err());
     }
 
     #[test]

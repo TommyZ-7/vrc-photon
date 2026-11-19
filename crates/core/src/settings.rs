@@ -102,7 +102,6 @@ pub enum AutoScope {
 
 /// Shared automatic-behavior settings for compression, Discord, and AI.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default)]
 pub struct AutoBehavior {
     pub mode: AutoMode,
     pub scope: AutoScope,
@@ -178,155 +177,101 @@ impl AutoBehavior {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
 pub struct AppSettings {
     /// Photo roots to index. The first entry is the primary VRChat folder.
     pub photo_roots: Vec<String>,
     /// VRChat output log directory.
     pub log_dir: Option<String>,
     /// Optional folder for imported photos.
-    #[serde(default)]
     pub managed_dir: Option<String>,
     /// Whether folder imports recreate the source hierarchy. Defaults to the
     /// historical flat layout.
-    #[serde(default)]
     pub import_preserve_folder_structure: bool,
     /// Whether a preserved hierarchy starts with the selected folder's name.
     /// Stored verbatim even when it has no effect (`preserve` is off).
-    #[serde(default)]
     pub import_include_root_folder: bool,
     pub language: String,
     pub autostart: bool,
     pub tray: bool,
     pub auto_compress_enabled: bool,
     pub auto_compress: AutoBehavior,
-    #[serde(default)]
     pub auto_compress_queue_paused: bool,
     /// Whether automatic compression keeps the original after a successful
     /// encode. Manual compression always keeps the original and never reads
     /// this value.
-    #[serde(default = "default_true", alias = "compression_keep_original")]
     pub auto_compress_keep_original: bool,
     /// Compression parameters used by automatic compression. They are
     /// independent of the manual compression profiles.
-    #[serde(default = "default_auto_compression")]
     pub auto_compression: CompressionOptions,
     /// Resize-only parameters used by the clipboard action.
-    #[serde(default = "default_clipboard_compression")]
     pub clipboard_compression: ResizeSettings,
     /// Compression parameters used when Discord has to encode an upload.
-    #[serde(default = "default_discord_compression")]
     pub discord_compression: CompressionOptions,
     pub estimated_link: bool,
     pub thumbnail_cache_mb: u64,
     /// Width of the fixed 16:9 thumbnail canvas (256, 384, or 512).
-    #[serde(default = "default_thumbnail_size")]
     pub thumbnail_size: u32,
     pub compression_workers: usize,
-    #[serde(default)]
     pub ui_sidebar_collapsed: bool,
-    #[serde(default = "default_true")]
     pub ui_inspector_collapsed: bool,
-    #[serde(default)]
     pub ui_reduce_motion: bool,
     /// Maximum animation frame rate. `0` means no cap.
-    #[serde(default = "default_max_fps")]
     pub ui_max_fps: u32,
     /// Whether the compact command ribbon is collapsed.
-    #[serde(default = "default_true")]
     pub ui_ribbon_collapsed: bool,
-    #[serde(default = "default_true")]
     pub ui_card_show_status: bool,
-    #[serde(default = "default_true")]
     pub ui_card_show_world: bool,
-    #[serde(default = "default_true")]
     pub ui_card_show_date: bool,
-    #[serde(default = "default_true")]
     pub ui_card_show_size: bool,
-    #[serde(default, deserialize_with = "deserialize_card_size")]
+    #[serde(deserialize_with = "deserialize_card_size")]
     pub ui_card_size: CardSize,
     /// Horizontal and vertical gap between photo cards, in pixels.
-    #[serde(
-        default = "default_ui_grid_gap",
-        deserialize_with = "deserialize_ui_grid_gap"
-    )]
+    #[serde(deserialize_with = "deserialize_ui_grid_gap")]
     pub ui_grid_gap: u8,
     /// Corner radius of photo cards, in pixels. The image inside a card uses
     /// this value minus the 1 px border.
-    #[serde(
-        default = "default_ui_card_radius",
-        deserialize_with = "deserialize_ui_card_radius"
-    )]
+    #[serde(deserialize_with = "deserialize_ui_card_radius")]
     pub ui_card_radius: u8,
     /// Whether the Photos grid opens in timeline or session order.
-    #[serde(default, deserialize_with = "deserialize_photos_view_mode")]
+    #[serde(deserialize_with = "deserialize_photos_view_mode")]
     pub ui_photos_view_mode: PhotosViewMode,
     /// Main colour catalog id. Unknown ids fall back to `charcoal` in the UI.
-    #[serde(default = "default_ui_theme_main")]
     pub ui_theme_main: String,
     /// Accent colour catalog id. Unknown ids fall back to `sky` in the UI.
-    #[serde(default = "default_ui_theme_accent")]
     pub ui_theme_accent: String,
-    #[serde(default = "default_auto_update_check")]
     pub auto_update_check: bool,
-    #[serde(default)]
     pub update_last_checked_at: Option<i64>,
     /// Whether automatic Discord posting is enabled.
-    #[serde(default)]
     pub discord_enabled: bool,
     /// Destination label shown in the UI. Blank values normalize to `Discord`.
-    #[serde(default = "default_discord_destination")]
     pub discord_destination: String,
-    #[serde(default)]
     pub discord_include_players: bool,
-    #[serde(default = "default_true")]
     pub discord_send_original: bool,
-    #[serde(default)]
     pub discord_auto: AutoBehavior,
-    #[serde(default)]
     pub discord_queue_paused: bool,
-    #[serde(default)]
     pub discord_consent_at: Option<i64>,
     /// Whether the daemon resolves world names through the VRChat API.
-    #[serde(default)]
     pub world_name_resolution_enabled: bool,
     /// Whether AI tagging is enabled.
-    #[serde(default)]
     pub ai_tagging_enabled: bool,
     /// Whether newly imported photos are tagged automatically.
-    #[serde(default)]
     pub ai_tagging_auto: AutoBehavior,
-    #[serde(default)]
     pub ai_tagging_queue_paused: bool,
     /// Character presence threshold (0.0–1.0). `None` uses the sidecar default.
-    #[serde(default)]
     pub ai_presence_threshold: Option<f32>,
     /// Inference backend: `auto`, `vulkan`, `cuda`, `roc`, or `cpu`.
-    #[serde(default = "default_ai_backend")]
     pub ai_tagging_backend: String,
     /// Longest edge of the JPEG snapshot passed to the sidecar
     /// (1024, 1536, or 2048).
-    #[serde(
-        default = "default_ai_tagging_max_edge",
-        deserialize_with = "deserialize_ai_tagging_max_edge"
-    )]
+    #[serde(deserialize_with = "deserialize_ai_tagging_max_edge")]
     pub ai_tagging_max_edge: u32,
     /// Seconds of inactivity before the sidecar stops (30–3600).
-    #[serde(default = "default_ai_idle_timeout")]
     pub ai_tagging_idle_timeout_sec: u64,
     /// Unix timestamp when the user accepted the model licence.
-    #[serde(default)]
     pub ai_model_license_consent_at: Option<i64>,
-    /// Whether the first-run setup was completed or dismissed. Older settings
-    /// without this field belong to an existing install and must not show the
-    /// wizard again, so serde defaults to `true`; a brand-new install uses
-    /// `Default::default()` (false).
-    #[serde(default = "default_true")]
+    /// Whether the first-run setup was completed or dismissed. A brand-new
+    /// install uses `Default::default()` (false).
     pub setup_completed: bool,
-}
-
-fn default_true() -> bool {
-    true
 }
 
 fn default_auto_compression() -> CompressionOptions {
@@ -339,18 +284,6 @@ fn default_clipboard_compression() -> ResizeSettings {
 
 fn default_discord_compression() -> CompressionOptions {
     CompressionOptions::discord_default()
-}
-
-fn default_max_fps() -> u32 {
-    60
-}
-
-fn default_thumbnail_size() -> u32 {
-    crate::thumbnail::THUMBNAIL_SIZE_DEFAULT
-}
-
-fn default_auto_update_check() -> bool {
-    true
 }
 
 fn default_ui_theme_main() -> String {
@@ -389,14 +322,6 @@ where
 
 fn default_ai_idle_timeout() -> u64 {
     600
-}
-
-fn default_ui_grid_gap() -> u8 {
-    UI_GRID_GAP_DEFAULT
-}
-
-fn default_ui_card_radius() -> u8 {
-    UI_CARD_RADIUS_DEFAULT
 }
 
 /// Reads one scalar and clamps it. A malformed value must not fail the whole
@@ -523,128 +448,6 @@ impl Default for AppSettings {
     }
 }
 
-/// Migrates the old boolean/mode fields to the shared `AutoBehavior` shape.
-/// New-format objects are left untouched; old keys are removed in every case.
-fn migrate_legacy_auto_settings(value: &mut serde_json::Value, now: i64) {
-    let Some(object) = value.as_object_mut() else {
-        return;
-    };
-
-    let old_enabled = object
-        .get("auto_compress")
-        .and_then(|value| value.as_bool());
-    let old_immediate = object
-        .get("auto_compress_immediate")
-        .and_then(|value| value.as_bool());
-    let old_backlog = object
-        .get("auto_compress_backlog")
-        .and_then(|value| value.as_bool());
-    let has_new_compression = object
-        .get("auto_compress")
-        .is_some_and(|value| value.is_object());
-
-    if !has_new_compression
-        && (old_enabled.is_some() || old_immediate.is_some() || old_backlog.is_some())
-    {
-        let enabled = old_enabled.unwrap_or(true);
-        // When the old master switch was off, the stored mode is a preference
-        // for the next enable. Migrating it to Waiting would leave the queue
-        // dormant after the user turns the switch back on.
-        let mode = if !enabled || old_immediate.unwrap_or(true) {
-            "immediate"
-        } else {
-            "waiting"
-        };
-        let scope = if old_backlog.unwrap_or(false) {
-            "include_backlog"
-        } else {
-            "new_only"
-        };
-        let activated_at = if enabled {
-            serde_json::json!(now)
-        } else {
-            serde_json::Value::Null
-        };
-        object
-            .entry("auto_compress_enabled".to_string())
-            .or_insert_with(|| serde_json::json!(enabled));
-        object.insert(
-            "auto_compress".to_string(),
-            serde_json::json!({
-                "mode": mode,
-                "scope": scope,
-                "activated_at": activated_at,
-            }),
-        );
-    }
-
-    object.remove("auto_compress_immediate");
-    object.remove("auto_compress_backlog");
-
-    let has_new_discord = object
-        .get("discord_auto")
-        .is_some_and(|value| value.is_object());
-    if !has_new_discord {
-        let old_mode = object
-            .get("discord_auto_mode")
-            .and_then(|value| value.as_str())
-            .map(str::to_string);
-        let old_since = object
-            .get("discord_auto_since")
-            .and_then(|value| value.as_i64());
-        if old_mode.is_some() || old_since.is_some() {
-            let mode = match old_mode.as_deref() {
-                Some("immediate") => "immediate",
-                Some("waiting") => "waiting",
-                _ => "off",
-            };
-            let enabled = object
-                .get("discord_enabled")
-                .and_then(|value| value.as_bool())
-                .unwrap_or(false);
-            let activated_at = old_since.or(if enabled { Some(now) } else { None });
-            object.insert(
-                "discord_auto".to_string(),
-                serde_json::json!({
-                    "mode": mode,
-                    "scope": "new_only",
-                    "activated_at": activated_at,
-                }),
-            );
-        }
-    }
-    object.remove("discord_auto_mode");
-    object.remove("discord_auto_since");
-
-    let has_new_ai = object
-        .get("ai_tagging_auto")
-        .is_some_and(|value| value.is_object());
-    if !has_new_ai
-        && let Some(auto) = object
-            .get("ai_tagging_auto")
-            .and_then(|value| value.as_bool())
-    {
-        let enabled = object
-            .get("ai_tagging_enabled")
-            .and_then(|value| value.as_bool())
-            .unwrap_or(false);
-        let mode = if auto { "immediate" } else { "off" };
-        let activated_at = if enabled {
-            serde_json::json!(now)
-        } else {
-            serde_json::Value::Null
-        };
-        object.insert(
-            "ai_tagging_auto".to_string(),
-            serde_json::json!({
-                "mode": mode,
-                "scope": "new_only",
-                "activated_at": activated_at,
-            }),
-        );
-    }
-}
-
 impl AppSettings {
     /// Loads the settings row.
     ///
@@ -655,7 +458,7 @@ impl AppSettings {
     pub fn load(db: &Db) -> Result<Self> {
         match db.get_setting(SETTINGS_KEY)? {
             Some(json) => {
-                let mut value = match serde_json::from_str::<serde_json::Value>(&json) {
+                let value = match serde_json::from_str::<serde_json::Value>(&json) {
                     Ok(value) => value,
                     Err(error) => {
                         if let Err(backup_error) = backup_corrupt_settings(db, &json) {
@@ -664,9 +467,7 @@ impl AppSettings {
                         return Err(error.into());
                     }
                 };
-                let before = value.clone();
-                migrate_legacy_auto_settings(&mut value, chrono::Utc::now().timestamp());
-                let mut settings = match serde_json::from_value::<Self>(value.clone()) {
+                let mut settings = match serde_json::from_value::<Self>(value) {
                     Ok(settings) => settings,
                     Err(error) => {
                         if let Err(backup_error) = backup_corrupt_settings(db, &json) {
@@ -675,18 +476,6 @@ impl AppSettings {
                         return Err(error.into());
                     }
                 };
-                if value != before {
-                    match serde_json::to_string_pretty(&value) {
-                        Ok(serialized) => {
-                            if let Err(error) = db.set_setting(SETTINGS_KEY, &serialized) {
-                                tracing::warn!(%error, "cannot persist migrated app settings");
-                            }
-                        }
-                        Err(error) => {
-                            tracing::warn!(%error, "cannot serialize migrated app settings");
-                        }
-                    }
-                }
                 settings.normalize_discord_destination();
                 settings.normalize_ai_settings();
                 settings.normalize_grid_display();
@@ -934,23 +723,6 @@ mod tests {
     use crate::model::{CompressionFormat, CompressionOptions, ResizeMode, ResizeSettings};
 
     #[test]
-    fn legacy_settings_without_feature_compression_use_defaults() {
-        let settings: AppSettings = serde_json::from_str("{}").unwrap();
-        assert_eq!(
-            settings.auto_compression,
-            CompressionOptions::auto_default()
-        );
-        assert_eq!(
-            settings.clipboard_compression,
-            ResizeSettings::clipboard_default()
-        );
-        assert_eq!(
-            settings.discord_compression,
-            CompressionOptions::discord_default()
-        );
-    }
-
-    #[test]
     fn feature_compression_defaults_match_the_builtin_profiles() {
         let auto = CompressionOptions::auto_default();
         assert_eq!(auto.format, CompressionFormat::Webp);
@@ -981,28 +753,6 @@ mod tests {
     }
 
     #[test]
-    fn missing_ribbon_collapsed_defaults_to_true_and_keeps_other_settings() {
-        let json = r#"{
-            "photo_roots": ["/tmp/photos"],
-            "log_dir": "/tmp/logs",
-            "managed_dir": null,
-            "language": "ja",
-            "autostart": false,
-            "tray": true,
-            "estimated_link": true,
-            "thumbnail_cache_mb": 2048,
-            "compression_workers": 2
-        }"#;
-        let settings: AppSettings = serde_json::from_str(json).unwrap();
-        assert!(settings.ui_ribbon_collapsed);
-        assert_eq!(settings.ui_max_fps, 60);
-        assert_eq!(settings.photo_roots, vec!["/tmp/photos".to_string()]);
-        assert_eq!(settings.log_dir, Some("/tmp/logs".to_string()));
-        assert!(!settings.autostart);
-        assert_eq!(settings.compression_workers, 2);
-    }
-
-    #[test]
     fn ribbon_collapsed_setting_roundtrips() {
         let db = Db::open_in_memory().unwrap();
         let settings = AppSettings {
@@ -1012,47 +762,6 @@ mod tests {
         settings.save(&db).unwrap();
         let loaded = AppSettings::load(&db).unwrap();
         assert!(loaded.ui_ribbon_collapsed);
-    }
-
-    #[test]
-    fn old_settings_default_to_keep_originals_and_immediate_auto_compress() {
-        let json = r#"{
-            "photo_roots": [],
-            "log_dir": null,
-            "managed_dir": null,
-            "language": "ja",
-            "autostart": true,
-            "tray": true,
-            "estimated_link": true,
-            "thumbnail_cache_mb": 2048,
-            "compression_workers": 1
-        }"#;
-        let db = Db::open_in_memory().unwrap();
-        db.set_setting(SETTINGS_KEY, json).unwrap();
-        let settings = AppSettings::load(&db).unwrap();
-        assert!(settings.auto_compress_keep_original);
-        assert_eq!(settings.auto_compress.mode, AutoMode::Immediate);
-    }
-
-    #[test]
-    fn legacy_compression_policy_loads_as_the_automatic_setting() {
-        let json = r#"{
-            "photo_roots": [],
-            "log_dir": null,
-            "managed_dir": null,
-            "language": "ja",
-            "autostart": true,
-            "tray": true,
-            "compression_keep_original": false,
-            "auto_compress_immediate": true,
-            "estimated_link": true,
-            "thumbnail_cache_mb": 2048,
-            "compression_workers": 1
-        }"#;
-        let db = Db::open_in_memory().unwrap();
-        db.set_setting(SETTINGS_KEY, json).unwrap();
-        let settings = AppSettings::load(&db).unwrap();
-        assert!(!settings.auto_compress_keep_original);
     }
 
     #[test]
@@ -1119,27 +828,6 @@ mod tests {
     }
 
     #[test]
-    fn missing_card_display_fields_default_to_visible_medium() {
-        let json = r#"{
-            "photo_roots": [],
-            "log_dir": null,
-            "managed_dir": null,
-            "language": "ja",
-            "autostart": true,
-            "tray": true,
-            "estimated_link": true,
-            "thumbnail_cache_mb": 2048,
-            "compression_workers": 1
-        }"#;
-        let settings: AppSettings = serde_json::from_str(json).unwrap();
-        assert!(settings.ui_card_show_status);
-        assert!(settings.ui_card_show_world);
-        assert!(settings.ui_card_show_date);
-        assert!(settings.ui_card_show_size);
-        assert_eq!(settings.ui_card_size, CardSize::Medium);
-    }
-
-    #[test]
     fn grid_display_slider_values_round_and_clamp() {
         assert_eq!(clamp_grid_gap(14.4), 14);
         assert_eq!(clamp_grid_gap(14.6), 15);
@@ -1160,13 +848,6 @@ mod tests {
         assert_eq!(settings.ui_card_radius, UI_CARD_RADIUS_DEFAULT);
         assert_eq!(UI_GRID_GAP_DEFAULT, 14);
         assert_eq!(UI_CARD_RADIUS_DEFAULT, 13);
-    }
-
-    #[test]
-    fn missing_grid_display_fields_use_defaults() {
-        let settings: AppSettings = serde_json::from_str("{}").unwrap();
-        assert_eq!(settings.ui_grid_gap, UI_GRID_GAP_DEFAULT);
-        assert_eq!(settings.ui_card_radius, UI_CARD_RADIUS_DEFAULT);
     }
 
     #[test]
@@ -1264,24 +945,6 @@ mod tests {
     }
 
     #[test]
-    fn incomplete_settings_json_uses_field_defaults() {
-        let settings: AppSettings = serde_json::from_str("{}").unwrap();
-        let defaults = AppSettings::default();
-        assert_eq!(settings.language, defaults.language);
-        assert_eq!(settings.autostart, defaults.autostart);
-        assert_eq!(settings.thumbnail_size, defaults.thumbnail_size);
-        assert_eq!(settings.photo_roots, defaults.photo_roots);
-        assert_eq!(settings.ai_tagging_backend, defaults.ai_tagging_backend);
-
-        let partial: AppSettings =
-            serde_json::from_str(r#"{"language":"en","photo_roots":["/tmp/photos"]}"#).unwrap();
-        assert_eq!(partial.language, "en");
-        assert_eq!(partial.photo_roots, vec!["/tmp/photos".to_string()]);
-        assert!(partial.ui_ribbon_collapsed);
-        assert!(partial.autostart);
-    }
-
-    #[test]
     fn malformed_settings_json_returns_an_error_and_backs_up_the_raw_row() {
         let db = Db::open_in_memory().unwrap();
         let raw = r#"{"photo_roots":["/tmp/photos"],"language":"#;
@@ -1346,24 +1009,6 @@ mod tests {
     }
 
     #[test]
-    fn missing_thumbnail_settings_use_the_new_defaults() {
-        let json = r#"{
-            "photo_roots": [],
-            "log_dir": null,
-            "managed_dir": null,
-            "language": "ja",
-            "autostart": true,
-            "tray": true,
-            "estimated_link": true,
-            "thumbnail_cache_mb": 2048,
-            "compression_workers": 1
-        }"#;
-        let settings: AppSettings = serde_json::from_str(json).unwrap();
-        assert_eq!(settings.thumbnail_size, 256);
-        assert_eq!(settings.thumbnail_cache_mb, 2048);
-    }
-
-    #[test]
     fn thumbnail_settings_roundtrip() {
         let db = Db::open_in_memory().unwrap();
         let settings = AppSettings {
@@ -1377,45 +1022,25 @@ mod tests {
 
     #[test]
     fn unknown_thumbnail_quality_key_is_ignored() {
-        let json = r#"{"thumbnail_quality": 95, "thumbnail_size": 256}"#;
-        let settings: AppSettings = serde_json::from_str(json).unwrap();
+        let mut value = serde_json::to_value(AppSettings::default()).unwrap();
+        let object = value.as_object_mut().unwrap();
+        object.insert("thumbnail_quality".to_string(), serde_json::json!(95));
+        object.insert("thumbnail_size".to_string(), serde_json::json!(256));
+        let settings: AppSettings = serde_json::from_value(value).unwrap();
         assert_eq!(settings.thumbnail_size, 256);
     }
 
     #[test]
-    fn missing_theme_fields_default_to_charcoal_and_sky() {
-        let json = r#"{
-            "photo_roots": [],
-            "log_dir": null,
-            "managed_dir": null,
-            "language": "ja",
-            "autostart": true,
-            "tray": true,
-            "estimated_link": true,
-            "thumbnail_cache_mb": 2048,
-            "compression_workers": 1
-        }"#;
-        let settings: AppSettings = serde_json::from_str(json).unwrap();
-        assert_eq!(settings.ui_theme_main, "charcoal");
-        assert_eq!(settings.ui_theme_accent, "sky");
-    }
-
-    #[test]
     fn unknown_theme_id_loads_verbatim() {
-        let json = r#"{
-            "photo_roots": ["/tmp/photos"],
-            "log_dir": null,
-            "managed_dir": null,
-            "language": "ja",
-            "autostart": true,
-            "tray": true,
-            "estimated_link": true,
-            "thumbnail_cache_mb": 2048,
-            "compression_workers": 1,
-            "ui_theme_main": "neon",
-            "ui_theme_accent": "void"
-        }"#;
-        let settings: AppSettings = serde_json::from_str(json).unwrap();
+        let mut value = serde_json::to_value(AppSettings {
+            photo_roots: vec!["/tmp/photos".to_string()],
+            ..Default::default()
+        })
+        .unwrap();
+        let object = value.as_object_mut().unwrap();
+        object.insert("ui_theme_main".to_string(), serde_json::json!("neon"));
+        object.insert("ui_theme_accent".to_string(), serde_json::json!("void"));
+        let settings: AppSettings = serde_json::from_value(value).unwrap();
         assert_eq!(settings.ui_theme_main, "neon");
         assert_eq!(settings.ui_theme_accent, "void");
         assert_eq!(settings.photo_roots, vec!["/tmp/photos".to_string()]);
@@ -1435,32 +1060,6 @@ mod tests {
         assert_eq!(loaded.photo_roots, settings.photo_roots);
         assert_eq!(loaded.log_dir, settings.log_dir);
         assert_eq!(loaded.language, "en");
-    }
-
-    #[test]
-    fn settings_deserialize_without_ui_fields() {
-        let json = r#"{
-            "photo_roots": [],
-            "log_dir": null,
-            "managed_dir": null,
-            "language": "ja",
-            "autostart": true,
-            "tray": true,
-            "estimated_link": true,
-            "thumbnail_cache_mb": 2048,
-            "compression_workers": 1
-        }"#;
-        let settings: AppSettings = serde_json::from_str(json).unwrap();
-        assert!(!settings.ui_sidebar_collapsed);
-        assert!(settings.ui_inspector_collapsed);
-        assert!(!settings.ui_reduce_motion);
-        assert!(settings.ui_card_show_status);
-        assert!(settings.ui_card_show_world);
-        assert!(settings.ui_card_show_date);
-        assert!(settings.ui_card_show_size);
-        assert_eq!(settings.ui_card_size, CardSize::Medium);
-        assert!(settings.auto_update_check);
-        assert_eq!(settings.update_last_checked_at, None);
     }
 
     #[test]
@@ -1493,25 +1092,6 @@ mod tests {
         assert_eq!(settings.discord_auto.mode, AutoMode::Off);
         assert_eq!(settings.discord_auto.activated_at, None);
         assert_eq!(settings.discord_consent_at, None);
-    }
-
-    #[test]
-    fn old_app_settings_json_keeps_discord_defaults() {
-        let mut value = serde_json::to_value(AppSettings::default()).unwrap();
-        for key in [
-            "discord_enabled",
-            "discord_destination",
-            "discord_include_players",
-            "discord_send_original",
-            "discord_auto",
-            "discord_consent_at",
-        ] {
-            value.as_object_mut().unwrap().remove(key);
-        }
-        let settings: AppSettings = serde_json::from_value(value).unwrap();
-        assert!(!settings.discord_enabled);
-        assert_eq!(settings.discord_auto.mode, AutoMode::Off);
-        assert!(settings.discord_send_original);
     }
 
     #[test]
@@ -1556,33 +1136,6 @@ mod tests {
         assert!(!json.contains(url));
         clear_discord_webhook(&db).unwrap();
         assert_eq!(load_discord_webhook(&db).unwrap(), None);
-    }
-
-    #[test]
-    fn ai_settings_default_off_and_survive_old_json() {
-        let settings = AppSettings::default();
-        assert!(!settings.ai_tagging_enabled);
-        assert_eq!(settings.ai_tagging_auto.mode, AutoMode::Off);
-        assert_eq!(settings.ai_tagging_backend, "auto");
-        assert_eq!(settings.ai_tagging_max_edge, 1024);
-        assert_eq!(settings.ai_tagging_idle_timeout_sec, 600);
-        assert!(settings.ai_presence_threshold.is_none());
-        assert!(settings.ai_model_license_consent_at.is_none());
-
-        let db = Db::open_in_memory().unwrap();
-        db.set_setting(
-            SETTINGS_KEY,
-            r#"{"photo_roots":[],"log_dir":null,"managed_dir":null,"language":"ja","autostart":true,"tray":true,"auto_compress":true,"auto_compress_backlog":false,"estimated_link":true,"thumbnail_cache_mb":2048,"compression_workers":1}"#,
-        )
-        .unwrap();
-        let old = AppSettings::load(&db).unwrap();
-        assert!(!old.ai_tagging_enabled);
-        assert_eq!(old.ai_tagging_auto.mode, AutoMode::Off);
-        assert_eq!(old.ai_tagging_backend, "auto");
-        assert_eq!(old.ai_tagging_max_edge, 1024);
-        assert_eq!(old.ai_tagging_idle_timeout_sec, 600);
-        assert!(old.ai_presence_threshold.is_none());
-        assert!(old.ai_model_license_consent_at.is_none());
     }
 
     #[test]
@@ -1743,37 +1296,9 @@ mod tests {
     }
 
     #[test]
-    fn old_settings_json_defaults_import_structure_off() {
-        let json = r#"{
-            "photo_roots": [],
-            "log_dir": null,
-            "managed_dir": null,
-            "language": "ja",
-            "autostart": true,
-            "tray": true,
-            "estimated_link": true,
-            "thumbnail_cache_mb": 2048,
-            "compression_workers": 1
-        }"#;
-        let settings: AppSettings = serde_json::from_str(json).unwrap();
-        assert!(!settings.import_preserve_folder_structure);
-        assert!(!settings.import_include_root_folder);
-        assert_eq!(
-            settings.import_options(),
-            crate::importer::ImportOptions::default()
-        );
-    }
-
-    #[test]
     fn fresh_settings_start_with_setup_pending() {
         let db = Db::open_in_memory().unwrap();
         assert!(!AppSettings::load(&db).unwrap().setup_completed);
-    }
-
-    #[test]
-    fn legacy_settings_without_the_setup_flag_count_as_completed() {
-        let settings: AppSettings = serde_json::from_str(r#"{"language":"ja"}"#).unwrap();
-        assert!(settings.setup_completed);
     }
 
     #[test]
@@ -1792,20 +1317,6 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         assert!(!AppSettings::default().world_name_resolution_enabled);
 
-        let json = r#"{
-            "photo_roots": [],
-            "log_dir": null,
-            "managed_dir": null,
-            "language": "ja",
-            "autostart": true,
-            "tray": true,
-            "estimated_link": true,
-            "thumbnail_cache_mb": 2048,
-            "compression_workers": 1
-        }"#;
-        let old: AppSettings = serde_json::from_str(json).unwrap();
-        assert!(!old.world_name_resolution_enabled);
-
         let settings = AppSettings {
             world_name_resolution_enabled: true,
             ..Default::default()
@@ -1816,95 +1327,6 @@ mod tests {
                 .unwrap()
                 .world_name_resolution_enabled
         );
-    }
-
-    #[test]
-    fn legacy_compression_fields_migrate_to_common_behavior() {
-        let mut value = serde_json::json!({
-            "auto_compress": true,
-            "auto_compress_immediate": false,
-            "auto_compress_backlog": true,
-        });
-        migrate_legacy_auto_settings(&mut value, 1_700_000_000);
-        assert_eq!(value["auto_compress_enabled"], true);
-        assert_eq!(value["auto_compress"]["mode"], "waiting");
-        assert_eq!(value["auto_compress"]["scope"], "include_backlog");
-        assert_eq!(value["auto_compress"]["activated_at"], 1_700_000_000);
-        assert!(value.get("auto_compress_immediate").is_none());
-        assert!(value.get("auto_compress_backlog").is_none());
-    }
-
-    #[test]
-    fn legacy_disabled_compression_migrates_to_a_disabled_master_switch() {
-        let mut value = serde_json::json!({
-            "auto_compress": false,
-            "auto_compress_immediate": true,
-        });
-        migrate_legacy_auto_settings(&mut value, 1_700_000_000);
-        assert_eq!(value["auto_compress_enabled"], false);
-        assert_eq!(value["auto_compress"]["mode"], "immediate");
-        assert_eq!(
-            value["auto_compress"]["activated_at"],
-            serde_json::Value::Null
-        );
-    }
-
-    #[test]
-    fn disabled_compression_with_waiting_preference_still_migrates_to_immediate() {
-        let mut value = serde_json::json!({
-            "auto_compress": false,
-            "auto_compress_immediate": false,
-        });
-        migrate_legacy_auto_settings(&mut value, 1_700_000_000);
-        assert_eq!(value["auto_compress_enabled"], false);
-        assert_eq!(value["auto_compress"]["mode"], "immediate");
-    }
-
-    #[test]
-    fn migration_does_not_overwrite_an_existing_master_switch() {
-        let mut value = serde_json::json!({
-            "auto_compress": true,
-            "auto_compress_immediate": false,
-            "auto_compress_enabled": false,
-        });
-        migrate_legacy_auto_settings(&mut value, 1_700_000_000);
-        assert_eq!(value["auto_compress_enabled"], false);
-        assert_eq!(value["auto_compress"]["mode"], "waiting");
-    }
-
-    #[test]
-    fn invalid_migrated_settings_are_not_persisted() {
-        let db = Db::open_in_memory().unwrap();
-        let raw = r#"{"auto_compress":true,"compression_workers":"two"}"#;
-        db.set_setting(SETTINGS_KEY, raw).unwrap();
-        assert!(AppSettings::load(&db).is_err());
-        assert_eq!(db.get_setting(SETTINGS_KEY).unwrap().as_deref(), Some(raw));
-    }
-
-    #[test]
-    fn legacy_discord_fields_migrate_to_common_behavior() {
-        let mut value = serde_json::json!({
-            "discord_auto_mode": "immediate",
-            "discord_auto_since": 42,
-        });
-        migrate_legacy_auto_settings(&mut value, 1_700_000_000);
-        assert_eq!(value["discord_auto"]["mode"], "immediate");
-        assert_eq!(value["discord_auto"]["scope"], "new_only");
-        assert_eq!(value["discord_auto"]["activated_at"], 42);
-        assert!(value.get("discord_auto_mode").is_none());
-        assert!(value.get("discord_auto_since").is_none());
-    }
-
-    #[test]
-    fn legacy_ai_auto_boolean_migrates_to_mode() {
-        let mut value = serde_json::json!({
-            "ai_tagging_enabled": true,
-            "ai_tagging_auto": true,
-        });
-        migrate_legacy_auto_settings(&mut value, 1_700_000_000);
-        assert_eq!(value["ai_tagging_auto"]["mode"], "immediate");
-        assert_eq!(value["ai_tagging_auto"]["scope"], "new_only");
-        assert_eq!(value["ai_tagging_auto"]["activated_at"], 1_700_000_000);
     }
 
     #[test]
@@ -1933,38 +1355,6 @@ mod tests {
     }
 
     #[test]
-    fn loading_legacy_settings_then_saving_writes_only_common_keys() {
-        let db = crate::db::Db::open_in_memory().unwrap();
-        db.set_setting(
-            SETTINGS_KEY,
-            r#"{"language":"ja","auto_compress":true,"auto_compress_immediate":false,
-                "auto_compress_backlog":true,"discord_auto_mode":"waiting",
-                "discord_auto_since":42,"ai_tagging_auto":true}"#,
-        )
-        .unwrap();
-        let settings = AppSettings::load(&db).unwrap();
-        assert!(settings.auto_compress_enabled);
-        assert_eq!(settings.auto_compress.mode, AutoMode::Waiting);
-        assert_eq!(settings.auto_compress.scope, AutoScope::IncludeBacklog);
-        assert_eq!(settings.discord_auto.mode, AutoMode::Waiting);
-        assert_eq!(settings.discord_auto.activated_at, Some(42));
-        assert_eq!(settings.ai_tagging_auto.mode, AutoMode::Immediate);
-        settings.save(&db).unwrap();
-        let raw = db.get_setting(SETTINGS_KEY).unwrap().unwrap();
-        for key in [
-            "auto_compress_immediate",
-            "auto_compress_backlog",
-            "discord_auto_mode",
-            "discord_auto_since",
-        ] {
-            assert!(!raw.contains(&format!("\"{key}\"")));
-        }
-        assert!(raw.contains("\"auto_compress\""));
-        assert!(raw.contains("\"discord_auto\""));
-        assert!(raw.contains("\"ai_tagging_auto\""));
-    }
-
-    #[test]
     fn fresh_settings_start_with_automatic_compression_off() {
         let db = crate::db::Db::open_in_memory().unwrap();
         let before = chrono::Utc::now().timestamp();
@@ -1973,25 +1363,6 @@ mod tests {
         assert!(!settings.auto_compress_enabled);
         let activated = settings.auto_compress.activated_at.unwrap();
         assert!(activated >= before && activated <= after);
-    }
-
-    #[test]
-    fn loading_legacy_settings_persists_the_new_shape() {
-        let db = crate::db::Db::open_in_memory().unwrap();
-        db.set_setting(
-            SETTINGS_KEY,
-            r#"{"language":"ja","auto_compress":true,"auto_compress_immediate":true,
-                "auto_compress_backlog":false,"ai_tagging_auto":true}"#,
-        )
-        .unwrap();
-        let _ = AppSettings::load(&db).unwrap();
-        let raw = db.get_setting(SETTINGS_KEY).unwrap().unwrap();
-        assert!(!raw.contains("auto_compress_immediate"));
-        assert!(!raw.contains("auto_compress_backlog"));
-        assert!(!raw.contains("discord_auto_mode"));
-        assert!(!raw.contains("discord_auto_since"));
-        assert!(raw.contains("\"auto_compress\""));
-        assert!(raw.contains("\"ai_tagging_auto\""));
     }
 
     #[test]
@@ -2012,13 +1383,36 @@ mod tests {
     }
 
     #[test]
-    fn old_settings_default_queue_pause_to_false() {
-        let db = crate::db::Db::open_in_memory().unwrap();
-        db.set_setting(SETTINGS_KEY, r#"{"language":"ja"}"#)
-            .unwrap();
-        let loaded = AppSettings::load(&db).unwrap();
-        assert!(!loaded.auto_compress_queue_paused);
-        assert!(!loaded.discord_queue_paused);
-        assert!(!loaded.ai_tagging_queue_paused);
+    fn partial_settings_are_rejected() {
+        assert!(serde_json::from_str::<AppSettings>(r#"{"language":"ja"}"#).is_err());
+    }
+
+    #[test]
+    fn settings_missing_update_fields_are_rejected() {
+        for field in [
+            "setup_completed",
+            "auto_compress_keep_original",
+            "auto_compression",
+            "clipboard_compression",
+            "discord_compression",
+            "ui_sidebar_collapsed",
+            "auto_compress",
+        ] {
+            let mut value = serde_json::to_value(AppSettings::default()).unwrap();
+            value.as_object_mut().unwrap().remove(field);
+            assert!(
+                serde_json::from_value::<AppSettings>(value).is_err(),
+                "missing {field} must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn legacy_compression_alias_is_rejected() {
+        let mut value = serde_json::to_value(AppSettings::default()).unwrap();
+        let object = value.as_object_mut().unwrap();
+        let keep = object.remove("auto_compress_keep_original").unwrap();
+        object.insert("compression_keep_original".to_string(), keep);
+        assert!(serde_json::from_value::<AppSettings>(value).is_err());
     }
 }
