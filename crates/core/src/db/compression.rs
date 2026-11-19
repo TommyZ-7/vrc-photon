@@ -622,6 +622,21 @@ impl Db {
         Ok(changed)
     }
 
+    /// Returns jobs left `processing` past `cutoff` to the queue without
+    /// consuming a retry. A worker panic is restarted by the supervisor
+    /// without restarting the daemon, so the startup-only recovery above
+    /// cannot see the stranded row; the daemon sweeps for it periodically.
+    /// `cutoff` is an RFC3339 UTC timestamp and compares lexicographically.
+    pub fn requeue_stale_compression_jobs(&self, cutoff: &str) -> Result<usize> {
+        let changed = self.conn.execute(
+            "UPDATE compression_jobs SET status = 'pending', progress = 0, error = NULL, \
+                started_at = NULL, finished_at = NULL \
+             WHERE status = 'processing' AND (started_at IS NULL OR started_at < ?1)",
+            params![cutoff],
+        )?;
+        Ok(changed)
+    }
+
     pub fn retry_job(&self, id: &str) -> Result<bool> {
         let sql = format!(
             "UPDATE compression_jobs SET {} WHERE id = ?1 AND status = 'failed' \

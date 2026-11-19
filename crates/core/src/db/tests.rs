@@ -3361,6 +3361,57 @@ fn resume_interrupted_compression_jobs_requeues_processing_without_retry() {
 }
 
 #[test]
+fn requeue_stale_compression_jobs_only_requeues_old_processing_rows() {
+    let db = Db::open_in_memory().unwrap();
+    let root = db.add_root("/photos", "reference").unwrap();
+    let old_photo = db
+        .upsert_photo(&sample_photo(root, "/photos/old.png", 100))
+        .unwrap();
+    let fresh_photo = db
+        .upsert_photo(&sample_photo(root, "/photos/fresh.png", 200))
+        .unwrap();
+    let old_job = db.enqueue_job(old_photo, "p", "keep").unwrap();
+    let fresh_job = db.enqueue_job(fresh_photo, "p", "keep").unwrap();
+    assert_eq!(db.next_pending_job().unwrap().unwrap().id, old_job);
+    assert_eq!(db.next_pending_job().unwrap().unwrap().id, fresh_job);
+    db.connection()
+        .execute(
+            "UPDATE compression_jobs SET started_at = ?1 WHERE id = ?2",
+            rusqlite::params!["2026-01-01T00:00:00+00:00", old_job],
+        )
+        .unwrap();
+    db.connection()
+        .execute(
+            "UPDATE compression_jobs SET started_at = ?1 WHERE id = ?2",
+            rusqlite::params!["2099-01-01T00:00:00+00:00", fresh_job],
+        )
+        .unwrap();
+
+    assert_eq!(
+        db.requeue_stale_compression_jobs("2026-11-19T00:00:00+00:00")
+            .unwrap(),
+        1
+    );
+    let resumed = db.list_jobs(10).unwrap();
+    let old = resumed.iter().find(|job| job.id == old_job).unwrap();
+    assert_eq!(old.status, QueueStatus::Pending);
+    assert_eq!(old.retry_count, 0);
+    assert_eq!(old.progress, 0.0);
+    assert!(old.error.is_none());
+    assert!(old.started_at.is_none());
+    assert!(old.finished_at.is_none());
+    let fresh = resumed.iter().find(|job| job.id == fresh_job).unwrap();
+    assert_eq!(fresh.status, QueueStatus::Processing);
+
+    // A second call is a no-op.
+    assert_eq!(
+        db.requeue_stale_compression_jobs("2026-11-19T00:00:00+00:00")
+            .unwrap(),
+        0
+    );
+}
+
+#[test]
 fn retry_failed_jobs_returns_only_eligible_rows() {
     let db = Db::open_in_memory().unwrap();
     let root = db.add_root("/photos", "reference").unwrap();
