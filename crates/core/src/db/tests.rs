@@ -9227,6 +9227,10 @@ fn common_manual_tags_handles_more_photos_than_sqlite_bind_limit() {
 
     db.add_tags_to_photos(&ids, &["shared".to_string(), "extra".to_string()])
         .unwrap();
+    db.add_tags_to_photos(&ids[..500], &["chunk-first".to_string()])
+        .unwrap();
+    db.add_tags_to_photos(&ids[ids.len() - 500..], &["chunk-last".to_string()])
+        .unwrap();
     db.set_photo_tags(
         ids[0],
         &[

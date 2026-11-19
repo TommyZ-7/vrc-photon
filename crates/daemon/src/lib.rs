@@ -25,7 +25,7 @@ use vrc_photon_core::model::{
 use vrc_photon_core::photo_filename::is_source_photo;
 use vrc_photon_core::scanner::{
     ScanFailure, ScanPhase as CoreScanPhase, ScanProgress, ScanReport, scan_and_index_shared,
-    scan_one,
+    scan_one_detailed,
 };
 use vrc_photon_core::settings::{AppSettings, AutoMode, detect_vrchat_paths};
 use vrc_photon_core::thumbnail;
