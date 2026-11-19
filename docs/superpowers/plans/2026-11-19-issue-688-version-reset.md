@@ -694,7 +694,7 @@ git commit -m "feat(thumbnail): drop legacy WebP cache name handling (#688)"
 
 **Interfaces:**
 - Consumes: 既存の `copy_file` / `ApplyKind` / `LastResult` / `HealthMarker` / `daemon_error_message_in`。
-- Produces: 旧一時名の削除なし、`app_image` alias なし、`LastResult.code` と `HealthMarker.database` は必須フィールド。`message_key: None` の表示フォールバックは維持。
+- Produces: 旧一時名の削除なし、`app_image` alias なし、`LastResult.code` と `HealthMarker.database` の `#[serde(default)]` を削除する。両方 `Option<T>` のため、serde 上は欠損を `None` として受理する（この挙動は記録済みの判断）。`message_key: None` の表示フォールバックは維持。
 
 - [x] **Step 1: 失敗するテストを書く**
 
@@ -719,25 +719,18 @@ assert_eq!(
 assert!(serde_json::from_str::<ApplyKind>("\"app_image\"").is_err());
 ```
 
-`crates/update/src/helper.rs` の `last_result_accepts_a_missing_code` を `last_result_requires_a_code` に変える。
-
-```rust
-assert!(LastResult::read(&paths).is_none());
-```
-
- `HealthMarker` の必須化テストを追加する。
+`crates/update/src/helper.rs` の `last_result_accepts_a_missing_code` は削除する。`LastResult` の round-trip テストが `code: None` を含むため、削除後の受理挙動はそこで確認できる。`HealthMarker` には DB なしの round-trip テストを追加する。
 
 ```rust
 #[test]
-fn health_marker_requires_a_database_field() {
+fn health_marker_round_trips_without_a_database() {
     let dir = tempfile::tempdir().unwrap();
     let paths = paths(dir.path());
-    std::fs::write(
-        paths.health_file("token"),
-        br#"{"version":"1.0.0","mode":"normal"}"#,
-    )
-    .unwrap();
-    assert!(read_health_marker(&paths, "token").is_err());
+    write_health_marker(&paths, "no-db", "1.0.0", None).unwrap();
+    let marker = read_health_marker(&paths, "no-db").unwrap().unwrap();
+    assert_eq!(marker.version, "1.0.0");
+    assert_eq!(marker.mode, "normal");
+    assert!(marker.database.is_none());
 }
 ```
 
@@ -745,16 +738,16 @@ fn health_marker_requires_a_database_field() {
 
 - [x] **Step 2: テストが失敗することを確認する**
 
-Run: `cargo test -p vrc-photon-update last_result_requires_a_code health_marker_requires_a_database_field && cargo test -p vrc-photon-core importer::tests::legacy_temp_file_does_not_block_and_is_not_removed`
-Expected: `LastResult` / `HealthMarker` が default で通ってしまい、importer は stale temp が削除されて FAIL。
+Run: `cargo test -p vrc-photon-update apply_kind_rejects_the_legacy_app_image_alias && cargo test -p vrc-photon-core importer::tests::legacy_temp_file_does_not_block_and_is_not_removed`
+Expected: `app_image` alias がまだ受理され、importer は stale temp が削除されて FAIL。`Option<T>` の欠損は serde が `None` として受理するため、必須化テストでは失敗を確認できない（記録済みの判断）。
 
 - [x] **Step 3: 実装する**
 
 - `crates/core/src/importer.rs`: `copy_file` 内の `clear_legacy_temp(&target);` と呼び出し先関数 `clear_legacy_temp` を削除する。
 - `crates/update/src/install.rs`: `#[serde(rename = "appimage", alias = "app_image")]` を `#[serde(rename = "appimage")]` にする。
 - `crates/update/src/helper.rs`:
-  - `LastResult.code` の `#[serde(default)]` を削除し、コメントを「失敗理由のコード。1.0.0 以降は必須」に変える。
-  - `HealthMarker.database` の `#[serde(default)]` を削除し、コメントを「1.0.0 以降は必須（DB なしは null）」に変える。
+  - `LastResult.code` の `#[serde(default)]` を削除する。`Option<LastErrorCode>` のため serde 上は欠損を `None` として受理する。
+  - `HealthMarker.database` の `#[serde(default)]` を削除する。`Option<NativeString>` のため serde 上は欠損を `None` として受理する。
 - `crates/ui/src/ui/daemon_error.rs`: 実装は変えず、コメントだけ更新する。
 
 - [x] **Step 4: テストを実行する**
@@ -1013,7 +1006,7 @@ git add docs/superpowers/plans/2026-11-19-issue-688-version-reset.md
 git commit -m "docs: record the completed 1.0.0 version reset plan (#688)"
 ```
 
-- [x] **Step 4: ブランチを push して PR を作成する**
+- [ ] **Step 4: ブランチを push して PR を作成する**
 
 ```bash
 git push -u origin feat/688-version-reset
@@ -1022,6 +1015,6 @@ gh pr create --title "feat: reset versions for 1.0.0 and remove 0.x compatibilit
   --label enhancement
 ```
 
-- [x] **Step 5: CI を監視する**
+- [ ] **Step 5: CI を監視する**
 
 `ci-watch` skill の手順で `CI` と `Release`（bundle）の結果を確認する。失敗時はログを解析して修正を push する。tag 作成・Release 公開は行わない。

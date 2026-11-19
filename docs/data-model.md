@@ -723,7 +723,7 @@ ai_model_license_consent_at, setup_completed
 - `import_preserve_folder_structure` / `import_include_root_folder` は既定 false。`include_root` は `preserve` が true のときだけ効果を持つ。
 - `estimated_link` は既定 true、`auto_compress_enabled` は既定 false、`auto_compress_keep_original` は既定 true。
 - `auto_compress` / `discord_auto` / `ai_tagging_auto` は `{ mode, scope, activated_at }` のオブジェクト。`auto_compress` は `Immediate / NewOnly`、`discord_auto` と `ai_tagging_auto` は `Off / NewOnly` を既定とする。
-- `auto_compress_queue_paused` / `discord_queue_paused` / `ai_tagging_queue_paused` は既定 false。既存 JSON にない場合は false として読む。
+- `auto_compress_queue_paused` / `discord_queue_paused` / `ai_tagging_queue_paused` は既定 false。1.0.0 の設定には必ず含まれ、欠損は parse error として扱う。
 - `auto_compression` は WebP ロスレス・リサイズなし、`discord_compression` は WebP ロスレス・2560×1440 の縮小のみ、`clipboard_compression` は 2560×1440 の縮小のみを既定とする。
 - `thumbnail_cache_mb` / `compression_workers` / `estimated_link` は保存値のみで、設定画面には表示しない。
 

@@ -2834,7 +2834,7 @@ fn thumbnail_budget_skips_a_prune_after_the_limit_turns_unlimited() {
 #[test]
 fn prune_thumbnail_cache_with_zero_limit_leaves_files_untouched() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("1.webp");
+    let path = dir.path().join("1-s384x216.bc7");
     write_thumbnail_cache_entry(&path, 2_000, SystemTime::now());
 
     assert!(prune_thumbnail_cache(dir.path(), 0).is_none());

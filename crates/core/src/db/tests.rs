@@ -8025,6 +8025,56 @@ fn migration_runner_rejects_a_gap() {
 }
 
 #[test]
+fn migration_runner_rolls_back_a_partially_applied_step() {
+    let db = Db::open_in_memory().unwrap();
+    let tx = Transaction::new_unchecked(db.connection(), TransactionBehavior::Immediate).unwrap();
+    let error = schema::apply_migrations(
+        &tx,
+        SCHEMA_BASE_VERSION,
+        &[
+            schema::Migration {
+                version: 2,
+                sql: "CREATE TABLE migration_probe(value TEXT);",
+            },
+            schema::Migration {
+                version: 3,
+                sql: "CREATE TABLE migration_second(value TEXT); \
+                      INSERT INTO missing_table(value) VALUES ('fail');",
+            },
+        ],
+        3,
+    )
+    .unwrap_err();
+    assert!(!error.to_string().is_empty());
+    drop(tx);
+
+    let version: i64 = db
+        .connection()
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, SCHEMA_BASE_VERSION);
+    let applied_versions: Vec<i64> = db
+        .connection()
+        .prepare("SELECT version FROM schema_migrations ORDER BY version")
+        .unwrap()
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .unwrap();
+    assert_eq!(applied_versions, vec![1]);
+    let probe_tables: i64 = db
+        .connection()
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master \
+             WHERE type = 'table' AND name IN ('migration_probe', 'migration_second')",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(probe_tables, 0);
+}
+
+#[test]
 fn migration_chain_matches_schema_version() {
     let mut expected = SCHEMA_BASE_VERSION;
     for migration in schema::MIGRATIONS {
