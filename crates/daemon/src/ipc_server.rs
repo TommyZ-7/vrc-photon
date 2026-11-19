@@ -596,7 +596,8 @@ fn handle_connection(
                         status: control.snapshot(),
                     },
                 )?;
-                stream_events(&mut reader, &control, events)?;
+                let probe = connection_probe(&reader);
+                stream_events(&mut reader, &control, events, probe)?;
                 return Ok(());
             }
             Request::WakeTagging => {
@@ -982,10 +983,27 @@ fn library_stats_response(control: &IpcControl) -> Response {
     }
 }
 
-fn stream_events(
-    reader: &mut BufReader<vrc_photon_ipc::server::Stream>,
+/// Clones the socket handle used to notice a subscription disconnect.
+#[cfg(unix)]
+fn connection_probe(
+    reader: &BufReader<vrc_photon_ipc::server::Stream>,
+) -> io::Result<vrc_photon_ipc::server::Stream> {
+    reader.get_ref().try_clone()
+}
+
+/// Clones the pipe handle used to notice a subscription disconnect.
+#[cfg(windows)]
+fn connection_probe(
+    reader: &BufReader<DeadlineReader<vrc_photon_ipc::server::Stream>>,
+) -> io::Result<vrc_photon_ipc::server::Stream> {
+    reader.get_ref().stream().try_clone()
+}
+
+fn stream_events<R: Read + Write>(
+    reader: &mut BufReader<R>,
     control: &IpcControl,
     events: Receiver<vrc_photon_ipc::Event>,
+    probe: io::Result<vrc_photon_ipc::server::Stream>,
 ) -> io::Result<()> {
     // Watch the read half on a cloned handle: after subscribing, the client
     // sends nothing, so EOF or a read error means it is gone. Without this,
@@ -993,7 +1011,7 @@ fn stream_events(
     // idle subscription leaks this thread and its EventBus sender.
     let disconnected = Arc::new(AtomicBool::new(false));
     let stop_watcher = Arc::new(AtomicBool::new(false));
-    match reader.get_ref().try_clone() {
+    match probe {
         Ok(probe) => spawn_disconnect_watcher(probe, disconnected.clone(), stop_watcher.clone()),
         Err(error) => {
             tracing::debug!(%error, "cannot watch subscription for disconnects");
