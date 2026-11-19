@@ -514,6 +514,17 @@ fn manifest_fingerprint(manifest: &PluginManifest) -> String {
     hex::encode(hasher.finalize())
 }
 
+/// Returns true when the on-disk verification stamp matches the manifest
+/// and both model files.
+///
+/// The stamp is a fast path, not a cryptographic guarantee. It trusts the
+/// file size and mtime recorded when a full SHA-256 verification last
+/// passed. An attacker with write access as the same user (or root) can
+/// preserve both values with `utimensat`, so this check does not defend
+/// against a same-uid compromise. The model is trusted-sidecar data and
+/// untrusted input is validated at the sidecar boundary; a full SHA-256
+/// runs on install, the first verification, and whenever the stamp is
+/// missing or does not match.
 fn stamp_matches(
     manifest: &PluginManifest,
     directory: &Path,
