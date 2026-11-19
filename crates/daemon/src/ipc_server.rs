@@ -155,8 +155,8 @@ pub(crate) struct IpcControl {
     pub(crate) tagging: Arc<JobSignal>,
     pub(crate) tagging_control: Arc<TaggingControl>,
     pub(crate) db: Arc<Mutex<Db>>,
-    /// Read-only connection used by search, detail, random, and stats IPC
-    /// requests so a long read does not wait behind the writer.
+    /// Read-only connection used by search, detail, random, worlds, and stats
+    /// IPC requests so a long read does not wait behind the writer.
     pub(crate) read_db: Arc<Mutex<Db>>,
 }
 
@@ -848,7 +848,7 @@ fn library_photo_response(control: &IpcControl, photo_id: i64) -> Response {
 fn library_worlds_response(control: &IpcControl) -> Response {
     let result = (|| -> vrc_photon_core::Result<Vec<WorldSummary>> {
         let db = control
-            .db
+            .read_db
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         Ok(db
@@ -1104,6 +1104,27 @@ mod tests {
             assert!(
                 searched_without_waiting,
                 "search must use the read connection instead of waiting for the writer"
+            );
+        });
+    }
+
+    #[test]
+    fn worlds_do_not_wait_for_the_writer_lock() {
+        let (_dir, _endpoint, control) = test_control();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let guard = lock_db(&control.db);
+        let control_ref = &control;
+        std::thread::scope(|scope| {
+            let tx = tx.clone();
+            scope.spawn(move || {
+                let response = library_worlds_response(control_ref);
+                let _ = tx.send(matches!(response, Response::Worlds { .. }));
+            });
+            let listed_without_waiting = rx.recv_timeout(Duration::from_secs(2)).unwrap_or(false);
+            drop(guard);
+            assert!(
+                listed_without_waiting,
+                "worlds must use the read connection instead of waiting for the writer"
             );
         });
     }
