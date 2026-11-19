@@ -1,3 +1,9 @@
+//! Daemon runtime, background workers, and worker supervision.
+//!
+//! New daemon modules use named imports. Existing modules that follow the
+//! older `use super::*;` style may keep it until they are substantially
+//! edited.
+
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};

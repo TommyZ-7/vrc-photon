@@ -1962,6 +1962,15 @@ mod tests {
     }
 
     #[test]
+    fn retry_delay_clamps_out_of_range_counts() {
+        let delays = [Duration::from_secs(5), Duration::from_secs(30)];
+        assert_eq!(retry_delay(&delays, 0), delays[0]);
+        assert_eq!(retry_delay(&delays, 1), delays[1]);
+        assert_eq!(retry_delay(&delays, 99), delays[1]);
+        assert_eq!(retry_delay(&delays, -1), delays[0]);
+    }
+
+    #[test]
     fn idle_timeout_shuts_down_the_sidecar() {
         let mut config = test_config();
         config.idle_timeout = Duration::from_millis(100);
