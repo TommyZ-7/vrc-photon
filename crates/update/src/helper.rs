@@ -1951,9 +1951,7 @@ pub(crate) fn write_atomic(path: &Path, bytes: &[u8], mode: u32) -> Result<()> {
     #[cfg(windows)]
     {
         use std::os::windows::ffi::OsStrExt;
-        use windows::Win32::Storage::FileSystem::{
-            MOVEFILE_REPLACE_EXISTING, MoveFileExW,
-        };
+        use windows::Win32::Storage::FileSystem::{MOVEFILE_REPLACE_EXISTING, MoveFileExW};
         use windows::core::PCWSTR;
 
         let wide = |path: &Path| -> Vec<u16> {
@@ -3057,10 +3055,7 @@ mod tests {
     }
 
     #[cfg(unix)]
-    fn appimage_fixture(
-        dir: &Path,
-        version: &str,
-    ) -> (ApplyJob, HelperOptions, minisign::KeyPair) {
+    fn appimage_fixture(dir: &Path, version: &str) -> (ApplyJob, HelperOptions, minisign::KeyPair) {
         use minisign::KeyPair;
 
         let keypair = KeyPair::generate_unencrypted_keypair().unwrap();
@@ -3102,12 +3097,17 @@ mod tests {
         use base64::Engine as _;
         use sha2::Sha256;
 
-        let artifact_signature =
-            minisign::sign(None, &keypair.sk, std::io::Cursor::new(artifact), None, None)
-                .unwrap()
-                .into_string();
-        let signature = base64::engine::general_purpose::STANDARD
-            .encode(artifact_signature.as_bytes());
+        let artifact_signature = minisign::sign(
+            None,
+            &keypair.sk,
+            std::io::Cursor::new(artifact),
+            None,
+            None,
+        )
+        .unwrap()
+        .into_string();
+        let signature =
+            base64::engine::general_purpose::STANDARD.encode(artifact_signature.as_bytes());
         let manifest = serde_json::to_vec(&serde_json::json!({
             "schema": 1,
             "version": version,

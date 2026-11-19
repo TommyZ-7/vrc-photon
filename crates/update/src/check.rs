@@ -127,9 +127,7 @@ fn signature_url(manifest_url: &str) -> Result<url::Url> {
         .path_segments()
         .and_then(|mut segments| segments.next_back())
         .filter(|name| !name.is_empty())
-        .ok_or_else(|| {
-            UpdateError::InvalidManifest("feed URL has no file name".to_string())
-        })?;
+        .ok_or_else(|| UpdateError::InvalidManifest("feed URL has no file name".to_string()))?;
     url.join(&format!("{name}.minisig"))
         .map_err(|error| UpdateError::InvalidManifest(format!("invalid signature URL: {error}")))
 }
