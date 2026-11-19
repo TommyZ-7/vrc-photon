@@ -1877,10 +1877,12 @@ pub(crate) fn process_alive(pid: u32) -> bool {
     }
     #[cfg(all(unix, not(target_os = "linux")))]
     {
-        std::process::Command::new("kill")
-            .args(["-0", &pid.to_string()])
-            .status()
-            .is_ok_and(|status| status.success())
+        // SAFETY: signal 0 checks existence and permission only and never
+        // delivers a signal.
+        unsafe {
+            libc::kill(pid as i32, 0) == 0
+                || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+        }
     }
     #[cfg(windows)]
     {
@@ -2253,6 +2255,12 @@ mod tests {
         });
 
         assert!(!paths.lock_file().exists());
+    }
+
+    #[test]
+    fn process_alive_reports_the_current_process_and_a_missing_pid() {
+        assert!(process_alive(std::process::id()));
+        assert!(!process_alive(u32::MAX));
     }
 
     #[cfg(unix)]
