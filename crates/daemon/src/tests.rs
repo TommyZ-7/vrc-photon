@@ -3024,6 +3024,45 @@ fn daemon_open_resumes_interrupted_compression_jobs() {
 }
 
 #[test]
+fn loop_requeues_compression_jobs_stuck_in_processing() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = manual_test_daemon(&dir);
+    daemon.run_once().unwrap();
+    let job_id = {
+        let db = daemon.db.lock().unwrap();
+        let photo = db
+            .photo_by_path(original_path(&dir).to_str().unwrap())
+            .unwrap()
+            .unwrap();
+        let job = db.enqueue_job(photo.id, "p", "keep").unwrap();
+        db.next_pending_job().unwrap().unwrap();
+        db.connection()
+            .execute(
+                &format!(
+                    "UPDATE compression_jobs SET started_at = '2026-01-01T00:00:00+00:00' \
+                     WHERE id = '{job}'"
+                ),
+                [],
+            )
+            .unwrap();
+        job
+    };
+
+    daemon.last_stale_job_sweep = Instant::now().checked_sub(STALE_JOB_SWEEP_INTERVAL).unwrap();
+    daemon.sweep_stale_jobs();
+
+    let db = daemon.db.lock().unwrap();
+    let job = db
+        .list_jobs(10)
+        .unwrap()
+        .into_iter()
+        .find(|job| job.id == job_id)
+        .unwrap();
+    assert_eq!(job.status, QueueStatus::Pending);
+    assert!(job.started_at.is_none());
+}
+
+#[test]
 fn startup_recovers_an_interrupted_compression_job_with_an_open_session() {
     let dir = tempfile::tempdir().unwrap();
     let mut daemon = manual_test_daemon(&dir);

@@ -151,6 +151,9 @@ pub struct Daemon {
     pub(crate) last_data_version: Option<i64>,
     pub(crate) last_session_status: Instant,
     pub(crate) last_counts_status: Instant,
+    /// Last time the main loop looked for compression jobs stranded by a
+    /// worker panic.
+    pub(crate) last_stale_job_sweep: Instant,
     pub(crate) last_published_status: Option<StatusSnapshot>,
     pub(crate) last_heartbeat: std::time::Instant,
     pub(crate) last_asset_check: Instant,
@@ -401,6 +404,7 @@ impl Daemon {
             last_data_version: None,
             last_session_status: Instant::now() - SESSION_STATUS_INTERVAL,
             last_counts_status: Instant::now() - COUNTS_STATUS_INTERVAL,
+            last_stale_job_sweep: Instant::now(),
             last_published_status: None,
             last_heartbeat: std::time::Instant::now() - Duration::from_secs(10),
             last_asset_check: Instant::now(),
@@ -1068,6 +1072,26 @@ impl Daemon {
         self.full_asset_check_due = false;
     }
 
+    /// Returns compression jobs stranded in `processing` by a panicked worker
+    /// to the queue. A supervised restart keeps the daemon alive, so the
+    /// startup-only recovery in `Daemon::open` never sees these rows.
+    pub(crate) fn sweep_stale_jobs(&mut self) {
+        if self.last_stale_job_sweep.elapsed() < STALE_JOB_SWEEP_INTERVAL {
+            return;
+        }
+        self.last_stale_job_sweep = Instant::now();
+        let cutoff =
+            (chrono::Utc::now() - chrono::Duration::minutes(STALE_JOB_TIMEOUT_MINUTES)).to_rfc3339();
+        match lock_db(&self.db).requeue_stale_compression_jobs(&cutoff) {
+            Ok(0) => {}
+            Ok(count) => {
+                tracing::warn!(count, "requeued stale compression jobs");
+                self.jobs.notify();
+            }
+            Err(error) => tracing::error!(%error, "cannot requeue stale compression jobs"),
+        }
+    }
+
     /// One supervised iteration of the background loop. Pause gates only the
     /// heavy work below; heartbeat, status, tray, log ingestion, watcher event
     /// collection, settings refreshes, and IPC keep running so a paused daemon
@@ -1078,6 +1102,7 @@ impl Daemon {
         }
         self.refresh_periodic_settings();
         self.poll_watchers();
+        self.sweep_stale_jobs();
 
         let paused = self.is_paused();
         if !paused

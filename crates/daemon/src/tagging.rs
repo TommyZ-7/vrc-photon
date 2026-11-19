@@ -285,7 +285,7 @@ impl TaggingWorker {
                         }
                         break;
                     }
-                    let delay = self.config.retry_delays[job.retry_count as usize];
+                    let delay = retry_delay(&self.config.retry_delays, job.retry_count);
                     job.retry_count += 1;
                     match self.wait_for_retry(delay, &job, &cancel) {
                         RetryWait::Cancelled => {
@@ -691,8 +691,12 @@ impl Drop for JobCleanup<'_> {
 
 /// Runs the tagging loop until the daemon stops. The supervisor in
 /// [`crate::supervisor`] wraps this in `catch_unwind` and restarts it, so a
-/// panic leaves the job recoverable as `processing` and the daemon alive.
+/// panic leaves the job recoverable as `processing` until this loop starts
+/// again and returns it to the queue.
 pub(crate) fn run_worker_loop(worker: &TaggingWorker) {
+    if let Err(error) = worker.db().resume_interrupted_tagging_jobs() {
+        tracing::error!(%error, "cannot resume interrupted tagging jobs");
+    }
     let mut seen = 0;
     while !worker.is_stopping() {
         if worker.is_paused() || worker.is_queue_paused() {
@@ -710,6 +714,13 @@ pub(crate) fn run_worker_loop(worker: &TaggingWorker) {
             }
         }
     }
+}
+
+/// Reads the backoff for a retry without indexing past the configured list.
+/// `MAX_TAGGING_RETRIES` and the array length are separate constants, so a
+/// future mismatch must not panic the worker.
+fn retry_delay(delays: &[Duration; 2], retry_count: i64) -> Duration {
+    delays[(retry_count.max(0) as usize).min(delays.len() - 1)]
 }
 
 enum RetryWait {

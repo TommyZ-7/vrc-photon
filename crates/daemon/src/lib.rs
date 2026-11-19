@@ -111,6 +111,12 @@ const SESSION_STATUS_INTERVAL: Duration = Duration::from_secs(2);
 /// Photo and queue counts are full-table aggregates; refresh them rarely and
 /// immediately after a scan, command, or indexing event changes the library.
 const COUNTS_STATUS_INTERVAL: Duration = Duration::from_secs(30);
+/// A compression job left `processing` by a panicked worker is returned to
+/// the queue after this long, even though the supervisor already restarted
+/// the worker and the daemon itself never restarted.
+const STALE_JOB_TIMEOUT_MINUTES: i64 = 30;
+/// How often the main loop looks for stale compression jobs.
+const STALE_JOB_SWEEP_INTERVAL: Duration = Duration::from_secs(60);
 /// Full display-derivative verification runs at startup, every six hours, and
 /// when the watcher reports lost events. Event handling covers deletions in
 /// between.
