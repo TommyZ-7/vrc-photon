@@ -1006,7 +1006,7 @@ git add docs/superpowers/plans/2026-11-19-issue-688-version-reset.md
 git commit -m "docs: record the completed 1.0.0 version reset plan (#688)"
 ```
 
-- [ ] **Step 4: ブランチを push して PR を作成する**
+- [x] **Step 4: ブランチを push して PR を作成する**
 
 ```bash
 git push -u origin feat/688-version-reset
@@ -1015,6 +1015,6 @@ gh pr create --title "feat: reset versions for 1.0.0 and remove 0.x compatibilit
   --label enhancement
 ```
 
-- [ ] **Step 5: CI を監視する**
+- [x] **Step 5: CI を監視する**
 
 `ci-watch` skill の手順で `CI` と `Release`（bundle）の結果を確認する。失敗時はログを解析して修正を push する。tag 作成・Release 公開は行わない。
