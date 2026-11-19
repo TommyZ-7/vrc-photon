@@ -10,6 +10,25 @@ use std::path::Path;
 /// be estimated as belonging to that session.
 pub const ESTIMATED_LINK_WINDOW_SECONDS: i64 = 3;
 
+/// Writes a link's context and players in one transaction.
+///
+/// `set_photo_context` clears the retry counter, so a crash after the
+/// context write would make the photo ineligible for `unlinked_photos_due`
+/// while leaving it without players. The transaction makes both writes
+/// visible together.
+fn store_link(
+    db: &Db,
+    context: &PhotoContext,
+    photo_id: i64,
+    players: &[PhotoPlayer],
+) -> Result<()> {
+    db.in_transaction(|db| {
+        db.set_photo_context(context)?;
+        db.set_photo_players(photo_id, players)?;
+        Ok(())
+    })
+}
+
 /// Links one photo to the VRChat session that was active at its capture time.
 ///
 /// Returns true when a session was found. The world name may be absent when
@@ -82,17 +101,14 @@ pub fn link_photo_with_xmp(
             author: xmp.and_then(|xmp| xmp.author),
             linked_at: chrono::Utc::now().to_rfc3339(),
         };
-        db.set_photo_context(&context)?;
-        db.set_photo_players(
-            photo.id,
-            &players
-                .into_iter()
-                .map(|player| PhotoPlayer {
-                    user_id: player.user_id,
-                    display_name: player.display_name,
-                })
-                .collect::<Vec<_>>(),
-        )?;
+        let players = players
+            .into_iter()
+            .map(|player| PhotoPlayer {
+                user_id: player.user_id,
+                display_name: player.display_name,
+            })
+            .collect::<Vec<_>>();
+        store_link(db, &context, photo.id, &players)?;
         return Ok(true);
     }
 
@@ -106,8 +122,7 @@ pub fn link_photo_with_xmp(
             return Ok(true);
         }
         if let Some((context, players)) = estimated_link(db, photo, &xmp)? {
-            db.set_photo_context(&context)?;
-            db.set_photo_players(photo.id, &players)?;
+            store_link(db, &context, photo.id, &players)?;
             return Ok(true);
         }
     }
@@ -132,8 +147,7 @@ pub fn link_photo_with_xmp(
         author: xmp.author,
         linked_at: chrono::Utc::now().to_rfc3339(),
     };
-    db.set_photo_context(&context)?;
-    db.set_photo_players(photo.id, &[])?;
+    store_link(db, &context, photo.id, &[])?;
     Ok(true)
 }
 
@@ -301,6 +315,25 @@ mod tests {
         assert_eq!(context.world_name.as_deref(), Some("XMP World"));
         assert_eq!(context.author.as_deref(), Some("Mio"));
         assert_eq!(context.link_method, "xmp");
+    }
+
+    #[test]
+    fn xmp_link_rolls_back_context_when_players_write_fails() {
+        let db = Db::open_in_memory().unwrap();
+        let photo_id = insert_photo(&db, 1_700_000_000);
+        let photo = db.photo_by_id(photo_id).unwrap().unwrap();
+
+        db.connection()
+            .execute_batch("DROP TABLE photo_players")
+            .unwrap();
+
+        let xmp = Some(XmpMetadata {
+            world_name: Some("Test World".to_string()),
+            world_id: None,
+            author: None,
+        });
+        assert!(link_photo_with_xmp(&db, &photo, xmp, false).is_err());
+        assert!(db.photo_context(photo_id).unwrap().is_none());
     }
 
     #[test]
