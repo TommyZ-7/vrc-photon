@@ -245,6 +245,18 @@ impl Db {
         Ok(())
     }
 
+    /// Borrows the underlying SQLite connection.
+    ///
+    /// `rusqlite::Connection` is `!Sync`. Callers must keep the `Db` on the
+    /// thread that owns the connection, or hold it behind a mutex as the
+    /// daemon does. Do not hold this borrow across slow I/O: it blocks every
+    /// other `Db` user, including UI reads.
+    ///
+    /// Statements issued directly through this connection bypass the typed
+    /// `Db` methods and the revision counter that wakes UI pollers. After a
+    /// direct write, call [`Self::bump_library_revision`] (or the matching
+    /// AI/session bump) so snapshots refresh. Prefer the typed methods for
+    /// writes.
     pub fn connection(&self) -> &Connection {
         &self.conn
     }
