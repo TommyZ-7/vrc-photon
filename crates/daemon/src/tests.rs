@@ -2065,6 +2065,33 @@ fn watcher_new_photo_enqueues_tagging() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn watcher_reports_non_utf8_path_failures() {
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt;
+
+    let mut ctx = DaemonAiTest::new();
+    let bad_dir = ctx.photo_dir.join(OsString::from_vec(b"dir-\xff".to_vec()));
+    std::fs::create_dir(&bad_dir).unwrap();
+    let path = bad_dir.join("VRChat_2026-10-21_21-24-00.000_4x3.png");
+    write_photo(&path);
+    ctx.daemon.dirty_paths.push(path);
+
+    ctx.daemon.index_dirty_paths().unwrap();
+
+    let errors = ctx.db.lock().unwrap().daemon_errors().unwrap();
+    let scan = errors
+        .iter()
+        .find(|error| error.operation == DaemonOperation::Scan)
+        .expect("the watcher must surface the failed path");
+    assert!(
+        scan.detail.as_deref().unwrap_or_default().contains("UTF-8"),
+        "detail should name the encoding problem: {:?}",
+        scan.detail
+    );
+}
+
 #[test]
 fn backlog_enqueue_is_waiting_until_released() {
     let mut ctx = DaemonAiTest::new();

@@ -25,6 +25,11 @@ pub struct ScannedPhoto {
 }
 
 impl ScannedPhoto {
+    /// Converts a scanned photo into a database row.
+    ///
+    /// `abs_path` is stored as a `String`. The scanner rejects non-UTF-8 roots
+    /// and path components before this point, so `to_string_lossy` cannot
+    /// substitute replacement characters here.
     pub fn into_new_photo(self, root_id: i64) -> NewPhoto {
         NewPhoto {
             root_id,
@@ -135,6 +140,12 @@ where
             root.display()
         )));
     }
+    if root.to_str().is_none() {
+        return Err(CoreError::Invalid(format!(
+            "撮影ルートに UTF-8 以外の文字が含まれています: {}",
+            root.display()
+        )));
+    }
     let mut photos = Vec::new();
     let mut failures = Vec::new();
     let cancelled = walk(
@@ -234,6 +245,12 @@ fn contained_rel_path(root: &Path, path: &Path) -> std::result::Result<String, C
     })?;
     let root_abs = absolute_lexical(root, &cwd);
     let path_abs = absolute_lexical(path, &cwd);
+    if path_abs.to_str().is_none() {
+        return Err(ContainmentError::Unverifiable(format!(
+            "パスに UTF-8 以外の文字が含まれています: {}",
+            path.display()
+        )));
+    }
 
     let relative = match path_abs.strip_prefix(&root_abs) {
         Ok(relative) if !relative.as_os_str().is_empty() => relative.to_path_buf(),
@@ -1606,5 +1623,37 @@ mod tests {
             "message should describe the stat/resolution failure: {}",
             failures[0].message
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn scan_root_rejects_a_non_utf8_root() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+
+        let dir = tempdir().unwrap();
+        let root = dir.path().join(OsString::from_vec(b"root-\xff".to_vec()));
+        std::fs::create_dir(&root).unwrap();
+        write_png(&root.join("photo.png"));
+
+        let error = scan_root_report(&root).unwrap_err();
+        assert!(error.to_string().contains("UTF-8"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn scan_reports_a_non_utf8_directory_component() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+
+        let dir = tempdir().unwrap();
+        let bad_dir = dir.path().join(OsString::from_vec(b"dir-\xff".to_vec()));
+        std::fs::create_dir(&bad_dir).unwrap();
+        write_png(&bad_dir.join("photo.png"));
+
+        let (photos, failures) = scan_root_report(dir.path()).unwrap();
+        assert!(photos.is_empty());
+        assert_eq!(failures.len(), 1);
+        assert!(failures[0].message.contains("UTF-8"));
     }
 }

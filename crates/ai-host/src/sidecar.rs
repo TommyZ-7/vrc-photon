@@ -1077,6 +1077,15 @@ fn interpret_response(
     }
 }
 
+fn validate_probability(name: &str, value: f32) -> Result<()> {
+    if !value.is_finite() || !(0.0..=1.0).contains(&value) {
+        return Err(AiHostError::SidecarProtocol(format!(
+            "{name} must be a finite probability in 0..=1, got {value}"
+        )));
+    }
+    Ok(())
+}
+
 fn validate_result(
     result: &SidecarResult,
     expected_op: Op,
@@ -1105,6 +1114,36 @@ fn validate_result(
             branch.as_str(),
             expected.as_str()
         )));
+    }
+
+    match result {
+        SidecarResult::Presence { p_yes, .. } => {
+            validate_probability("presence.p_yes", *p_yes)?;
+        }
+        SidecarResult::PeopleCount { count, interval } => {
+            if interval[0] > interval[1] {
+                return Err(AiHostError::SidecarProtocol(format!(
+                    "people_count.interval is inverted: [{}, {}]",
+                    interval[0], interval[1]
+                )));
+            }
+            if *count < interval[0] || *count > interval[1] {
+                return Err(AiHostError::SidecarProtocol(format!(
+                    "people_count.count {count} is outside interval [{}, {}]",
+                    interval[0], interval[1]
+                )));
+            }
+        }
+        SidecarResult::PlaceClass { probabilities, .. } => {
+            validate_probability("place_class.probabilities.indoor", probabilities.indoor)?;
+            validate_probability("place_class.probabilities.outdoor", probabilities.outdoor)?;
+            validate_probability("place_class.probabilities.other", probabilities.other)?;
+        }
+        SidecarResult::PlaceTags { tags, .. } | SidecarResult::AtmosphereTags { tags } => {
+            for tag in tags {
+                validate_probability(&format!("tag '{}' p_yes", tag.key), tag.p_yes)?;
+            }
+        }
     }
     Ok(())
 }
@@ -1176,6 +1215,58 @@ fn finish_child(child: &mut Child) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use vrc_photon_ai_protocol::{PlaceBranch, PlaceProbabilities, TagProbability};
+
+    #[test]
+    fn validate_result_rejects_out_of_range_probabilities() {
+        let presence = SidecarResult::Presence {
+            present: true,
+            p_yes: f32::NAN,
+        };
+        assert!(matches!(
+            validate_result(&presence, Op::Presence, None),
+            Err(AiHostError::SidecarProtocol(_))
+        ));
+
+        let class = SidecarResult::PlaceClass {
+            branch: PlaceBranch::Indoor,
+            probabilities: PlaceProbabilities {
+                indoor: 1.1,
+                outdoor: 0.0,
+                other: 1.0,
+            },
+        };
+        assert!(validate_result(&class, Op::PlaceClass, None).is_err());
+
+        let tags = SidecarResult::AtmosphereTags {
+            tags: vec![TagProbability {
+                key: "rain".to_string(),
+                p_yes: -0.1,
+            }],
+        };
+        assert!(validate_result(&tags, Op::AtmosphereTags, None).is_err());
+    }
+
+    #[test]
+    fn validate_result_rejects_impossible_people_counts() {
+        let inverted = SidecarResult::PeopleCount {
+            count: 2,
+            interval: [3, 1],
+        };
+        assert!(validate_result(&inverted, Op::PeopleCount, None).is_err());
+
+        let outside = SidecarResult::PeopleCount {
+            count: 4,
+            interval: [1, 3],
+        };
+        assert!(validate_result(&outside, Op::PeopleCount, None).is_err());
+
+        let valid = SidecarResult::PeopleCount {
+            count: 2,
+            interval: [1, 3],
+        };
+        assert!(validate_result(&valid, Op::PeopleCount, None).is_ok());
+    }
 
     fn sample_config() -> SidecarConfig {
         SidecarConfig {

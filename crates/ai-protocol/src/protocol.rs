@@ -143,10 +143,16 @@ pub struct SidecarResponse {
 pub enum SidecarResult {
     Presence {
         present: bool,
+        /// Probability in `0.0..=1.0`. The host rejects non-finite or
+        /// out-of-range values.
         p_yes: f32,
     },
     PeopleCount {
+        /// Point estimate (median) of the number of people.
         count: u32,
+        /// Model p10/p90 interval. `interval[0] <= interval[1]`, and
+        /// `count` must lie inside the interval; the host rejects
+        /// violations.
         interval: [u32; 2],
     },
     PlaceClass {
@@ -164,14 +170,18 @@ pub enum SidecarResult {
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct PlaceProbabilities {
+    /// Probability in `0.0..=1.0`; the host validates it.
     pub indoor: f32,
+    /// Probability in `0.0..=1.0`; the host validates it.
     pub outdoor: f32,
+    /// Probability in `0.0..=1.0`; the host validates it.
     pub other: f32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TagProbability {
     pub key: String,
+    /// Probability in `0.0..=1.0`; the host validates it.
     pub p_yes: f32,
 }
 

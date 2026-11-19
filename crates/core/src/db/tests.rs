@@ -9209,3 +9209,49 @@ fn retry_all_failed_tagging_jobs_skips_rows_with_an_active_job() {
         TaggingJobStatus::Failed
     );
 }
+
+#[test]
+fn common_manual_tags_handles_more_photos_than_sqlite_bind_limit() {
+    let db = Db::open_in_memory().unwrap();
+    let root = db.add_root("/photos", "reference").unwrap();
+    let photos = (0..32_770)
+        .map(|index| {
+            sample_photo(
+                root,
+                &format!("/photos/common-{index}.png"),
+                1_700_000_000 + index as i64,
+            )
+        })
+        .collect::<Vec<_>>();
+    let ids = db.upsert_photos(&photos).unwrap();
+
+    db.add_tags_to_photos(&ids, &["shared".to_string(), "extra".to_string()])
+        .unwrap();
+    db.add_tags_to_photos(&ids[..500], &["chunk-first".to_string()])
+        .unwrap();
+    db.add_tags_to_photos(&ids[ids.len() - 500..], &["chunk-last".to_string()])
+        .unwrap();
+    db.set_photo_tags(
+        ids[0],
+        &[
+            "shared".to_string(),
+            "extra".to_string(),
+            "only-first".to_string(),
+        ],
+    )
+    .unwrap();
+    db.set_photo_tags(
+        *ids.last().unwrap(),
+        &[
+            "shared".to_string(),
+            "extra".to_string(),
+            "only-last".to_string(),
+        ],
+    )
+    .unwrap();
+
+    assert_eq!(
+        db.common_manual_tags(&ids).unwrap(),
+        vec!["extra".to_string(), "shared".to_string()]
+    );
+}
