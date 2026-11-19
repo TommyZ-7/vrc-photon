@@ -148,7 +148,7 @@ pub(crate) fn write_png(png: &[u8]) -> Result<(), String> {
     let image = image::load_from_memory_with_format(png, image::ImageFormat::Png)
         .map_err(|error| tr_args!("compression.clipboard_decode", error = error))?
         .to_rgba8();
-    let dib = dib_from_rgba(image.width(), image.height(), image.as_raw());
+    let dib = dib_from_rgba(image.width(), image.height(), image.as_raw())?;
     let _guard = lock_clipboard_write();
     windows_clipboard::write(png, &dib)
 }
@@ -291,11 +291,16 @@ fn read_stderr(file: &mut File) -> String {
 /// as reserved. Transparency remains available through the parallel `"PNG"`
 /// clipboard format.
 #[cfg(any(target_os = "windows", test))]
-pub(crate) fn dib_from_rgba(width: u32, height: u32, rgba: &[u8]) -> Vec<u8> {
+pub(crate) fn dib_from_rgba(width: u32, height: u32, rgba: &[u8]) -> Result<Vec<u8>, String> {
     const HEADER_LEN: usize = 40;
     let stride = width as usize * 4;
     let image_len = stride * height as usize;
-    debug_assert_eq!(rgba.len(), image_len);
+    if rgba.len() != image_len {
+        return Err(format!(
+            "DIB input has {} bytes, expected {image_len} for {width}x{height}",
+            rgba.len()
+        ));
+    }
 
     let mut dib = Vec::with_capacity(HEADER_LEN + image_len);
     dib.extend_from_slice(&40u32.to_le_bytes()); // biSize
@@ -316,7 +321,7 @@ pub(crate) fn dib_from_rgba(width: u32, height: u32, rgba: &[u8]) -> Vec<u8> {
             dib.extend_from_slice(&[pixel[2], pixel[1], pixel[0], u8::MAX]);
         }
     }
-    dib
+    Ok(dib)
 }
 
 #[cfg(target_os = "windows")]
@@ -609,7 +614,7 @@ mod tests {
 
     #[test]
     fn dib_has_a_bitmap_info_header_and_opaque_bgra_pixels() {
-        let dib = dib_from_rgba(2, 1, &[255, 0, 0, 0, 0, 255, 0, 0]);
+        let dib = dib_from_rgba(2, 1, &[255, 0, 0, 0, 0, 255, 0, 0]).unwrap();
         assert_eq!(&dib[0..4], &40u32.to_le_bytes());
         assert_eq!(&dib[4..8], &2i32.to_le_bytes());
         assert_eq!(&dib[8..12], &1i32.to_le_bytes());
@@ -621,8 +626,13 @@ mod tests {
     }
 
     #[test]
+    fn dib_rejects_a_mismatched_input_length() {
+        assert!(dib_from_rgba(2, 1, &[0, 0, 0, 255]).is_err());
+    }
+
+    #[test]
     fn dib_stores_rows_bottom_up() {
-        let dib = dib_from_rgba(1, 2, &[255, 0, 0, 255, 0, 0, 255, 255]);
+        let dib = dib_from_rgba(1, 2, &[255, 0, 0, 255, 0, 0, 255, 255]).unwrap();
         assert_eq!(&dib[40..], &[255, 0, 0, 255, 0, 0, 255, 255]);
     }
 }

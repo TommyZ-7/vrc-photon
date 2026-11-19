@@ -40,7 +40,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 /// Startup happens before any window exists, so there is no in-app surface for
 /// this message. Keep the exit explicit so a service manager or launcher never
 /// mistakes a broken start for a clean one.
-fn exit_startup_failure(context: &str, error: impl std::fmt::Display) -> ! {
+pub(crate) fn exit_startup_failure(context: &str, error: impl std::fmt::Display) -> ! {
     tracing::error!(error = %error, "{context}");
     eprintln!("VRC PhotoN cannot start: {context}: {error}");
     std::process::exit(1)

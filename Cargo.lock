@@ -8417,6 +8417,7 @@ dependencies = [
  "embed-resource",
  "gpui-kit",
  "image",
+ "libc",
  "mimalloc",
  "rfd",
  "semver",

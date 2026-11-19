@@ -13,6 +13,11 @@ path = "src/main.rs"
 [build-dependencies]
 embed-resource.workspace = true
 
+[features]
+# Development-only demo library and fixture generator. Release builds keep
+# this off so a broken database cannot silently switch to demo data.
+demo = []
+
 [dependencies]
 anyhow.workspace = true
 async-channel = "2.5"
@@ -36,6 +41,9 @@ vrc-photon-update = { path = "../update" }
 # The test modules use `tempfile` on every platform. Linux also needs it at
 # runtime for the clipboard bridge, hence the target dependency below.
 tempfile = "3"
+
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 tempfile = "3"

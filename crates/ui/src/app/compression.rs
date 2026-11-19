@@ -107,9 +107,7 @@ impl App {
         };
         edit(options);
         options.normalize();
-        if let Err(error) = self.settings.save(&self.db) {
-            tracing::warn!(%error, ?target, "cannot save feature compression settings");
-        }
+        self.schedule_settings_save(cx);
         cx.notify();
     }
 
@@ -120,9 +118,7 @@ impl App {
     ) {
         edit(&mut self.settings.clipboard_compression);
         self.settings.clipboard_compression.normalize();
-        if let Err(error) = self.settings.save(&self.db) {
-            tracing::warn!(%error, "cannot save clipboard compression settings");
-        }
+        self.schedule_settings_save(cx);
         cx.notify();
     }
 
@@ -409,9 +405,7 @@ impl App {
                 .auto_compress
                 .touch_activation(Utc::now().timestamp());
         }
-        if let Err(error) = self.settings.save(&self.db) {
-            tracing::warn!(%error, "cannot save the automatic compression master switch");
-        }
+        self.schedule_settings_save(cx);
         cx.notify();
     }
 
@@ -424,9 +418,7 @@ impl App {
         self.settings
             .auto_compress
             .set_mode(mode, Utc::now().timestamp());
-        if let Err(error) = self.settings.save(&self.db) {
-            tracing::warn!(%error, "cannot save the automatic compression mode");
-        }
+        self.schedule_settings_save(cx);
         cx.notify();
     }
 
@@ -437,9 +429,7 @@ impl App {
         cx: &mut Context<Self>,
     ) {
         self.settings.auto_compress.scope = scope;
-        if let Err(error) = self.settings.save(&self.db) {
-            tracing::warn!(%error, "cannot save the automatic compression scope");
-        }
+        self.schedule_settings_save(cx);
         cx.notify();
     }
 
