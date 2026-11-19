@@ -1632,9 +1632,7 @@ mod tests {
         use std::os::unix::ffi::OsStringExt;
 
         let dir = tempdir().unwrap();
-        let root = dir
-            .path()
-            .join(OsString::from_vec(b"root-\xff".to_vec()));
+        let root = dir.path().join(OsString::from_vec(b"root-\xff".to_vec()));
         std::fs::create_dir(&root).unwrap();
         write_png(&root.join("photo.png"));
 
@@ -1649,9 +1647,7 @@ mod tests {
         use std::os::unix::ffi::OsStringExt;
 
         let dir = tempdir().unwrap();
-        let bad_dir = dir
-            .path()
-            .join(OsString::from_vec(b"dir-\xff".to_vec()));
+        let bad_dir = dir.path().join(OsString::from_vec(b"dir-\xff".to_vec()));
         std::fs::create_dir(&bad_dir).unwrap();
         write_png(&bad_dir.join("photo.png"));
 
