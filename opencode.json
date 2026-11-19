@@ -40,6 +40,47 @@
       "action": "shell",
       "resource": "git worktree *",
       "effect": "allow"
+    },
+    {
+      "action": "skill",
+      "resource": "hyprland-visual-qa",
+      "effect": "deny"
+    },
+    {
+      "action": "skill",
+      "resource": "wsl-gpui-testing",
+      "effect": "deny"
     }
-  ]
+  ],
+  "mcp": {
+    "servers": {
+      "playwright": {
+        "type": "local",
+        "command": [
+          "/home/tommyz7/.bun/bin/bun",
+          "x",
+          "@playwright/mcp@latest",
+          "--headless",
+          "--executable-path",
+          "/home/tommyz7/.cache/ms-playwright/chromium-1248/chrome-linux64/chrome",
+          "--output-dir",
+          "/home/tommyz7/.local/share/opencode/playwright-mcp"
+        ]
+      },
+      "serena": {
+        "type": "local",
+        "command": [
+          "/home/tommyz7/.local/bin/serena",
+          "start-mcp-server",
+          "--context",
+          "agent",
+          "--project-from-cwd",
+          "--agent-interface",
+          "tools",
+          "--enable-web-dashboard",
+          "false"
+        ]
+      }
+    }
+  }
 }
