@@ -1,9 +1,7 @@
 use super::photos::*;
 use super::*;
 use crate::ai::{NewPhotoAi, PluginInstallation};
-use crate::model::{
-    DeletionReason, DeletionStatus, NewPhoto, PhotoFilter, PhotoPlayer, PhotoStatus,
-};
+use crate::model::{DeletionReason, DeletionStatus, NewPhoto, PhotoPlayer, PhotoStatus};
 use crate::queue::{QueueFeature, QueueState};
 use vrc_photon_ai_protocol::{
     Catalog, ModelState, TagDefinition, TaggingErrorCode, TaggingJobStatus, TaggingStage,
@@ -244,7 +242,7 @@ fn deleting_photo_is_hidden_from_index_search_and_counts() {
     assert_eq!(stats.derivative_bytes, 0);
     assert!(db.compressed_photo_ids().unwrap().is_empty());
     assert!(
-        db.search_photos(&PhotoFilter::default())
+        db.search_photos_text(&PhotoTextFilter::default(), 10, 0)
             .unwrap()
             .is_empty()
     );
@@ -2642,12 +2640,12 @@ fn links_context_and_players() {
     assert_eq!(stored.world_name.as_deref(), Some("Test World"));
     assert_eq!(db.photo_players(photo_id).unwrap()[0].display_name, "Alice");
 
-    let filter = PhotoFilter {
-        world_ids: vec![world],
+    let filter = PhotoTextFilter {
+        world: Some("Test World".to_string()),
         ..Default::default()
     };
-    assert_eq!(db.search_photos(&filter).unwrap().len(), 1);
-    assert_eq!(db.count_search(&filter).unwrap(), 1);
+    assert_eq!(db.search_photos_text(&filter, 10, 0).unwrap().len(), 1);
+    assert_eq!(db.count_photos_text(&filter).unwrap(), 1);
 }
 
 #[test]
@@ -4515,7 +4513,7 @@ fn people_count_filter_matches_inclusive_intervals() {
 }
 
 #[test]
-fn photo_filter_ai_conditions_apply_to_search_photos_and_count() {
+fn text_filter_ai_conditions_apply_to_search_and_count() {
     let db = Db::open_in_memory().unwrap();
     let photo = seed_photo(&db);
     install_test_catalog(&db);
@@ -4523,16 +4521,16 @@ fn photo_filter_ai_conditions_apply_to_search_photos_and_count() {
         .unwrap();
     seed_other_photo(&db);
 
-    let filter = PhotoFilter {
+    let filter = PhotoTextFilter {
         ai: AiPhotoFilter {
             tags: vec!["sea".into()],
             people_count: Some(3),
         },
         ..Default::default()
     };
-    assert_eq!(db.count_search(&filter).unwrap(), 1);
+    assert_eq!(db.count_photos_text(&filter).unwrap(), 1);
     assert_eq!(
-        db.search_photos(&filter)
+        db.search_photos_text(&filter, 10, 0)
             .unwrap()
             .iter()
             .map(|photo| photo.id)
@@ -7338,13 +7336,10 @@ fn photo_list_and_search_limits_agree() {
             .unwrap()
             .len()
     });
-    assert_limit_contract("search_photos", |limit| {
-        db.search_photos(&PhotoFilter {
-            limit,
-            ..Default::default()
-        })
-        .unwrap()
-        .len()
+    assert_limit_contract("search_photos_text", |limit| {
+        db.search_photos_text(&PhotoTextFilter::default(), limit, 0)
+            .unwrap()
+            .len()
     });
     assert_limit_contract("random_photos_text", |limit| {
         db.random_photos_text(&PhotoTextFilter::default(), limit, 7)
@@ -7353,8 +7348,8 @@ fn photo_list_and_search_limits_agree() {
             .len()
     });
 
-    // The legacy filter search and the production index search must agree
-    // for every normalized limit, including the old zero default.
+    // The text search and the production index search must agree for every
+    // normalized limit, including zero.
     for limit in [0, -3, MAX_ROW_LIMIT + 1, i64::MAX, 2] {
         let indexed = db
             .photo_index_text_limited(&PhotoTextFilter::default(), limit)
@@ -7363,10 +7358,7 @@ fn photo_list_and_search_limits_agree() {
             .map(|entry| entry.id)
             .collect::<Vec<_>>();
         let searched = db
-            .search_photos(&PhotoFilter {
-                limit,
-                ..Default::default()
-            })
+            .search_photos_text(&PhotoTextFilter::default(), limit, 0)
             .unwrap()
             .into_iter()
             .map(|photo| photo.id)

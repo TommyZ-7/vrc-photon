@@ -1092,21 +1092,6 @@ pub struct RandomPhotoSample {
     pub total: i64,
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct PhotoFilter {
-    pub world_ids: Vec<i64>,
-    pub player_user_ids: Vec<String>,
-    pub from_utc: Option<i64>,
-    pub to_utc: Option<i64>,
-    pub tags: Vec<String>,
-    pub favorite: Option<bool>,
-    pub unlinked: Option<bool>,
-    pub limit: i64,
-    pub offset: i64,
-    pub sort: Option<PhotoSort>,
-    pub ai: AiPhotoFilter,
-}
-
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct LibraryStats {
     pub photo_count: i64,

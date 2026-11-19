@@ -479,7 +479,7 @@ mod tests {
     use super::*;
     use chrono::NaiveDate;
     use std::collections::{BTreeMap, BTreeSet};
-    use vrc_photon_core::model::{PhotoFilter, PhotoSort};
+    use vrc_photon_core::model::{PhotoSort, PhotoTextFilter};
     use vrc_photon_core::time;
 
     use crate::state::year_rail::build_year_buckets;
@@ -630,18 +630,16 @@ mod tests {
         )
         .unwrap()
         .utc - 1;
-        let filter = PhotoFilter {
+        let filter = PhotoTextFilter {
             from_utc: Some(from),
             to_utc: Some(to),
-            limit: 500,
             ..Default::default()
         };
-        assert_eq!(db.count_search(&filter).unwrap(), june as i64);
+        assert_eq!(db.count_photos_text(&filter).unwrap(), june as i64);
 
         let favorites = db
-            .count_search(&PhotoFilter {
-                favorite: Some(true),
-                limit: 500,
+            .count_photos_text(&PhotoTextFilter {
+                favorite: true,
                 ..Default::default()
             })
             .unwrap();
@@ -783,10 +781,7 @@ mod tests {
 
         let fixture = demo_fixture::demo_fixture_at(moment(reference).naive_local());
         let photos = db
-            .search_photos(&PhotoFilter {
-                limit: 500,
-                ..Default::default()
-            })
+            .search_photos_text(&PhotoTextFilter::default(), 500, 0)
             .unwrap();
         assert_eq!(photos.len(), fixture.len());
 

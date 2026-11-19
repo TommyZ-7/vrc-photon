@@ -20,8 +20,8 @@ use crate::model::{
     DaemonError, DaemonOperation, DeletionBlockers, DeletionCounts, DeletionJobSummary,
     DeletionReason, DeletionRequest, DeletionStatus, Derivative, JobStatusCounts, LibraryRoot,
     LibraryStats, MAX_JOB_RETRIES, MAX_PROFILE_NAME_CHARS, NewPhoto, Photo, PhotoContext,
-    PhotoFilter, PhotoIndexEntry, PhotoPlayer, PhotoSort, PhotoStatus, PhotoTextFilter,
-    QueueStatus, RandomPhotoSample, SearchSuggestion, SendCompletion, SendErrorCode,
+    PhotoIndexEntry, PhotoPlayer, PhotoSort, PhotoStatus, PhotoTextFilter, QueueStatus,
+    RandomPhotoSample, SearchSuggestion, SendCompletion, SendErrorCode,
     SendHistoryEntry, SendKind, SendOrigin, SendOutboxEntry, SendSource, SendStatus, Session,
     SessionPlayer, SessionSummary, World, WorldPhotoCount,
 };
