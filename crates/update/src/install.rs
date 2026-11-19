@@ -388,7 +388,7 @@ fn safe_component(value: &str) -> String {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ApplyKind {
-    #[serde(rename = "appimage", alias = "app_image")]
+    #[serde(rename = "appimage")]
     AppImage,
     Windows,
     SystemPackage {
@@ -964,11 +964,8 @@ mod tests {
     }
 
     #[test]
-    fn apply_kind_accepts_the_legacy_app_image_alias() {
-        assert_eq!(
-            serde_json::from_str::<ApplyKind>("\"app_image\"").unwrap(),
-            ApplyKind::AppImage
-        );
+    fn apply_kind_rejects_the_legacy_app_image_alias() {
+        assert!(serde_json::from_str::<ApplyKind>("\"app_image\"").is_err());
     }
 
     #[test]

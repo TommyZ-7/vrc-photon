@@ -462,7 +462,6 @@ fn copy_file(source: &Path, dest: &Path, result: &mut ImportResult) {
             result.skipped += 1;
             return;
         }
-        clear_legacy_temp(&target);
         match copy_atomic(source, &target) {
             Ok(PlaceOutcome::Placed) => {
                 record_imported(source, target, result);
@@ -592,26 +591,6 @@ fn copy_atomic_with(
     copy: fn(&Path, &Path) -> std::io::Result<u64>,
 ) -> Result<PlaceOutcome> {
     fs_safe::copy_no_clobber_with(source, target, copy).map_err(CoreError::Io)
-}
-
-/// Removes the deterministic temporary name used by versions before the
-/// no-clobber helper. New copies use unique temp names, which never block a
-/// destination, but an upgrade may still find one of these stale files.
-fn clear_legacy_temp(target: &Path) {
-    let extension = target
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .unwrap_or("png");
-    let legacy = target.with_extension(format!("{extension}.tmp"));
-    if legacy.is_file()
-        && let Err(error) = fs::remove_file(&legacy)
-    {
-        tracing::debug!(
-            %error,
-            path = %legacy.display(),
-            "cannot remove stale import temp"
-        );
-    }
 }
 
 #[cfg(test)]
@@ -768,13 +747,13 @@ mod tests {
     }
 
     #[test]
-    fn stale_temp_file_does_not_block_the_import() {
+    fn legacy_temp_file_does_not_block_and_is_not_removed() {
         let dir = tempdir().unwrap();
         let dest = dir.path().join("dest");
         fs::create_dir_all(&dest).unwrap();
         let source = dir.path().join("VRChat_2026-10-21_21-14-03.221_4x3.png");
         write_png(&source);
-        // A temp file left behind by an interrupted import of the same name.
+        // A temp file left behind by a version before the unique temp names.
         let stale_temp = dest.join("VRChat_2026-10-21_21-14-03.221_4x3.png.tmp");
         fs::write(&stale_temp, b"partial garbage").unwrap();
 
@@ -782,7 +761,10 @@ mod tests {
 
         assert_eq!(result.imported.len(), 1);
         assert!(result.issues.is_empty());
-        assert!(!stale_temp.exists(), "the stale temp must be gone");
+        assert!(
+            stale_temp.exists(),
+            "an old .tmp file is not this build's temporary file"
+        );
         assert_eq!(
             fs::metadata(&result.imported[0]).unwrap().len(),
             fs::metadata(&source).unwrap().len()
