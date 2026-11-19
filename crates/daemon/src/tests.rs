@@ -3110,7 +3110,9 @@ fn panic_in_a_compression_batch_fails_the_claimed_jobs() {
         .unwrap();
     assert_eq!(job.status, QueueStatus::Failed);
     assert!(
-        job.error.as_deref().is_some_and(|error| error.contains("decoder panic")),
+        job.error
+            .as_deref()
+            .is_some_and(|error| error.contains("decoder panic")),
         "unexpected error: {:?}",
         job.error
     );

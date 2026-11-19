@@ -2137,8 +2137,7 @@ mod tests {
                 Ok(1)
             }
         }
-        let mut reader =
-            DeadlineReader::new(OneEmptyRead { empty: true }, Duration::from_secs(1));
+        let mut reader = DeadlineReader::new(OneEmptyRead { empty: true }, Duration::from_secs(1));
         let mut byte = [0];
         assert_eq!(reader.read(&mut byte).unwrap(), 1);
         assert_eq!(byte[0], b'x');
