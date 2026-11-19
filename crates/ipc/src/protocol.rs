@@ -186,23 +186,17 @@ pub struct StatusSnapshot {
     pub scan_roots: usize,
     pub photo_count: i64,
     pub pending_jobs: i64,
-    /// Discord sends still queued or in flight. Defaults to 0 so a snapshot
-    /// from a daemon without the send worker still decodes.
-    #[serde(default)]
+    /// Discord sends still queued or in flight.
     pub pending_sends: i64,
     /// Monotonic version stamped by the daemon when the snapshot is taken
     /// under its status lock. A snapshot published late therefore still
     /// carries the older version, and receivers drop it once a newer one
-    /// has been applied. Zero means the sender does not version snapshots.
-    #[serde(default)]
+    /// has been applied.
     pub version: u64,
-    /// Tagging jobs that are waiting, pending, or processing. Defaults to 0
-    /// so a snapshot from a daemon without tagging still decodes.
-    #[serde(default)]
+    /// Tagging jobs that are waiting, pending, or processing.
     pub pending_tagging_jobs: i64,
     /// True when an active install, a ready model, and a saved probe are all
-    /// present. Defaults to false for daemons without tagging.
-    #[serde(default)]
+    /// present.
     pub tagging_ready: bool,
 }
 
@@ -253,7 +247,6 @@ pub enum Event {
     ScanStarted {
         roots: usize,
         /// Set when the scan targets one import root; `None` for full scans.
-        #[serde(default)]
         target: Option<String>,
     },
     ScanProgress {
@@ -270,12 +263,9 @@ pub enum Event {
         skipped: usize,
         failures: usize,
         failed: bool,
-        /// Automatic compression jobs created by this scan. Defaults to 0 so
-        /// an older daemon stays compatible with a newer UI.
-        #[serde(default)]
+        /// Automatic compression jobs created by this scan.
         auto_enqueued: usize,
         /// Set when the scan targets one import root; `None` for full scans.
-        #[serde(default)]
         target: Option<String>,
     },
     CompressionProgress {
@@ -360,13 +350,20 @@ mod tests {
     }
 
     #[test]
-    fn status_snapshot_without_a_version_decodes_as_zero() {
-        // Snapshots written before versioning existed carry no version
-        // field; they decode as 0, which receivers always accept.
-        let json = r#"{"paused":false,"watching":true,"scanning":true,"scan_phase":"walking","scan_processed":3,"scan_total":null,"scan_indexed":2,"scan_root":0,"scan_roots":1,"photo_count":10,"pending_jobs":1}"#;
-        let snapshot: StatusSnapshot = serde_json::from_str(json).unwrap();
-        assert_eq!(snapshot.version, 0);
-        assert!(snapshot.scanning);
+    fn status_snapshot_requires_every_protocol_field() {
+        for field in [
+            "pending_sends",
+            "version",
+            "pending_tagging_jobs",
+            "tagging_ready",
+        ] {
+            let mut value = serde_json::to_value(StatusSnapshot::default()).unwrap();
+            value.as_object_mut().unwrap().remove(field);
+            assert!(
+                serde_json::from_value::<StatusSnapshot>(value).is_err(),
+                "missing {field} must be rejected"
+            );
+        }
     }
 
     #[test]
@@ -431,7 +428,7 @@ mod tests {
     }
 
     #[test]
-    fn send_progress_round_trips_and_defaults_pending_sends() {
+    fn send_progress_round_trips() {
         let event = Event::SendProgress {
             outbox_id: 4,
             photo_id: Some(9),
@@ -440,8 +437,6 @@ mod tests {
         };
         let json = serde_json::to_string(&event).unwrap();
         assert_eq!(serde_json::from_str::<Event>(&json).unwrap(), event);
-        let snapshot: StatusSnapshot = serde_json::from_str(r#"{"paused":false,"watching":true,"scanning":false,"scan_phase":null,"scan_processed":0,"scan_total":null,"scan_indexed":0,"scan_root":0,"scan_roots":0,"photo_count":1,"pending_jobs":0}"#).unwrap();
-        assert_eq!(snapshot.pending_sends, 0);
     }
 
     #[test]
@@ -462,11 +457,36 @@ mod tests {
     }
 
     #[test]
-    fn scan_finished_defaults_new_fields_for_older_daemons() {
-        let event: Event = serde_json::from_str(
-            r#"{"type":"scan_finished","found":1,"indexed":1,"skipped":0,"failures":0,"failed":false}"#,
-        )
-        .unwrap();
+    fn scan_finished_requires_auto_enqueued() {
+        let base = serde_json::json!({
+            "type": "scan_finished",
+            "found": 1,
+            "indexed": 1,
+            "skipped": 0,
+            "failures": 0,
+            "failed": false,
+            "auto_enqueued": 0,
+            "target": null,
+        });
+        let event: Event = serde_json::from_value(base.clone()).unwrap();
+        assert_eq!(
+            event,
+            Event::ScanFinished {
+                found: 1,
+                indexed: 1,
+                skipped: 0,
+                failures: 0,
+                failed: false,
+                auto_enqueued: 0,
+                target: None,
+            }
+        );
+        let mut missing = base.clone();
+        missing.as_object_mut().unwrap().remove("auto_enqueued");
+        assert!(serde_json::from_value::<Event>(missing).is_err());
+        let mut without_target = base;
+        without_target.as_object_mut().unwrap().remove("target");
+        let event: Event = serde_json::from_value(without_target).unwrap();
         assert_eq!(
             event,
             Event::ScanFinished {
@@ -629,11 +649,16 @@ mod tests {
     }
 
     #[test]
-    fn status_snapshot_without_ai_fields_decodes() {
-        let json = r#"{"paused":false,"watching":true,"scanning":false,"scan_phase":null,"scan_processed":0,"scan_total":null,"scan_indexed":0,"scan_root":0,"scan_roots":0,"photo_count":0,"pending_jobs":0}"#;
-        let snapshot: StatusSnapshot = serde_json::from_str(json).unwrap();
-        assert_eq!(snapshot.pending_tagging_jobs, 0);
-        assert!(!snapshot.tagging_ready);
+    fn scan_started_accepts_an_absent_optional_target() {
+        let value = serde_json::json!({"type": "scan_started", "roots": 1});
+        let event: Event = serde_json::from_value(value).unwrap();
+        assert_eq!(
+            event,
+            Event::ScanStarted {
+                roots: 1,
+                target: None
+            }
+        );
     }
 
     #[test]

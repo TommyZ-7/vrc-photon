@@ -64,8 +64,10 @@ grep -Fq "最大値（${schema}）" docs/data-model.md \
     || fail "docs/data-model.md must say 最大値（${schema}）"
 grep -Fq "| ${schema} | そのまま開く。" docs/database-initialization.md \
     || fail "docs/database-initialization.md must say ${schema} opens as-is"
-grep -Fq "| 1〜$((schema - 1)) |" docs/database-initialization.md \
-    || fail "docs/database-initialization.md must reject 1〜$((schema - 1))"
+if [ "${schema}" -gt 1 ]; then
+    grep -Fq "| 1〜$((schema - 1)) |" docs/database-initialization.md \
+        || fail "docs/database-initialization.md must reject 1〜$((schema - 1))"
+fi
 grep -Fq "| $((schema + 1)) 以上 |" docs/database-initialization.md \
     || fail "docs/database-initialization.md must reject $((schema + 1)) 以上"
 

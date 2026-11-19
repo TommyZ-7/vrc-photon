@@ -249,38 +249,6 @@ impl Db {
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
-    /// Legacy `PhotoFilter` search retained as an oracle for tests and demo
-    /// data. Production UI search uses [`Self::photo_index_text`].
-    /// `filter.limit` follows [`clamp_limit`].
-    pub fn search_photos(&self, filter: &PhotoFilter) -> Result<Vec<Photo>> {
-        let (where_sql, values) = build_photo_filter(filter);
-        let sort = filter.sort.unwrap_or(PhotoSort::Newest);
-        let order = photo_order(sort);
-        let limit = clamp_limit(filter.limit);
-        let offset = filter.offset.max(0);
-        let sql = format!(
-            "SELECT {PHOTO_SELECT}{PHOTO_FROM} WHERE {where_sql} \
-             ORDER BY {order} LIMIT ? OFFSET ?"
-        );
-        let mut all_values = values;
-        all_values.push(Value::Integer(limit));
-        all_values.push(Value::Integer(offset));
-        let mut stmt = self.conn.prepare_cached(&sql)?;
-        let rows = stmt.query_map(params_from_iter(all_values), row_to_photo)?;
-        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
-    }
-
-    /// Counts rows matching a legacy `PhotoFilter` query. Retained together
-    /// with [`Self::search_photos`] as a test/demo oracle; production search
-    /// uses [`Self::photo_index_text`].
-    pub fn count_search(&self, filter: &PhotoFilter) -> Result<i64> {
-        let (where_sql, values) = build_photo_filter(filter);
-        let sql = format!("SELECT COUNT(*){PHOTO_FROM} WHERE {where_sql}");
-        let mut stmt = self.conn.prepare_cached(&sql)?;
-        let count = stmt.query_row(params_from_iter(values), |row| row.get(0))?;
-        Ok(count)
-    }
-
     /// Returns a page of full photo rows matching the text filters.
     ///
     /// This is the read model behind the daemon's MCP search: it uses the same
@@ -1137,59 +1105,6 @@ fn push_ai_filter(clauses: &mut Vec<String>, values: &mut Vec<Value>, ai: &AiPho
         values.push(Value::Integer(i64::from(count)));
         values.push(Value::Integer(i64::from(count)));
     }
-}
-
-fn build_photo_filter(filter: &PhotoFilter) -> (String, Vec<Value>) {
-    let mut clauses = vec![VISIBLE_STATUS.to_string()];
-    let mut values = Vec::new();
-
-    if !filter.world_ids.is_empty() {
-        let placeholders = vec!["?"; filter.world_ids.len()].join(",");
-        clauses.push(format!("c.world_id IN ({placeholders})"));
-        values.extend(filter.world_ids.iter().map(|id| Value::Integer(*id)));
-    }
-
-    if !filter.player_user_ids.is_empty() {
-        let placeholders = vec!["?"; filter.player_user_ids.len()].join(",");
-        clauses.push(format!(
-            "EXISTS (SELECT 1 FROM photo_players pp WHERE pp.photo_id = p.id \
-             AND pp.user_id IN ({placeholders}))"
-        ));
-        values.extend(
-            filter
-                .player_user_ids
-                .iter()
-                .map(|id| Value::Text(id.clone())),
-        );
-    }
-
-    if !filter.tags.is_empty() {
-        let placeholders = vec!["?"; filter.tags.len()].join(",");
-        clauses.push(format!(
-            "EXISTS (SELECT 1 FROM photo_tags pt JOIN tags t ON t.id = pt.tag_id \
-             WHERE pt.photo_id = p.id AND t.name IN ({placeholders}))"
-        ));
-        values.extend(filter.tags.iter().map(|tag| Value::Text(tag.clone())));
-    }
-
-    push_ai_filter(&mut clauses, &mut values, &filter.ai);
-
-    if let Some(from) = filter.from_utc {
-        clauses.push("p.captured_at_utc >= ?".to_string());
-        values.push(Value::Integer(from));
-    }
-    if let Some(to) = filter.to_utc {
-        clauses.push("p.captured_at_utc <= ?".to_string());
-        values.push(Value::Integer(to));
-    }
-    if filter.favorite == Some(true) {
-        clauses.push("p.is_favorite = 1".to_string());
-    }
-    if filter.unlinked == Some(true) {
-        clauses.push("c.photo_id IS NULL".to_string());
-    }
-
-    (clauses.join(" AND "), values)
 }
 
 fn escape_like(query: &str) -> String {

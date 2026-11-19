@@ -119,7 +119,7 @@
   - 形式、品質、ロスレス、リサイズ（有効/無効、幅、高さ、アスペクト比維持、方法）、
     エンコード速度を保持する。既定は「無劣化webp」相当（WebP ロスレス、リサイズなし）。
 - 出力先は元画像の親ディレクトリ直下の `compressed/` に固定する。機能設定に出力先の項目は持たない。
-- 元画像の扱いは自動圧縮専用の `auto_compress_keep_original`（既定 `true`）に従う。旧 `compression_keep_original` は読み込み時に引き継ぐ。
+- 元画像の扱いは自動圧縮専用の `auto_compress_keep_original`（既定 `true`）に従う。
   - `true`: 別ファイルを生成し、元画像を保持する。
   - `false`: 圧縮成功後に元画像の削除要求を積む。写真を対象とする全ジョブが完了してからOSゴミ箱へ移動する。自動圧縮がONのときは設定画面に警告を表示する。
 - 1写真につき自動圧縮ジョブは1件だけ積む。再索引しても完了・失敗・取消済みのジョブは作り直さない。
@@ -279,7 +279,7 @@
 ### 8.1 UI⇔デーモンIPC
 
 - トランスポートはローカルソケット（Unix domain socket / Windows名前付きパイプ）。TCPやネットワーク公開は使わない。
-- プロトコルは改行区切りJSON、`PROTOCOL_VERSION = 8`。接続は `hello` で始まり、バージョン不一致なら接続を閉じる。
+- プロトコルは改行区切りJSON、`PROTOCOL_VERSION = 1`。接続は `hello` で始まり、バージョン不一致なら接続を閉じる。
 - リクエスト: `status`、`wake_commands`、`wake_jobs`、`wake_sends`、`wake_tagging`、`set_paused`、`shutdown`、`subscribe`、`thumbnails_generated`、`clear_thumbnail_cache`。MCPサーバー向けの読み取り専用リクエストとして `search_photos`、`random_search_photos`、`get_photo`、`list_worlds`、`library_stats` を持つ。
 - UI操作:
   - ダッシュボードの「再スキャン」は `daemon_commands` に積み、IPC接続中なら `wake_commands` で即時実行する。

@@ -1,9 +1,7 @@
 use super::photos::*;
 use super::*;
 use crate::ai::{NewPhotoAi, PluginInstallation};
-use crate::model::{
-    DeletionReason, DeletionStatus, NewPhoto, PhotoFilter, PhotoPlayer, PhotoStatus,
-};
+use crate::model::{DeletionReason, DeletionStatus, NewPhoto, PhotoPlayer, PhotoStatus};
 use crate::queue::{QueueFeature, QueueState};
 use vrc_photon_ai_protocol::{
     Catalog, ModelState, TagDefinition, TaggingErrorCode, TaggingJobStatus, TaggingStage,
@@ -244,7 +242,7 @@ fn deleting_photo_is_hidden_from_index_search_and_counts() {
     assert_eq!(stats.derivative_bytes, 0);
     assert!(db.compressed_photo_ids().unwrap().is_empty());
     assert!(
-        db.search_photos(&PhotoFilter::default())
+        db.search_photos_text(&PhotoTextFilter::default(), 10, 0)
             .unwrap()
             .is_empty()
     );
@@ -2642,12 +2640,12 @@ fn links_context_and_players() {
     assert_eq!(stored.world_name.as_deref(), Some("Test World"));
     assert_eq!(db.photo_players(photo_id).unwrap()[0].display_name, "Alice");
 
-    let filter = PhotoFilter {
-        world_ids: vec![world],
+    let filter = PhotoTextFilter {
+        world: Some("Test World".to_string()),
         ..Default::default()
     };
-    assert_eq!(db.search_photos(&filter).unwrap().len(), 1);
-    assert_eq!(db.count_search(&filter).unwrap(), 1);
+    assert_eq!(db.search_photos_text(&filter, 10, 0).unwrap().len(), 1);
+    assert_eq!(db.count_photos_text(&filter).unwrap(), 1);
 }
 
 #[test]
@@ -4515,7 +4513,7 @@ fn people_count_filter_matches_inclusive_intervals() {
 }
 
 #[test]
-fn photo_filter_ai_conditions_apply_to_search_photos_and_count() {
+fn text_filter_ai_conditions_apply_to_search_and_count() {
     let db = Db::open_in_memory().unwrap();
     let photo = seed_photo(&db);
     install_test_catalog(&db);
@@ -4523,16 +4521,16 @@ fn photo_filter_ai_conditions_apply_to_search_photos_and_count() {
         .unwrap();
     seed_other_photo(&db);
 
-    let filter = PhotoFilter {
+    let filter = PhotoTextFilter {
         ai: AiPhotoFilter {
             tags: vec!["sea".into()],
             people_count: Some(3),
         },
         ..Default::default()
     };
-    assert_eq!(db.count_search(&filter).unwrap(), 1);
+    assert_eq!(db.count_photos_text(&filter).unwrap(), 1);
     assert_eq!(
-        db.search_photos(&filter)
+        db.search_photos_text(&filter, 10, 0)
             .unwrap()
             .iter()
             .map(|photo| photo.id)
@@ -7338,13 +7336,10 @@ fn photo_list_and_search_limits_agree() {
             .unwrap()
             .len()
     });
-    assert_limit_contract("search_photos", |limit| {
-        db.search_photos(&PhotoFilter {
-            limit,
-            ..Default::default()
-        })
-        .unwrap()
-        .len()
+    assert_limit_contract("search_photos_text", |limit| {
+        db.search_photos_text(&PhotoTextFilter::default(), limit, 0)
+            .unwrap()
+            .len()
     });
     assert_limit_contract("random_photos_text", |limit| {
         db.random_photos_text(&PhotoTextFilter::default(), limit, 7)
@@ -7353,8 +7348,8 @@ fn photo_list_and_search_limits_agree() {
             .len()
     });
 
-    // The legacy filter search and the production index search must agree
-    // for every normalized limit, including the old zero default.
+    // The text search and the production index search must agree for every
+    // normalized limit, including zero.
     for limit in [0, -3, MAX_ROW_LIMIT + 1, i64::MAX, 2] {
         let indexed = db
             .photo_index_text_limited(&PhotoTextFilter::default(), limit)
@@ -7363,10 +7358,7 @@ fn photo_list_and_search_limits_agree() {
             .map(|entry| entry.id)
             .collect::<Vec<_>>();
         let searched = db
-            .search_photos(&PhotoFilter {
-                limit,
-                ..Default::default()
-            })
+            .search_photos_text(&PhotoTextFilter::default(), limit, 0)
             .unwrap()
             .into_iter()
             .map(|photo| photo.id)
@@ -7772,7 +7764,7 @@ fn bundled_sqlite_supports_strftime_in_stored_generated_columns() {
 }
 
 #[test]
-fn fresh_database_is_initialized_to_v21() {
+fn fresh_database_is_initialized_to_v1() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("library.db");
     let db = Db::open(&path).unwrap();
@@ -7781,7 +7773,7 @@ fn fresh_database_is_initialized_to_v21() {
         .connection()
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 21);
+    assert_eq!(version, 1);
 
     let tables: i64 = db
         .connection()
@@ -7831,11 +7823,21 @@ fn fresh_database_is_initialized_to_v21() {
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(migrations_table, 0);
+    assert_eq!(migrations_table, 1);
+
+    let applied: Vec<i64> = db
+        .connection()
+        .prepare("SELECT version FROM schema_migrations ORDER BY version")
+        .unwrap()
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .unwrap();
+    assert_eq!(applied, vec![1]);
 }
 
 #[test]
-fn existing_v21_database_opens_without_reinitializing() {
+fn existing_v1_database_opens_without_reinitializing() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("library.db");
     let db = Db::open(&path).unwrap();
@@ -7883,7 +7885,15 @@ fn v20_database_is_rejected_without_modification() {
         panic!("expected an explicit schema error, got {error:?}");
     };
     assert!(message.contains("20"), "{message}");
-    assert!(message.contains("cannot be migrated"), "{message}");
+    assert!(
+        message.contains("newer than this build supports"),
+        "{message}"
+    );
+    assert!(
+        message.contains("update VRC PhotoN before opening it"),
+        "{message}"
+    );
+    assert!(!message.contains("cannot be migrated"), "{message}");
 
     let after = std::fs::read(&path).unwrap();
     assert_eq!(before, after, "the rejected database must not be modified");
@@ -7912,7 +7922,15 @@ fn v18_database_is_rejected_without_modification() {
         panic!("expected an explicit schema error, got {error:?}");
     };
     assert!(message.contains("18"), "{message}");
-    assert!(message.contains("cannot be migrated"), "{message}");
+    assert!(
+        message.contains("newer than this build supports"),
+        "{message}"
+    );
+    assert!(
+        message.contains("update VRC PhotoN before opening it"),
+        "{message}"
+    );
+    assert!(!message.contains("cannot be migrated"), "{message}");
 
     let after = std::fs::read(&path).unwrap();
     assert_eq!(before, after, "the rejected database must not be modified");
@@ -7947,6 +7965,123 @@ fn v18_database_is_rejected_by_open_read_only_without_modification() {
 
     let after = std::fs::read(&path).unwrap();
     assert_eq!(before, after, "the rejected database must not be modified");
+}
+
+#[test]
+fn migration_runner_applies_steps_one_version_at_a_time() {
+    let db = Db::open_in_memory().unwrap();
+    let tx = Transaction::new_unchecked(db.connection(), TransactionBehavior::Immediate).unwrap();
+    let applied = schema::apply_migrations(
+        &tx,
+        SCHEMA_BASE_VERSION,
+        &[
+            schema::Migration {
+                version: 2,
+                sql: "CREATE TABLE migration_probe(value TEXT); \
+                      INSERT INTO migration_probe(value) VALUES ('two');",
+            },
+            schema::Migration {
+                version: 3,
+                sql: "ALTER TABLE migration_probe ADD COLUMN extra TEXT;",
+            },
+        ],
+        3,
+    )
+    .unwrap();
+    tx.commit().unwrap();
+
+    assert_eq!(applied, 3);
+    let version: i64 = db
+        .connection()
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, 3);
+    let applied_versions: Vec<i64> = db
+        .connection()
+        .prepare("SELECT version FROM schema_migrations ORDER BY version")
+        .unwrap()
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .unwrap();
+    assert_eq!(applied_versions, vec![1, 2, 3]);
+}
+
+#[test]
+fn migration_runner_rejects_a_gap() {
+    let db = Db::open_in_memory().unwrap();
+    let tx = Transaction::new_unchecked(db.connection(), TransactionBehavior::Immediate).unwrap();
+    let error = schema::apply_migrations(
+        &tx,
+        SCHEMA_BASE_VERSION,
+        &[schema::Migration {
+            version: 3,
+            sql: "CREATE TABLE skipped(value TEXT);",
+        }],
+        3,
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("does not follow version 1"));
+}
+
+#[test]
+fn migration_runner_rolls_back_a_partially_applied_step() {
+    let db = Db::open_in_memory().unwrap();
+    let tx = Transaction::new_unchecked(db.connection(), TransactionBehavior::Immediate).unwrap();
+    let error = schema::apply_migrations(
+        &tx,
+        SCHEMA_BASE_VERSION,
+        &[
+            schema::Migration {
+                version: 2,
+                sql: "CREATE TABLE migration_probe(value TEXT);",
+            },
+            schema::Migration {
+                version: 3,
+                sql: "CREATE TABLE migration_second(value TEXT); \
+                      INSERT INTO missing_table(value) VALUES ('fail');",
+            },
+        ],
+        3,
+    )
+    .unwrap_err();
+    assert!(!error.to_string().is_empty());
+    drop(tx);
+
+    let version: i64 = db
+        .connection()
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, SCHEMA_BASE_VERSION);
+    let applied_versions: Vec<i64> = db
+        .connection()
+        .prepare("SELECT version FROM schema_migrations ORDER BY version")
+        .unwrap()
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .unwrap();
+    assert_eq!(applied_versions, vec![1]);
+    let probe_tables: i64 = db
+        .connection()
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master \
+             WHERE type = 'table' AND name IN ('migration_probe', 'migration_second')",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(probe_tables, 0);
+}
+
+#[test]
+fn migration_chain_matches_schema_version() {
+    let mut expected = SCHEMA_BASE_VERSION;
+    for migration in schema::MIGRATIONS {
+        assert_eq!(migration.version, expected + 1);
+        expected = migration.version;
+    }
+    assert_eq!(expected, SCHEMA_VERSION);
 }
 
 #[test]

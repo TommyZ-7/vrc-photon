@@ -2599,14 +2599,14 @@ fn refresh_compression_settings_clears_the_cache_on_a_size_change() {
     let mut daemon = test_daemon(&dir);
     let cache = dir.path().join("thumbnails");
     std::fs::create_dir_all(&cache).unwrap();
-    std::fs::write(cache.join("1.bc7"), vec![0u8; 384 * 216]).unwrap();
+    std::fs::write(cache.join("1-s384x216.bc7"), vec![0u8; 384 * 216]).unwrap();
     daemon.set_thumbnail_dir(cache.clone());
     let epoch = daemon.thumbnail_cache_epoch.load(Ordering::Relaxed);
 
     save_daemon_settings(&daemon, |settings| settings.thumbnail_size = 512);
     daemon.refresh_compression_settings();
 
-    assert!(!cache.join("1.bc7").exists());
+    assert!(!cache.join("1-s384x216.bc7").exists());
     assert!(daemon.thumbnail_cache_epoch.load(Ordering::Relaxed) > epoch);
     assert_eq!(daemon.settings.thumbnail_size, 512);
 }
@@ -2620,7 +2620,7 @@ fn startup_prunes_thumbnail_cache_to_limit() {
     let now = SystemTime::now();
     for (id, age) in [(1, 30), (2, 20), (3, 10)] {
         write_thumbnail_cache_entry(
-            &cache.join(format!("{id}.bc7")),
+            &cache.join(format!("{id}-s384x216.bc7")),
             600_000,
             now - Duration::from_secs(age),
         );
@@ -2631,10 +2631,10 @@ fn startup_prunes_thumbnail_cache_to_limit() {
 
     daemon.start_workers();
     wait_for(
-        || !cache.join("1.bc7").exists() && !cache.join("2.bc7").exists(),
+        || !cache.join("1-s384x216.bc7").exists() && !cache.join("2-s384x216.bc7").exists(),
         Duration::from_secs(5),
     );
-    assert!(cache.join("3.bc7").exists());
+    assert!(cache.join("3-s384x216.bc7").exists());
     daemon.stop_workers();
 }
 
@@ -2647,7 +2647,7 @@ fn run_once_prunes_thumbnail_cache_after_direct_generation() {
     let now = SystemTime::now();
     for (id, age) in [(1, 30), (2, 20), (3, 10)] {
         write_thumbnail_cache_entry(
-            &cache.join(format!("{id}.bc7")),
+            &cache.join(format!("{id}-s384x216.bc7")),
             600_000,
             now - Duration::from_secs(age),
         );
@@ -2662,9 +2662,9 @@ fn run_once_prunes_thumbnail_cache_after_direct_generation() {
 
     daemon.run_once().unwrap();
 
-    assert!(!cache.join("1.bc7").exists());
-    assert!(!cache.join("2.bc7").exists());
-    assert!(cache.join("3.bc7").exists());
+    assert!(!cache.join("1-s384x216.bc7").exists());
+    assert!(!cache.join("2-s384x216.bc7").exists());
+    assert!(cache.join("3-s384x216.bc7").exists());
 }
 
 fn report_with_remaining(bytes: u64) -> thumbnail::ThumbnailPruneReport {
@@ -2716,7 +2716,7 @@ fn external_thumbnail_growth_prunes_over_the_limit() {
     let now = SystemTime::now();
     for (id, age) in [(1, 30), (2, 20), (3, 10)] {
         write_thumbnail_cache_entry(
-            &cache.join(format!("{id}.bc7")),
+            &cache.join(format!("{id}-s384x216.bc7")),
             600_000,
             now - Duration::from_secs(age),
         );
@@ -2737,16 +2737,19 @@ fn external_thumbnail_growth_prunes_over_the_limit() {
             Duration::from_secs(5),
         );
     }
-    assert!(cache.join("1.bc7").exists());
+    assert!(cache.join("1-s384x216.bc7").exists());
 
     // The UI writes its own thumbnails; the notice reports bytes the
     // daemon's generation counter never saw.
-    write_thumbnail_cache_entry(&cache.join("4.bc7"), 1_000_000, now);
+    write_thumbnail_cache_entry(&cache.join("4-s384x216.bc7"), 1_000_000, now);
     daemon
         .thumbnail_external_bytes
         .fetch_add(1_000_000, Ordering::Relaxed);
-    wait_for(|| !cache.join("1.bc7").exists(), Duration::from_secs(5));
-    assert!(cache.join("3.bc7").exists());
+    wait_for(
+        || !cache.join("1-s384x216.bc7").exists(),
+        Duration::from_secs(5),
+    );
+    assert!(cache.join("3-s384x216.bc7").exists());
     daemon.stop_workers();
 }
 
@@ -2759,7 +2762,7 @@ fn external_notice_prunes_through_a_channel_message() {
     let now = SystemTime::now();
     for (id, age) in [(1, 30), (2, 20), (3, 10)] {
         write_thumbnail_cache_entry(
-            &cache.join(format!("{id}.bc7")),
+            &cache.join(format!("{id}-s384x216.bc7")),
             600_000,
             now - Duration::from_secs(age),
         );
@@ -2778,9 +2781,9 @@ fn external_notice_prunes_through_a_channel_message() {
             Duration::from_secs(5),
         );
     }
-    assert!(cache.join("1.bc7").exists());
+    assert!(cache.join("1-s384x216.bc7").exists());
 
-    write_thumbnail_cache_entry(&cache.join("4.bc7"), 1_000_000, now);
+    write_thumbnail_cache_entry(&cache.join("4-s384x216.bc7"), 1_000_000, now);
     // Hold the DB lock so the worker must consume the notice in the Ok
     // branch and take the post-lookup prune path after we release it.
     let db = daemon.db.lock().unwrap();
@@ -2799,8 +2802,11 @@ fn external_notice_prunes_through_a_channel_message() {
     );
     drop(db);
 
-    wait_for(|| !cache.join("1.bc7").exists(), Duration::from_secs(5));
-    assert!(cache.join("3.bc7").exists());
+    wait_for(
+        || !cache.join("1-s384x216.bc7").exists(),
+        Duration::from_secs(5),
+    );
+    assert!(cache.join("3-s384x216.bc7").exists());
     daemon.stop_workers();
 }
 
@@ -2809,7 +2815,7 @@ fn thumbnail_budget_skips_a_prune_after_the_limit_turns_unlimited() {
     let dir = tempfile::tempdir().unwrap();
     let cache = dir.path().join("thumbnails");
     std::fs::create_dir_all(&cache).unwrap();
-    let path = cache.join("1.bc7");
+    let path = cache.join("1-s384x216.bc7");
     write_thumbnail_cache_entry(&path, 2_000, SystemTime::now());
     let cache_limit = AtomicU64::new(1000);
     let mut budget = ThumbnailCacheBudget::new(1000);
@@ -2828,7 +2834,7 @@ fn thumbnail_budget_skips_a_prune_after_the_limit_turns_unlimited() {
 #[test]
 fn prune_thumbnail_cache_with_zero_limit_leaves_files_untouched() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("1.webp");
+    let path = dir.path().join("1-s384x216.bc7");
     write_thumbnail_cache_entry(&path, 2_000, SystemTime::now());
 
     assert!(prune_thumbnail_cache(dir.path(), 0).is_none());
@@ -2864,22 +2870,22 @@ fn live_thumbnail_limit_change_prunes_cache() {
     let now = SystemTime::now();
     for (id, age) in [(1, 30), (2, 20), (3, 10)] {
         write_thumbnail_cache_entry(
-            &cache.join(format!("{id}.bc7")),
+            &cache.join(format!("{id}-s384x216.bc7")),
             600_000,
             now - Duration::from_secs(age),
         );
     }
     daemon.set_thumbnail_dir(cache.clone());
     daemon.start_workers();
-    assert!(cache.join("1.bc7").exists());
+    assert!(cache.join("1-s384x216.bc7").exists());
 
     save_daemon_settings(&daemon, |settings| settings.thumbnail_cache_mb = 1);
     daemon.refresh_compression_settings();
     wait_for(
-        || !cache.join("1.bc7").exists() && !cache.join("2.bc7").exists(),
+        || !cache.join("1-s384x216.bc7").exists() && !cache.join("2-s384x216.bc7").exists(),
         Duration::from_secs(5),
     );
-    assert!(cache.join("3.bc7").exists());
+    assert!(cache.join("3-s384x216.bc7").exists());
     daemon.stop_workers();
 }
 

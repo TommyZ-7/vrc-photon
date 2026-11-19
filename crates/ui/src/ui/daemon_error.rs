@@ -1,4 +1,7 @@
 //! Renders stored daemon errors in the current language.
+//!
+//! Rows without a `message_key` are technical messages. They use the stored
+//! `message` directly; there is no separate legacy-row branch.
 
 use std::collections::BTreeMap;
 

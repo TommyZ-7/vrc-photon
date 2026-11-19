@@ -5,7 +5,7 @@
 - DB: ユーザーデータディレクトリ配下 `vrc-photon/library.db`
   - Linux: `~/.local/share/vrc-photon/library.db`
   - Windows: `%LOCALAPPDATA%\vrc-photon\library.db`
-- サムネイル: 同ディレクトリの `thumbnails/<photo_id>-s<幅>x<高さ>.bc7`（旧 `<photo_id>.webp` などは起動時に削除）。隣に元ファイルの `mtime + size`、平均色、回転状態を記録した `.bc7.meta` を置く。
+- サムネイル: 同ディレクトリの `thumbnails/<photo_id>-s<幅>x<高さ>.bc7`。隣に元ファイルの `mtime + size`、平均色、回転状態を記録した `.bc7.meta` を置く。旧形式のファイルはサムネイルキャッシュとして扱わない。
 - AI プラグイン: 同ディレクトリの `plugins/<plugin_id>/<variant>/<version>/`
 - AI モデル: 同ディレクトリの `plugins/<plugin_id>/models/<revision>/`
 - タグ付け用スナップショット: 同ディレクトリの `cache/tagging/<job_id>.jpg`（一時ファイル）
@@ -29,12 +29,14 @@ PRAGMA busy_timeout = 5000;
 ```
 
 - `user_version` でスキーマバージョンを管理する。
-- 現在のバージョンは **21**。このビルドが理解できる最大値でもあり、
-  `user_version` が 22 以上の DB は `Db::open` / `Db::open_read_only` の
+- 現在のバージョンは **1**。このビルドが理解できる最大値（1）でもあり、
+  `user_version` が 2 以上の DB は `Db::open` / `Db::open_read_only` の
   どちらでも型付きエラーで拒否する（古いアプリで新スキーマを書き換えない）。
-- 新規 DB は `SCHEMA_LATEST` を 1 トランザクションで実行して v21 にする。
-- v1〜v20 の既存 DB は自動移行しない。`Db::open` は明示エラーを返し、
-  ファイルを変更しない。バックアップして新しいライブラリを作成する。
+- 新規 DB は `SCHEMA_V1` を 1 トランザクションで実行し、`user_version = 1` と
+  `schema_migrations` の v1 行を作る。
+- 1.0.0 未満の DB は存在しない前提で、0.x からの移行は行わない。旧 0.x の
+  `user_version`（18/20/21 など）は v1 より大きいため「新しすぎる DB」として
+  拒否される。
 - 詳細は [`docs/database-initialization.md`](database-initialization.md) を参照。
 
 ## 3. テーブル
@@ -263,12 +265,12 @@ CREATE UNIQUE INDEX idx_plugin_installations_one_active
 | model_bytes_downloaded | INTEGER | ファイル横断の累計バイト |
 | model_bytes_total | INTEGER | 合計サイズ。不明なら NULL |
 | model_error | TEXT | 失敗理由（`interrupted` など） |
-| probe_json | TEXT | `--probe` の JSON をそのまま保存（v13 の拡張） |
+| probe_json | TEXT | `--probe` の JSON をそのまま保存 |
 | updated_at | TEXT | RFC3339 |
 
 `probe_json` は設定画面のバックエンド表示、`tagging_ready` の判定、
 再起動後の状態復元に使う。ファイルの存在とサイズだけでは probe の成否を
-判断できないため、v13 で追加した。
+判断できないため、この列を使う。
 
 ### `ai_tag_definitions`
 
@@ -620,7 +622,7 @@ CREATE INDEX idx_deletion_requests_status
 | message_args | TEXT | `message_key` に渡す引数のJSONオブジェクト。NULL可 |
 
 - 同じ操作の新しい失敗は `message` / `detail` / `occurred_at` / `message_key` / `message_args` を置き換える。
-- schema v10 で `message_key` / `message_args` を追加した。キーがある行はUIが現在の言語で描画し、キーがない旧行は `message` をそのまま表示する。
+- キーがある行はUIが現在の言語で描画し、キーがない技術メッセージは `message` をそのまま表示する。
 - デーモンはメッセージと詳細の署名が変わったときだけ書き込むため、`attempts` はポーリング回数ではなく「異なる失敗を検出した回数」になる。
 - 操作が成功すると行を削除する。`scan` は失敗のないフルスキャン、`log` は新しく処理できた行が1行以上あり、失敗もスキップもない取り込み、`link` は紐付け成功で消える。
 - UIは発生時刻の降順、同時刻なら `operation` 順で読む。
@@ -654,6 +656,17 @@ UIからデーモンへの再実行要求。FIFOの小さなキュー。
 | last_offset | INTEGER | 次回読み取りバイト位置 |
 | parser_version | TEXT | 現状 `1` |
 | parsed_at | TEXT | |
+
+### `schema_migrations`
+
+適用済み schema 版の履歴。
+
+| 列 | 型 | 説明 |
+|---|---|---|
+| version | INTEGER PK | 適用した schema 版 |
+| applied_at | TEXT | 適用日時（RFC3339） |
+
+- 新規 DB は v1、移行時は各版を記録する。起動時の判定は `user_version` を正本とする。
 
 ### `app_settings`
 
@@ -701,7 +714,7 @@ ai_model_license_consent_at, setup_completed
 ```
 
 - `thumbnail_size` は 256 / 384 / 512 のいずれか（既定 256）。`thumbnail_cache_mb` は既定 8192、0 は無制限。
-- `setup_completed` は初回セットアップの完了・閉じるで `true` になる。新規インストールの既定は `false`。この項目を持たない旧設定は既存ユーザーとして `true` に読み替える。
+- `setup_completed` は初回セットアップの完了・閉じるで `true` になる。新規インストールの既定は `false`。1.0.0 の設定には必ず含まれ、欠損は parse error として扱う。
 - `compression_workers` は 1〜4（既定 1）。
 - `ui_grid_gap` は 0〜32（既定 14）、`ui_card_radius` は 0〜24（既定 13）。
 - `ui_card_size` は `small` / `medium` / `large` / `extra_large`（既定 `medium`）。
@@ -710,7 +723,7 @@ ai_model_license_consent_at, setup_completed
 - `import_preserve_folder_structure` / `import_include_root_folder` は既定 false。`include_root` は `preserve` が true のときだけ効果を持つ。
 - `estimated_link` は既定 true、`auto_compress_enabled` は既定 false、`auto_compress_keep_original` は既定 true。
 - `auto_compress` / `discord_auto` / `ai_tagging_auto` は `{ mode, scope, activated_at }` のオブジェクト。`auto_compress` は `Immediate / NewOnly`、`discord_auto` と `ai_tagging_auto` は `Off / NewOnly` を既定とする。
-- `auto_compress_queue_paused` / `discord_queue_paused` / `ai_tagging_queue_paused` は既定 false。既存 JSON にない場合は false として読む。
+- `auto_compress_queue_paused` / `discord_queue_paused` / `ai_tagging_queue_paused` は既定 false。1.0.0 の設定には必ず含まれ、欠損は parse error として扱う。
 - `auto_compression` は WebP ロスレス・リサイズなし、`discord_compression` は WebP ロスレス・2560×1440 の縮小のみ、`clipboard_compression` は 2560×1440 の縮小のみを既定とする。
 - `thumbnail_cache_mb` / `compression_workers` / `estimated_link` は保存値のみで、設定画面には表示しない。
 
@@ -795,19 +808,24 @@ Discord 関連の既定値:
 
 ## 6. schema の初期化
 
-新規 DB は `crates/core/src/db/schema.rs` の `SCHEMA_LATEST` を 1 回の
-`IMMEDIATE` トランザクションで実行し、`user_version = 21` にする。
-`schema_migrations` テーブルと `migrate_v*` は持たない。
+新規 DB は `crates/core/src/db/schema.rs` の `SCHEMA_V1` を 1 回の
+`IMMEDIATE` トランザクションで実行し、`user_version = 1` と
+`schema_migrations` の v1 行を作る。`SCHEMA_V1` は凍結し、将来の変更は
+`MIGRATIONS` に 1 版ずつ追加する。
 
-既存 DB は v21 のみ受け付ける。v1〜v20 は自動移行せず、`CoreError::Invalid`
-で「このビルドでは移行できない」と返す。このとき `user_version` もファイル内容も
-変更しない。v21 より新しい DB は、このビルドの最大値（21）を超えるため、
-書き込みを始める前に `CoreError::Invalid` で拒否する。読み取り専用の
-`open_read_only` も同じ検査を行う。
+既存 DB は `user_version` を確認し、1 はそのまま開く。2 以上はこのビルドより
+新しい schema として `CoreError::Invalid` で拒否し、ファイルを変更しない。
+1.0.0 未満の DB は存在しない前提で、0.x からの移行は行わない。
 
-schema を変更するときは `SCHEMA_LATEST` と `SCHEMA_VERSION` を同時に更新し、
-新規 DB の初期化テストと v20 既存 DB の拒否テストを追加する。過去バージョン向けの
-移行コードは追加しない。
+将来の版では、起動時に `user_version` の続きから `SCHEMA_VERSION` まで
+`MIGRATIONS` を順に適用する。新規 DB も v1 作成後に同じステップを適用する。
+移行は `IMMEDIATE` トランザクション内で行い、ロック取得後に `user_version` を
+再確認する。各ステップは SQL 実行、`schema_migrations` への記録、
+`user_version` の更新を同じトランザクションで行い、失敗時はロールバックする。
+`open_read_only` は移行せず、`SCHEMA_VERSION` と一致する DB だけを受け付ける。
+
+schema を変更するときは `SCHEMA_VERSION` を上げ、`MIGRATIONS` に次の版を追加する。
+`SCHEMA_V1` は変更しない。
 
 ## 7. クエリと性能
 

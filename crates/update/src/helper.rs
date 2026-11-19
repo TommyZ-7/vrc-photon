@@ -1551,8 +1551,7 @@ pub struct LastResult {
     pub to: String,
     #[serde(default)]
     pub reason: Option<String>,
-    /// Machine-readable reason for a failure; older files have no code.
-    #[serde(default)]
+    /// Machine-readable reason for a failure.
     pub code: Option<LastErrorCode>,
 }
 
@@ -1585,7 +1584,6 @@ impl LastResult {
 pub struct HealthMarker {
     pub version: String,
     pub mode: String,
-    #[serde(default)]
     pub database: Option<NativeString>,
 }
 
@@ -3419,16 +3417,14 @@ mod tests {
     }
 
     #[test]
-    fn last_result_accepts_a_missing_code() {
+    fn health_marker_round_trips_without_a_database() {
         let dir = tempfile::tempdir().unwrap();
         let paths = paths(dir.path());
-        std::fs::write(
-            paths.result_file(),
-            br#"{"status":"success","from":"0.3.0","to":"0.4.0"}"#,
-        )
-        .unwrap();
-        let result = LastResult::read(&paths).unwrap();
-        assert_eq!(result.code, None);
+        write_health_marker(&paths, "no-db", "1.0.0", None).unwrap();
+        let marker = read_health_marker(&paths, "no-db").unwrap().unwrap();
+        assert_eq!(marker.version, "1.0.0");
+        assert_eq!(marker.mode, "normal");
+        assert!(marker.database.is_none());
     }
 
     #[test]

@@ -24,7 +24,7 @@ pub const TEST_PLATFORM: &str = "linux";
 pub const TEST_BACKEND: &str = "vulkan";
 pub const TEST_VARIANT: &str = "linux-vulkan";
 pub const TEST_HOST_VERSION_MIN: &str = "0.10.0";
-pub const TEST_HOST_VERSION_MAX: &str = "0.99.99";
+pub const TEST_HOST_VERSION_MAX: &str = "1.99.99";
 pub const TEST_CATALOG_VERSION: &str = "2026-11-07.1";
 pub const TEST_ENTRYPOINT: &str = "d1-sidecar";
 
