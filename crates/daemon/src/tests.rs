@@ -4947,12 +4947,15 @@ fn paused_loop_defers_queued_commands_until_resume() {
     daemon.set_paused(true);
     daemon.run_loop_iteration();
     assert_eq!(daemon.db.lock().unwrap().count_photos().unwrap(), 0);
-    assert_eq!(daemon.deferred_commands.len(), 1);
+    assert!(
+        daemon.db.lock().unwrap().has_daemon_commands().unwrap(),
+        "paused commands must stay durable in the database"
+    );
 
     daemon.set_paused(false);
     daemon.run_loop_iteration();
     assert_eq!(daemon.db.lock().unwrap().count_photos().unwrap(), 1);
-    assert!(daemon.deferred_commands.is_empty());
+    assert!(!daemon.db.lock().unwrap().has_daemon_commands().unwrap());
 }
 
 #[test]
@@ -4966,13 +4969,12 @@ fn shutdown_requeues_commands_deferred_while_paused() {
     }
     daemon.set_paused(true);
     daemon.run_loop_iteration();
-    assert_eq!(daemon.deferred_commands.len(), 1);
+    assert!(daemon.db.lock().unwrap().has_daemon_commands().unwrap());
 
     daemon.shutdown();
 
     let commands = daemon.db.lock().unwrap().take_daemon_commands().unwrap();
     assert_eq!(commands, vec![DaemonCommand::Rescan]);
-    assert!(daemon.deferred_commands.is_empty());
 }
 
 #[test]
