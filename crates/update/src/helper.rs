@@ -374,6 +374,17 @@ fn verify_staged(job: &ApplyJob, options: &HelperOptions) -> Result<()> {
     if options.skip_signature_check {
         return Ok(());
     }
+    let (_, _, asset) = verify_manifest(job, options)?;
+    if !asset.sha256.eq_ignore_ascii_case(&job.sha256) {
+        return Err(UpdateError::InvalidJob(
+            "manifest asset SHA-256 does not match the job".to_string(),
+        ));
+    }
+    if asset.signature != job.signature {
+        return Err(UpdateError::InvalidJob(
+            "manifest asset signature does not match the job".to_string(),
+        ));
+    }
     let signature = decode_signature_base64(&job.signature)?;
     #[cfg(test)]
     let keys = if options.public_keys.is_empty() {
@@ -540,7 +551,7 @@ fn verify_staging(_job: &ApplyJob, _uid: u32) -> Result<()> {
     Err(UpdateError::UnsupportedPlatform)
 }
 
-/// Verifies the signed manifest and returns the asset for the job's family.
+/// Verifies the signed manifest and returns the asset for the job's kind.
 fn verify_manifest(
     job: &ApplyJob,
     options: &HelperOptions,
@@ -572,19 +583,11 @@ fn verify_manifest(
             target: version.to_string(),
         });
     }
-    let family = match job.kind {
-        ApplyKind::SystemPackage { family } => family,
-        _ => {
-            return Err(UpdateError::InvalidJob(
-                "job is not a system package job".to_string(),
-            ));
-        }
-    };
     let asset = manifest
-        .system_package_for(family)
+        .asset_for_apply(&job.kind)
         .cloned()
         .ok_or_else(|| {
-            UpdateError::InvalidManifest("system package asset is missing".to_string())
+            UpdateError::InvalidManifest("the job's asset is missing from the manifest".to_string())
         })?;
     if asset.file_name()?
         != job
@@ -1877,10 +1880,12 @@ pub(crate) fn process_alive(pid: u32) -> bool {
     }
     #[cfg(all(unix, not(target_os = "linux")))]
     {
-        std::process::Command::new("kill")
-            .args(["-0", &pid.to_string()])
-            .status()
-            .is_ok_and(|status| status.success())
+        // SAFETY: signal 0 checks existence and permission only and never
+        // delivers a signal.
+        unsafe {
+            libc::kill(pid as i32, 0) == 0
+                || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+        }
     }
     #[cfg(windows)]
     {
@@ -1945,10 +1950,35 @@ pub(crate) fn write_atomic(path: &Path, bytes: &[u8], mode: u32) -> Result<()> {
 
     #[cfg(windows)]
     {
-        if path.exists() {
-            let _ = std::fs::remove_file(path);
+        use std::os::windows::ffi::OsStrExt;
+        use windows::Win32::Storage::FileSystem::{MOVEFILE_REPLACE_EXISTING, MoveFileExW};
+        use windows::core::PCWSTR;
+
+        let wide = |path: &Path| -> Vec<u16> {
+            path.as_os_str()
+                .encode_wide()
+                .chain(std::iter::once(0))
+                .collect()
+        };
+        let from = wide(&temp);
+        let to = wide(path);
+        // SAFETY: both buffers are NUL-terminated UTF-16 and stay alive for
+        // the duration of the call.
+        unsafe {
+            MoveFileExW(
+                PCWSTR(from.as_ptr()),
+                PCWSTR(to.as_ptr()),
+                MOVEFILE_REPLACE_EXISTING,
+            )
         }
+        .map_err(|error| {
+            UpdateError::Other(format!(
+                "cannot replace {} atomically: {error}",
+                path.display()
+            ))
+        })
     }
+    #[cfg(not(windows))]
     std::fs::rename(&temp, path).map_err(|error| UpdateError::io(path, error))
 }
 
@@ -2255,6 +2285,12 @@ mod tests {
         assert!(!paths.lock_file().exists());
     }
 
+    #[test]
+    fn process_alive_reports_the_current_process_and_a_missing_pid() {
+        assert!(process_alive(std::process::id()));
+        assert!(!process_alive(u32::MAX));
+    }
+
     #[cfg(unix)]
     fn dead_pid() -> u32 {
         let _guard = crate::command::test_process_lock();
@@ -2466,7 +2502,40 @@ mod tests {
     }
 
     #[cfg(unix)]
-    fn signed_job(dir: &Path, staged: &Path, token: &str) -> (ApplyJob, String) {
+    fn attach_manifest(job: &mut ApplyJob, keypair: &KeyPair) {
+        let bytes = std::fs::read(&job.staged).unwrap();
+        let file_name = job.staged.file_name().unwrap().to_str().unwrap();
+        let manifest = serde_json::to_vec(&serde_json::json!({
+            "schema": 1,
+            "version": job.to_version.clone(),
+            "platforms": {
+                "linux-x86_64": {
+                    "url": format!("https://example.com/{file_name}"),
+                    "format": "appimage",
+                    "size": bytes.len(),
+                    "sha256": job.sha256.clone(),
+                    "signature": job.signature.clone(),
+                }
+            },
+            "system_packages": {},
+        }))
+        .unwrap();
+        job.manifest_signature = Some(
+            minisign::sign(
+                None,
+                &keypair.sk,
+                std::io::Cursor::new(manifest.as_slice()),
+                None,
+                None,
+            )
+            .unwrap()
+            .into_string(),
+        );
+        job.signed_manifest = Some(String::from_utf8(manifest).unwrap());
+    }
+
+    #[cfg(unix)]
+    fn signed_job(dir: &Path, staged: &Path, token: &str) -> (ApplyJob, String, KeyPair) {
         let keypair = KeyPair::generate_unencrypted_keypair().unwrap();
         let public_key = keypair
             .pk
@@ -2484,7 +2553,8 @@ mod tests {
             .into_string();
         job.signature = base64::engine::general_purpose::STANDARD.encode(signature.as_bytes());
         job.sha256 = hex::encode(sha2::Sha256::digest(&bytes));
-        (job, public_key)
+        attach_manifest(&mut job, &keypair);
+        (job, public_key, keypair)
     }
 
     #[cfg(unix)]
@@ -2509,7 +2579,7 @@ mod tests {
             ),
         );
 
-        let (job, public_key) = signed_job(dir.path(), &new_script, token);
+        let (job, public_key, _keypair) = signed_job(dir.path(), &new_script, token);
         let job_file = dir.path().join("updates/job.json");
         std::fs::create_dir_all(job_file.parent().unwrap()).unwrap();
         std::fs::write(&job_file, serde_json::to_vec(&job).unwrap()).unwrap();
@@ -2536,7 +2606,7 @@ mod tests {
         let new_script = dir.path().join("new.AppImage");
         write_script(&new_script, "#!/bin/sh\nexit 0\n");
 
-        let (mut job, public_key) = signed_job(dir.path(), &new_script, token);
+        let (mut job, public_key, keypair) = signed_job(dir.path(), &new_script, token);
         let bytes = std::fs::read(&new_script).unwrap();
         let other_signature = minisign::sign(
             None,
@@ -2550,6 +2620,7 @@ mod tests {
         job.signature =
             base64::engine::general_purpose::STANDARD.encode(other_signature.as_bytes());
         job.sha256 = hex::encode(sha2::Sha256::digest(&bytes));
+        attach_manifest(&mut job, &keypair);
         let target = job.target.clone();
         let old_content = std::fs::read_to_string(&target).unwrap();
         let job_file = dir.path().join("updates/job.json");
@@ -2597,8 +2668,8 @@ mod tests {
             health_token: token.to_string(),
             data_dir: dir.to_path_buf(),
             created_at: "2026-10-24T12:00:00Z".to_string(),
-            signed_manifest: None,
-            manifest_signature: None,
+            signed_manifest: Some("{\"schema\":1}".to_string()),
+            manifest_signature: Some("signature".to_string()),
         }
     }
 
@@ -2672,8 +2743,8 @@ mod tests {
             health_token: "token-apply-failure".to_string(),
             data_dir: dir.path().to_path_buf(),
             created_at: "2026-10-24T12:00:00Z".to_string(),
-            signed_manifest: None,
-            manifest_signature: None,
+            signed_manifest: Some("{\"schema\":1}".to_string()),
+            manifest_signature: Some("signature".to_string()),
         };
         let job_file = dir.path().join("updates/job.json");
         std::fs::write(&job_file, serde_json::to_vec(&job).unwrap()).unwrap();
@@ -2720,8 +2791,8 @@ mod tests {
             health_token: "token".to_string(),
             data_dir: dir.path().to_path_buf(),
             created_at: "2026-10-24T12:00:00Z".to_string(),
-            signed_manifest: None,
-            manifest_signature: None,
+            signed_manifest: Some("{\"schema\":1}".to_string()),
+            manifest_signature: Some("signature".to_string()),
         };
         std::fs::write(&job_path, serde_json::to_vec(&job).unwrap()).unwrap();
 
@@ -2981,6 +3052,158 @@ mod tests {
         };
         std::fs::create_dir_all(options.root_temp_dir.as_ref().unwrap()).unwrap();
         (job, options)
+    }
+
+    #[cfg(unix)]
+    fn appimage_fixture(dir: &Path, version: &str) -> (ApplyJob, HelperOptions, minisign::KeyPair) {
+        use minisign::KeyPair;
+
+        let keypair = KeyPair::generate_unencrypted_keypair().unwrap();
+        let public_key = keypair
+            .pk
+            .to_box()
+            .unwrap()
+            .to_string()
+            .lines()
+            .find(|line| line.starts_with("RW"))
+            .unwrap()
+            .to_string();
+        let file_name = format!("vrc-photon-{version}-x86_64.AppImage");
+        let artifact = b"fake appimage";
+        let sha256 = hex::encode(sha2::Sha256::digest(artifact));
+        let (job, options) = appimage_job_with_manifest(
+            dir,
+            version,
+            &file_name,
+            artifact,
+            &keypair,
+            &public_key,
+            &sha256,
+        );
+        (job, options, keypair)
+    }
+
+    #[cfg(unix)]
+    #[allow(clippy::too_many_arguments)]
+    fn appimage_job_with_manifest(
+        dir: &Path,
+        version: &str,
+        file_name: &str,
+        artifact: &[u8],
+        keypair: &minisign::KeyPair,
+        public_key: &str,
+        manifest_sha256: &str,
+    ) -> (ApplyJob, HelperOptions) {
+        use base64::Engine as _;
+        use sha2::Sha256;
+
+        let artifact_signature = minisign::sign(
+            None,
+            &keypair.sk,
+            std::io::Cursor::new(artifact),
+            None,
+            None,
+        )
+        .unwrap()
+        .into_string();
+        let signature =
+            base64::engine::general_purpose::STANDARD.encode(artifact_signature.as_bytes());
+        let manifest = serde_json::to_vec(&serde_json::json!({
+            "schema": 1,
+            "version": version,
+            "platforms": {
+                "linux-x86_64": {
+                    "url": format!("https://example.com/{file_name}"),
+                    "format": "appimage",
+                    "size": artifact.len(),
+                    "sha256": manifest_sha256,
+                    "signature": signature,
+                }
+            },
+            "system_packages": {},
+        }))
+        .unwrap();
+        let manifest_signature = minisign::sign(
+            None,
+            &keypair.sk,
+            std::io::Cursor::new(manifest.as_slice()),
+            None,
+            None,
+        )
+        .unwrap()
+        .into_string();
+
+        let data_dir = dir.join("data");
+        let staged = data_dir
+            .join(format!("updates/downloads/{version}"))
+            .join(file_name);
+        std::fs::create_dir_all(staged.parent().unwrap()).unwrap();
+        std::fs::write(&staged, artifact).unwrap();
+        let job = ApplyJob {
+            schema: APPLY_SCHEMA,
+            kind: ApplyKind::AppImage,
+            from_version: "0.3.0".to_string(),
+            to_version: version.to_string(),
+            target: dir.join("vrc-photon.AppImage"),
+            staged,
+            signature,
+            sha256: hex::encode(Sha256::digest(artifact)),
+            ui_pid: 1,
+            daemon_pid: None,
+            restart_args: Vec::new(),
+            working_dir: dir.to_path_buf(),
+            database: None,
+            health_token: "abc-123".to_string(),
+            data_dir,
+            created_at: "2026-10-24T12:00:00Z".to_string(),
+            signed_manifest: Some(String::from_utf8(manifest).unwrap()),
+            manifest_signature: Some(manifest_signature),
+        };
+        let options = HelperOptions {
+            public_keys: vec![public_key.to_string()],
+            ..HelperOptions::default()
+        };
+        (job, options)
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn verify_staged_accepts_a_matching_signed_manifest() {
+        let dir = tempfile::tempdir().unwrap();
+        let (job, options, _keypair) = appimage_fixture(dir.path(), &next_version());
+        verify_staged(&job, &options).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn verify_staged_rejects_a_sha256_that_differs_from_the_manifest() {
+        let dir = tempfile::tempdir().unwrap();
+        let (job, options, keypair) = appimage_fixture(dir.path(), &next_version());
+        let file_name = job.staged.file_name().unwrap().to_str().unwrap();
+        let (mismatched, options) = appimage_job_with_manifest(
+            dir.path(),
+            &job.to_version,
+            file_name,
+            b"fake appimage",
+            &keypair,
+            &options.public_keys[0],
+            &"b".repeat(64),
+        );
+        assert!(matches!(
+            verify_staged(&mismatched, &options),
+            Err(UpdateError::InvalidJob(_))
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn verify_staged_rejects_a_downgrade_manifest() {
+        let dir = tempfile::tempdir().unwrap();
+        let (job, options, _keypair) = appimage_fixture(dir.path(), crate::CURRENT_VERSION);
+        assert!(matches!(
+            verify_staged(&job, &options),
+            Err(UpdateError::Downgrade { .. })
+        ));
     }
 
     #[cfg(unix)]

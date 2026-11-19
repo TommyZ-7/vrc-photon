@@ -561,7 +561,9 @@ impl Db {
         if matches.len() != 1 {
             return Ok(None);
         }
-        let candidate = matches.pop().unwrap();
+        let Some(candidate) = matches.pop() else {
+            return Ok(None);
+        };
         if let (Some(old), Some(new)) = (candidate.blake3.as_deref(), photo.blake3.as_deref())
             && old != new
         {

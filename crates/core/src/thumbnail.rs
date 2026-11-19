@@ -510,7 +510,7 @@ pub fn ensure_thumbnail_in_with_status(
     let expected_bytes = crate::bc7::encoded_len(width, height);
     let existing_bytes = existing_thumbnail_bytes(&output);
     if let Some(bytes) = existing_bytes
-        && expected_bytes == Some(bytes as usize)
+        && expected_bytes == usize::try_from(bytes).ok()
         && cache_metadata::cache_is_fresh(&output, source)
         && let Some((color, rotated)) = cache_metadata::read_color_rotation(&output)
     {

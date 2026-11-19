@@ -1138,23 +1138,18 @@ impl App {
                 return;
             }
         };
-        let (signed_manifest, manifest_signature) = match &kind {
-            ApplyKind::SystemPackage { .. } => {
-                let bytes = match String::from_utf8(update.signed_manifest.bytes.clone()) {
-                    Ok(bytes) => bytes,
-                    Err(error) => {
-                        tracing::error!(%error, "signed manifest is not valid UTF-8");
-                        let message = UpdateText::key("update.error.manifest");
-                        self.update.phase = UpdatePhase::Error(message.clone());
-                        self.toast_error(message.message(), cx);
-                        cx.notify();
-                        return;
-                    }
-                };
-                (Some(bytes), Some(update.signed_manifest.signature.clone()))
+        let signed_manifest = match String::from_utf8(update.signed_manifest.bytes.clone()) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                tracing::error!(%error, "signed manifest is not valid UTF-8");
+                let message = UpdateText::key("update.error.manifest");
+                self.update.phase = UpdatePhase::Error(message.clone());
+                self.toast_error(message.message(), cx);
+                cx.notify();
+                return;
             }
-            _ => (None, None),
         };
+        let manifest_signature = update.signed_manifest.signature.clone();
         let job = ApplyJob {
             schema: vrc_photon_update::APPLY_SCHEMA,
             kind,
@@ -1176,8 +1171,8 @@ impl App {
             health_token: ApplyJob::new_health_token(),
             data_dir,
             created_at: Utc::now().to_rfc3339(),
-            signed_manifest,
-            manifest_signature,
+            signed_manifest: Some(signed_manifest),
+            manifest_signature: Some(manifest_signature),
         };
 
         // The supervisor is not loaded into App until the first monitor

@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::error::{Result, UpdateError};
-use crate::install::{InstallKind, PackageFamily};
+use crate::install::{ApplyKind, InstallKind, PackageFamily};
 
 pub const MANIFEST_SCHEMA: u32 = 1;
 pub const MAX_MANIFEST_BYTES: u64 = 512 * 1024;
@@ -178,6 +178,18 @@ impl Manifest {
             InstallKind::WindowsCurrentUser { .. } => (WINDOWS_PLATFORM, UpdateFormat::Nsis),
             InstallKind::SystemPackage { family, .. } => return self.system_package_for(*family),
             _ => return None,
+        };
+        self.platforms
+            .get(platform)
+            .filter(|asset| asset.format == format)
+    }
+
+    /// Returns the artifact for an apply job's target kind.
+    pub fn asset_for_apply(&self, kind: &ApplyKind) -> Option<&PlatformAsset> {
+        let (platform, format) = match kind {
+            ApplyKind::AppImage => (LINUX_PLATFORM, UpdateFormat::AppImage),
+            ApplyKind::Windows => (WINDOWS_PLATFORM, UpdateFormat::Nsis),
+            ApplyKind::SystemPackage { family } => return self.system_package_for(*family),
         };
         self.platforms
             .get(platform)

@@ -358,6 +358,11 @@ where
         &manifest.plugin_version,
     )?;
     fs::create_dir_all(&root)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&root, fs::Permissions::from_mode(0o700))?;
+    }
     let staging = Builder::new().prefix(".staging-").tempdir_in(&root)?;
 
     for file in &manifest.files {
@@ -990,6 +995,23 @@ mod tests {
                 .mode();
             assert_eq!(mode & 0o777, 0o755);
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn install_restricts_the_plugins_root_to_the_owner() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let data_dir = tempdir().unwrap();
+        let root = plugins_root(data_dir.path());
+        fs::create_dir_all(&root).unwrap();
+        fs::set_permissions(&root, fs::Permissions::from_mode(0o755)).unwrap();
+
+        let package = TestPackage::new();
+        install(&package, data_dir.path()).unwrap();
+
+        let mode = fs::metadata(&root).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o700);
     }
 
     #[test]

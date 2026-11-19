@@ -1,6 +1,10 @@
 use super::*;
 
 impl Db {
+    /// Keeps every dynamic `IN (...)` list well below SQLite's 32,766-value
+    /// bound-parameter limit.
+    const BULK_TAG_CHUNK: usize = 500;
+
     // ---------- tags ----------
 
     pub fn add_tag(&self, name: &str) -> Result<i64> {
@@ -126,12 +130,21 @@ impl Db {
         for name in tags {
             tag_ids.push(self.add_tag(name)?);
         }
-        for photo_id in photo_ids {
-            for tag_id in &tag_ids {
-                self.conn.execute(
-                    "INSERT OR IGNORE INTO photo_tags(photo_id, tag_id) VALUES (?1, ?2)",
-                    params![*photo_id, *tag_id],
-                )?;
+        for tag_id in &tag_ids {
+            for chunk in photo_ids.chunks(Self::BULK_TAG_CHUNK) {
+                let values_sql = (0..chunk.len())
+                    .map(|index| format!("(?{}, ?{})", index * 2 + 1, index * 2 + 2))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                let sql = format!(
+                    "INSERT OR IGNORE INTO photo_tags(photo_id, tag_id) VALUES {values_sql}"
+                );
+                let mut values = Vec::with_capacity(chunk.len() * 2);
+                for photo_id in chunk {
+                    values.push(*photo_id);
+                    values.push(*tag_id);
+                }
+                self.conn.execute(&sql, params_from_iter(values))?;
             }
         }
         Ok(())
@@ -173,23 +186,40 @@ impl Db {
         }
         self.ensure_photos_exist(&photo_ids)?;
 
-        let placeholders = (2..=photo_ids.len() + 1)
-            .map(|index| format!("?{index}"))
-            .collect::<Vec<_>>()
-            .join(",");
-        let sql = format!(
-            "SELECT t.name FROM tags t JOIN photo_tags pt ON pt.tag_id = t.id \
-             WHERE pt.photo_id IN ({placeholders}) \
-             GROUP BY t.id, t.name \
-             HAVING COUNT(DISTINCT pt.photo_id) = ?1 \
-             ORDER BY t.name COLLATE NOCASE"
-        );
-        let mut values = Vec::with_capacity(photo_ids.len() + 1);
-        values.push(photo_ids.len() as i64);
-        values.extend(photo_ids.iter().copied());
-        let mut stmt = self.conn.prepare_cached(&sql)?;
-        let rows = stmt.query_map(params_from_iter(values), |row| row.get(0))?;
-        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+        let mut common: Option<HashSet<String>> = None;
+        for chunk in photo_ids.chunks(Self::BULK_TAG_CHUNK) {
+            let placeholders = (2..=chunk.len() + 1)
+                .map(|index| format!("?{index}"))
+                .collect::<Vec<_>>()
+                .join(",");
+            let sql = format!(
+                "SELECT t.name FROM tags t JOIN photo_tags pt ON pt.tag_id = t.id \
+                 WHERE pt.photo_id IN ({placeholders}) \
+                 GROUP BY t.id, t.name \
+                 HAVING COUNT(DISTINCT pt.photo_id) = ?1"
+            );
+            let mut values = Vec::with_capacity(chunk.len() + 1);
+            values.push(chunk.len() as i64);
+            values.extend(chunk.iter().copied());
+            let mut stmt = self.conn.prepare_cached(&sql)?;
+            let rows = stmt.query_map(params_from_iter(values), |row| row.get::<_, String>(0))?;
+            let chunk_names = rows.collect::<rusqlite::Result<HashSet<_>>>()?;
+            common = Some(match common {
+                Some(previous) => previous.intersection(&chunk_names).cloned().collect(),
+                None => chunk_names,
+            });
+            if common.as_ref().is_some_and(HashSet::is_empty) {
+                return Ok(Vec::new());
+            }
+        }
+
+        let mut names = common.unwrap_or_default().into_iter().collect::<Vec<_>>();
+        names.sort_by(|left, right| {
+            left.to_ascii_lowercase()
+                .cmp(&right.to_ascii_lowercase())
+                .then_with(|| left.cmp(right))
+        });
+        Ok(names)
     }
 
     fn unique_photo_ids(photo_ids: &[i64]) -> Vec<i64> {
@@ -217,7 +247,7 @@ impl Db {
     }
 
     fn ensure_photos_exist(&self, photo_ids: &[i64]) -> Result<()> {
-        for chunk in photo_ids.chunks(500) {
+        for chunk in photo_ids.chunks(Self::BULK_TAG_CHUNK) {
             let placeholders = vec!["?"; chunk.len()].join(",");
             let sql = format!("SELECT COUNT(*) FROM photos WHERE id IN ({placeholders})");
             let count: i64 =

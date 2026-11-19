@@ -126,12 +126,26 @@ impl Daemon {
                 if is_compressed_path(&path) {
                     continue;
                 }
+                let scanned = match scan_one_detailed(root, &path) {
+                    Some(Ok(scanned)) => scanned,
+                    Some(Err(failure)) => {
+                        tracing::warn!(
+                            path = %failure.path.display(),
+                            message = %failure.message,
+                            "cannot index the changed photo"
+                        );
+                        self.report_localized_error(
+                            DaemonOperation::Scan,
+                            LocalizedError::new("daemon.scan_failed").arg("count", 1),
+                            Some(&failure.message),
+                        )?;
+                        continue;
+                    }
+                    None => continue,
+                };
                 let root_id = {
                     let db = lock_db(&self.db);
                     db.add_root(&root.to_string_lossy(), "reference")?
-                };
-                let Some(scanned) = scan_one(root, &path) else {
-                    continue;
                 };
                 let mut new_photo = scanned.into_new_photo(root_id);
                 let abs_path = new_photo.abs_path.clone();

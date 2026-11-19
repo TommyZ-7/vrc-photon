@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
@@ -179,6 +179,8 @@ impl AutoBehavior {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppSettings {
     /// Photo roots to index. The first entry is the primary VRChat folder.
+    /// Paths are stored as strings and must be valid UTF-8; scanning rejects a
+    /// non-UTF-8 root instead of replacing bytes with U+FFFD.
     pub photo_roots: Vec<String>,
     /// VRChat output log directory.
     pub log_dir: Option<String>,
@@ -693,10 +695,6 @@ pub fn existing_photo_roots(settings: &AppSettings) -> Vec<PathBuf> {
         .into_iter()
         .filter(|path| path.is_dir())
         .collect()
-}
-
-pub fn is_under(path: &Path, root: &Path) -> bool {
-    path.strip_prefix(root).is_ok()
 }
 
 /// Webhook URL lives in its own `app_settings` row so it never lands in the
