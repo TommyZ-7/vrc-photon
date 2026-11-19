@@ -297,8 +297,8 @@ fn encode_avif(image: &DynamicImage, quality: u8, lossless: bool, speed: u8) -> 
         None => Cow::Owned(image.to_rgba8().into_raw()),
     };
     let (width, height) = (
-        usize::try_from(image.width()).unwrap_or(usize::MAX),
-        usize::try_from(image.height()).unwrap_or(usize::MAX),
+        usize::try_from(image.width()).expect("u32 image width always fits usize"),
+        usize::try_from(image.height()).expect("u32 image height always fits usize"),
     );
     let pixels: &[rgb::RGBA<u8>] = rgb::bytemuck::cast_slice(&rgba);
     let image_ref = imgref::Img::new(pixels, width, height);

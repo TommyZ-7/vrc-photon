@@ -409,6 +409,8 @@ impl Daemon {
         {
             self.log_locator = Some(LogLocator::new(log_dir.clone()));
         }
+        // The branch above always initializes `log_locator` when it is absent;
+        // this let-else keeps the function panic-free if that invariant changes.
         let Some(locator) = self.log_locator.as_mut() else {
             return Ok(());
         };
@@ -491,8 +493,11 @@ impl Daemon {
             });
         }
 
+        // The preceding block always initializes `log_tail` when it is absent,
+        // so this branch is defensive; return the pass accumulated so far
+        // instead of discarding it.
         let Some(tail) = self.log_tail.as_mut() else {
-            return Ok(LogPass::default());
+            return Ok(pass);
         };
         if size < tail.offset {
             tail.offset = 0;

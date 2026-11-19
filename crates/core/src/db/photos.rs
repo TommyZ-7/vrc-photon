@@ -1224,7 +1224,9 @@ fn row_to_photo(row: &Row<'_>) -> rusqlite::Result<Photo> {
         display_derivative_id: row.get(16)?,
         display_path: row.get(17)?,
         display_format: row.get(18)?,
-        display_file_size: row.get::<_, Option<i64>>(19)?.map(u64_from_i64),
+        display_file_size: row
+            .get::<_, Option<i64>>(19)?
+            .and_then(|size| u64::try_from(size).ok()),
         display_width: row.get(20)?,
         display_height: row.get(21)?,
         world_name: row.get(22)?,
