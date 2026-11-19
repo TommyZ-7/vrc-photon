@@ -79,7 +79,7 @@ pub fn check(
         ));
     }
 
-    let signature_url = format!("{}.minisig", feed.manifest_url);
+    let signature_url = signature_url(&feed.manifest_url)?.to_string();
     let signature_bytes = match client.get_bytes(&signature_url, MAX_SIGNATURE_BYTES) {
         Ok(bytes) => bytes,
         Err(UpdateError::NotFound) => return Err(UpdateError::Signature),
@@ -116,6 +116,22 @@ pub fn check(
         ai_plugin,
         verified: true,
     })
+}
+
+/// Builds the detached signature URL next to the manifest, dropping any
+/// query string so a token in the feed URL cannot break the lookup.
+fn signature_url(manifest_url: &str) -> Result<url::Url> {
+    let url = url::Url::parse(manifest_url)
+        .map_err(|error| UpdateError::InvalidManifest(format!("invalid feed URL: {error}")))?;
+    let name = url
+        .path_segments()
+        .and_then(|mut segments| segments.next_back())
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| {
+            UpdateError::InvalidManifest("feed URL has no file name".to_string())
+        })?;
+    url.join(&format!("{name}.minisig"))
+        .map_err(|error| UpdateError::InvalidManifest(format!("invalid signature URL: {error}")))
 }
 
 #[cfg(test)]
@@ -814,5 +830,12 @@ mod tests {
                 .update
                 .is_some()
         );
+    }
+
+    #[test]
+    fn signature_url_appends_the_suffix_and_drops_the_query() {
+        let url = signature_url("https://example.com/feed/latest.json?token=1").unwrap();
+        assert_eq!(url.as_str(), "https://example.com/feed/latest.json.minisig");
+        assert!(signature_url("https://example.com/feed/").is_err());
     }
 }
