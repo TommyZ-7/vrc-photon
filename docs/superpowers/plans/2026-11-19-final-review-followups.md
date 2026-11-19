@@ -40,7 +40,7 @@
 - Consumes: existing `Db::unique_photo_ids`, `Db::ensure_photos_exist`, `HashSet<String>` from `super::*`.
 - Produces: private `const BULK_TAG_CHUNK: usize = 500;`; no public signature changes.
 
-- [ ] **Step 1: Write the failing regression test**
+- [x] **Step 1: Write the failing regression test**
 
 Append to `crates/core/src/db/tests.rs`:
 
@@ -88,12 +88,12 @@ fn common_manual_tags_handles_more_photos_than_sqlite_bind_limit() {
 }
 ```
 
-- [ ] **Step 2: Run the test and verify it fails for the parameter limit**
+- [x] **Step 2: Run the test and verify it fails for the parameter limit**
 
 Run: `cargo test -p vrc-photon-core common_manual_tags_handles_more_photos_than_sqlite_bind_limit`
 Expected: FAIL with a rusqlite/SQLite error mentioning too many SQL variables (the current query binds all 32,770 photo IDs).
 
-- [ ] **Step 3: Implement chunking**
+- [x] **Step 3: Implement chunking**
 
 In `crates/core/src/db/tags.rs`, add near the top of `impl Db`:
 
@@ -166,17 +166,17 @@ names.sort_by(|left, right| {
 Ok(names)
 ```
 
-- [ ] **Step 4: Run the test and verify it passes**
+- [x] **Step 4: Run the test and verify it passes**
 
 Run: `cargo test -p vrc-photon-core common_manual_tags_handles_more_photos_than_sqlite_bind_limit`
 Expected: PASS.
 
-- [ ] **Step 5: Run the core tag tests**
+- [x] **Step 5: Run the core tag tests**
 
 Run: `cargo test -p vrc-photon-core tags`
 Expected: PASS, including the existing bulk add/remove tests.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add crates/core/src/db/tags.rs crates/core/src/db/tests.rs
@@ -195,7 +195,7 @@ git commit -m "fix: chunk bulk tag queries and inserts (#745, #766)"
 - Consumes: `Db::in_transaction`, `Db::set_photo_context`, `Db::set_photo_players`, existing `insert_photo` test helper.
 - Produces: private `fn store_link(db: &Db, context: &PhotoContext, photo_id: i64, players: &[PhotoPlayer]) -> Result<()>`.
 
-- [ ] **Step 1: Write the failing atomicity test**
+- [x] **Step 1: Write the failing atomicity test**
 
 Add this test inside the existing `mod tests` in `crates/core/src/linker.rs`:
 
@@ -220,12 +220,12 @@ fn xmp_link_rolls_back_context_when_players_write_fails() {
 }
 ```
 
-- [ ] **Step 2: Run the test and verify it fails**
+- [x] **Step 2: Run the test and verify it fails**
 
 Run: `cargo test -p vrc-photon-core xmp_link_rolls_back_context_when_players_write_fails`
 Expected: FAIL because the context row was committed before `set_photo_players` failed.
 
-- [ ] **Step 3: Add `store_link` and use it in all three branches**
+- [x] **Step 3: Add `store_link` and use it in all three branches**
 
 Add near the top of `crates/core/src/linker.rs`:
 
@@ -256,17 +256,17 @@ replace the two calls with `store_link(db, &context, photo.id, &players)?;`.
 In the XMP-only branch, replace the two calls with
 `store_link(db, &context, photo.id, &[])?;`.
 
-- [ ] **Step 4: Run the test and verify it passes**
+- [x] **Step 4: Run the test and verify it passes**
 
 Run: `cargo test -p vrc-photon-core xmp_link_rolls_back_context_when_players_write_fails`
 Expected: PASS, and `photo_context` is `None`.
 
-- [ ] **Step 5: Run all linker tests**
+- [x] **Step 5: Run all linker tests**
 
 Run: `cargo test -p vrc-photon-core linker`
 Expected: PASS, including the existing XMP/log/estimated tests.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add crates/core/src/linker.rs
@@ -284,7 +284,7 @@ git commit -m "fix: store link context and players atomically (#747)"
 - Consumes: nothing.
 - Produces: doc comment on `Db::connection`; no signature change.
 
-- [ ] **Step 1: Add the contract documentation**
+- [x] **Step 1: Add the contract documentation**
 
 Replace the bare `pub fn connection` with:
 
@@ -306,12 +306,12 @@ pub fn connection(&self) -> &Connection {
 }
 ```
 
-- [ ] **Step 2: Verify the crate still builds and tests**
+- [x] **Step 2: Verify the crate still builds and tests**
 
 Run: `cargo test -p vrc-photon-core --lib`
 Expected: PASS.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add crates/core/src/db/mod.rs
@@ -331,7 +331,7 @@ git commit -m "docs: document the raw Db connection contract (#748)"
 - Consumes: `SidecarResult`, `Op`, `AiHostError::SidecarProtocol`.
 - Produces: private `fn validate_probability(name: &str, value: f32) -> Result<()>`.
 
-- [ ] **Step 1: Write the failing probability validation test**
+- [x] **Step 1: Write the failing probability validation test**
 
 Add to the sidecar test module (and add
 `use vrc_photon_ai_protocol::{PlaceBranch, PlaceProbabilities, TagProbability};`
@@ -369,7 +369,7 @@ fn validate_result_rejects_out_of_range_probabilities() {
 }
 ```
 
-- [ ] **Step 2: Write the failing people-count interval test**
+- [x] **Step 2: Write the failing people-count interval test**
 
 ```rust
 #[test]
@@ -394,12 +394,12 @@ fn validate_result_rejects_impossible_people_counts() {
 }
 ```
 
-- [ ] **Step 3: Run the tests and verify they fail**
+- [x] **Step 3: Run the tests and verify they fail**
 
 Run: `cargo test -p vrc-photon-ai-host validate_result_rejects`
 Expected: FAIL; `validate_result` currently accepts both results.
 
-- [ ] **Step 4: Implement the validation**
+- [x] **Step 4: Implement the validation**
 
 Add before `validate_result`:
 
@@ -448,7 +448,7 @@ match result {
 }
 ```
 
-- [ ] **Step 5: Document the wire constraints**
+- [x] **Step 5: Document the wire constraints**
 
 In `crates/ai-protocol/src/protocol.rs`, add doc comments:
 
@@ -458,17 +458,17 @@ In `crates/ai-protocol/src/protocol.rs`, add doc comments:
 - On each field of `PlaceProbabilities`: “Probability in 0.0..=1.0; the host validates it.”
 - On `TagProbability::p_yes`: same probability rule.
 
-- [ ] **Step 6: Run the tests and verify they pass**
+- [x] **Step 6: Run the tests and verify they pass**
 
 Run: `cargo test -p vrc-photon-ai-host validate_result_rejects`
 Expected: PASS.
 
-- [ ] **Step 7: Run the ai-host and ai-protocol tests**
+- [x] **Step 7: Run the ai-host and ai-protocol tests**
 
 Run: `cargo test -p vrc-photon-ai-host -p vrc-photon-ai-protocol`
 Expected: PASS.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add crates/ai-host/src/sidecar.rs crates/ai-protocol/src/protocol.rs
@@ -488,7 +488,7 @@ git commit -m "fix: validate sidecar probabilities and people intervals (#755, #
 - Consumes: `plugins_root`, `TestPackage`, `install()` test helper.
 - Produces: no signature changes; `plugins_root` is mode 0700 after install on Unix.
 
-- [ ] **Step 1: Write the failing plugin-root mode test**
+- [x] **Step 1: Write the failing plugin-root mode test**
 
 Add inside the install test module:
 
@@ -511,12 +511,12 @@ fn install_restricts_the_plugins_root_to_the_owner() {
 }
 ```
 
-- [ ] **Step 2: Run the test and verify it fails**
+- [x] **Step 2: Run the test and verify it fails**
 
 Run: `cargo test -p vrc-photon-ai-host install_restricts_the_plugins_root_to_the_owner`
 Expected: FAIL; the root stays 0755 because install only calls `create_dir_all`.
 
-- [ ] **Step 3: Set the plugin root mode**
+- [x] **Step 3: Set the plugin root mode**
 
 In `crates/ai-host/src/install.rs`, immediately after
 `fs::create_dir_all(&root)?;`, add:
@@ -529,12 +529,12 @@ In `crates/ai-host/src/install.rs`, immediately after
 }
 ```
 
-- [ ] **Step 4: Run the test and verify it passes**
+- [x] **Step 4: Run the test and verify it passes**
 
 Run: `cargo test -p vrc-photon-ai-host install_restricts_the_plugins_root_to_the_owner`
 Expected: PASS with mode 0700.
 
-- [ ] **Step 5: Document the stamp threat model**
+- [x] **Step 5: Document the stamp threat model**
 
 Add this doc comment above `fn stamp_matches` in `crates/ai-host/src/model.rs`:
 
@@ -552,12 +552,12 @@ Add this doc comment above `fn stamp_matches` in `crates/ai-host/src/model.rs`:
 /// missing or does not match.
 ```
 
-- [ ] **Step 6: Run the ai-host tests**
+- [x] **Step 6: Run the ai-host tests**
 
 Run: `cargo test -p vrc-photon-ai-host`
 Expected: PASS, including `matching_stamp_is_trusted_without_rehashing`.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add crates/ai-host/src/model.rs crates/ai-host/src/install.rs
@@ -579,7 +579,7 @@ git commit -m "fix: keep plugin binaries private and document stamp limits (#770
 - Consumes: existing `CoreError::Invalid`, `Option<usize>` return of `encoded_len`.
 - Produces: private `fn checked_stride(width: u32) -> Option<u32>`; `is_under` removed.
 
-- [ ] **Step 1: Write the failing stride test**
+- [x] **Step 1: Write the failing stride test**
 
 Add to the `bc7` test module:
 
@@ -591,12 +591,12 @@ fn checked_stride_rejects_overflow() {
 }
 ```
 
-- [ ] **Step 2: Run the test and verify it fails**
+- [x] **Step 2: Run the test and verify it fails**
 
 Run: `cargo test -p vrc-photon-core checked_stride_rejects_overflow`
 Expected: FAIL with “cannot find function `checked_stride`”.
 
-- [ ] **Step 3: Implement the checked stride**
+- [x] **Step 3: Implement the checked stride**
 
 Add above `encode_rgba`:
 
@@ -613,12 +613,12 @@ stride: checked_stride(width)
     .ok_or_else(|| CoreError::Invalid("BC7 stride overflow".to_string()))?,
 ```
 
-- [ ] **Step 4: Run the test and verify it passes**
+- [x] **Step 4: Run the test and verify it passes**
 
 Run: `cargo test -p vrc-photon-core checked_stride_rejects_overflow`
 Expected: PASS.
 
-- [ ] **Step 5: Apply the behavior-preserving fixes**
+- [x] **Step 5: Apply the behavior-preserving fixes**
 
 In `crates/core/src/thumbnail.rs`, replace:
 
@@ -654,12 +654,12 @@ pub fn is_under(path: &Path, root: &Path) -> bool {
 }
 ```
 
-- [ ] **Step 6: Run the core tests**
+- [x] **Step 6: Run the core tests**
 
 Run: `cargo test -p vrc-photon-core`
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add crates/core/src/bc7.rs crates/core/src/thumbnail.rs crates/core/src/db/photos.rs crates/core/src/settings.rs
@@ -679,7 +679,7 @@ git commit -m "fix: remove core overflow and unwrap hazards (#766)"
 - Consumes: `ContainmentError::Unverifiable`, `CoreError::Invalid`.
 - Produces: `scan_root_report` returns `CoreError::Invalid` for a non-UTF-8 root; `contained_rel_path` returns `ContainmentError::Unverifiable` for any non-UTF-8 component; `ScannedPhoto::into_new_photo` stays lossless because the scanner rejects those paths first.
 
-- [ ] **Step 1: Write the failing non-UTF-8 root test**
+- [x] **Step 1: Write the failing non-UTF-8 root test**
 
 Add to the scanner test module:
 
@@ -702,7 +702,7 @@ fn scan_root_rejects_a_non_utf8_root() {
 }
 ```
 
-- [ ] **Step 2: Write the failing non-UTF-8 directory test**
+- [x] **Step 2: Write the failing non-UTF-8 directory test**
 
 ```rust
 #[cfg(unix)]
@@ -725,12 +725,12 @@ fn scan_reports_a_non_utf8_directory_component() {
 }
 ```
 
-- [ ] **Step 3: Run the tests and verify they fail**
+- [x] **Step 3: Run the tests and verify they fail**
 
 Run: `cargo test -p vrc-photon-core non_utf8`
 Expected: FAIL; both paths are currently lossily converted.
 
-- [ ] **Step 4: Reject non-UTF-8 roots and components**
+- [x] **Step 4: Reject non-UTF-8 roots and components**
 
 In `scan_root_report_with_progress_running`, after the `root.is_dir()` check, add:
 
@@ -757,12 +757,12 @@ if path_abs.to_str().is_none() {
 Keep the final `relative.to_string_lossy().replace('\\', "/")`; the check
 above guarantees it is now lossless.
 
-- [ ] **Step 5: Run the tests and verify they pass**
+- [x] **Step 5: Run the tests and verify they pass**
 
 Run: `cargo test -p vrc-photon-core non_utf8`
 Expected: PASS.
 
-- [ ] **Step 6: Document the String storage constraint**
+- [x] **Step 6: Document the String storage constraint**
 
 In `crates/core/src/settings.rs`, extend the `photo_roots` field doc:
 
@@ -782,12 +782,12 @@ Add a doc comment to `ScannedPhoto::into_new_photo`:
 /// substitute replacement characters here.
 ```
 
-- [ ] **Step 7: Run the scanner and settings tests**
+- [x] **Step 7: Run the scanner and settings tests**
 
 Run: `cargo test -p vrc-photon-core scanner`
 Expected: PASS.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add crates/core/src/scanner.rs crates/core/src/settings.rs
@@ -805,7 +805,7 @@ git commit -m "fix: reject non-UTF-8 photo paths instead of rewriting them (#771
 - Consumes: `lookup`, `lookup_exact`, `DEFAULT_LOCALE`, `MISSING`.
 - Produces: private `fn translate_in(locale: &str, key: &str) -> Option<String>`; `tr_in` and `tr_args_in` keep their signatures.
 
-- [ ] **Step 1: Refactor the lookup chain**
+- [x] **Step 1: Refactor the lookup chain**
 
 Replace `tr_in` and `tr_args_in` with:
 
@@ -839,12 +839,12 @@ pub fn tr_args_in(locale: &str, key: &str, args: &[(&str, String)]) -> String {
 }
 ```
 
-- [ ] **Step 2: Run the i18n tests**
+- [x] **Step 2: Run the i18n tests**
 
 Run: `cargo test -p vrc-photon-i18n`
 Expected: PASS. No new behavioral test is possible: a catalog value exactly equal to `MISSING` has no placeholders, so the old early return produced the same output. The refactor removes the internal special case while preserving output.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add crates/i18n/src/lib.rs
@@ -855,11 +855,11 @@ git commit -m "refactor: resolve missing translations without a sentinel check (
 
 ### Final verification and handoff
 
-- [ ] **Step 1: Mark all plan checkboxes complete**
+- [x] **Step 1: Mark all plan checkboxes complete**
 
 Replace every `- [ ]` in this file with `- [x]` after the final verification passes.
 
-- [ ] **Step 2: Run the full local gate**
+- [x] **Step 2: Run the full local gate**
 
 ```bash
 cargo fmt --all -- --check
@@ -869,14 +869,14 @@ cargo test --workspace
 
 Expected: all three commands exit 0.
 
-- [ ] **Step 3: Commit the completed plan**
+- [x] **Step 3: Commit the completed plan**
 
 ```bash
 git add docs/superpowers/plans/2026-11-19-final-review-followups.md
 git commit -m "docs: mark the final review follow-up plan complete"
 ```
 
-- [ ] **Step 4: Open the PR and wait for CI**
+- [x] **Step 4: Open the PR and wait for CI**
 
 Push the branch, open one PR titled
 “Fix final review follow-ups (#745, #747, #748, #755, #766, #770, #771, #772)”,
