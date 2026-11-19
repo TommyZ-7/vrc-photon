@@ -39,7 +39,7 @@ signed manifest との結合検証を行う。補助的に liveness probe を sy
 - Consumes: なし
 - Produces: `pub(crate) fn process_alive(pid: u32) -> bool` (シグネチャ不変)
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 `helper.rs` のテストモジュールに追加:
 
@@ -51,13 +51,13 @@ fn process_alive_reports_the_current_process_and_a_missing_pid() {
 }
 ```
 
-- [ ] **Step 2: テストが失敗することを確認**
+- [x] **Step 2: テストが失敗することを確認**
 
 Run: `cargo test -p vrc-photon-update process_alive_reports -- --nocapture`
 Expected: コンパイルは通るが `u32::MAX` が Linux の `/proc` 判定で false になるため現状でも通る。
 このテストは契約の固定用であり、次の置換の回帰を防ぐ。
 
-- [ ] **Step 3: BSD/macOS 分岐を libc に置換**
+- [x] **Step 3: BSD/macOS 分岐を libc に置換**
 
 ```rust
 #[cfg(all(unix, not(target_os = "linux")))]
@@ -70,12 +70,12 @@ Expected: コンパイルは通るが `u32::MAX` が Linux の `/proc` 判定で
 }
 ```
 
-- [ ] **Step 4: テストと clippy を実行**
+- [x] **Step 4: テストと clippy を実行**
 
 Run: `cargo test -p vrc-photon-update process_alive && cargo clippy -p vrc-photon-update --all-targets -- -D warnings`
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add crates/update/src/helper.rs
@@ -98,7 +98,7 @@ git commit -m "fix: probe process liveness without PATH-dependent kill (#756)"
 - Produces: `fn verify_manifest(job: &ApplyJob, options: &HelperOptions) -> Result<(Manifest, Version, PlatformAsset)>`（全 kind 対応）
 - Consumes: `ApplyJob { signed_manifest: Option<String>, manifest_signature: Option<String>, .. }`
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 `install.rs` のテストで、manifest を持たない AppImage job が validate に失敗することを固定:
 
@@ -138,12 +138,12 @@ fn verify_staged_rejects_a_sha256_that_differs_from_the_manifest() { /* UpdateEr
 fn verify_staged_rejects_a_downgrade_manifest() { /* UpdateError::Downgrade */ }
 ```
 
-- [ ] **Step 2: テストが失敗することを確認**
+- [x] **Step 2: テストが失敗することを確認**
 
 Run: `cargo test -p vrc-photon-update verify_staged_ -- --nocapture`
 Expected: `verify_staged_accepts_a_matching_signed_manifest` が manifest 未検証のため失敗。
 
-- [ ] **Step 3: manifest 選択と結合検証を実装**
+- [x] **Step 3: manifest 選択と結合検証を実装**
 
 `manifest.rs`:
 
@@ -177,12 +177,12 @@ if !asset.sha256.eq_ignore_ascii_case(&job.sha256) {
 `ui/update_view.rs`: `let (signed_manifest, manifest_signature) = match &kind { ... }` を削除し、
 常に UTF-8 変換した manifest と署名を job に入れる。
 
-- [ ] **Step 4: テストを実行**
+- [x] **Step 4: テストを実行**
 
 Run: `cargo test -p vrc-photon-update && cargo test -p vrc-photon-ui --lib`
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add crates/update/src/manifest.rs crates/update/src/install.rs crates/update/src/helper.rs crates/ui/src/update_view.rs
@@ -200,7 +200,7 @@ git commit -m "fix: bind staged artifacts to the signed manifest on every apply 
 **Interfaces:**
 - Produces: `fn signature_url(manifest_url: &str) -> Result<Url>`
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 ```rust
 #[test]
@@ -211,12 +211,12 @@ fn signature_url_appends_the_suffix_and_drops_the_query() {
 }
 ```
 
-- [ ] **Step 2: テストが失敗することを確認**
+- [x] **Step 2: テストが失敗することを確認**
 
 Run: `cargo test -p vrc-photon-update signature_url -- --nocapture`
 Expected: `signature_url` が未定義でコンパイル失敗。
 
-- [ ] **Step 3: helper を実装して check() から使う**
+- [x] **Step 3: helper を実装して check() から使う**
 
 ```rust
 fn signature_url(manifest_url: &str) -> Result<Url> {
@@ -234,12 +234,12 @@ fn signature_url(manifest_url: &str) -> Result<Url> {
 
 `check()` の `format!("{}.minisig", feed.manifest_url)` を `signature_url(&feed.manifest_url)?` に置換。
 
-- [ ] **Step 4: テストを実行**
+- [x] **Step 4: テストを実行**
 
 Run: `cargo test -p vrc-photon-update signature_url`
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add crates/update/src/check.rs
@@ -259,7 +259,7 @@ git commit -m "fix: build the manifest signature URL with Url::join (#769)"
 - Consumes: `std::path::Path`
 - Produces: `fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()>` (不変)
 
-- [ ] **Step 1: Windows 用の feature を追加**
+- [x] **Step 1: Windows 用の feature を追加**
 
 `crates/update/Cargo.toml`:
 
@@ -267,7 +267,7 @@ git commit -m "fix: build the manifest signature URL with Url::join (#769)"
 windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_Threading"] }
 ```
 
-- [ ] **Step 2: remove_file + rename を置換**
+- [x] **Step 2: remove_file + rename を置換**
 
 ```rust
 #[cfg(windows)]
@@ -300,12 +300,12 @@ std::fs::rename(&temp, path).map_err(|error| UpdateError::io(path, error))
 実際の windows 0.62 の戻り値型に合わせ、`result` が `BOOL` の場合は
 `result.as_bool()` で判定する。Windows ジョブのコンパイルで確定する。
 
-- [ ] **Step 3: Linux で回帰確認**
+- [x] **Step 3: Linux で回帰確認**
 
 Run: `cargo test -p vrc-photon-update && cargo clippy -p vrc-photon-update --all-targets -- -D warnings`
 Expected: PASS（Windows 分岐は cfg 外）
 
-- [ ] **Step 4: コミット**
+- [x] **Step 4: コミット**
 
 ```bash
 git add crates/update/Cargo.toml crates/update/src/helper.rs
@@ -325,7 +325,7 @@ git commit -m "fix: replace state files atomically on Windows (#769)"
 **Interfaces:**
 - Produces: `pub fn build_manifest(dist: &Path, tag: &str, repo: &str, notes_url: &str, ai_plugin: Option<AiPluginRelease>, public_keys: &[String]) -> Result<Manifest>`
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 `build_manifest` の既存テストを public key 付きに更新し、stale 署名のテストを追加:
 
@@ -337,12 +337,12 @@ fn generate_rejects_an_artifact_changed_after_signing() {
 }
 ```
 
-- [ ] **Step 2: テストが失敗することを確認**
+- [x] **Step 2: テストが失敗することを確認**
 
 Run: `cargo test -p vrc-photon-release-tool generate_rejects -- --nocapture`
 Expected: 署名検証がないため Ok が返り失敗。
 
-- [ ] **Step 3: 実装**
+- [x] **Step 3: 実装**
 
 `build_manifest` の各 `asset(...)` 呼び出し前に `verify_file(path, public_keys)?` を実行する。
 `public_keys` が空なら `bail!("at least one --public-key is required")`。
@@ -350,12 +350,12 @@ Expected: 署名検証がないため Ok が返り失敗。
 `main.rs` の `Generate` に `#[arg(long = "public-key")] public_keys: Vec<String>` を追加。
 `release.yml` の generate 呼び出しへ `"${PUB_ARGS[@]}"` を渡す。
 
-- [ ] **Step 4: テストを実行**
+- [x] **Step 4: テストを実行**
 
 Run: `cargo test -p vrc-photon-release-tool`
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add crates/release-tool/src/lib.rs crates/release-tool/src/main.rs .github/workflows/release.yml
@@ -366,7 +366,7 @@ git commit -m "fix: verify artifact signatures when generating the update manife
 
 ### Task 6: 最終検証
 
-- [ ] `cargo fmt --all -- --check`
-- [ ] `cargo clippy --workspace --all-targets -- -D warnings`
-- [ ] `cargo test --workspace`
-- [ ] 計画のチェックボックスを `- [x]` に更新し、PR を作成する
+- [x] `cargo fmt --all -- --check`
+- [x] `cargo clippy --workspace --all-targets -- -D warnings`
+- [x] `cargo test --workspace`
+- [x] 計画のチェックボックスを `- [x]` に更新し、PR を作成する
