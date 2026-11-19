@@ -92,7 +92,7 @@ pub fn prepare_tagging_snapshot(
         .modified()
         .ok()
         .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
-        .map(|duration| duration.as_millis() as u64)
+        .map(|duration| u64::try_from(duration.as_millis()).unwrap_or(u64::MAX))
         .unwrap_or(0);
     Ok(TaggingSnapshot {
         path: output,

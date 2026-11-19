@@ -1381,7 +1381,7 @@ pub fn wait_for_process_exit(pid: u32, timeout: Duration) -> bool {
         if elapsed >= timeout {
             return false;
         }
-        thread::sleep(Duration::from_millis(250).min(timeout - elapsed));
+        thread::sleep(Duration::from_millis(250).min(timeout.saturating_sub(elapsed)));
     }
 }
 

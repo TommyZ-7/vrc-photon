@@ -19,6 +19,10 @@ pub const UI_CARD_RADIUS_MIN: u8 = 0;
 pub const UI_CARD_RADIUS_MAX: u8 = 24;
 pub const UI_CARD_RADIUS_DEFAULT: u8 = 13;
 
+#[allow(
+    clippy::as_conversions,
+    reason = "value is clamped to the u8 bounds first, so the cast cannot truncate"
+)]
 fn clamp_u8(value: f32, min: u8, max: u8, default: u8) -> u8 {
     if value.is_finite() {
         value.round().clamp(f32::from(min), f32::from(max)) as u8
@@ -328,6 +332,10 @@ fn default_ai_idle_timeout() -> u64 {
 
 /// Reads one scalar and clamps it. A malformed value must not fail the whole
 /// `AppSettings` parse: callers lose every setting when that happens.
+#[allow(
+    clippy::as_conversions,
+    reason = "value is clamped to the u8 bounds first, so the cast cannot truncate"
+)]
 fn deserialize_clamped_u8<'de, D>(
     deserializer: D,
     min: u8,

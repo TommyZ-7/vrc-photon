@@ -4,6 +4,12 @@
 //! older `use super::*;` style may keep it until they are substantially
 //! edited.
 
+// #762 staged rollout: core casts are enforced first. This crate keeps
+// the lint allowed with a reason so the exception is visible and greppable.
+#![allow(
+    clippy::as_conversions,
+    reason = "Staged #762 rollout: vrc-photon-core casts are enforced first; this crate follows"
+)]
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};

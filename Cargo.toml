@@ -72,3 +72,23 @@ gpui-component = { git = "https://github.com/TommyZ-7/gpui-kit", rev = "ee98b887
 gpui-fast = { git = "https://github.com/TommyZ-7/gpui-fast", rev = "691d31b236e2ffe17a2cdfa6f45321d5f78eec75" }
 gpui-fast-wgpu = { git = "https://github.com/TommyZ-7/gpui-fast", rev = "691d31b236e2ffe17a2cdfa6f45321d5f78eec75" }
 gpui-fast-windows = { git = "https://github.com/TommyZ-7/gpui-fast", rev = "691d31b236e2ffe17a2cdfa6f45321d5f78eec75" }
+
+# Thin LTO keeps cross-crate inlining (image decode, SQLite boundary) while
+# staying far cheaper to build than fat LTO. One codegen unit trades build
+# time for runtime; `strip = "symbols"` removes the debug symbol table from
+# the shipped binaries.
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+
+# Five lints from the pre-release review (#762). `expect_used` stays allowed:
+# the review only asked for unwrap in production and several call sites
+# legitimately expect on values they just constructed.
+[workspace.lints.clippy]
+unwrap_used = "warn"
+expect_used = "allow"
+as_conversions = "warn"
+undocumented_unsafe_blocks = "warn"
+unchecked_time_subtraction = "warn"
+wildcard_imports = "warn"

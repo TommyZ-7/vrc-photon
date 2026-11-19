@@ -92,7 +92,7 @@ pub enum WorldNameParseError {
 /// The design caps the schedule on the ninth attempt, so the sequence is
 /// 60, 120, 240, 480, 960, 1920, 3840, 7680, 21600 seconds.
 pub fn backoff_seconds(attempts: i64) -> i64 {
-    let doublings = attempts.saturating_sub(1).clamp(0, 8) as u32;
+    let doublings = u32::try_from(attempts.saturating_sub(1).clamp(0, 8)).unwrap_or(8);
     if doublings >= 8 {
         MAX_BACKOFF_SECONDS
     } else {

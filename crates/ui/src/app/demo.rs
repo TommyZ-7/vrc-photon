@@ -132,6 +132,7 @@ fn prepare_demo(_reset: bool) -> Result<(Db, DemoAssets), String> {
 /// machine from fighting over one temporary directory.
 fn demo_root() -> PathBuf {
     #[cfg(unix)]
+    // SAFETY: `getuid` has no preconditions and does not touch memory.
     let name = format!("vrc-photon-demo-{}", unsafe { libc::getuid() });
     #[cfg(not(unix))]
     let name = "vrc-photon-demo".to_string();
@@ -574,7 +575,10 @@ mod tests {
             .unwrap()
             .to_string_lossy()
             .into_owned();
-        assert!(name.ends_with(&format!("-{}", unsafe { libc::getuid() })));
+        assert!(name.ends_with(&format!("-{}", {
+            // SAFETY: `getuid` has no preconditions and does not touch memory.
+            unsafe { libc::getuid() }
+        })));
     }
 
     #[test]

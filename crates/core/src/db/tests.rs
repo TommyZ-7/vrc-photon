@@ -1,3 +1,6 @@
+// Test fixtures build small in-memory databases with constant sizes.
+#![allow(clippy::as_conversions)]
+
 use super::photos::*;
 use super::*;
 use crate::ai::{NewPhotoAi, PluginInstallation};

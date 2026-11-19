@@ -20,8 +20,8 @@ fn spring_forward_gap_line_links_a_photo_to_the_resolved_session() {
         return;
     }
 
-    // This integration-test binary runs a single test, so changing the process
-    // environment cannot race with another `Local` lookup.
+    // SAFETY: This integration-test binary runs a single test, so changing the
+    // process environment cannot race with another `Local` lookup.
     unsafe {
         std::env::set_var("TZ", "America/New_York");
     }

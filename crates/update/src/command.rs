@@ -226,13 +226,13 @@ pub(crate) fn run_bounded(command: &mut Command, timeout: Duration) -> Result<Co
     })
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
+#[cfg(unix)]
 mod tests {
     use std::path::Path;
 
     use super::*;
 
-    #[cfg(unix)]
     fn make_executable(path: &Path) {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).unwrap();

@@ -80,9 +80,9 @@ impl Db {
         let mut stmt = self.conn.prepare_cached(&sql)?;
         let rows = stmt.query_map([limit + 1], row_to_photo_index)?;
         let mut entries = rows.collect::<rusqlite::Result<Vec<_>>>()?;
-        let truncated = entries.len() as i64 > limit;
+        let truncated = i64_from_usize(entries.len()) > limit;
         if truncated {
-            entries.truncate(limit as usize);
+            entries.truncate(usize_from_i64(limit));
         }
         Ok(PhotoIndexSnapshot { entries, truncated })
     }
@@ -133,7 +133,7 @@ impl Db {
              ORDER BY photo_count DESC, name COLLATE NOCASE ASC LIMIT ?"
         );
         let mut stmt = self.conn.prepare_cached(&sql)?;
-        let rows = stmt.query_map(params![like, limit as i64], |row| {
+        let rows = stmt.query_map(params![like, i64_from_usize(limit)], |row| {
             Ok(SearchSuggestion {
                 name: row.get(0)?,
                 photo_count: row.get(1)?,
@@ -162,7 +162,7 @@ impl Db {
              ORDER BY photo_count DESC, name COLLATE NOCASE ASC LIMIT ?"
         );
         let mut stmt = self.conn.prepare_cached(&sql)?;
-        let rows = stmt.query_map(params![like, limit as i64], |row| {
+        let rows = stmt.query_map(params![like, i64_from_usize(limit)], |row| {
             Ok(SearchSuggestion {
                 name: row.get(0)?,
                 photo_count: row.get(1)?,
@@ -207,7 +207,12 @@ impl Db {
         );
         let mut stmt = self.conn.prepare_cached(&sql)?;
         let rows = stmt.query_map(
-            params![i64::from(prefer_english), like, limit as i64, AI_PLUGIN_ID],
+            params![
+                i64::from(prefer_english),
+                like,
+                i64_from_usize(limit),
+                AI_PLUGIN_ID
+            ],
             |row| {
                 Ok(SearchSuggestion {
                     name: row.get(0)?,
@@ -300,11 +305,11 @@ impl Db {
         seed: u64,
     ) -> Result<RandomPhotoSample> {
         let ids = self.photo_ids_text(filter)?;
-        let total = ids.len() as i64;
-        let take = clamp_limit(limit) as usize;
+        let total = i64_from_usize(ids.len());
+        let take = usize_from_i64(clamp_limit(limit));
         let mut keyed: Vec<(u64, i64)> = ids
             .iter()
-            .map(|&id| (splitmix64(seed ^ id as u64), id))
+            .map(|&id| (splitmix64(seed ^ id.cast_unsigned()), id))
             .collect();
         keyed.sort_unstable();
         keyed.truncate(take.min(keyed.len()));
@@ -390,7 +395,7 @@ impl Db {
                 Ok(PhotoScanState {
                     id: row.get(0)?,
                     abs_path: row.get(1)?,
-                    file_size: row.get::<_, i64>(2)? as u64,
+                    file_size: u64_from_i64(row.get::<_, i64>(2)?),
                     mtime: row.get(3)?,
                     blake3: row.get(4)?,
                     status: PhotoStatus::parse(&row.get::<_, String>(5)?),
@@ -417,7 +422,7 @@ impl Db {
     pub fn set_favorite(&self, photo_id: i64, favorite: bool) -> Result<()> {
         self.conn.execute(
             "UPDATE photos SET is_favorite = ?1, updated_at = ?2 WHERE id = ?3",
-            params![favorite as i64, now_string(), photo_id],
+            params![i64::from(favorite), now_string(), photo_id],
         )?;
         Ok(())
     }
@@ -550,9 +555,9 @@ impl Db {
             params![
                 photo.abs_path,
                 photo.file_name,
-                photo.file_size as i64,
-                photo.width as i64,
-                photo.height as i64,
+                i64_from_u64(photo.file_size),
+                i64_from_u32(photo.width),
+                i64_from_u32(photo.height),
                 photo.captured_at_utc,
             ],
             row_to_photo,
@@ -608,7 +613,7 @@ impl Db {
                 photo.rel_path,
                 photo.abs_path,
                 photo.file_name,
-                photo.file_size as i64,
+                i64_from_u64(photo.file_size),
                 photo.mtime,
                 photo.blake3,
                 now_string(),
@@ -788,10 +793,10 @@ impl Db {
         )?;
         Ok(LibraryStats {
             photo_count,
-            total_bytes: total_bytes.max(0) as u64,
+            total_bytes: u64_from_i64(total_bytes),
             world_count,
             compressed_count,
-            derivative_bytes: derivative_bytes.max(0) as u64,
+            derivative_bytes: u64_from_i64(derivative_bytes),
         })
     }
 }
@@ -969,9 +974,9 @@ impl Db {
                     photo_id,
                     path,
                     format,
-                    width as i64,
-                    height as i64,
-                    file_size as i64,
+                    i64_from_u32(width),
+                    i64_from_u32(height),
+                    i64_from_u64(file_size),
                     profile_id,
                     origin.as_str(),
                     policy,
@@ -1010,7 +1015,7 @@ impl Db {
                 format: row.get(3)?,
                 width: row.get(4)?,
                 height: row.get(5)?,
-                file_size: row.get::<_, i64>(6)? as u64,
+                file_size: u64_from_i64(row.get::<_, i64>(6)?),
                 profile_id: row.get(7)?,
                 origin: CompressionOrigin::parse(&row.get::<_, String>(8)?),
                 policy: row.get(9)?,
@@ -1056,9 +1061,9 @@ fn upsert_photo_in(conn: &Connection, photo: &NewPhoto) -> Result<i64> {
             photo.captured_at_utc,
             photo.captured_at_local,
             photo.tz_offset_sec,
-            photo.width as i64,
-            photo.height as i64,
-            photo.file_size as i64,
+            i64_from_u32(photo.width),
+            i64_from_u32(photo.height),
+            i64_from_u64(photo.file_size),
             photo.mtime,
             photo.blake3,
             now,
@@ -1210,7 +1215,7 @@ fn row_to_photo(row: &Row<'_>) -> rusqlite::Result<Photo> {
         tz_offset_sec: row.get(7)?,
         width: row.get(8)?,
         height: row.get(9)?,
-        file_size: row.get::<_, i64>(10)? as u64,
+        file_size: u64_from_i64(row.get::<_, i64>(10)?),
         mtime: row.get(11)?,
         blake3: row.get(12)?,
         status: PhotoStatus::parse(&row.get::<_, String>(13)?),
@@ -1219,7 +1224,7 @@ fn row_to_photo(row: &Row<'_>) -> rusqlite::Result<Photo> {
         display_derivative_id: row.get(16)?,
         display_path: row.get(17)?,
         display_format: row.get(18)?,
-        display_file_size: row.get::<_, Option<i64>>(19)?.map(|size| size as u64),
+        display_file_size: row.get::<_, Option<i64>>(19)?.map(u64_from_i64),
         display_width: row.get(20)?,
         display_height: row.get(21)?,
         world_name: row.get(22)?,

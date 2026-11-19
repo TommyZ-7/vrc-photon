@@ -464,6 +464,9 @@ pub(crate) fn decode_thumbnail(
 
 #[cfg(test)]
 mod tests {
+    // Test clocks only subtract fixed, small durations; a panic here is the test failure.
+    #![allow(clippy::unchecked_time_subtraction)]
+
     use super::*;
     use gpui_kit::{DevicePixels, size};
 

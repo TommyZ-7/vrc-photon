@@ -590,7 +590,7 @@ pub fn ensure_thumbnail_in_with_status(
             Ok(Some(EnsuredThumbnail {
                 path: output,
                 created: true,
-                bytes: blocks.len() as u64,
+                bytes: u64::try_from(blocks.len()).unwrap_or(u64::MAX),
                 blocks: Some(blocks),
                 color,
                 rotated,
@@ -659,9 +659,9 @@ fn average_color(image: &RgbaImage) -> u32 {
     if count == 0 {
         return 0;
     }
-    let red = (red / count) as u32;
-    let green = (green / count) as u32;
-    let blue = (blue / count) as u32;
+    let red = u32::try_from(red / count).unwrap_or(u32::MAX);
+    let green = u32::try_from(green / count).unwrap_or(u32::MAX);
+    let blue = u32::try_from(blue / count).unwrap_or(u32::MAX);
     (red << 16) | (green << 8) | blue
 }
 
@@ -681,6 +681,10 @@ fn publish_thumbnail_bytes(output: &Path, bytes: &[u8]) -> Result<PlaceOutcome> 
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::as_conversions,
+    reason = "test fixtures size small in-memory buffers"
+)]
 mod tests {
     use super::*;
     use image::{Rgba, RgbaImage};

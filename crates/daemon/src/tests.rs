@@ -1,3 +1,6 @@
+// Test clocks only subtract fixed, small durations; a panic here is the test failure.
+#![allow(clippy::unchecked_time_subtraction)]
+
 use super::*;
 use crate::compression::*;
 use crate::hash::*;

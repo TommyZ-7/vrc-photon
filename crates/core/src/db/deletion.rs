@@ -80,7 +80,7 @@ impl Db {
                 tx.execute(
                     "UPDATE deletion_requests SET reason = ?1, force = ?2, status = ?3 \
                      WHERE id = ?4",
-                    params![next_reason, next_force as i64, next_status, id],
+                    params![next_reason, i64::from(next_force), next_status, id],
                 )?;
                 id
             } else {
@@ -88,7 +88,7 @@ impl Db {
                     "INSERT INTO deletion_requests \
                         (photo_id, reason, status, force, requested_at) \
                      VALUES (?1, ?2, 'pending', ?3, ?4)",
-                    params![photo_id, reason.as_str(), force as i64, now],
+                    params![photo_id, reason.as_str(), i64::from(force), now],
                 )?;
                 tx.last_insert_rowid()
             };

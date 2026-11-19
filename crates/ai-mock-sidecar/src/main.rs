@@ -21,6 +21,12 @@
 //! - `MOCK_SIDECAR_NO_ATMOSPHERE=1`: behave like a pre-0.4 sidecar by
 //!   omitting the `atmosphere_tags` capability and atmosphere catalog.
 
+// #762 staged rollout: core casts are enforced first. This crate keeps
+// the lint allowed with a reason so the exception is visible and greppable.
+#![allow(
+    clippy::as_conversions,
+    reason = "Staged #762 rollout: vrc-photon-core casts are enforced first; this crate follows"
+)]
 use std::collections::VecDeque;
 use std::fs;
 use std::io::{self, BufRead, BufReader, Write};

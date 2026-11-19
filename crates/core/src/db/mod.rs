@@ -14,6 +14,10 @@ use crate::ai::{
     AI_PLUGIN_ID, AiTagDefinition, AiTagThreshold, MAX_TAGGING_RETRIES, NewPhotoAi, PhotoAi,
     PhotoAiTag, PhotoAiTagView, PluginInstallation, PluginState, TaggingJob,
 };
+use crate::cast::{
+    f32_from_f64, i64_from_u32, i64_from_u64, i64_from_usize, u32_from_i64, u64_from_i64,
+    usize_from_i64,
+};
 use crate::error::{CoreError, Result};
 use crate::model::{
     AiPhotoFilter, CompressionJob, CompressionOrigin, CompressionProfile, DaemonCommand,
