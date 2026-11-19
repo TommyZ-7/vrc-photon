@@ -164,7 +164,7 @@ fn prepare_demo_at(
 }
 
 pub(crate) fn demo_thumb_path(assets: &DemoAssets, photo_id: i64) -> PathBuf {
-    assets.thumb_dir.join(format!("{photo_id}.bc7"))
+    assets.thumb_dir.join(format!("{photo_id}-s384x216.bc7"))
 }
 
 /// Demo thumbnails are generated at this fixed canvas size.
@@ -429,7 +429,7 @@ fn seed_demo(db: &Db, photo_dir: &Path, now: DateTime<Local>) -> Result<(), Stri
                 blake3: None,
             })?;
 
-            let thumb_path = thumb_dir.join(format!("{id}.bc7"));
+            let thumb_path = thumb_dir.join(format!("{id}-s384x216.bc7"));
             std::fs::copy(&pool_thumbnails[variant], &thumb_path).map_err(|error| {
                 vrc_photon_core::CoreError::Invalid(format!("{}: {error}", thumb_path.display()))
             })?;
@@ -523,7 +523,7 @@ mod tests {
             thumb_dir: std::path::PathBuf::from("/tmp/vrc-demo/thumbnails"),
         };
         let path = demo_thumb_path(&assets, 42);
-        assert!(path.ends_with("42.bc7"));
+        assert!(path.ends_with("42-s384x216.bc7"));
         assert_eq!(path.parent(), Some(assets.thumb_dir.as_path()));
     }
 
@@ -657,7 +657,9 @@ mod tests {
         let thumb_dir = photo_dir.parent().unwrap().join("thumbnails");
         for entry in &entries {
             assert!(
-                thumb_dir.join(format!("{}.bc7", entry.id)).exists(),
+                thumb_dir
+                    .join(format!("{}-s384x216.bc7", entry.id))
+                    .exists(),
                 "missing thumbnail for {}",
                 entry.id
             );

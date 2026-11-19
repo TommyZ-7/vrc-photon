@@ -759,7 +759,11 @@ mod tests {
         write_cache_entry(&dir.path().join("1-s384x216.bc7"), 1000, SystemTime::now());
         write_cache_entry(&dir.path().join("2-s384x216.bc7"), 2000, SystemTime::now());
         write_cache_entry(&dir.path().join("keep.bc7"), 3000, SystemTime::now());
-        write_cache_entry(&dir.path().join("3-s384x216.bc7.tmp"), 4000, SystemTime::now());
+        write_cache_entry(
+            &dir.path().join("3-s384x216.bc7.tmp"),
+            4000,
+            SystemTime::now(),
+        );
 
         let usage = thumbnail_cache_usage_in(dir.path()).unwrap();
 
@@ -771,7 +775,11 @@ mod tests {
     fn clear_thumbnail_cache_removes_current_and_temporary_files() {
         let dir = tempdir().unwrap();
         write_cache_entry(&dir.path().join("1-s384x216.bc7"), 1000, SystemTime::now());
-        write_cache_entry(&dir.path().join("1-s384x216.bc7.meta"), 10, SystemTime::now());
+        write_cache_entry(
+            &dir.path().join("1-s384x216.bc7.meta"),
+            10,
+            SystemTime::now(),
+        );
         write_cache_entry(&dir.path().join("2-s384x216.bc7"), 2000, SystemTime::now());
         write_cache_entry(
             &dir.path().join("2-s384x216.bc7.meta"),

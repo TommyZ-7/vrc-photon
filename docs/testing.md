@@ -43,7 +43,7 @@ doc-test は含めない。`--list` で総数を確認する場合は
 | `world_name.rs` | ステータス、指数バックオフ、`Retry-After` の clamp、レスポンスの `name` 検証（空・長すぎ・制御文字・ID不一致） |
 | `metadata.rs` | XMP属性、PNG iTXtからの読み取り |
 | `compressor.rs` | WebP/JPEG/AVIF/JXL、リサイズ、出力名衝突回避、AVIF透過、16bitフォールバック、高速経路と変換経路の一致、同一画像の再利用 |
-| `thumbnail.rs` | BC7サムネイル生成、キャッシュ、`.meta` の mtime+size 検証、旧WebPの削除、存在しない元ファイル |
+| `thumbnail.rs` | BC7サムネイル生成、キャッシュ、`.meta` の mtime+size 検証、現行キーだけをキャッシュとして数えること、存在しない元ファイル |
 | `bc7.rs` | BC7 エンコード、寸法ごとのバイト数 |
 | `image_decode.rs` | PNG/JPEG/WebP/JXL のデコード、EXIF 回転、画素上限 |
 | `importer.rs` | PNG取り込み、JPG/JPEGスキップ、コピー、移動、衝突連番、非画像スキップ、ファイル単位の失敗継続、部分移動（コピー成功・元削除失敗） |

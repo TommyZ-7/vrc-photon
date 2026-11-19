@@ -5,7 +5,7 @@
 - DB: ユーザーデータディレクトリ配下 `vrc-photon/library.db`
   - Linux: `~/.local/share/vrc-photon/library.db`
   - Windows: `%LOCALAPPDATA%\vrc-photon\library.db`
-- サムネイル: 同ディレクトリの `thumbnails/<photo_id>-s<幅>x<高さ>.bc7`（旧 `<photo_id>.webp` などは起動時に削除）。隣に元ファイルの `mtime + size`、平均色、回転状態を記録した `.bc7.meta` を置く。
+- サムネイル: 同ディレクトリの `thumbnails/<photo_id>-s<幅>x<高さ>.bc7`。隣に元ファイルの `mtime + size`、平均色、回転状態を記録した `.bc7.meta` を置く。旧形式のファイルはサムネイルキャッシュとして扱わない。
 - AI プラグイン: 同ディレクトリの `plugins/<plugin_id>/<variant>/<version>/`
 - AI モデル: 同ディレクトリの `plugins/<plugin_id>/models/<revision>/`
 - タグ付け用スナップショット: 同ディレクトリの `cache/tagging/<job_id>.jpg`（一時ファイル）
@@ -714,7 +714,7 @@ ai_model_license_consent_at, setup_completed
 ```
 
 - `thumbnail_size` は 256 / 384 / 512 のいずれか（既定 256）。`thumbnail_cache_mb` は既定 8192、0 は無制限。
-- `setup_completed` は初回セットアップの完了・閉じるで `true` になる。新規インストールの既定は `false`。この項目を持たない旧設定は既存ユーザーとして `true` に読み替える。
+- `setup_completed` は初回セットアップの完了・閉じるで `true` になる。新規インストールの既定は `false`。1.0.0 の設定には必ず含まれ、欠損は parse error として扱う。
 - `compression_workers` は 1〜4（既定 1）。
 - `ui_grid_gap` は 0〜32（既定 14）、`ui_card_radius` は 0〜24（既定 13）。
 - `ui_card_size` は `small` / `medium` / `large` / `extra_large`（既定 `medium`）。

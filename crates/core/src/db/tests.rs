@@ -7885,7 +7885,10 @@ fn v20_database_is_rejected_without_modification() {
         panic!("expected an explicit schema error, got {error:?}");
     };
     assert!(message.contains("20"), "{message}");
-    assert!(message.contains("newer than this build supports"), "{message}");
+    assert!(
+        message.contains("newer than this build supports"),
+        "{message}"
+    );
     assert!(
         message.contains("update VRC PhotoN before opening it"),
         "{message}"
@@ -7919,7 +7922,10 @@ fn v18_database_is_rejected_without_modification() {
         panic!("expected an explicit schema error, got {error:?}");
     };
     assert!(message.contains("18"), "{message}");
-    assert!(message.contains("newer than this build supports"), "{message}");
+    assert!(
+        message.contains("newer than this build supports"),
+        "{message}"
+    );
     assert!(
         message.contains("update VRC PhotoN before opening it"),
         "{message}"

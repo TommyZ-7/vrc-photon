@@ -1384,8 +1384,8 @@ mod tests {
         let (_dir, endpoint, control) = test_control();
         let cache = control.thumbnail_dir.clone();
         std::fs::create_dir_all(&cache).unwrap();
-        std::fs::write(cache.join("1-q80-s256.webp"), b"thumb").unwrap();
-        std::fs::write(cache.join("2-q80-s256.webp.tmp"), b"tmp").unwrap();
+        std::fs::write(cache.join("1-s384x216.bc7"), b"thumb").unwrap();
+        std::fs::write(cache.join("2-s384x216.bc7.tmp-42-7"), b"tmp").unwrap();
         control
             .thumbnail_external_bytes
             .store(1234, Ordering::Relaxed);
@@ -1411,8 +1411,8 @@ mod tests {
             }
             other => panic!("unexpected response: {other:?}"),
         }
-        assert!(!cache.join("1-q80-s256.webp").exists());
-        assert!(!cache.join("2-q80-s256.webp.tmp").exists());
+        assert!(!cache.join("1-s384x216.bc7").exists());
+        assert!(!cache.join("2-s384x216.bc7.tmp-42-7").exists());
         assert_eq!(control.thumbnail_external_bytes.load(Ordering::Relaxed), 0);
         assert_eq!(control.thumbnail_cache_epoch.load(Ordering::Relaxed), 1);
     }

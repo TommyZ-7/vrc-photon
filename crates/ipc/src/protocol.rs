@@ -652,7 +652,13 @@ mod tests {
     fn scan_started_accepts_an_absent_optional_target() {
         let value = serde_json::json!({"type": "scan_started", "roots": 1});
         let event: Event = serde_json::from_value(value).unwrap();
-        assert_eq!(event, Event::ScanStarted { roots: 1, target: None });
+        assert_eq!(
+            event,
+            Event::ScanStarted {
+                roots: 1,
+                target: None
+            }
+        );
     }
 
     #[test]

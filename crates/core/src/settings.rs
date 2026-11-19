@@ -720,7 +720,7 @@ pub fn clear_discord_webhook(db: &Db) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{CompressionFormat, CompressionOptions, ResizeMode, ResizeSettings};
+    use crate::model::{CompressionFormat, CompressionOptions, ResizeMode};
 
     #[test]
     fn feature_compression_defaults_match_the_builtin_profiles() {
