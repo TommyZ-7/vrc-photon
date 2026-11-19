@@ -988,6 +988,34 @@ impl Daemon {
         Ok(())
     }
 
+    /// Runs the fallible startup work after workers exist. Any error here is
+    /// finished by [`Self::finish_startup`], which stops those workers.
+    pub(crate) fn run_startup_tasks(&mut self) -> Result<()> {
+        self.startup_scan()?;
+        if self.stopping() {
+            return Ok(());
+        }
+        // The startup scan runs before logs are ingested, so its link pass can
+        // record a retry before the sessions needed to link are available.
+        // Clear that schedule once at startup; the periodic loop keeps the
+        // backoff and only retries due photos.
+        self.make_unlinked_photos_due()?;
+        self.ingest_logs()?;
+        self.poll_vrchat_presence()?;
+        self.link_unlinked()?;
+        Ok(())
+    }
+
+    /// Finishes the fallible startup phase. An error or a stop request must
+    /// run the full shutdown path: `Drop` only raises flags and would leave
+    /// workers and the AI sidecar running.
+    pub(crate) fn finish_startup(&mut self, result: Result<()>) -> Result<()> {
+        if result.is_err() || self.stopping() {
+            self.shutdown();
+        }
+        result
+    }
+
     pub fn run(&mut self) -> Result<()> {
         let _ = prune_thumbnail_cache(
             &self.thumbnail_dir,
@@ -1004,21 +1032,9 @@ impl Daemon {
         // already queued compression, tagging, or deletion work. The scan now
         // takes the database mutex only for short per-photo operations.
         self.start_workers();
-        self.startup_scan()?;
+        let startup = self.run_startup_tasks();
+        self.finish_startup(startup)?;
         if self.stopping() {
-            self.shutdown();
-            return Ok(());
-        }
-        // The startup scan runs before logs are ingested, so its link pass can
-        // record a retry before the sessions needed to link are available.
-        // Clear that schedule once at startup; the periodic loop keeps the
-        // backoff and only retries due photos.
-        self.make_unlinked_photos_due()?;
-        self.ingest_logs()?;
-        self.poll_vrchat_presence()?;
-        self.link_unlinked()?;
-        if self.stopping() {
-            self.shutdown();
             return Ok(());
         }
         self.write_heartbeat();

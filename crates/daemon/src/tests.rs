@@ -3063,6 +3063,20 @@ fn loop_requeues_compression_jobs_stuck_in_processing() {
 }
 
 #[test]
+fn startup_error_shuts_down_workers() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    daemon.start_workers();
+    assert!(!daemon.workers.is_empty());
+
+    let result = daemon.finish_startup(Err(anyhow::anyhow!("startup failed")));
+
+    assert!(result.is_err());
+    assert!(daemon.stopping());
+    assert!(daemon.workers.is_empty());
+}
+
+#[test]
 fn startup_recovers_an_interrupted_compression_job_with_an_open_session() {
     let dir = tempfile::tempdir().unwrap();
     let mut daemon = manual_test_daemon(&dir);
