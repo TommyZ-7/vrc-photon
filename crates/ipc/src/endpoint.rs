@@ -1,4 +1,3 @@
-#[cfg(unix)]
 use std::fs;
 use std::io;
 use std::path::Path;
@@ -53,9 +52,9 @@ impl Endpoint {
 
     /// Resolves the per-user daemon endpoint on Windows.
     #[cfg(windows)]
-    pub fn for_data_dir(_data_dir: &Path) -> io::Result<Self> {
+    pub fn for_data_dir(data_dir: &Path) -> io::Result<Self> {
         Ok(Self {
-            inner: EndpointInner::Namespaced(current_user_namespaced("vrc-photon-daemon")),
+            inner: EndpointInner::Namespaced(daemon_pipe_name(data_dir)?),
             fallback: false,
         })
     }
@@ -217,31 +216,99 @@ pub(crate) fn ensure_safe_fallback_dir(dir: &Path) -> io::Result<()> {
 }
 
 #[cfg(any(windows, test))]
-fn user_namespaced(prefix: &str, user: &str) -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
+const PIPE_NONCE_FILE: &str = "daemon-pipe-nonce";
 
-    let sanitized: String = user
-        .chars()
-        .map(|character| {
-            if character.is_ascii_alphanumeric() {
-                character
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    let mut hasher = DefaultHasher::new();
-    user.hash(&mut hasher);
-    format!("{prefix}-{sanitized}-{:016x}", hasher.finish())
+#[cfg(any(windows, test))]
+fn valid_pipe_nonce(nonce: &str) -> bool {
+    nonce.len() == 32
+        && nonce
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
-#[cfg(windows)]
-fn current_user_namespaced(prefix: &str) -> String {
-    let user = std::env::var("USERNAME")
-        .or_else(|_| std::env::var("USER"))
-        .unwrap_or_else(|_| "user".to_string());
-    user_namespaced(prefix, &user)
+#[cfg(any(windows, test))]
+fn read_pipe_nonce(path: &Path) -> io::Result<Option<String>> {
+    match fs::read_to_string(path) {
+        Ok(nonce) if valid_pipe_nonce(&nonce) => Ok(Some(nonce)),
+        Ok(_) => Ok(None),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
+/// Waits briefly for a concurrently created file to finish being written.
+/// Another process can observe the file between `create_new` and the first
+/// write, so an immediate invalid read is not proof of corruption.
+#[cfg(any(windows, test))]
+fn wait_for_pipe_nonce(path: &Path) -> io::Result<Option<String>> {
+    for _ in 0..20 {
+        if let Some(nonce) = read_pipe_nonce(path)? {
+            return Ok(Some(nonce));
+        }
+        if !path.exists() {
+            return Ok(None);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    Ok(None)
+}
+
+#[cfg(any(windows, test))]
+fn create_pipe_nonce(path: &Path) -> io::Result<String> {
+    use std::io::Write as _;
+
+    let nonce = uuid::Uuid::new_v4().simple().to_string();
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(path)?;
+    file.write_all(nonce.as_bytes())?;
+    file.sync_all()?;
+    Ok(nonce)
+}
+
+#[cfg(any(windows, test))]
+fn read_or_create_pipe_nonce(data_dir: &Path) -> io::Result<String> {
+    fs::create_dir_all(data_dir)?;
+    let path = data_dir.join(PIPE_NONCE_FILE);
+    if let Some(nonce) = wait_for_pipe_nonce(&path)? {
+        return Ok(nonce);
+    }
+    if path.exists() {
+        match fs::remove_file(&path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
+    }
+    match create_pipe_nonce(&path) {
+        Ok(nonce) => Ok(nonce),
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+            // Another process won the create race. Its nonce is authoritative.
+            if let Some(nonce) = wait_for_pipe_nonce(&path)? {
+                return Ok(nonce);
+            }
+            match fs::remove_file(&path) {
+                Ok(()) => {}
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error),
+            }
+            create_pipe_nonce(&path)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+#[cfg(any(windows, test))]
+fn daemon_pipe_name(data_dir: &Path) -> io::Result<String> {
+    Ok(format!(
+        "vrc-photon-daemon-{}",
+        read_or_create_pipe_nonce(data_dir)?
+    ))
 }
 
 #[cfg(test)]
@@ -342,18 +409,47 @@ mod tests {
     }
 
     #[test]
-    fn windows_names_include_a_stable_user_hash() {
-        assert_ne!(
-            user_namespaced("daemon", "山田"),
-            user_namespaced("daemon", "田中")
-        );
-        assert_ne!(
-            user_namespaced("daemon", "a-b"),
-            user_namespaced("daemon", "a_b")
-        );
+    fn pipe_name_is_stable_for_one_data_dir() {
+        let dir = tempfile::tempdir().unwrap();
         assert_eq!(
-            user_namespaced("daemon", "same"),
-            user_namespaced("daemon", "same")
+            daemon_pipe_name(dir.path()).unwrap(),
+            daemon_pipe_name(dir.path()).unwrap()
         );
+    }
+
+    #[test]
+    fn pipe_names_differ_between_data_dirs() {
+        let first = tempfile::tempdir().unwrap();
+        let second = tempfile::tempdir().unwrap();
+        assert_ne!(
+            daemon_pipe_name(first.path()).unwrap(),
+            daemon_pipe_name(second.path()).unwrap()
+        );
+    }
+
+    #[test]
+    fn invalid_pipe_nonce_is_regenerated() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("daemon-pipe-nonce"), b"broken").unwrap();
+        let name = daemon_pipe_name(dir.path()).unwrap();
+        let nonce = std::fs::read_to_string(dir.path().join("daemon-pipe-nonce")).unwrap();
+        assert_eq!(name, format!("vrc-photon-daemon-{nonce}"));
+        assert_eq!(nonce.len(), 32);
+        assert!(nonce.bytes().all(|byte| byte.is_ascii_hexdigit()));
+        assert!(nonce.bytes().all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit()));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn pipe_nonce_file_is_private() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        daemon_pipe_name(dir.path()).unwrap();
+        let mode = std::fs::metadata(dir.path().join("daemon-pipe-nonce"))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o600);
     }
 }
