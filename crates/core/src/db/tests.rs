@@ -9309,3 +9309,52 @@ fn common_manual_tags_handles_more_photos_than_sqlite_bind_limit() {
         vec!["extra".to_string(), "shared".to_string()]
     );
 }
+
+#[test]
+fn corrupt_numeric_rows_read_as_unknown_or_clamped() {
+    let db = Db::open_in_memory().unwrap();
+    let photo_id = seed_photo(&db);
+    db.save_photo_ai(photo_id, AI_PLUGIN_ID, &test_ai_result(&[("sea", 0.9)]))
+        .unwrap();
+    let derivative_id = db
+        .add_derivative(
+            photo_id,
+            "/photos/a.webp",
+            "webp",
+            16,
+            10,
+            8,
+            None,
+            CompressionOrigin::Manual,
+            "test",
+        )
+        .unwrap();
+    db.connection()
+        .execute(
+            "UPDATE photos SET file_size = -1, display_derivative_id = ?1 WHERE id = ?2",
+            params![derivative_id, photo_id],
+        )
+        .unwrap();
+    db.connection()
+        .execute(
+            "UPDATE derivatives SET file_size = -1 WHERE id = ?1",
+            params![derivative_id],
+        )
+        .unwrap();
+    db.connection()
+        .execute(
+            "UPDATE photo_ai SET people_min = 5000000000, people_max = -1, \
+                people_median = 5000000000 WHERE photo_id = ?1",
+            params![photo_id],
+        )
+        .unwrap();
+
+    let photo = db.photo_by_id(photo_id).unwrap().unwrap();
+    assert_eq!(photo.file_size, 0);
+    assert_eq!(photo.display_file_size, None);
+
+    let ai = db.photo_ai(photo_id).unwrap().unwrap();
+    assert_eq!(ai.people_min, None);
+    assert_eq!(ai.people_max, None);
+    assert_eq!(ai.people_median, None);
+}

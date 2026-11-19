@@ -659,9 +659,9 @@ fn average_color(image: &RgbaImage) -> u32 {
     if count == 0 {
         return 0;
     }
-    let red = u32::try_from(red / count).unwrap_or(u32::MAX);
-    let green = u32::try_from(green / count).unwrap_or(u32::MAX);
-    let blue = u32::try_from(blue / count).unwrap_or(u32::MAX);
+    let red = u32::try_from(red / count).unwrap_or(255);
+    let green = u32::try_from(green / count).unwrap_or(255);
+    let blue = u32::try_from(blue / count).unwrap_or(255);
     (red << 16) | (green << 8) | blue
 }
 

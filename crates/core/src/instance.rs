@@ -272,7 +272,7 @@ mod guard {
         }
 
         let offset = std::mem::size_of::<libc::sa_family_t>();
-        let length = length as usize;
+        let length = usize::try_from(length).unwrap_or(usize::MAX);
         if length <= offset
             || length > std::mem::size_of::<libc::sockaddr_un>()
             || address.sun_path[0] != 0
