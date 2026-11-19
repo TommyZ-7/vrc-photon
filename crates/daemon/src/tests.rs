@@ -3048,7 +3048,9 @@ fn loop_requeues_compression_jobs_stuck_in_processing() {
         job
     };
 
-    daemon.last_stale_job_sweep = Instant::now().checked_sub(STALE_JOB_SWEEP_INTERVAL).unwrap();
+    daemon.last_stale_job_sweep = Instant::now()
+        .checked_sub(STALE_JOB_SWEEP_INTERVAL)
+        .unwrap();
     daemon.sweep_stale_jobs();
 
     let db = daemon.db.lock().unwrap();

@@ -1097,8 +1097,8 @@ impl Daemon {
             return;
         }
         self.last_stale_job_sweep = Instant::now();
-        let cutoff =
-            (chrono::Utc::now() - chrono::Duration::minutes(STALE_JOB_TIMEOUT_MINUTES)).to_rfc3339();
+        let cutoff = (chrono::Utc::now() - chrono::Duration::minutes(STALE_JOB_TIMEOUT_MINUTES))
+            .to_rfc3339();
         match lock_db(&self.db).requeue_stale_compression_jobs(&cutoff) {
             Ok(0) => {}
             Ok(count) => {

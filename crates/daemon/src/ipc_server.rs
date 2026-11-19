@@ -1059,11 +1059,7 @@ fn spawn_disconnect_watcher(
     }
 }
 
-fn write_response<W: Write>(
-    stream: &mut W,
-    id: u64,
-    response: Response,
-) -> io::Result<()> {
+fn write_response<W: Write>(stream: &mut W, id: u64, response: Response) -> io::Result<()> {
     framing::write_message(stream, &ServerMessage::Response { id, response })
 }
 

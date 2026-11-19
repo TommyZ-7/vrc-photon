@@ -420,7 +420,11 @@ mod tests {
         assert_eq!(name, format!("vrc-photon-daemon-{nonce}"));
         assert_eq!(nonce.len(), 32);
         assert!(nonce.bytes().all(|byte| byte.is_ascii_hexdigit()));
-        assert!(nonce.bytes().all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit()));
+        assert!(
+            nonce
+                .bytes()
+                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
+        );
     }
 
     #[cfg(unix)]
