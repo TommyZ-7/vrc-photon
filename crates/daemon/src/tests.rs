@@ -3051,6 +3051,101 @@ fn daemon_open_resumes_interrupted_compression_jobs() {
 }
 
 #[test]
+fn loop_requeues_compression_jobs_stuck_in_processing() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = manual_test_daemon(&dir);
+    daemon.run_once().unwrap();
+    let job_id = {
+        let db = daemon.db.lock().unwrap();
+        let photo = db
+            .photo_by_path(original_path(&dir).to_str().unwrap())
+            .unwrap()
+            .unwrap();
+        let job = db.enqueue_job(photo.id, "p", "keep").unwrap();
+        db.next_pending_job().unwrap().unwrap();
+        db.connection()
+            .execute(
+                &format!(
+                    "UPDATE compression_jobs SET started_at = '2026-01-01T00:00:00+00:00' \
+                     WHERE id = '{job}'"
+                ),
+                [],
+            )
+            .unwrap();
+        job
+    };
+
+    daemon.last_stale_job_sweep = Instant::now()
+        .checked_sub(STALE_JOB_SWEEP_INTERVAL)
+        .unwrap();
+    daemon.sweep_stale_jobs();
+
+    let db = daemon.db.lock().unwrap();
+    let job = db
+        .list_jobs(10)
+        .unwrap()
+        .into_iter()
+        .find(|job| job.id == job_id)
+        .unwrap();
+    assert_eq!(job.status, QueueStatus::Pending);
+    assert!(job.started_at.is_none());
+}
+
+#[test]
+fn startup_error_shuts_down_workers() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = test_daemon(&dir);
+    daemon.start_workers();
+    assert!(!daemon.workers.is_empty());
+
+    let result = daemon.finish_startup(Err(anyhow::anyhow!("startup failed")));
+
+    assert!(result.is_err());
+    assert!(daemon.stopping());
+    assert!(daemon.workers.is_empty());
+}
+
+#[test]
+fn panic_in_a_compression_batch_fails_the_claimed_jobs() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = manual_test_daemon(&dir);
+    daemon.run_once().unwrap();
+    let claimed = {
+        let db = daemon.db.lock().unwrap();
+        let photo = db
+            .photo_by_path(original_path(&dir).to_str().unwrap())
+            .unwrap()
+            .unwrap();
+        db.enqueue_job(photo.id, "p", "keep").unwrap();
+        db.next_pending_job().unwrap().unwrap()
+    };
+
+    let outcomes = crate::compression::process_batch_guarded(
+        &daemon.db,
+        std::slice::from_ref(&claimed),
+        || panic!("decoder panic"),
+    );
+    assert_eq!(outcomes.len(), 1);
+    assert_eq!(outcomes[0].status, QueueStatus::Failed);
+
+    let db = daemon.db.lock().unwrap();
+    let job = db
+        .list_jobs(10)
+        .unwrap()
+        .into_iter()
+        .find(|job| job.id == claimed.id)
+        .unwrap();
+    assert_eq!(job.status, QueueStatus::Failed);
+    assert!(
+        job.error
+            .as_deref()
+            .is_some_and(|error| error.contains("decoder panic")),
+        "unexpected error: {:?}",
+        job.error
+    );
+}
+
+#[test]
 fn startup_recovers_an_interrupted_compression_job_with_an_open_session() {
     let dir = tempfile::tempdir().unwrap();
     let mut daemon = manual_test_daemon(&dir);
@@ -4701,6 +4796,14 @@ fn min_wait_uses_the_earliest_deadline_and_caps_at_the_maximum() {
 }
 
 #[test]
+fn overdue_never_panics_and_is_not_in_the_future() {
+    let before = Instant::now();
+    let value = crate::lifecycle::overdue(Duration::from_secs(60));
+    assert!(value <= before);
+    let _ = crate::lifecycle::overdue(Duration::MAX);
+}
+
+#[test]
 fn headless_idle_wait_is_at_most_one_second() {
     let dir = tempfile::tempdir().unwrap();
     let mut daemon = test_daemon(&dir);
@@ -4913,12 +5016,15 @@ fn paused_loop_defers_queued_commands_until_resume() {
     daemon.set_paused(true);
     daemon.run_loop_iteration();
     assert_eq!(daemon.db.lock().unwrap().count_photos().unwrap(), 0);
-    assert_eq!(daemon.deferred_commands.len(), 1);
+    assert!(
+        daemon.db.lock().unwrap().has_daemon_commands().unwrap(),
+        "paused commands must stay durable in the database"
+    );
 
     daemon.set_paused(false);
     daemon.run_loop_iteration();
     assert_eq!(daemon.db.lock().unwrap().count_photos().unwrap(), 1);
-    assert!(daemon.deferred_commands.is_empty());
+    assert!(!daemon.db.lock().unwrap().has_daemon_commands().unwrap());
 }
 
 #[test]
@@ -4932,13 +5038,12 @@ fn shutdown_requeues_commands_deferred_while_paused() {
     }
     daemon.set_paused(true);
     daemon.run_loop_iteration();
-    assert_eq!(daemon.deferred_commands.len(), 1);
+    assert!(daemon.db.lock().unwrap().has_daemon_commands().unwrap());
 
     daemon.shutdown();
 
     let commands = daemon.db.lock().unwrap().take_daemon_commands().unwrap();
     assert_eq!(commands, vec![DaemonCommand::Rescan]);
-    assert!(daemon.deferred_commands.is_empty());
 }
 
 #[test]

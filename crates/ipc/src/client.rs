@@ -4,7 +4,7 @@ use std::io::{self, BufReader};
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc;
-use std::sync::{Arc, Mutex, OnceLock, Weak};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, Weak};
 use std::time::Duration;
 
 use interprocess::ConnectWaitMode;
@@ -108,12 +108,22 @@ impl Drop for InFlightGuard {
 /// while every endpoint still gets a fixed ceiling.
 static REQUEST_LIMITERS: OnceLock<Mutex<HashMap<String, Weak<InFlightLimiter>>>> = OnceLock::new();
 
+/// Recovers a poisoned limiter registry instead of making every later request
+/// panic at the same lock.
+fn lock_unpoisoned<'a, T>(mutex: &'a Mutex<T>, label: &'static str) -> MutexGuard<'a, T> {
+    match mutex.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => {
+            tracing::error!(mutex = label, "recovering a poisoned mutex");
+            poisoned.into_inner()
+        }
+    }
+}
+
 fn request_limiter(endpoint: &Endpoint) -> Arc<InFlightLimiter> {
     let key = endpoint.display();
-    let mut limiters = REQUEST_LIMITERS
-        .get_or_init(|| Mutex::new(HashMap::new()))
-        .lock()
-        .unwrap();
+    let registry = REQUEST_LIMITERS.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut limiters = lock_unpoisoned(registry, "ipc.client.request_limiters");
     if let Some(limiter) = limiters.get(&key).and_then(Weak::upgrade) {
         return limiter;
     }

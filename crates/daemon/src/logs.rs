@@ -81,7 +81,7 @@ impl LogLocator {
     pub(crate) fn invalidate(&mut self) {
         self.latest = None;
         self.dir_mtime = None;
-        self.last_scan = Instant::now() - LOG_DIR_RESCAN_FALLBACK;
+        self.last_scan = crate::lifecycle::overdue(LOG_DIR_RESCAN_FALLBACK);
     }
 
     pub(crate) fn latest(&mut self) -> Result<Option<PathBuf>> {

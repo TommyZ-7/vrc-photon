@@ -1,4 +1,4 @@
-use std::io::{self, BufReader, Read};
+use std::io::{self, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender, TrySendError};
@@ -7,7 +7,6 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use interprocess::TryClone as _;
-#[cfg(unix)]
 use interprocess::local_socket::traits::Stream as _;
 use vrc_photon_core::db::Db;
 use vrc_photon_core::error::CoreError;
@@ -21,7 +20,7 @@ use vrc_photon_ipc::{
 };
 
 use crate::DaemonStatus;
-use crate::lock::{lock_db, lock_status};
+use crate::lock::{lock_db, lock_status, lock_unpoisoned};
 use crate::plugin::{AI_PLUGIN_ID, PluginError, PluginService};
 use crate::signals::{JobSignal, WakeSignal};
 use crate::tagging::TaggingControl;
@@ -37,6 +36,13 @@ const EVENT_QUEUE_CAPACITY: usize = 256;
 /// client's eight in-flight request slots to avoid rejecting a busy UI's own
 /// requests.
 const MAX_IPC_CONNECTIONS: usize = 16;
+
+/// How long a client gets to complete the Hello handshake. On Windows the
+/// stream has no working read timeout, so the handshake is read in
+/// non-blocking mode under this deadline. A stalled client therefore cannot
+/// occupy one of the connection slots forever.
+#[cfg(windows)]
+const HELLO_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Upper bound for one read-only library page requested over IPC. MCP asks
 /// for at most 200; the daemon keeps a hard cap so a stray client cannot
@@ -72,7 +78,7 @@ impl Default for EventBus {
 
 impl EventBus {
     pub(crate) fn publish(&self, event: vrc_photon_ipc::Event) {
-        let mut subscribers = self.subscribers.lock().unwrap();
+        let mut subscribers = lock_unpoisoned(&self.subscribers, "daemon.events.subscribers");
         if subscribers.len() == 1 {
             // The usual case is one UI subscriber. Move the event instead of
             // cloning it for a fan-out that has only one target.
@@ -94,7 +100,7 @@ impl EventBus {
 
     pub(crate) fn subscribe(&self) -> Receiver<vrc_photon_ipc::Event> {
         let (sender, receiver) = mpsc::sync_channel(EVENT_QUEUE_CAPACITY);
-        self.subscribers.lock().unwrap().push(sender);
+        lock_unpoisoned(&self.subscribers, "daemon.events.subscribers").push(sender);
         receiver
     }
 }
@@ -155,8 +161,8 @@ pub(crate) struct IpcControl {
     pub(crate) tagging: Arc<JobSignal>,
     pub(crate) tagging_control: Arc<TaggingControl>,
     pub(crate) db: Arc<Mutex<Db>>,
-    /// Read-only connection used by search, detail, random, and stats IPC
-    /// requests so a long read does not wait behind the writer.
+    /// Read-only connection used by search, detail, random, worlds, and stats
+    /// IPC requests so a long read does not wait behind the writer.
     pub(crate) read_db: Arc<Mutex<Db>>,
 }
 
@@ -311,11 +317,97 @@ fn accept_loop(
     }
 }
 
+/// Reads from a non-blocking stream until a fixed deadline, retrying
+/// `WouldBlock` instead of surfacing it. Used for the Windows Hello handshake,
+/// where interprocess offers no read timeout. Once the handshake completes the
+/// stream returns to blocking mode and the deadline is cleared, so the request
+/// loop does not spin.
+#[cfg(any(windows, test))]
+struct DeadlineReader<R> {
+    inner: R,
+    deadline: Option<Instant>,
+}
+
+#[cfg(any(windows, test))]
+impl<R> DeadlineReader<R> {
+    fn new(inner: R, timeout: Duration) -> Self {
+        let now = Instant::now();
+        Self {
+            inner,
+            deadline: now.checked_add(timeout).or(Some(now)),
+        }
+    }
+
+    #[cfg(windows)]
+    fn stream(&self) -> &R {
+        &self.inner
+    }
+
+    #[cfg(windows)]
+    fn clear_deadline(&mut self) {
+        self.deadline = None;
+    }
+}
+
+#[cfg(any(windows, test))]
+impl<R: Read> Read for DeadlineReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        loop {
+            let Some(deadline) = self.deadline else {
+                // The handshake is over: blocking reads and EOF behave
+                // normally.
+                return self.inner.read(buf);
+            };
+            if Instant::now() >= deadline {
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "IPC hello handshake timed out",
+                ));
+            }
+            match self.inner.read(buf) {
+                // A Windows named pipe in non-blocking mode reports an empty
+                // pipe as Ok(0) or ERROR_NO_DATA (232), which Rust maps to
+                // BrokenPipe. Both mean "not ready yet" until the deadline.
+                Ok(0) => thread::sleep(Duration::from_millis(10)),
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        io::ErrorKind::WouldBlock | io::ErrorKind::BrokenPipe
+                    ) || error.raw_os_error() == Some(232) =>
+                {
+                    thread::sleep(Duration::from_millis(10));
+                }
+                result => return result,
+            }
+        }
+    }
+}
+
+#[cfg(any(windows, test))]
+impl<R: Write> Write for DeadlineReader<R> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.inner.write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
+    }
+}
+
 fn handle_connection(
     stream: vrc_photon_ipc::server::Stream,
     control: IpcControl,
 ) -> io::Result<()> {
+    #[cfg(unix)]
     let mut reader = BufReader::new(stream);
+    #[cfg(windows)]
+    let mut reader = {
+        // interprocess named pipes ignore read timeouts. Read the handshake
+        // non-blocking under a deadline, then restore blocking mode for the
+        // request loop.
+        stream.set_nonblocking(true)?;
+        BufReader::new(DeadlineReader::new(stream, HELLO_TIMEOUT))
+    };
     #[cfg(unix)]
     {
         reader
@@ -329,6 +421,11 @@ fn handle_connection(
     let Some(hello) = framing::read_message::<_, RequestEnvelope>(&mut reader)? else {
         return Ok(());
     };
+    #[cfg(windows)]
+    {
+        reader.get_ref().stream().set_nonblocking(false)?;
+        reader.get_mut().clear_deadline();
+    }
     let Request::Hello {
         protocol_version,
         client: _,
@@ -499,7 +596,8 @@ fn handle_connection(
                         status: control.snapshot(),
                     },
                 )?;
-                stream_events(&mut reader, &control, events)?;
+                let probe = connection_probe(&reader);
+                stream_events(&mut reader, &control, events, probe)?;
                 return Ok(());
             }
             Request::WakeTagging => {
@@ -562,10 +660,7 @@ fn handle_connection(
             }
             Request::CancelTagging { job_id } => {
                 let cancelled = {
-                    let db = control
-                        .db
-                        .lock()
-                        .unwrap_or_else(|poisoned| poisoned.into_inner());
+                    let db = lock_db(&control.db);
                     db.cancel_tagging_job(&job_id)
                 };
                 let response = match cancelled {
@@ -848,7 +943,7 @@ fn library_photo_response(control: &IpcControl, photo_id: i64) -> Response {
 fn library_worlds_response(control: &IpcControl) -> Response {
     let result = (|| -> vrc_photon_core::Result<Vec<WorldSummary>> {
         let db = control
-            .db
+            .read_db
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         Ok(db
@@ -888,10 +983,27 @@ fn library_stats_response(control: &IpcControl) -> Response {
     }
 }
 
-fn stream_events(
-    reader: &mut BufReader<vrc_photon_ipc::server::Stream>,
+/// Clones the socket handle used to notice a subscription disconnect.
+#[cfg(unix)]
+fn connection_probe(
+    reader: &BufReader<vrc_photon_ipc::server::Stream>,
+) -> io::Result<vrc_photon_ipc::server::Stream> {
+    reader.get_ref().try_clone()
+}
+
+/// Clones the pipe handle used to notice a subscription disconnect.
+#[cfg(windows)]
+fn connection_probe(
+    reader: &BufReader<DeadlineReader<vrc_photon_ipc::server::Stream>>,
+) -> io::Result<vrc_photon_ipc::server::Stream> {
+    reader.get_ref().stream().try_clone()
+}
+
+fn stream_events<R: Read + Write>(
+    reader: &mut BufReader<R>,
     control: &IpcControl,
     events: Receiver<vrc_photon_ipc::Event>,
+    probe: io::Result<vrc_photon_ipc::server::Stream>,
 ) -> io::Result<()> {
     // Watch the read half on a cloned handle: after subscribing, the client
     // sends nothing, so EOF or a read error means it is gone. Without this,
@@ -899,7 +1011,7 @@ fn stream_events(
     // idle subscription leaks this thread and its EventBus sender.
     let disconnected = Arc::new(AtomicBool::new(false));
     let stop_watcher = Arc::new(AtomicBool::new(false));
-    match reader.get_ref().try_clone() {
+    match probe {
         Ok(probe) => spawn_disconnect_watcher(probe, disconnected.clone(), stop_watcher.clone()),
         Err(error) => {
             tracing::debug!(%error, "cannot watch subscription for disconnects");
@@ -976,11 +1088,7 @@ fn spawn_disconnect_watcher(
     }
 }
 
-fn write_response(
-    stream: &mut vrc_photon_ipc::server::Stream,
-    id: u64,
-    response: Response,
-) -> io::Result<()> {
+fn write_response<W: Write>(stream: &mut W, id: u64, response: Response) -> io::Result<()> {
     framing::write_message(stream, &ServerMessage::Response { id, response })
 }
 
@@ -1105,6 +1213,41 @@ mod tests {
                 searched_without_waiting,
                 "search must use the read connection instead of waiting for the writer"
             );
+        });
+    }
+
+    #[test]
+    fn worlds_do_not_wait_for_the_writer_lock() {
+        let (_dir, _endpoint, control) = test_control();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let guard = lock_db(&control.db);
+        let control_ref = &control;
+        std::thread::scope(|scope| {
+            let tx = tx.clone();
+            scope.spawn(move || {
+                let response = library_worlds_response(control_ref);
+                let _ = tx.send(matches!(response, Response::Worlds { .. }));
+            });
+            let listed_without_waiting = rx.recv_timeout(Duration::from_secs(2)).unwrap_or(false);
+            drop(guard);
+            assert!(
+                listed_without_waiting,
+                "worlds must use the read connection instead of waiting for the writer"
+            );
+        });
+    }
+
+    #[test]
+    fn event_bus_survives_a_poisoned_lock() {
+        let bus = EventBus::default();
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = bus.subscribers.lock().unwrap();
+            panic!("poison the event bus");
+        }));
+        let _receiver = bus.subscribe();
+        bus.publish(vrc_photon_ipc::Event::ScanStarted {
+            roots: 0,
+            target: None,
         });
     }
 
@@ -1952,5 +2095,99 @@ mod tests {
             Response::RandomPhotos { result } => assert_eq!(result.limit, MAX_RANDOM_LIMIT),
             other => panic!("unexpected response: {other:?}"),
         }
+    }
+
+    #[test]
+    fn deadline_reader_retries_would_block_until_data_arrives() {
+        struct OneBlock {
+            blocked: bool,
+        }
+        impl std::io::Read for OneBlock {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                if self.blocked {
+                    self.blocked = false;
+                    return Err(std::io::ErrorKind::WouldBlock.into());
+                }
+                buf[0] = b'x';
+                Ok(1)
+            }
+        }
+        let mut reader = DeadlineReader::new(OneBlock { blocked: true }, Duration::from_secs(1));
+        let mut byte = [0];
+        assert_eq!(reader.read(&mut byte).unwrap(), 1);
+        assert_eq!(byte[0], b'x');
+    }
+
+    #[test]
+    fn deadline_reader_retries_broken_pipe_until_data_arrives() {
+        struct OneBrokenPipe {
+            broken: bool,
+        }
+        impl std::io::Read for OneBrokenPipe {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                if self.broken {
+                    self.broken = false;
+                    return Err(std::io::ErrorKind::BrokenPipe.into());
+                }
+                buf[0] = b'x';
+                Ok(1)
+            }
+        }
+        let mut reader =
+            DeadlineReader::new(OneBrokenPipe { broken: true }, Duration::from_secs(1));
+        let mut byte = [0];
+        assert_eq!(reader.read(&mut byte).unwrap(), 1);
+        assert_eq!(byte[0], b'x');
+    }
+
+    #[test]
+    fn deadline_reader_retries_an_empty_read_until_data_arrives() {
+        struct OneEmptyRead {
+            empty: bool,
+        }
+        impl std::io::Read for OneEmptyRead {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                if self.empty {
+                    self.empty = false;
+                    return Ok(0);
+                }
+                buf[0] = b'x';
+                Ok(1)
+            }
+        }
+        let mut reader = DeadlineReader::new(OneEmptyRead { empty: true }, Duration::from_secs(1));
+        let mut byte = [0];
+        assert_eq!(reader.read(&mut byte).unwrap(), 1);
+        assert_eq!(byte[0], b'x');
+    }
+
+    #[test]
+    fn deadline_reader_reports_eof_after_the_deadline_is_cleared() {
+        struct AlwaysEof;
+        impl std::io::Read for AlwaysEof {
+            fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+                Ok(0)
+            }
+        }
+        let mut reader = DeadlineReader {
+            inner: AlwaysEof,
+            deadline: None,
+        };
+        let mut byte = [0];
+        assert_eq!(reader.read(&mut byte).unwrap(), 0);
+    }
+
+    #[test]
+    fn deadline_reader_times_out() {
+        struct AlwaysBlocked;
+        impl std::io::Read for AlwaysBlocked {
+            fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+                Err(std::io::ErrorKind::WouldBlock.into())
+            }
+        }
+        let mut reader = DeadlineReader::new(AlwaysBlocked, Duration::from_millis(20));
+        let mut byte = [0];
+        let error = reader.read(&mut byte).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
     }
 }

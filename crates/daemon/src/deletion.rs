@@ -8,6 +8,9 @@ pub(crate) fn deletion_loop(
     paused: Arc<AtomicBool>,
 ) {
     let mut seen_generation = 0;
+    if let Err(error) = lock_db(&db).reset_running_deletions() {
+        tracing::error!(%error, "cannot resume interrupted deletions");
+    }
     while running.load(Ordering::Relaxed) {
         if paused.load(Ordering::Relaxed) {
             jobs.wait(&mut seen_generation, DELETION_IDLE_WAIT);

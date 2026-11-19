@@ -133,9 +133,6 @@ pub struct Daemon {
     pub(crate) last_presence_check: Instant,
     pub(crate) workers: Vec<JoinHandle<()>>,
     pub(crate) dirty_paths: Vec<PathBuf>,
-    /// Commands consumed from the database while paused. They run in order
-    /// once the daemon resumes, so pausing never loses an explicit request.
-    pub(crate) deferred_commands: Vec<DaemonCommand>,
     pub(crate) last_log_poll: std::time::Instant,
     pub(crate) tray: Option<Tray>,
     pub(crate) tray_enabled: bool,
@@ -151,6 +148,9 @@ pub struct Daemon {
     pub(crate) last_data_version: Option<i64>,
     pub(crate) last_session_status: Instant,
     pub(crate) last_counts_status: Instant,
+    /// Last time the main loop looked for compression jobs stranded by a
+    /// worker panic.
+    pub(crate) last_stale_job_sweep: Instant,
     pub(crate) last_published_status: Option<StatusSnapshot>,
     pub(crate) last_heartbeat: std::time::Instant,
     pub(crate) last_asset_check: Instant,
@@ -192,6 +192,14 @@ pub(crate) fn min_wait(waits: &[Duration], cap: Duration) -> Duration {
         .unwrap_or(cap)
         .min(cap)
         .max(Duration::from_millis(10))
+}
+
+/// Returns `Instant::now() - interval`, clamped to now when the monotonic
+/// clock is younger than `interval` (fresh VM, container, or early boot).
+pub(crate) fn overdue(interval: Duration) -> Instant {
+    Instant::now()
+        .checked_sub(interval)
+        .unwrap_or_else(Instant::now)
 }
 
 impl Daemon {
@@ -382,11 +390,10 @@ impl Daemon {
             vrchat_probe: VrchatProcessProbe::new(),
             vrchat_missing_polls: 0,
             vrchat_session_id: None,
-            last_presence_check: Instant::now() - PRESENCE_INTERVAL,
+            last_presence_check: overdue(PRESENCE_INTERVAL),
             workers: Vec::new(),
             dirty_paths: Vec::new(),
-            deferred_commands: Vec::new(),
-            last_log_poll: std::time::Instant::now() - LOG_INTERVAL,
+            last_log_poll: overdue(LOG_INTERVAL),
             tray: None,
             tray_enabled,
             thumbnail_tx: None,
@@ -397,12 +404,13 @@ impl Daemon {
             owns_deletion_executor,
             deletion_handle: None,
             last_autostart_check: std::time::Instant::now(),
-            last_settings_check: Instant::now() - Duration::from_secs(2),
+            last_settings_check: overdue(Duration::from_secs(2)),
             last_data_version: None,
-            last_session_status: Instant::now() - SESSION_STATUS_INTERVAL,
-            last_counts_status: Instant::now() - COUNTS_STATUS_INTERVAL,
+            last_session_status: overdue(SESSION_STATUS_INTERVAL),
+            last_counts_status: overdue(COUNTS_STATUS_INTERVAL),
+            last_stale_job_sweep: overdue(STALE_JOB_SWEEP_INTERVAL),
             last_published_status: None,
-            last_heartbeat: std::time::Instant::now() - Duration::from_secs(10),
+            last_heartbeat: overdue(Duration::from_secs(10)),
             last_asset_check: Instant::now(),
             full_asset_check_due: false,
             thumbnail_dir,
@@ -620,31 +628,28 @@ impl Daemon {
     /// watchers for the new roots, runs each command in request order, then
     /// refreshes the status view. Commands are consumed even when they fail so
     /// a broken request cannot loop forever; the failure is recorded under its
-    /// operation instead.
+    /// operation instead. While paused no row is touched, so a crash cannot
+    /// lose a request; the work waits for resume.
     ///
     /// When `initial_scan` is `Some(true)`, targeted `ScanRoot` commands run
     /// before full rescans. An import into an empty library must be indexed as
     /// new work before the startup scan can classify it as backlog.
     pub(crate) fn poll_commands_with_initial(&mut self, initial_scan: Option<bool>) -> Result<()> {
-        let mut commands = std::mem::take(&mut self.deferred_commands);
-        {
+        if self.is_paused() {
+            return Ok(());
+        }
+        let mut commands = {
             let db = lock_db(&self.db);
-            if commands.is_empty() && !db.has_daemon_commands()? {
+            if !db.has_daemon_commands()? {
                 return Ok(());
             }
-            commands.extend(db.take_daemon_commands()?);
-        }
+            db.take_daemon_commands()?
+        };
         if commands.is_empty() {
             return Ok(());
         }
         self.reload_settings()?;
         self.restart_watchers();
-        if self.is_paused() {
-            // Settings and watchers above still apply while paused, but the
-            // scan/relink work these commands represent waits for resume.
-            self.deferred_commands = commands;
-            return Ok(());
-        }
         if initial_scan == Some(true) {
             commands.sort_by_key(|command| !matches!(command, DaemonCommand::ScanRoot { .. }));
         }
@@ -984,6 +989,34 @@ impl Daemon {
         Ok(())
     }
 
+    /// Runs the fallible startup work after workers exist. Any error here is
+    /// finished by [`Self::finish_startup`], which stops those workers.
+    pub(crate) fn run_startup_tasks(&mut self) -> Result<()> {
+        self.startup_scan()?;
+        if self.stopping() {
+            return Ok(());
+        }
+        // The startup scan runs before logs are ingested, so its link pass can
+        // record a retry before the sessions needed to link are available.
+        // Clear that schedule once at startup; the periodic loop keeps the
+        // backoff and only retries due photos.
+        self.make_unlinked_photos_due()?;
+        self.ingest_logs()?;
+        self.poll_vrchat_presence()?;
+        self.link_unlinked()?;
+        Ok(())
+    }
+
+    /// Finishes the fallible startup phase. An error or a stop request must
+    /// run the full shutdown path: `Drop` only raises flags and would leave
+    /// workers and the AI sidecar running.
+    pub(crate) fn finish_startup(&mut self, result: Result<()>) -> Result<()> {
+        if result.is_err() || self.stopping() {
+            self.shutdown();
+        }
+        result
+    }
+
     pub fn run(&mut self) -> Result<()> {
         let _ = prune_thumbnail_cache(
             &self.thumbnail_dir,
@@ -1000,21 +1033,9 @@ impl Daemon {
         // already queued compression, tagging, or deletion work. The scan now
         // takes the database mutex only for short per-photo operations.
         self.start_workers();
-        self.startup_scan()?;
+        let startup = self.run_startup_tasks();
+        self.finish_startup(startup)?;
         if self.stopping() {
-            self.shutdown();
-            return Ok(());
-        }
-        // The startup scan runs before logs are ingested, so its link pass can
-        // record a retry before the sessions needed to link are available.
-        // Clear that schedule once at startup; the periodic loop keeps the
-        // backoff and only retries due photos.
-        self.make_unlinked_photos_due()?;
-        self.ingest_logs()?;
-        self.poll_vrchat_presence()?;
-        self.link_unlinked()?;
-        if self.stopping() {
-            self.shutdown();
             return Ok(());
         }
         self.write_heartbeat();
@@ -1068,6 +1089,26 @@ impl Daemon {
         self.full_asset_check_due = false;
     }
 
+    /// Returns compression jobs stranded in `processing` by a panicked worker
+    /// to the queue. A supervised restart keeps the daemon alive, so the
+    /// startup-only recovery in `Daemon::open` never sees these rows.
+    pub(crate) fn sweep_stale_jobs(&mut self) {
+        if self.last_stale_job_sweep.elapsed() < STALE_JOB_SWEEP_INTERVAL {
+            return;
+        }
+        self.last_stale_job_sweep = Instant::now();
+        let cutoff = (chrono::Utc::now() - chrono::Duration::minutes(STALE_JOB_TIMEOUT_MINUTES))
+            .to_rfc3339();
+        match lock_db(&self.db).requeue_stale_compression_jobs(&cutoff) {
+            Ok(0) => {}
+            Ok(count) => {
+                tracing::warn!(count, "requeued stale compression jobs");
+                self.jobs.notify();
+            }
+            Err(error) => tracing::error!(%error, "cannot requeue stale compression jobs"),
+        }
+    }
+
     /// One supervised iteration of the background loop. Pause gates only the
     /// heavy work below; heartbeat, status, tray, log ingestion, watcher event
     /// collection, settings refreshes, and IPC keep running so a paused daemon
@@ -1078,6 +1119,7 @@ impl Daemon {
         }
         self.refresh_periodic_settings();
         self.poll_watchers();
+        self.sweep_stale_jobs();
 
         let paused = self.is_paused();
         if !paused
@@ -1723,23 +1765,7 @@ impl Daemon {
         }
     }
 
-    /// Puts commands consumed while paused back into the database so a
-    /// graceful shutdown does not drop an explicit user request.
-    pub(crate) fn persist_deferred_commands(&mut self) {
-        if self.deferred_commands.is_empty() {
-            return;
-        }
-        let commands = std::mem::take(&mut self.deferred_commands);
-        let db = lock_db(&self.db);
-        for command in commands {
-            if let Err(error) = db.request_daemon_command(command) {
-                tracing::warn!(%error, "cannot requeue daemon command deferred while paused");
-            }
-        }
-    }
-
     pub(crate) fn shutdown(&mut self) {
-        self.persist_deferred_commands();
         self.ipc = None;
         self.running.store(false, Ordering::Relaxed);
         self.wake.notify();
@@ -1762,7 +1788,6 @@ impl Daemon {
 
 impl Drop for Daemon {
     fn drop(&mut self) {
-        self.persist_deferred_commands();
         self.ipc = None;
         self.running.store(false, Ordering::Relaxed);
         self.jobs.notify();
