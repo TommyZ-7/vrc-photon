@@ -263,9 +263,7 @@ impl App {
             return;
         }
         self.settings.auto_compress_keep_original = keep;
-        if let Err(error) = self.settings.save(&self.db) {
-            tracing::warn!(%error, "cannot save keep-original setting");
-        }
+        self.schedule_settings_save(cx);
         cx.notify();
     }
 

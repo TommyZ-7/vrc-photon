@@ -1054,9 +1054,7 @@ impl App {
             return;
         }
         self.settings.ui_max_fps = fps;
-        if let Err(error) = self.settings.save(&self.db) {
-            tracing::warn!(%error, "cannot save max fps");
-        }
+        self.schedule_settings_save(cx);
         cx.notify();
     }
 
@@ -1066,9 +1064,7 @@ impl App {
         }
         self.capture_display_layout_anchors();
         self.settings.ui_card_size = size;
-        if let Err(error) = self.settings.save(&self.db) {
-            tracing::warn!(%error, "cannot save card size");
-        }
+        self.schedule_settings_save(cx);
         cx.notify();
     }
 
@@ -1094,9 +1090,7 @@ impl App {
 
     /// Persists a grid-gap or card-radius change once the slider is released.
     pub(crate) fn save_grid_display_settings(&mut self, cx: &mut Context<Self>) {
-        if let Err(error) = self.settings.save(&self.db) {
-            tracing::warn!(%error, "cannot save grid display settings");
-        }
+        self.schedule_settings_save(cx);
         cx.notify();
     }
 
@@ -1104,10 +1098,7 @@ impl App {
     /// generated with the previous spec, so drop them and let the grid request
     /// the new variant on its next frame.
     pub(crate) fn save_thumbnail_settings(&mut self, cx: &mut Context<Self>) {
-        if let Err(error) = self.settings.save(&self.db) {
-            tracing::warn!(%error, "cannot save thumbnail settings");
-            self.toast_error(tr_args!("settings.language.save_failed", error = error), cx);
-        }
+        self.schedule_settings_save(cx);
         self.thumbnails.borrow_mut().clear();
         cx.notify();
     }
@@ -1197,9 +1188,7 @@ impl App {
 
     pub(crate) fn set_reduce_motion(&mut self, enabled: bool, cx: &mut Context<Self>) {
         self.settings.ui_reduce_motion = enabled;
-        if let Err(error) = self.settings.save(&self.db) {
-            tracing::warn!(%error, "cannot save reduce-motion setting");
-        }
+        self.schedule_settings_save(cx);
         cx.set_reduce_motion(enabled);
         cx.notify();
     }
