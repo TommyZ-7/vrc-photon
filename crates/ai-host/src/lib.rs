@@ -4,6 +4,13 @@
 //! the UI, or GPUI. Plugin packages are signed with minisign and contain a
 //! `manifest.json` whose `files` list covers every other file in the ZIP.
 
+// #762 staged rollout: core casts are enforced first. This crate keeps
+// the lint allowed with a reason so the exception is visible and greppable.
+#![allow(
+    clippy::as_conversions,
+    reason = "Staged #762 rollout: vrc-photon-core casts are enforced first; this crate follows"
+)]
+
 pub mod error;
 pub mod http;
 pub mod install;

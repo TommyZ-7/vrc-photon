@@ -275,7 +275,7 @@ fn encode_webp(image: &DynamicImage, quality: u8, lossless: bool) -> Result<Vec<
         let data = if lossless {
             encoder.encode_lossless()
         } else {
-            encoder.encode(quality as f32)
+            encoder.encode(f32::from(quality))
         };
         return Ok(data.to_vec());
     }
@@ -284,7 +284,7 @@ fn encode_webp(image: &DynamicImage, quality: u8, lossless: bool) -> Result<Vec<
     let data = if lossless {
         encoder.encode_lossless()
     } else {
-        encoder.encode(quality as f32)
+        encoder.encode(f32::from(quality))
     };
     Ok(data.to_vec())
 }
@@ -296,12 +296,15 @@ fn encode_avif(image: &DynamicImage, quality: u8, lossless: bool, speed: u8) -> 
         Some(rgba) => Cow::Borrowed(rgba.as_raw()),
         None => Cow::Owned(image.to_rgba8().into_raw()),
     };
-    let (width, height) = (image.width() as usize, image.height() as usize);
+    let (width, height) = (
+        usize::try_from(image.width()).unwrap_or(usize::MAX),
+        usize::try_from(image.height()).unwrap_or(usize::MAX),
+    );
     let pixels: &[rgb::RGBA<u8>] = rgb::bytemuck::cast_slice(&rgba);
     let image_ref = imgref::Img::new(pixels, width, height);
     // ravif has no true lossless switch; quality 100 is the closest available
     // setting. The UI labels this as "lossless (approx.)".
-    let quality = if lossless { 100.0 } else { quality as f32 };
+    let quality = if lossless { 100.0 } else { f32::from(quality) };
     let encoded = ravif::Encoder::new()
         .with_quality(quality)
         .with_speed(speed)
@@ -341,7 +344,7 @@ fn encode_jxl(image: &DynamicImage, quality: u8, lossless: bool, speed: u8) -> R
             .speed(jxl_speed)
             .build()
             .map_err(|error| CoreError::Invalid(format!("JXL encoder init failed: {error}")))?;
-        encoder.quality = (1.0 - quality as f32 / 100.0) * 15.0;
+        encoder.quality = (1.0 - f32::from(quality) / 100.0) * 15.0;
         encoder
     };
 
@@ -351,6 +354,10 @@ fn encode_jxl(image: &DynamicImage, quality: u8, lossless: bool, speed: u8) -> R
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::as_conversions,
+    reason = "test fixtures build small pixel constants"
+)]
 mod tests {
     use super::*;
     use image::{GenericImageView as _, ImageBuffer, Rgb, RgbImage, Rgba, RgbaImage};

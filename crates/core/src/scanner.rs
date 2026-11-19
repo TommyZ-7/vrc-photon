@@ -338,7 +338,7 @@ fn read_photo(path: &Path, rel_path: String) -> std::result::Result<ScannedPhoto
         .modified()
         .ok()
         .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|duration| duration.as_secs() as i64)
+        .map(|duration| i64::try_from(duration.as_secs()).unwrap_or(i64::MAX))
         .unwrap_or(0);
 
     let mut parsed = parse_photo_filename(&file_name).unwrap_or_else(|| {
@@ -819,6 +819,10 @@ fn rebind_moved_photo<S: ScanStore + ?Sized>(db: &S, new_photo: &NewPhoto) -> Re
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::as_conversions,
+    reason = "test fixtures build small pixel constants"
+)]
 mod tests {
     use super::*;
     use crate::model::PhotoStatus;

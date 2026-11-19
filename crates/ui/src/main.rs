@@ -1,4 +1,10 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
+// #762 staged rollout: core casts are enforced first. This crate keeps
+// the lint allowed with a reason so the exception is visible and greppable.
+#![allow(
+    clippy::as_conversions,
+    reason = "Staged #762 rollout: vrc-photon-core casts are enforced first; this crate follows"
+)]
 
 //! VRC PhotoN desktop entry point.
 //!

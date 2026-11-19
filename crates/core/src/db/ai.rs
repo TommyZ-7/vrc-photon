@@ -258,7 +258,7 @@ impl Db {
                         definition.name_en,
                         definition.description,
                         definition.default_threshold,
-                        sort_order as i64,
+                        i64_from_usize(sort_order),
                         catalog.version,
                         now_string(),
                     ],
@@ -816,7 +816,7 @@ impl Db {
                 photo_id: Some(row.get(1)?),
                 photo_name: row.get(2)?,
                 state: QueueState::from_tagging_status(status).unwrap_or(QueueState::Pending),
-                progress: row.get::<_, f64>(4)? as f32,
+                progress: f32_from_f64(row.get::<_, f64>(4)?),
                 detail: row.get(5)?,
                 created_at: row.get(6)?,
             })
@@ -1134,15 +1134,9 @@ fn row_to_photo_ai(row: &Row<'_>) -> rusqlite::Result<PhotoAi> {
         presence_threshold: row.get(8)?,
         character_present: row.get::<_, i64>(9)? != 0,
         presence_probability: row.get(10)?,
-        people_min: row
-            .get::<_, Option<i64>>(11)?
-            .map(|value| value.max(0) as u32),
-        people_max: row
-            .get::<_, Option<i64>>(12)?
-            .map(|value| value.max(0) as u32),
-        people_median: row
-            .get::<_, Option<i64>>(13)?
-            .map(|value| value.max(0) as u32),
+        people_min: row.get::<_, Option<i64>>(11)?.map(u32_from_i64),
+        people_max: row.get::<_, Option<i64>>(12)?.map(u32_from_i64),
+        people_median: row.get::<_, Option<i64>>(13)?.map(u32_from_i64),
         place_branch: row.get(14)?,
         place_probabilities_json: row.get(15)?,
         tagged_at: row.get(16)?,

@@ -409,7 +409,10 @@ impl Daemon {
         {
             self.log_locator = Some(LogLocator::new(log_dir.clone()));
         }
-        let path = match self.log_locator.as_mut().unwrap().latest() {
+        let Some(locator) = self.log_locator.as_mut() else {
+            return Ok(());
+        };
+        let path = match locator.latest() {
             Ok(Some(path)) => path,
             Ok(None) => return Ok(()),
             Err(error) => {
@@ -488,7 +491,9 @@ impl Daemon {
             });
         }
 
-        let tail = self.log_tail.as_mut().unwrap();
+        let Some(tail) = self.log_tail.as_mut() else {
+            return Ok(LogPass::default());
+        };
         if size < tail.offset {
             tail.offset = 0;
             tail.ingestor = LogIngestor::new(&path_string);
@@ -594,6 +599,9 @@ impl Daemon {
 
 #[cfg(test)]
 mod tests {
+    // Test clocks only subtract fixed, small durations; a panic here is the test failure.
+    #![allow(clippy::unchecked_time_subtraction)]
+
     use super::*;
     use std::fs;
 

@@ -199,7 +199,7 @@ impl Db {
                  HAVING COUNT(DISTINCT pt.photo_id) = ?1"
             );
             let mut values = Vec::with_capacity(chunk.len() + 1);
-            values.push(chunk.len() as i64);
+            values.push(i64_from_usize(chunk.len()));
             values.extend(chunk.iter().copied());
             let mut stmt = self.conn.prepare_cached(&sql)?;
             let rows = stmt.query_map(params_from_iter(values), |row| row.get::<_, String>(0))?;
@@ -255,8 +255,9 @@ impl Db {
                     .query_row(&sql, params_from_iter(chunk.iter().copied()), |row| {
                         row.get(0)
                     })?;
-            if count as usize != chunk.len() {
-                let missing = chunk.len() - count as usize;
+            let count = usize_from_i64(count);
+            if count != chunk.len() {
+                let missing = chunk.len() - count;
                 return Err(CoreError::NotFound(format!(
                     "{missing} photo(s) in a bulk tag operation"
                 )));

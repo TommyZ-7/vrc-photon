@@ -16,3 +16,6 @@ path = "src/main.rs"
 [dependencies]
 vrc-photon-ai-protocol = { path = "../ai-protocol" }
 serde_json.workspace = true
+
+[lints]
+workspace = true

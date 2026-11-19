@@ -199,7 +199,13 @@ mod guard {
         }
     }
 
+    #[allow(
+        clippy::as_conversions,
+        reason = "libc ABI: pointer and address-family casts cannot be expressed as TryFrom without changing their meaning"
+    )]
     fn bind_abstract(socket: RawFd, name: &[u8]) -> io::Result<()> {
+        // SAFETY: `sockaddr_un` is plain old data; zeroing it is a valid
+        // initial state that the code below fills in before `bind`.
         let mut address: libc::sockaddr_un = unsafe { std::mem::zeroed() };
         address.sun_family = libc::AF_UNIX as libc::sa_family_t;
         for (index, byte) in name.iter().enumerate() {
@@ -244,7 +250,13 @@ mod guard {
         None
     }
 
+    #[allow(
+        clippy::as_conversions,
+        reason = "libc ABI: pointer and address-family casts cannot be expressed as TryFrom without changing their meaning"
+    )]
     fn fd_is_abstract_socket(fd: RawFd, expected: &[u8]) -> bool {
+        // SAFETY: `sockaddr_un` is plain old data; zeroing it is a valid
+        // initial state for the `getsockname` call below.
         let mut address: libc::sockaddr_un = unsafe { std::mem::zeroed() };
         let mut length = std::mem::size_of::<libc::sockaddr_un>() as libc::socklen_t;
         // SAFETY: `getsockname` writes at most `length` bytes into `address`.
@@ -346,6 +358,7 @@ mod guard {
 pub use guard::InstanceGuard;
 
 #[cfg(test)]
+#[allow(clippy::as_conversions, reason = "test asserts on libc ABI values")]
 mod tests {
     use super::*;
 
@@ -416,17 +429,26 @@ mod tests {
     }
 
     #[cfg(target_os = "linux")]
+    #[allow(
+        clippy::as_conversions,
+        reason = "libc ABI: pointer and address-family casts cannot be expressed as TryFrom without changing their meaning"
+    )]
     fn bind_without_close_on_exec(name: &str) -> std::os::fd::RawFd {
         // Mimics single-instance 0.3.3, which created the Linux socket without
         // SOCK_CLOEXEC.
+        // SAFETY: `socket` has no preconditions; the fd is checked below.
         let socket = unsafe { libc::socket(libc::AF_UNIX, libc::SOCK_STREAM, 0) };
         assert!(socket >= 0, "{}", std::io::Error::last_os_error());
+        // SAFETY: `sockaddr_un` is plain old data; zeroing it is a valid
+        // initial state that the code below fills in before `bind`.
         let mut address: libc::sockaddr_un = unsafe { std::mem::zeroed() };
         address.sun_family = libc::AF_UNIX as libc::sa_family_t;
         for (index, byte) in name.as_bytes().iter().enumerate() {
             address.sun_path[index + 1] = *byte as libc::c_char;
         }
         let length = (std::mem::size_of::<libc::sa_family_t>() + 1 + name.len()) as libc::socklen_t;
+        // SAFETY: `address` is initialized for the abstract name and is large
+        // enough for the validated name length.
         let result = unsafe {
             libc::bind(
                 socket,

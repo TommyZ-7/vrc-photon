@@ -82,3 +82,13 @@ lto = "thin"
 codegen-units = 1
 strip = "symbols"
 
+# Five lints from the pre-release review (#762). `expect_used` stays allowed:
+# the review only asked for unwrap in production and several call sites
+# legitimately expect on values they just constructed.
+[workspace.lints.clippy]
+unwrap_used = "warn"
+expect_used = "allow"
+as_conversions = "warn"
+undocumented_unsafe_blocks = "warn"
+unchecked_time_subtraction = "warn"
+wildcard_imports = "warn"

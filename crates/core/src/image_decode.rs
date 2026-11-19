@@ -219,7 +219,9 @@ fn decode_jpeg_scaled(
     }
     let file = fs::File::open(source).ok()?;
     let mut decoder = jpeg_decoder::Decoder::new(std::io::BufReader::new(file));
-    decoder.set_max_decoding_buffer_size(MAX_DECODE_ALLOC_BYTES as usize);
+    decoder.set_max_decoding_buffer_size(
+        usize::try_from(MAX_DECODE_ALLOC_BYTES).unwrap_or(usize::MAX),
+    );
     decoder.read_info().ok()?;
     let info = decoder.info()?;
     let width = u32::from(info.width);
@@ -230,7 +232,7 @@ fn decode_jpeg_scaled(
     if !within_pixel_limit(width, height) {
         return reject_too_many_pixels(source, width, height);
     }
-    let requested = max_size.min(u32::from(u16::MAX)) as u16;
+    let requested = u16::try_from(max_size.min(u32::from(u16::MAX))).unwrap_or(u16::MAX);
     decoder.scale(requested, requested).ok()?;
     let pixels = decoder.decode().ok()?;
     // The codec pixel decode cannot be interrupted; stop before expansion.
@@ -674,6 +676,10 @@ fn read_compressed(path: &Path) -> Option<Vec<u8>> {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::as_conversions,
+    reason = "test fixtures build small pixel constants"
+)]
 pub(crate) mod test_support {
     use std::fs;
     use std::path::Path;
@@ -708,6 +714,10 @@ pub(crate) mod test_support {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::as_conversions,
+    reason = "test fixtures build small pixel constants"
+)]
 mod tests {
     use super::*;
     use crate::compressor;

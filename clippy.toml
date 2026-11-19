@@ -1,0 +1,7 @@
+# `allow-unwrap-in-tests` keeps the five lint additions from #762 useful:
+# production unwraps are what the review asked to eliminate, and test helpers
+# unwrap fixtures on purpose. `allowed-wildcard-imports` preserves the project's
+# structural glob style (`use super::*`, gpui-kit reexports, the schema and
+# theme modules) instead of rewriting 121 imports for no safety gain.
+allow-unwrap-in-tests = true
+allowed-wildcard-imports = ["super", "gpui_kit", "schema", "theme"]

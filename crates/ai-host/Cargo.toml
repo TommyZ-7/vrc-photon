@@ -38,3 +38,6 @@ test-support = ["dep:minisign"]
 # Exposes the in-memory EOCD validator to the standalone `fuzz/` workspace.
 # Not enabled for normal builds.
 fuzz-support = []
+
+[lints]
+workspace = true

@@ -35,3 +35,6 @@ vrc-photon-ipc = { path = "../ipc" }
 [dev-dependencies]
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 tempfile = "3"
+
+[lints]
+workspace = true

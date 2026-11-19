@@ -6,6 +6,7 @@
 pub mod ai;
 pub mod bc7;
 mod cache_metadata;
+mod cast;
 pub mod compressor;
 pub mod db;
 pub mod discord;

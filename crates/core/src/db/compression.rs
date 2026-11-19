@@ -54,7 +54,7 @@ impl Db {
         let stored: i64 = tx.query_row("SELECT COUNT(*) FROM compression_profiles", [], |row| {
             row.get(0)
         })?;
-        if stored != ids.len() as i64 {
+        if stored != i64_from_usize(ids.len()) {
             return Err(CoreError::Invalid(
                 "profile order must list every profile".to_string(),
             ));
@@ -70,7 +70,7 @@ impl Db {
         for (index, id) in ids.iter().enumerate() {
             let changed = tx.execute(
                 "UPDATE compression_profiles SET sort_order = ?1 WHERE id = ?2",
-                params![index as i64, id],
+                params![i64_from_usize(index), id],
             )?;
             if changed != 1 {
                 return Err(CoreError::NotFound(format!("compression profile {id}")));
@@ -133,12 +133,12 @@ impl Db {
         for (index, (stored_id, _)) in ordered.iter().enumerate() {
             tx.execute(
                 "UPDATE compression_profiles SET sort_order = ?1 WHERE id = ?2",
-                params![index as i64, stored_id],
+                params![i64_from_usize(index), stored_id],
             )?;
         }
         tx.execute(
             "UPDATE compression_profiles SET sort_order = sort_order + 1 WHERE sort_order > ?1",
-            params![source_index as i64],
+            params![i64_from_usize(source_index)],
         )?;
 
         let copy = CompressionProfile {
@@ -146,7 +146,7 @@ impl Db {
             name,
             ..ordered[source_index].1.clone()
         };
-        Self::write_profile(&tx, &copy, source_index as i64 + 1)?;
+        Self::write_profile(&tx, &copy, i64_from_usize(source_index) + 1)?;
         tx.commit()?;
         Ok(copy)
     }
@@ -163,7 +163,7 @@ impl Db {
         }
         let transaction = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
         for (index, profile) in CompressionProfile::defaults().into_iter().enumerate() {
-            Self::write_profile(&transaction, &profile, index as i64)?;
+            Self::write_profile(&transaction, &profile, i64_from_usize(index))?;
         }
         transaction.commit()?;
         self.list_profiles()
@@ -705,7 +705,7 @@ impl Db {
                 photo_id: Some(row.get(1)?),
                 photo_name: row.get(2)?,
                 state: QueueState::from_queue_status(status).unwrap_or(QueueState::Pending),
-                progress: row.get::<_, f64>(4)? as f32,
+                progress: f32_from_f64(row.get::<_, f64>(4)?),
                 detail: row.get(5)?,
                 created_at: row.get(6)?,
             })
