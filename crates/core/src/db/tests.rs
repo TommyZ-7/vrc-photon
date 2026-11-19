@@ -7772,7 +7772,7 @@ fn bundled_sqlite_supports_strftime_in_stored_generated_columns() {
 }
 
 #[test]
-fn fresh_database_is_initialized_to_v21() {
+fn fresh_database_is_initialized_to_v1() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("library.db");
     let db = Db::open(&path).unwrap();
@@ -7781,7 +7781,7 @@ fn fresh_database_is_initialized_to_v21() {
         .connection()
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 21);
+    assert_eq!(version, 1);
 
     let tables: i64 = db
         .connection()
@@ -7831,11 +7831,21 @@ fn fresh_database_is_initialized_to_v21() {
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(migrations_table, 0);
+    assert_eq!(migrations_table, 1);
+
+    let applied: Vec<i64> = db
+        .connection()
+        .prepare("SELECT version FROM schema_migrations ORDER BY version")
+        .unwrap()
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .unwrap();
+    assert_eq!(applied, vec![1]);
 }
 
 #[test]
-fn existing_v21_database_opens_without_reinitializing() {
+fn existing_v1_database_opens_without_reinitializing() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("library.db");
     let db = Db::open(&path).unwrap();
@@ -7883,7 +7893,12 @@ fn v20_database_is_rejected_without_modification() {
         panic!("expected an explicit schema error, got {error:?}");
     };
     assert!(message.contains("20"), "{message}");
-    assert!(message.contains("cannot be migrated"), "{message}");
+    assert!(message.contains("newer than this build supports"), "{message}");
+    assert!(
+        message.contains("update VRC PhotoN before opening it"),
+        "{message}"
+    );
+    assert!(!message.contains("cannot be migrated"), "{message}");
 
     let after = std::fs::read(&path).unwrap();
     assert_eq!(before, after, "the rejected database must not be modified");
@@ -7912,7 +7927,12 @@ fn v18_database_is_rejected_without_modification() {
         panic!("expected an explicit schema error, got {error:?}");
     };
     assert!(message.contains("18"), "{message}");
-    assert!(message.contains("cannot be migrated"), "{message}");
+    assert!(message.contains("newer than this build supports"), "{message}");
+    assert!(
+        message.contains("update VRC PhotoN before opening it"),
+        "{message}"
+    );
+    assert!(!message.contains("cannot be migrated"), "{message}");
 
     let after = std::fs::read(&path).unwrap();
     assert_eq!(before, after, "the rejected database must not be modified");
@@ -7947,6 +7967,73 @@ fn v18_database_is_rejected_by_open_read_only_without_modification() {
 
     let after = std::fs::read(&path).unwrap();
     assert_eq!(before, after, "the rejected database must not be modified");
+}
+
+#[test]
+fn migration_runner_applies_steps_one_version_at_a_time() {
+    let db = Db::open_in_memory().unwrap();
+    let tx = Transaction::new_unchecked(db.connection(), TransactionBehavior::Immediate).unwrap();
+    let applied = schema::apply_migrations(
+        &tx,
+        SCHEMA_BASE_VERSION,
+        &[
+            schema::Migration {
+                version: 2,
+                sql: "CREATE TABLE migration_probe(value TEXT); \
+                      INSERT INTO migration_probe(value) VALUES ('two');",
+            },
+            schema::Migration {
+                version: 3,
+                sql: "ALTER TABLE migration_probe ADD COLUMN extra TEXT;",
+            },
+        ],
+        3,
+    )
+    .unwrap();
+    tx.commit().unwrap();
+
+    assert_eq!(applied, 3);
+    let version: i64 = db
+        .connection()
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, 3);
+    let applied_versions: Vec<i64> = db
+        .connection()
+        .prepare("SELECT version FROM schema_migrations ORDER BY version")
+        .unwrap()
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .unwrap();
+    assert_eq!(applied_versions, vec![1, 2, 3]);
+}
+
+#[test]
+fn migration_runner_rejects_a_gap() {
+    let db = Db::open_in_memory().unwrap();
+    let tx = Transaction::new_unchecked(db.connection(), TransactionBehavior::Immediate).unwrap();
+    let error = schema::apply_migrations(
+        &tx,
+        SCHEMA_BASE_VERSION,
+        &[schema::Migration {
+            version: 3,
+            sql: "CREATE TABLE skipped(value TEXT);",
+        }],
+        3,
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("does not follow version 1"));
+}
+
+#[test]
+fn migration_chain_matches_schema_version() {
+    let mut expected = SCHEMA_BASE_VERSION;
+    for migration in schema::MIGRATIONS {
+        assert_eq!(migration.version, expected + 1);
+        expected = migration.version;
+    }
+    assert_eq!(expected, SCHEMA_VERSION);
 }
 
 #[test]

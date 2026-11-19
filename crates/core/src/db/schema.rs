@@ -1,12 +1,15 @@
 /// Highest schema version this build understands.
-pub(crate) const SCHEMA_VERSION: i64 = 21;
+pub(crate) const SCHEMA_VERSION: i64 = 1;
 
-/// Integrated schema for a new v21 database.
-///
-/// This is the schema produced by the previous migration chain. Existing
-/// v21 databases are opened as-is; older schemas are rejected without
-/// modification instead of being migrated in place.
-pub(crate) const SCHEMA_LATEST: &str = r##"
+/// Schema version created by [`SCHEMA_V1`].
+pub(crate) const SCHEMA_BASE_VERSION: i64 = 1;
+
+/// Initial schema, frozen at v1. Do not edit; add a [`Migration`] instead.
+pub(crate) const SCHEMA_V1: &str = r##"
+CREATE TABLE schema_migrations (
+    version INTEGER PRIMARY KEY,
+    applied_at TEXT NOT NULL
+);
 CREATE TABLE ai_tag_definitions (
     plugin_id TEXT NOT NULL,
     tag_key TEXT NOT NULL,
@@ -466,34 +469,100 @@ BEGIN
 END;
 "##;
 
-use rusqlite::{Connection, Transaction, TransactionBehavior};
+/// One schema upgrade step. Steps are applied in ascending, gap-free order.
+pub(crate) struct Migration {
+    pub version: i64,
+    pub sql: &'static str,
+}
 
-use crate::error::Result;
+/// Ordered one-version-at-a-time migrations above [`SCHEMA_BASE_VERSION`].
+/// 1.0.0 時点では 0 件。
+pub(crate) const MIGRATIONS: &[Migration] = &[];
 
-/// Creates the latest schema in one immediate transaction.
-pub(crate) fn initialize(conn: &Connection) -> Result<()> {
+use rusqlite::{Connection, Transaction, TransactionBehavior, params};
+
+use crate::error::{CoreError, Result};
+
+/// Creates the v1 schema and applies every pending migration in one immediate
+/// transaction.
+pub(super) fn initialize(conn: &Connection) -> Result<()> {
     let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
-    // Another process may have initialized the database while this one waited
-    // for the write lock. Re-check under the lock before creating tables.
-    let version: i64 = tx.pragma_query_value(None, "user_version", |row| row.get(0))?;
+    // Another process may have initialized or migrated the database while this
+    // one waited for the write lock. Re-check under the lock before writing.
+    let mut version: i64 = tx.pragma_query_value(None, "user_version", |row| row.get(0))?;
     if version == SCHEMA_VERSION {
         tx.commit()?;
         return Ok(());
     }
-    let tables: i64 = tx.query_row(
-        "SELECT COUNT(*) FROM sqlite_master \
-         WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
-        [],
-        |row| row.get(0),
-    )?;
-    if tables > 0 {
-        return Err(crate::error::CoreError::Invalid(format!(
-            "database has tables but is not schema version {SCHEMA_VERSION}; \
-                 refusing to modify it"
+    if version > SCHEMA_VERSION {
+        return Err(CoreError::Invalid(format!(
+            "database schema version {version} is newer than this build supports \
+             (maximum {SCHEMA_VERSION}); update VRC PhotoN before opening it"
         )));
     }
-    tx.execute_batch(SCHEMA_LATEST)?;
-    tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+    if version == 0 {
+        let tables: i64 = tx.query_row(
+            "SELECT COUNT(*) FROM sqlite_master \
+             WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
+            [],
+            |row| row.get(0),
+        )?;
+        if tables > 0 {
+            return Err(CoreError::Invalid(
+                "database has tables but user_version is 0; refusing to modify it".to_string(),
+            ));
+        }
+        tx.execute_batch(SCHEMA_V1)?;
+        tx.pragma_update(None, "user_version", SCHEMA_BASE_VERSION)?;
+        tx.execute(
+            "INSERT INTO schema_migrations(version, applied_at) VALUES (?1, ?2)",
+            params![SCHEMA_BASE_VERSION, super::now_string()],
+        )?;
+        version = SCHEMA_BASE_VERSION;
+    }
+    apply_migrations(&tx, version, MIGRATIONS, SCHEMA_VERSION)?;
     tx.commit()?;
     Ok(())
+}
+
+/// Applies `migrations` from `version` through `target`, one version at a time.
+///
+/// The caller owns the `IMMEDIATE` transaction and must have re-read
+/// `user_version` after acquiring its lock.
+pub(crate) fn apply_migrations(
+    tx: &Transaction<'_>,
+    mut version: i64,
+    migrations: &[Migration],
+    target: i64,
+) -> Result<i64> {
+    for migration in migrations {
+        if migration.version <= version {
+            continue;
+        }
+        if migration.version != version + 1 {
+            return Err(CoreError::Invalid(format!(
+                "schema migration {} does not follow version {version}",
+                migration.version
+            )));
+        }
+        if migration.version > target {
+            return Err(CoreError::Invalid(format!(
+                "schema migration {} exceeds schema version {target}",
+                migration.version
+            )));
+        }
+        tx.execute_batch(migration.sql)?;
+        tx.execute(
+            "INSERT INTO schema_migrations(version, applied_at) VALUES (?1, ?2)",
+            params![migration.version, super::now_string()],
+        )?;
+        tx.pragma_update(None, "user_version", migration.version)?;
+        version = migration.version;
+    }
+    if version != target {
+        return Err(CoreError::Invalid(format!(
+            "database schema version {version} cannot be migrated to {target}"
+        )));
+    }
+    Ok(version)
 }

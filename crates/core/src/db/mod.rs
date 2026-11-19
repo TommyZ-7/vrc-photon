@@ -168,9 +168,7 @@ impl Db {
         if path.exists() {
             let probe = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
             let version = schema_version(&probe)?;
-            if version != 0 && version != SCHEMA_VERSION {
-                check_schema_version(version)?;
-            }
+            check_open_version(version)?;
             if version == 0 && has_user_tables(&probe)? {
                 return Err(CoreError::Invalid(
                     "database has tables but user_version is 0; refusing to modify it".to_string(),
@@ -179,16 +177,14 @@ impl Db {
         }
         let conn = Connection::open(path)?;
         let version = schema_version(&conn)?;
-        if version != 0 && version != SCHEMA_VERSION {
-            check_schema_version(version)?;
-        }
+        check_open_version(version)?;
         if version == 0 && has_user_tables(&conn)? {
             return Err(CoreError::Invalid(
                 "database has tables but user_version is 0; refusing to modify it".to_string(),
             ));
         }
         Self::configure(&conn, profile)?;
-        if version == 0 {
+        if version != SCHEMA_VERSION {
             schema::initialize(&conn)?;
         }
         Ok(Self {
@@ -218,7 +214,7 @@ impl Db {
     pub fn open_read_only_with_profile(path: impl AsRef<Path>, profile: DbProfile) -> Result<Self> {
         let path = path.as_ref();
         let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
-        check_schema_version(schema_version(&conn)?)?;
+        check_read_only_version(schema_version(&conn)?)?;
         Self::configure(&conn, profile)?;
         Ok(Self {
             conn,
@@ -270,15 +266,28 @@ fn has_user_tables(conn: &Connection) -> Result<bool> {
     Ok(count > 0)
 }
 
-fn check_schema_version(version: i64) -> Result<()> {
+/// Rejects databases this build cannot safely migrate. Versions below
+/// [`SCHEMA_VERSION`] are accepted here and migrated by `schema::initialize`.
+fn check_open_version(version: i64) -> Result<()> {
+    if version > SCHEMA_VERSION {
+        return Err(CoreError::Invalid(format!(
+            "database schema version {version} is newer than this build supports \
+             (maximum {SCHEMA_VERSION}); update VRC PhotoN before opening it"
+        )));
+    }
+    if version < 0 {
+        return Err(CoreError::Invalid(format!(
+            "database schema version {version} is not supported; expected {SCHEMA_VERSION}"
+        )));
+    }
+    Ok(())
+}
+
+/// Read-only connections never migrate, so they accept only the current
+/// schema version.
+fn check_read_only_version(version: i64) -> Result<()> {
     if version == SCHEMA_VERSION {
         return Ok(());
-    }
-    if (1..SCHEMA_VERSION).contains(&version) {
-        return Err(CoreError::Invalid(format!(
-            "database schema version {version} cannot be migrated by this build; \
-             back up the database and create a new library (supported version: {SCHEMA_VERSION})"
-        )));
     }
     if version > SCHEMA_VERSION {
         return Err(CoreError::Invalid(format!(
@@ -287,7 +296,8 @@ fn check_schema_version(version: i64) -> Result<()> {
         )));
     }
     Err(CoreError::Invalid(format!(
-        "database schema version {version} is not supported; expected {SCHEMA_VERSION}"
+        "database schema version {version} requires migration; open it with VRC PhotoN \
+         before using the read-only index (supported version: {SCHEMA_VERSION})"
     )))
 }
 
