@@ -8347,6 +8347,7 @@ name = "vrc-photon-ipc"
 version = "1.0.0"
 dependencies = [
  "interprocess",
+ "libc",
  "proptest",
  "serde",
  "serde_json",

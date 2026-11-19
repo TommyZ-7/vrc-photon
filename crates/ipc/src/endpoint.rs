@@ -137,29 +137,20 @@ impl Endpoint {
     }
 }
 
-/// The current user's uid, read from `/proc/self` (Linux). `None` when it
-/// cannot be determined, in which case ownership checks are skipped.
+/// The current user's effective uid. `geteuid` has no preconditions and
+/// cannot fail, so ownership checks are always available on Unix.
 #[cfg(unix)]
-fn current_uid() -> Option<u32> {
-    use std::os::unix::fs::MetadataExt;
-    fs::metadata("/proc/self")
-        .map(|metadata| metadata.uid())
-        .ok()
+fn current_uid() -> u32 {
+    // SAFETY: `geteuid` takes no arguments and has no failure mode.
+    unsafe { libc::geteuid() }
 }
 
 /// The per-user fallback directory inside the shared temp directory. The
-/// uid form keeps the name from being predictable across users even when
+/// numeric uid keeps the name from being predictable across users even when
 /// `USER` is spoofed or shared.
 #[cfg(unix)]
 fn fallback_dir() -> PathBuf {
-    let name = match current_uid() {
-        Some(uid) => format!("vrc-photon-{uid}"),
-        None => {
-            let user = std::env::var("USER").unwrap_or_else(|_| "user".to_string());
-            format!("vrc-photon-{user}")
-        }
-    };
-    std::env::temp_dir().join(name)
+    std::env::temp_dir().join(format!("vrc-photon-{}", current_uid()))
 }
 
 /// Rejects a fallback directory that already exists in an unsafe state:
@@ -182,9 +173,7 @@ pub(crate) fn verify_fallback_dir(dir: &Path) -> io::Result<()> {
             ),
         ));
     }
-    if let Some(uid) = current_uid()
-        && metadata.uid() != uid
-    {
+    if metadata.uid() != current_uid() {
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
             format!(
@@ -335,10 +324,7 @@ mod tests {
     fn fallback_dir_is_named_for_the_current_user() {
         let dir = fallback_dir();
         let name = dir.file_name().unwrap().to_string_lossy().to_string();
-        match current_uid() {
-            Some(uid) => assert_eq!(name, format!("vrc-photon-{uid}")),
-            None => assert!(name.starts_with("vrc-photon-")),
-        }
+        assert_eq!(name, format!("vrc-photon-{}", current_uid()));
         assert_eq!(dir.parent(), Some(std::env::temp_dir().as_path()));
     }
 
@@ -384,9 +370,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn ensure_safe_fallback_dir_rejects_another_users_directory() {
-        let Some(uid) = current_uid() else {
-            return;
-        };
+        let uid = current_uid();
         let dir = tempfile::tempdir().unwrap();
         let target = dir.path().join("foreign");
         std::fs::create_dir(&target).unwrap();
