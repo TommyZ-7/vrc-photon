@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
@@ -693,10 +693,6 @@ pub fn existing_photo_roots(settings: &AppSettings) -> Vec<PathBuf> {
         .into_iter()
         .filter(|path| path.is_dir())
         .collect()
-}
-
-pub fn is_under(path: &Path, root: &Path) -> bool {
-    path.strip_prefix(root).is_ok()
 }
 
 /// Webhook URL lives in its own `app_settings` row so it never lands in the

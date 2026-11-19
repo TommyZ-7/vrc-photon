@@ -22,6 +22,10 @@ pub fn encoded_len(width: u32, height: u32) -> Option<usize> {
     blocks.checked_mul(16)
 }
 
+fn checked_stride(width: u32) -> Option<u32> {
+    width.checked_mul(4)
+}
+
 /// Encodes tightly packed RGBA8 pixels into raw BC7 blocks in row order.
 pub fn encode_rgba(width: u32, height: u32, rgba: &[u8]) -> Result<Vec<u8>> {
     let expected = encoded_len(width, height).ok_or_else(|| {
@@ -45,7 +49,8 @@ pub fn encode_rgba(width: u32, height: u32, rgba: &[u8]) -> Result<Vec<u8>> {
         data: rgba,
         width,
         height,
-        stride: width * 4,
+        stride: checked_stride(width)
+            .ok_or_else(|| CoreError::Invalid("BC7 stride overflow".to_string()))?,
     };
     let blocks =
         intel_tex_2::bc7::compress_blocks(&intel_tex_2::bc7::opaque_basic_settings(), &surface);
@@ -74,6 +79,12 @@ mod tests {
         assert_eq!(encoded_len(0, 144), None);
         assert_eq!(encoded_len(383, 216), None);
         assert_eq!(encoded_len(384, 217), None);
+    }
+
+    #[test]
+    fn checked_stride_rejects_overflow() {
+        assert_eq!(checked_stride(1), Some(4));
+        assert_eq!(checked_stride(u32::MAX), None);
     }
 
     #[test]
