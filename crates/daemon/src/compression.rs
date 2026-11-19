@@ -125,7 +125,9 @@ pub(crate) fn worker_loop(
         for job in &batch {
             publish_compression(&events, job, JobStatus::Processing, 0.05, None);
         }
-        for outcome in process_photo_batch(&db, &batch, Some(&thumbnail_dir), &budget) {
+        for outcome in process_batch_guarded(&db, &batch, || {
+            process_photo_batch(&db, &batch, Some(&thumbnail_dir), &budget)
+        }) {
             match outcome.status {
                 QueueStatus::Completed => {
                     publish_compression(&events, &outcome.job, JobStatus::Completed, 1.0, None)
@@ -185,6 +187,33 @@ pub(crate) fn process_photo_batch(
         Err(error) => {
             let message = error.to_string();
             tracing::error!(%error, "compression batch failed");
+            fail_claimed_jobs(db, jobs, &message)
+        }
+    }
+}
+
+/// Runs a compression batch and records a failure even when it panics.
+///
+/// A panic would otherwise leave the claimed jobs `processing`; the stale
+/// sweep would requeue them and the same deterministic panic would repeat
+/// forever, keeping the photo's deletion blocked. Recording `failed` lets the
+/// user retry or force the deletion instead.
+pub(crate) fn process_batch_guarded<F>(
+    db: &Arc<Mutex<Db>>,
+    jobs: &[CompressionJob],
+    process: F,
+) -> Vec<JobOutcome>
+where
+    F: FnOnce() -> Vec<JobOutcome>,
+{
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(process)) {
+        Ok(outcomes) => outcomes,
+        Err(payload) => {
+            let message = format!(
+                "worker panic: {}",
+                crate::supervisor::panic_message(payload.as_ref())
+            );
+            tracing::error!(%message, "compression worker panicked");
             fail_claimed_jobs(db, jobs, &message)
         }
     }

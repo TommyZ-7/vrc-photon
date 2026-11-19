@@ -3079,6 +3079,44 @@ fn startup_error_shuts_down_workers() {
 }
 
 #[test]
+fn panic_in_a_compression_batch_fails_the_claimed_jobs() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut daemon = manual_test_daemon(&dir);
+    daemon.run_once().unwrap();
+    let claimed = {
+        let db = daemon.db.lock().unwrap();
+        let photo = db
+            .photo_by_path(original_path(&dir).to_str().unwrap())
+            .unwrap()
+            .unwrap();
+        db.enqueue_job(photo.id, "p", "keep").unwrap();
+        db.next_pending_job().unwrap().unwrap()
+    };
+
+    let outcomes = crate::compression::process_batch_guarded(
+        &daemon.db,
+        std::slice::from_ref(&claimed),
+        || panic!("decoder panic"),
+    );
+    assert_eq!(outcomes.len(), 1);
+    assert_eq!(outcomes[0].status, QueueStatus::Failed);
+
+    let db = daemon.db.lock().unwrap();
+    let job = db
+        .list_jobs(10)
+        .unwrap()
+        .into_iter()
+        .find(|job| job.id == claimed.id)
+        .unwrap();
+    assert_eq!(job.status, QueueStatus::Failed);
+    assert!(
+        job.error.as_deref().is_some_and(|error| error.contains("decoder panic")),
+        "unexpected error: {:?}",
+        job.error
+    );
+}
+
+#[test]
 fn startup_recovers_an_interrupted_compression_job_with_an_open_session() {
     let dir = tempfile::tempdir().unwrap();
     let mut daemon = manual_test_daemon(&dir);
