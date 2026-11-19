@@ -1,4 +1,4 @@
-use std::io::{self, BufReader, Read};
+use std::io::{self, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender, TrySendError};
@@ -7,7 +7,6 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use interprocess::TryClone as _;
-#[cfg(unix)]
 use interprocess::local_socket::traits::Stream as _;
 use vrc_photon_core::db::Db;
 use vrc_photon_core::error::CoreError;
@@ -37,6 +36,13 @@ const EVENT_QUEUE_CAPACITY: usize = 256;
 /// client's eight in-flight request slots to avoid rejecting a busy UI's own
 /// requests.
 const MAX_IPC_CONNECTIONS: usize = 16;
+
+/// How long a client gets to complete the Hello handshake. On Windows the
+/// stream has no working read timeout, so the handshake is read in
+/// non-blocking mode under this deadline. A stalled client therefore cannot
+/// occupy one of the connection slots forever.
+#[cfg(windows)]
+const HELLO_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Upper bound for one read-only library page requested over IPC. MCP asks
 /// for at most 200; the daemon keeps a hard cap so a stray client cannot
@@ -311,11 +317,86 @@ fn accept_loop(
     }
 }
 
+/// Reads from a non-blocking stream until a fixed deadline, retrying
+/// `WouldBlock` instead of surfacing it. Used for the Windows Hello handshake,
+/// where interprocess offers no read timeout. Once the handshake completes the
+/// stream returns to blocking mode and the deadline is cleared, so the request
+/// loop does not spin.
+#[cfg(any(windows, test))]
+struct DeadlineReader<R> {
+    inner: R,
+    deadline: Option<Instant>,
+}
+
+#[cfg(any(windows, test))]
+impl<R> DeadlineReader<R> {
+    fn new(inner: R, timeout: Duration) -> Self {
+        let now = Instant::now();
+        Self {
+            inner,
+            deadline: now.checked_add(timeout).or(Some(now)),
+        }
+    }
+
+    #[cfg(windows)]
+    fn stream(&self) -> &R {
+        &self.inner
+    }
+
+    #[cfg(windows)]
+    fn clear_deadline(&mut self) {
+        self.deadline = None;
+    }
+}
+
+#[cfg(any(windows, test))]
+impl<R: Read> Read for DeadlineReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        loop {
+            match self.inner.read(buf) {
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                    let Some(deadline) = self.deadline else {
+                        return Err(error);
+                    };
+                    if Instant::now() >= deadline {
+                        return Err(io::Error::new(
+                            io::ErrorKind::TimedOut,
+                            "IPC hello handshake timed out",
+                        ));
+                    }
+                    thread::sleep(Duration::from_millis(10));
+                }
+                result => return result,
+            }
+        }
+    }
+}
+
+#[cfg(any(windows, test))]
+impl<R: Write> Write for DeadlineReader<R> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.inner.write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
+    }
+}
+
 fn handle_connection(
     stream: vrc_photon_ipc::server::Stream,
     control: IpcControl,
 ) -> io::Result<()> {
+    #[cfg(unix)]
     let mut reader = BufReader::new(stream);
+    #[cfg(windows)]
+    let mut reader = {
+        // interprocess named pipes ignore read timeouts. Read the handshake
+        // non-blocking under a deadline, then restore blocking mode for the
+        // request loop.
+        stream.set_nonblocking(true)?;
+        BufReader::new(DeadlineReader::new(stream, HELLO_TIMEOUT))
+    };
     #[cfg(unix)]
     {
         reader
@@ -329,6 +410,11 @@ fn handle_connection(
     let Some(hello) = framing::read_message::<_, RequestEnvelope>(&mut reader)? else {
         return Ok(());
     };
+    #[cfg(windows)]
+    {
+        reader.get_ref().stream().set_nonblocking(false)?;
+        reader.get_mut().clear_deadline();
+    }
     let Request::Hello {
         protocol_version,
         client: _,
@@ -973,8 +1059,8 @@ fn spawn_disconnect_watcher(
     }
 }
 
-fn write_response(
-    stream: &mut vrc_photon_ipc::server::Stream,
+fn write_response<W: Write>(
+    stream: &mut W,
     id: u64,
     response: Response,
 ) -> io::Result<()> {
@@ -1984,5 +2070,40 @@ mod tests {
             Response::RandomPhotos { result } => assert_eq!(result.limit, MAX_RANDOM_LIMIT),
             other => panic!("unexpected response: {other:?}"),
         }
+    }
+
+    #[test]
+    fn deadline_reader_retries_would_block_until_data_arrives() {
+        struct OneBlock {
+            blocked: bool,
+        }
+        impl std::io::Read for OneBlock {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                if self.blocked {
+                    self.blocked = false;
+                    return Err(std::io::ErrorKind::WouldBlock.into());
+                }
+                buf[0] = b'x';
+                Ok(1)
+            }
+        }
+        let mut reader = DeadlineReader::new(OneBlock { blocked: true }, Duration::from_secs(1));
+        let mut byte = [0];
+        assert_eq!(reader.read(&mut byte).unwrap(), 1);
+        assert_eq!(byte[0], b'x');
+    }
+
+    #[test]
+    fn deadline_reader_times_out() {
+        struct AlwaysBlocked;
+        impl std::io::Read for AlwaysBlocked {
+            fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+                Err(std::io::ErrorKind::WouldBlock.into())
+            }
+        }
+        let mut reader = DeadlineReader::new(AlwaysBlocked, Duration::from_millis(20));
+        let mut byte = [0];
+        let error = reader.read(&mut byte).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
     }
 }
