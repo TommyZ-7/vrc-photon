@@ -1964,7 +1964,7 @@ pub(crate) fn write_atomic(path: &Path, bytes: &[u8], mode: u32) -> Result<()> {
         let to = wide(path);
         // SAFETY: both buffers are NUL-terminated UTF-16 and stay alive for
         // the duration of the call.
-        return unsafe {
+        unsafe {
             MoveFileExW(
                 PCWSTR(from.as_ptr()),
                 PCWSTR(to.as_ptr()),
@@ -1976,7 +1976,7 @@ pub(crate) fn write_atomic(path: &Path, bytes: &[u8], mode: u32) -> Result<()> {
                 "cannot replace {} atomically: {error}",
                 path.display()
             ))
-        });
+        })
     }
     #[cfg(not(windows))]
     std::fs::rename(&temp, path).map_err(|error| UpdateError::io(path, error))
