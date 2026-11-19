@@ -120,18 +120,22 @@ pub fn tr(key: &str) -> String {
     tr_in(&current_locale(), key)
 }
 
+fn translate_in(locale: &str, key: &str) -> Option<String> {
+    let locale = normalize(locale);
+    lookup(&locale, key).or_else(|| lookup_exact(DEFAULT_LOCALE, key))
+}
+
+fn missing_translation(locale: &str, key: &str) -> String {
+    tracing::warn!(locale = %normalize(locale), key, "missing translation");
+    MISSING.to_string()
+}
+
 /// Translate a key in an explicit locale.
 ///
 /// Lookup order: exact locale, base language (`pt-BR` → `pt`), Japanese.
 /// A key missing everywhere renders [`MISSING`], never the key itself.
 pub fn tr_in(locale: &str, key: &str) -> String {
-    let locale = normalize(locale);
-    lookup(&locale, key).unwrap_or_else(|| {
-        lookup_exact(DEFAULT_LOCALE, key).unwrap_or_else(|| {
-            tracing::warn!(locale = %locale, key, "missing translation");
-            MISSING.to_string()
-        })
-    })
+    translate_in(locale, key).unwrap_or_else(|| missing_translation(locale, key))
 }
 
 /// Translate a key in the current locale and replace `%{name}` placeholders.
@@ -141,10 +145,9 @@ pub fn tr_args(key: &str, args: &[(&str, String)]) -> String {
 
 /// Translate a key in an explicit locale and replace `%{name}` placeholders.
 pub fn tr_args_in(locale: &str, key: &str, args: &[(&str, String)]) -> String {
-    let text = tr_in(locale, key);
-    if text == MISSING {
-        return text;
-    }
+    let Some(text) = translate_in(locale, key) else {
+        return missing_translation(locale, key);
+    };
     let names: Vec<&str> = args.iter().map(|(name, _)| *name).collect();
     let values: Vec<String> = args.iter().map(|(_, value)| value.clone()).collect();
     rust_i18n::replace_patterns(&text, &names, &values)
