@@ -489,27 +489,28 @@ impl ApplyJob {
                 "restart arguments contain a NUL".to_string(),
             ));
         }
+        let manifest = self
+            .signed_manifest
+            .as_deref()
+            .ok_or_else(|| UpdateError::InvalidJob("signed manifest is missing".to_string()))?;
+        let signature = self
+            .manifest_signature
+            .as_deref()
+            .ok_or_else(|| UpdateError::InvalidJob("manifest signature is missing".to_string()))?;
+        if manifest.is_empty() || manifest.len() as u64 > MAX_MANIFEST_BYTES {
+            return Err(UpdateError::InvalidJob(
+                "signed manifest is empty or too large".to_string(),
+            ));
+        }
+        if signature.is_empty() || signature.len() as u64 > MAX_SIGNATURE_BYTES {
+            return Err(UpdateError::InvalidJob(
+                "manifest signature is empty or too large".to_string(),
+            ));
+        }
         if let ApplyKind::SystemPackage { family } = self.kind {
             if !matches!(family, PackageFamily::Pacman | PackageFamily::Deb) {
                 return Err(UpdateError::InvalidJob(
                     "unsupported system package family".to_string(),
-                ));
-            }
-            let manifest = self
-                .signed_manifest
-                .as_deref()
-                .ok_or_else(|| UpdateError::InvalidJob("signed manifest is missing".to_string()))?;
-            let signature = self.manifest_signature.as_deref().ok_or_else(|| {
-                UpdateError::InvalidJob("manifest signature is missing".to_string())
-            })?;
-            if manifest.is_empty() || manifest.len() as u64 > MAX_MANIFEST_BYTES {
-                return Err(UpdateError::InvalidJob(
-                    "signed manifest is empty or too large".to_string(),
-                ));
-            }
-            if signature.is_empty() || signature.len() as u64 > MAX_SIGNATURE_BYTES {
-                return Err(UpdateError::InvalidJob(
-                    "manifest signature is empty or too large".to_string(),
                 ));
             }
             let version = parse_job_version(&self.to_version)?;
@@ -908,8 +909,8 @@ mod tests {
             health_token: "abc-123".to_string(),
             data_dir: dir.to_path_buf(),
             created_at: "2026-10-24T12:00:00Z".to_string(),
-            signed_manifest: None,
-            manifest_signature: None,
+            signed_manifest: Some("{\"schema\":1}".to_string()),
+            manifest_signature: Some("signature".to_string()),
         }
     }
 
@@ -969,18 +970,26 @@ mod tests {
     }
 
     #[test]
-    fn system_package_job_requires_manifest_and_signature() {
+    fn every_apply_kind_requires_manifest_and_signature() {
         let dir = tempfile::tempdir().unwrap();
-        let job = system_job(dir.path());
-        job.validate().unwrap();
+        let system = system_job(dir.path());
+        system.validate().unwrap();
+        let appimage = test_job(dir.path());
+        appimage.validate().unwrap();
 
-        let mut missing = job.clone();
-        missing.signed_manifest = None;
-        assert!(missing.validate().is_err());
+        for job in [system, appimage] {
+            let mut missing = job.clone();
+            missing.signed_manifest = None;
+            assert!(missing.validate().is_err());
 
-        let mut empty_signature = job.clone();
-        empty_signature.manifest_signature = Some(String::new());
-        assert!(empty_signature.validate().is_err());
+            let mut empty_signature = job.clone();
+            empty_signature.manifest_signature = Some(String::new());
+            assert!(empty_signature.validate().is_err());
+
+            let mut missing_signature = job;
+            missing_signature.manifest_signature = None;
+            assert!(missing_signature.validate().is_err());
+        }
     }
 
     #[test]

@@ -375,6 +375,7 @@ jobs:
           ./target/debug/vrc-photon-update-manifest sign --key "$KEY" --dist dist
           ./target/debug/vrc-photon-update-manifest verify "${PUB_ARGS[@]}" --dist dist
           ./target/debug/vrc-photon-update-manifest generate \
+            "${PUB_ARGS[@]}" \
             --dist dist \
             --tag "$TAG" \
             --repo "$GITHUB_REPOSITORY" \
