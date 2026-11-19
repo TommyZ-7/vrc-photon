@@ -1,6 +1,6 @@
 # UI レビュー対応 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Issue #757 / #758 / #759 / #760 / #767 / #768 のレビュー指摘を UI に反映する。
 
@@ -40,7 +40,7 @@ UI スレッドから外す。完了イベントは既存の coalesce パスへ�
 - Produces: `fn cached_appimage_writable(install: &InstallKind, cached: Option<bool>) -> bool`
 - Produces: `impl UpdateState { fn refresh_appimage_writable(&mut self); fn appimage_writable(&self) -> bool }`
 
-- [ ] **Step 1: 純粋 helper の失敗テストを書く**
+- [x] **Step 1: 純粋 helper の失敗テストを書く**
 
 ```rust
 #[test]
@@ -56,12 +56,12 @@ fn cached_writability_is_only_used_for_appimages() {
 }
 ```
 
-- [ ] **Step 2: テストが失敗することを確認**
+- [x] **Step 2: テストが失敗することを確認**
 
 Run: `cargo test -p vrc-photon-ui cached_writability -- --nocapture`
 Expected: `cached_appimage_writable` 未定義でコンパイル失敗。
 
-- [ ] **Step 3: キャッシュを実装**
+- [x] **Step 3: キャッシュを実装**
 
 - `UpdateState` に `appimage_writable: Option<bool>` を追加。
 - `refresh_appimage_writable` は AppImage のときだけ `appimage_writable(&self.install)` を保存。
@@ -72,12 +72,12 @@ Expected: `cached_appimage_writable` 未定義でコンパイル失敗。
   `self.update.appimage_writable = Some(false)` を設定する。
 - `cached_appimage_writable` は `install` が AppImage なら `cached.unwrap_or(false)`、それ以外は `true`。
 
-- [ ] **Step 4: テストと clippy**
+- [x] **Step 4: テストと clippy**
 
 Run: `cargo test -p vrc-photon-ui cached_writability && cargo clippy -p vrc-photon-ui --all-targets -- -D warnings`
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add crates/ui/src/update_view.rs
@@ -97,7 +97,7 @@ git commit -m "fix: cache AppImage writability instead of probing during render 
 - Consumes: `pub(crate) fn start_daemon(supervisor: Option<&str>) -> Result<(), String>`
 - Consumes: `pub(crate) fn restart_daemon_after_update(supervisor: Option<&str>) -> Result<(), String>`
 
-- [ ] **Step 1: App::new の同期呼び出しを置換**
+- [x] **Step 1: App::new の同期呼び出しを置換**
 
 ```rust
 if !app.demo && !app.daemon_active && !updating {
@@ -118,23 +118,23 @@ if !app.demo && !app.daemon_active && !updating {
 }
 ```
 
-- [ ] **Step 2: 更新適用失敗時の再起動を置換**
+- [x] **Step 2: 更新適用失敗時の再起動を置換**
 
 `apply_update_confirmed` の `if this.daemon_active { let _ = start_daemon(...) }` を、
 `cx.background_executor().spawn` + `this.update` の非同期再起動へ置換する。
 
-- [ ] **Step 3: 更新後再起動を置換**
+- [x] **Step 3: 更新後再起動を置換**
 
 `complete_update_startup` の `restart_daemon_after_update` を同じ形で `cx.spawn` に移す。
 失敗時のトーストは既存の `update.error.daemon_start` を使う。
 
-- [ ] **Step 4: 検証**
+- [x] **Step 4: 検証**
 
 Run: `cargo test -p vrc-photon-ui daemon && cargo clippy -p vrc-photon-ui --all-targets -- -D warnings`
 Expected: PASS。`rg "start_daemon\\(|restart_daemon_after_update\\(" crates/ui/src` で
 UI スレッド直呼びが残っていないことを確認する。
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add crates/ui/src/app.rs crates/ui/src/update_view.rs
@@ -154,7 +154,7 @@ git commit -m "fix: run systemctl daemon startup off the UI thread (#758)"
 - Produces: `fn replaced_photo_rows(photos: Vec<Photo>) -> Vec<Photo>`
 - Consumes: `Db::photos_by_ids(&[i64]) -> Result<Vec<Photo>>`
 
-- [ ] **Step 1: フィルタの失敗テストを書く**
+- [x] **Step 1: フィルタの失敗テストを書く**
 
 ```rust
 #[test]
@@ -170,12 +170,12 @@ fn only_replaced_rows_are_refreshed_after_compression() {
 
 `photo_with_status` はテスト内で最小の `Photo` を組み立てる helper。
 
-- [ ] **Step 2: テストが失敗することを確認**
+- [x] **Step 2: テストが失敗することを確認**
 
 Run: `cargo test -p vrc-photon-ui only_replaced_rows -- --nocapture`
 Expected: 未定義でコンパイル失敗。
 
-- [ ] **Step 3: 実装**
+- [x] **Step 3: 実装**
 
 - `App` の `compression_replaced_photos` を `compression_replaced_candidates: HashSet<i64>` に置換。
 - `CompressionProgress` の `completed` 分岐は `photo_by_id` を呼ばず、`photo_id` を候補集合へ入れる。
@@ -184,12 +184,12 @@ Expected: 未定義でコンパイル失敗。
   その行だけ `update_photo_rows` とメディア無効化を行う。
 - quick look の再要求判定は、絞った行の id を使う。
 
-- [ ] **Step 4: テストを実行**
+- [x] **Step 4: テストを実行**
 
 Run: `cargo test -p vrc-photon-ui only_replaced_rows && cargo test -p vrc-photon-ui`
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add crates/ui/src/app.rs crates/ui/src/app/lifecycle.rs
@@ -214,7 +214,7 @@ git commit -m "fix: coalesce compression row lookups into one batch query (#760)
 - Produces: `#[cfg(not(feature = "demo"))] fn prepare_demo(_: bool) -> Result<(Db, DemoAssets), String>`（常に `Err`）
 - Produces: `fn demo_root() -> PathBuf`（unix は UID 入り）
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 ```rust
 #[cfg(unix)]
@@ -226,12 +226,12 @@ fn demo_root_is_scoped_to_the_user() {
 }
 ```
 
-- [ ] **Step 2: テストが失敗することを確認**
+- [x] **Step 2: テストが失敗することを確認**
 
 Run: `cargo test -p vrc-photon-ui demo_root_is_scoped -- --nocapture`
 Expected: 現在の `vrc-photon-demo` に UID が無いため失敗。
 
-- [ ] **Step 3: feature と startuperror を実装**
+- [x] **Step 3: feature と startuperror を実装**
 
 - `Cargo.toml` に `[features] demo = []`、`[target.'cfg(unix)'.dependencies] libc.workspace = true` を追加。
 - `demo_fixture` と `seed_demo` / `demo_image` / `seed_demo_sessions` / `prepare_demo_at` を
@@ -247,12 +247,12 @@ Expected: 現在の `vrc-photon-demo` に UID が無いため失敗。
 - i18n に `demo.unavailable` を ja/en 両方追加。
 - `ci.yml` の test ステップに `cargo test -p vrc-photon-ui --features demo` を追加。
 
-- [ ] **Step 4: テストを実行**
+- [x] **Step 4: テストを実行**
 
 Run: `cargo test -p vrc-photon-ui demo_root_is_scoped && cargo test -p vrc-photon-ui --features demo`
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add crates/ui/Cargo.toml crates/ui/src/app.rs crates/ui/src/app/demo.rs crates/ui/src/main.rs crates/ui/src/i18n .github/workflows/ci.yml Cargo.lock
@@ -274,14 +274,14 @@ git commit -m "fix: gate demo content and reject the release fallback (#759, #76
 - Produces: `impl App { pub(crate) fn schedule_settings_save(&mut self, cx: &mut Context<Self>); pub(crate) fn flush_settings_save(&mut self); }`
 - Produces: `fn refresh_monitor_sync(&mut self)`（demo / インメモリ専用）
 
-- [ ] **Step 1: monitor の同期参照を削除**
+- [x] **Step 1: monitor の同期参照を削除**
 
 - `daemon::refresh_monitor` を `refresh_monitor_sync` に改名し、呼び出しを `refresh_live` (lifecycle.rs:529) のみに残す。
 - Connected / Disconnected / StatusChanged / reload_aux_ui の呼び出しを削除する。
   monitor フィールドは `apply_live_snapshot` が背景スナップショットから更新する。
 - コメントで「同期版は demo / インメモリのみ」と明記。
 
-- [ ] **Step 2: settings 保存の失敗テストを書く**
+- [x] **Step 2: settings 保存の失敗テストを書く**
 
 デバウンスは時間依存のため、純粋 helper を切り出す:
 
@@ -298,7 +298,7 @@ fn a_settings_save_batch_supersedes_earlier_values() {
 
 `SettingsSaveBatch` は `App` 内の小構造体でよい。
 
-- [ ] **Step 3: デバウンスを実装**
+- [x] **Step 3: デバウンスを実装**
 
 - `App` に `settings_save: SettingsSaveBatch` 相当の状態を追加。
 - `schedule_settings_save(cx)` は 350ms の timer を 1 回だけ spawn し、発火時に最新値だけ
@@ -307,12 +307,12 @@ fn a_settings_save_batch_supersedes_earlier_values() {
 - `ui/settings.rs` / `ui/setup.rs` / `app.rs` のハンドラ内 `settings.save(&self.db)` を
   `self.schedule_settings_save(cx)` に置換する。起動時の初期保存など `cx` を持たない箇所は同期のまま。
 
-- [ ] **Step 4: 検証**
+- [x] **Step 4: 検証**
 
 Run: `cargo test -p vrc-photon-ui && cargo clippy -p vrc-photon-ui --all-targets -- -D warnings`
 Expected: PASS
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add crates/ui/src/app.rs crates/ui/src/app/daemon.rs crates/ui/src/app/lifecycle.rs crates/ui/src/ui/settings.rs crates/ui/src/ui/setup.rs
@@ -332,22 +332,22 @@ git commit -m "fix: read monitor state from the snapshot and debounce settings s
 **Interfaces:**
 - Produces: `pub(crate) fn dib_from_rgba(width: u32, height: u32, rgba: &[u8]) -> Result<Vec<u8>, String>`
 
-- [ ] **Step 1: search_suggest の check-then-unwrap を let-else 化**
+- [x] **Step 1: search_suggest の check-then-unwrap を let-else 化**
 
 `as_ref()` ガード後の `as_mut().unwrap()` / `as_ref().unwrap()` を
 `let Some(value) = ... else { return ...; };` に置換する。挙動は変えない。
 
-- [ ] **Step 2: clipboard の長さ契約を Result 化**
+- [x] **Step 2: clipboard の長さ契約を Result 化**
 
 - `dib_from_rgba` は `rgba.len() != stride * height` のとき `Err("...")` を返す。
 - 呼び出し元 3 箇所で `?` または `unwrap_or_else` を使い、既存のエラー表示へ流す。
 - テストを追加: 長さ不一致で `Err`、正しい長さで先頭 `biSize == 40`。
 
-- [ ] **Step 3: update_view のテストモジュールを末尾へ移動**
+- [x] **Step 3: update_view のテストモジュールを末尾へ移動**
 
 ファイル先頭の `#[cfg(test)] mod tests` を本番コードの下へ移動する。内容は変更しない。
 
-- [ ] **Step 4: batch 合成テストを追加**
+- [x] **Step 4: batch 合成テストを追加**
 
 ```rust
 #[test]
@@ -366,7 +366,7 @@ fn a_mixed_ipc_batch_is_applied_in_order_with_one_repaint() {
 
 `Connected` / `ScanStarted` の必須フィールドは既存の IPC テストからコピーする。
 
-- [ ] **Step 5: 検証とコミット**
+- [x] **Step 5: 検証とコミット**
 
 Run: `cargo test -p vrc-photon-ui && cargo clippy -p vrc-photon-ui --all-targets -- -D warnings`
 Expected: PASS
@@ -380,8 +380,8 @@ git commit -m "chore: address UI review follow-ups (#768)"
 
 ### Task 7: 最終検証
 
-- [ ] `cargo fmt --all -- --check`
-- [ ] `cargo clippy --workspace --all-targets -- -D warnings`
-- [ ] `cargo test --workspace`
-- [ ] `cargo test -p vrc-photon-ui --features demo`
-- [ ] 計画のチェックボックスを `- [x]` に更新し、PR を作成する
+- [x] `cargo fmt --all -- --check`
+- [x] `cargo clippy --workspace --all-targets -- -D warnings`
+- [x] `cargo test --workspace`
+- [x] `cargo test -p vrc-photon-ui --features demo`
+- [x] 計画のチェックボックスを `- [x]` に更新し、PR を作成する
