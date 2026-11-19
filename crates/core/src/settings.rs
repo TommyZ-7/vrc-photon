@@ -179,6 +179,8 @@ impl AutoBehavior {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppSettings {
     /// Photo roots to index. The first entry is the primary VRChat folder.
+    /// Paths are stored as strings and must be valid UTF-8; scanning rejects a
+    /// non-UTF-8 root instead of replacing bytes with U+FFFD.
     pub photo_roots: Vec<String>,
     /// VRChat output log directory.
     pub log_dir: Option<String>,
