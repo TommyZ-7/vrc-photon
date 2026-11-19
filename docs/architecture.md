@@ -53,7 +53,7 @@ UIとデーモンは同じSQLite（WAL）に加えて、ローカルIPC（Unix d
 
 UIとデーモンは同じSQLite（WAL）を共有し、状態とジョブをやり取りする。これに加えて、即時コマンドのwake-upとイベント配信のためにローカルIPCを使う（ADR-0011）。UIはデーモンのハートビート（`app_settings.daemon_heartbeat`）とIPC購読のどちらかが生きていれば稼働中と判定する。デーモンの処理エラーは `daemon_errors`、UIからの再実行要求は `daemon_commands` に置く。IPCはUIからの指令について `daemon_commands` / `compression_jobs` / `send_outbox` を置き換えず、デーモンを起こすだけ。デーモン停止中も要求はDBに残り、起動後に処理される。MCPサーバーからの読み取り要求はIPCで処理する。AI の取込・モデル・probe・キャンセルは IPC 要求としてデーモンだけが実行し、AI 結果の書き込みもデーモンに限定する。
 
-IPCは `PROTOCOL_VERSION = 8`。MCPサーバー向けに、`search_photos` /
+IPCは `PROTOCOL_VERSION = 1`。MCPサーバー向けに、`search_photos` /
 `random_search_photos` / `get_photo` / `list_worlds` / `library_stats` の
 読み取り要求を持つ。AI プラグインの
 取込・アンインストール・probe・variant 切替・モデル DL / 取込 / 削除と、
@@ -96,7 +96,7 @@ crates/
   core/
     src/lib.rs            # アプリ名、データディレクトリ
     src/db/               # schema とドメイン別のCRUD（photos/sessions/compression/send/deletion/ai/settings など）
-    src/db/schema.rs      # SCHEMA_LATEST と SCHEMA_VERSION
+    src/db/schema.rs      # SCHEMA_V1 / MIGRATIONS / SCHEMA_VERSION
     src/model.rs          # Photo / Context / Profile / Job など
     src/ai.rs             # プラグイン・AI結果・タグ付けジョブの型
     src/scanner.rs        # フォルダ走査、増分スキャン
@@ -284,7 +284,7 @@ crates/ui/src/
 
 1. UIまたはデーモンが `Db::open` でSQLiteを開く。
 2. `journal_mode=WAL`、`foreign_keys=ON`、`busy_timeout=5s` を設定。
-3. `PRAGMA user_version` を検査する。新規 DB は統合 schema を1トランザクションで初期化し、既存 DB は v21 のみ受け付ける。それ以外はファイルを変更せずエラーを返す。
+3. `PRAGMA user_version` を検査する。新規 DB は `SCHEMA_V1` を1トランザクションで初期化し、既存 DB は v1 のみ受け付ける。v2 以上はファイルを変更せずエラーを返す。
 4. 設定（`app_settings` の `app_settings` キー）を読む。なければVRChatパスを自動検出。
 5. デーモンはIPCサーバーを起動する。UIはIPC購読を開始し、接続できなければハートビート/DB表示にフォールバックする。
 6. デーモンは `scan_photos` で写真ルートを走査し、ログの末尾から解析を開始する。走査中は `scan_started` / `scan_progress` / `scan_finished` を配信する。
@@ -444,7 +444,7 @@ crates/ui/src/
 ### 4.10 ワールド名解決（オプトイン）
 
 1. 設定 `world_name_resolution_enabled`（既定 false）がONのときだけ動く。
-   スキーマ v12 で追加した `world_name_lookups` をキューとして使う。
+   `world_name_lookups` をキューとして使う。
 2. デーモンは機能がONのとき、起動時・有効化時・リンク完了時に
    `backfill_photo_context_world_names` → `enqueue_missing_world_name_lookups`
    の順で実行し、名前のないワールドだけを `pending` で積む。既存の

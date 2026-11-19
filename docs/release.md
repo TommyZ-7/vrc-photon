@@ -214,7 +214,7 @@ Required check名を変更した場合は、GitHubのbranch protectionも更新�
 
 - [ ] `Cargo.toml` と `Cargo.lock` のバージョンが一致
 - [ ] CI / Release（PR）が緑
-- [ ] 破壊的DB変更がない、または旧DBの扱い（v21のみ・v1〜v20は自動移行せず明示エラー）がリリースノートに明記されている
+- [ ] 破壊的DB変更がない、または旧DBの扱い（v1のみ・1.0.0未満は自動移行せず明示エラー）がリリースノートに明記されている
 - [ ] パッケージ生成物にUIとデーモンの両方が入っている
 - [ ] deb / pacman に `usr/lib/systemd/user/vrc-photon-daemon.service` が入っている
 - [ ] アイコンとdesktop entryが入っている
@@ -234,7 +234,7 @@ Required check名を変更した場合は、GitHubのbranch protectionも更新�
 - 不具合のあるリリースは、修正版を新しいパッチバージョンで出す。
 - 既存タグの付け替えはしない。
 - GitHub Releaseを非公開/削除する場合も、タグは残す。ユーザーの明示指示が必要。
-- DB は v21 のみをサポートする。v1〜v20 は自動移行せず、明示エラーで開かない。
+- DB は v1 のみをサポートする。1.0.0 未満の DB は自動移行せず、明示エラーで開かない。
   アップグレード前にバックアップを案内し、ダウングレードは保証しない。
 
 ## 10. 自動アップデートの署名と配信
@@ -260,7 +260,7 @@ Required check名を変更した場合は、GitHubのbranch protectionも更新�
   - 単一情報源は `packaging/ai-plugin.json`。autotag のリリース時に、リリースした
     プラグインの `plugin_version` と manifest の `host_version_min` でこのファイルを
     更新し、photon のリリース前に `main` へマージする。初期値は
-    `version: 0.5.1`、`host_version_min: 0.14.4`。
+    `version: 0.5.1`、`host_version_min: 1.0.0`。
   - `schema` は 1 のまま。`ai_plugin` を知らない旧クライアントは未知フィールドとして
     無視する。
   - `ai_plugin` が semver でない、型が違う、キーが欠落している場合は、プラグイン

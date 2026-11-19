@@ -235,7 +235,7 @@ AVIF はエンコード時間が支配的なため、デコード削減（約40m
 ## 7. コードの読み方
 
 1. `crates/core/src/db/mod.rs` — DB のオープン、schema バージョン検査、接続設定。
-2. `crates/core/src/db/schema.rs` — 統合 schema（`SCHEMA_LATEST`）と `SCHEMA_VERSION`。
+2. `crates/core/src/db/schema.rs` — 凍結した `SCHEMA_V1`、`MIGRATIONS`、`SCHEMA_VERSION`。
 3. `crates/core/src/db/{photos,sessions,compression,send,deletion,ai,settings}.rs` — ドメイン別の CRUD と検索。
 4. `crates/core/src/scanner.rs` — 写真索引。
 5. `crates/core/src/log_parser.rs` — ログイベントとセッション状態。
@@ -268,13 +268,13 @@ AVIF はエンコード時間が支配的なため、デコード削減（約40m
 
 ## 9. schema の変更
 
-1. `crates/core/src/db/schema.rs` の `SCHEMA_LATEST` を変更し、`SCHEMA_VERSION` を1つ上げる。
-2. 新規 DB の初期化テストと、直前のバージョンの DB を拒否するテストを追加する。
-3. `docs/data-model.md` のバージョン表と `docs/database-initialization.md` を更新する。
-4. `scripts/check-docs-drift.sh` が `SCHEMA_VERSION` を参照しているため、ドキュメント側の値を同じPRで更新する。
+1. `crates/core/src/db/schema.rs` の `MIGRATIONS` に、直前の版から1つだけ上げる SQL を追加する。
+2. `SCHEMA_VERSION` を1つ上げる。`SCHEMA_V1` は凍結し、変更しない。
+3. 新規 DB の初期化テストと、直前のバージョンからの移行テストを追加する。
+4. `docs/data-model.md` のバージョン表、`docs/database-initialization.md`、`docs/architecture.md` を更新する。
+5. `scripts/check-docs-drift.sh` が `SCHEMA_VERSION` を参照しているため、ドキュメント側の値を同じPRで更新する。
 
-このアプリは過去バージョン向けの `migrate_v*` を持たない。v1〜v20 の既存 DB は
-自動移行せず、バックアップして新しいライブラリを作成する。破壊的変更（既存DBの
+1.0.0 未満の DB は存在しない前提で、0.x からの移行は実装しない。破壊的変更（既存DBの
 列削除・意味変更）はしない。必要なら新テーブル＋コピーを検討する。
 
 ## 10. デバッグ

@@ -279,7 +279,7 @@
 ### 8.1 UI⇔デーモンIPC
 
 - トランスポートはローカルソケット（Unix domain socket / Windows名前付きパイプ）。TCPやネットワーク公開は使わない。
-- プロトコルは改行区切りJSON、`PROTOCOL_VERSION = 8`。接続は `hello` で始まり、バージョン不一致なら接続を閉じる。
+- プロトコルは改行区切りJSON、`PROTOCOL_VERSION = 1`。接続は `hello` で始まり、バージョン不一致なら接続を閉じる。
 - リクエスト: `status`、`wake_commands`、`wake_jobs`、`wake_sends`、`wake_tagging`、`set_paused`、`shutdown`、`subscribe`、`thumbnails_generated`、`clear_thumbnail_cache`。MCPサーバー向けの読み取り専用リクエストとして `search_photos`、`random_search_photos`、`get_photo`、`list_worlds`、`library_stats` を持つ。
 - UI操作:
   - ダッシュボードの「再スキャン」は `daemon_commands` に積み、IPC接続中なら `wake_commands` で即時実行する。
