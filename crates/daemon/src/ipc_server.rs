@@ -21,7 +21,7 @@ use vrc_photon_ipc::{
 };
 
 use crate::DaemonStatus;
-use crate::lock::{lock_db, lock_status};
+use crate::lock::{lock_db, lock_status, lock_unpoisoned};
 use crate::plugin::{AI_PLUGIN_ID, PluginError, PluginService};
 use crate::signals::{JobSignal, WakeSignal};
 use crate::tagging::TaggingControl;
@@ -72,7 +72,7 @@ impl Default for EventBus {
 
 impl EventBus {
     pub(crate) fn publish(&self, event: vrc_photon_ipc::Event) {
-        let mut subscribers = self.subscribers.lock().unwrap();
+        let mut subscribers = lock_unpoisoned(&self.subscribers, "daemon.events.subscribers");
         if subscribers.len() == 1 {
             // The usual case is one UI subscriber. Move the event instead of
             // cloning it for a fan-out that has only one target.
@@ -94,7 +94,7 @@ impl EventBus {
 
     pub(crate) fn subscribe(&self) -> Receiver<vrc_photon_ipc::Event> {
         let (sender, receiver) = mpsc::sync_channel(EVENT_QUEUE_CAPACITY);
-        self.subscribers.lock().unwrap().push(sender);
+        lock_unpoisoned(&self.subscribers, "daemon.events.subscribers").push(sender);
         receiver
     }
 }
@@ -562,10 +562,7 @@ fn handle_connection(
             }
             Request::CancelTagging { job_id } => {
                 let cancelled = {
-                    let db = control
-                        .db
-                        .lock()
-                        .unwrap_or_else(|poisoned| poisoned.into_inner());
+                    let db = lock_db(&control.db);
                     db.cancel_tagging_job(&job_id)
                 };
                 let response = match cancelled {
@@ -1126,6 +1123,20 @@ mod tests {
                 listed_without_waiting,
                 "worlds must use the read connection instead of waiting for the writer"
             );
+        });
+    }
+
+    #[test]
+    fn event_bus_survives_a_poisoned_lock() {
+        let bus = EventBus::default();
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = bus.subscribers.lock().unwrap();
+            panic!("poison the event bus");
+        }));
+        let _receiver = bus.subscribe();
+        bus.publish(vrc_photon_ipc::Event::ScanStarted {
+            roots: 0,
+            target: None,
         });
     }
 

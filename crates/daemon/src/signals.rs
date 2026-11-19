@@ -1,6 +1,8 @@
 use std::sync::{Condvar, Mutex};
 use std::time::Duration;
 
+use crate::lock::lock_unpoisoned;
+
 /// Wakes the daemon's main loop when IPC work arrives.
 #[derive(Debug, Default)]
 pub struct WakeSignal {
@@ -10,15 +12,18 @@ pub struct WakeSignal {
 
 impl WakeSignal {
     pub fn notify(&self) {
-        *self.pending.lock().unwrap() = true;
+        *lock_unpoisoned(&self.pending, "daemon.wake.pending") = true;
         self.condvar.notify_all();
     }
 
     /// Waits for a notification or the timeout, then consumes the flag.
     pub fn wait(&self, timeout: Duration) {
-        let mut pending = self.pending.lock().unwrap();
+        let mut pending = lock_unpoisoned(&self.pending, "daemon.wake.pending");
         if !*pending {
-            let (guard, _) = self.condvar.wait_timeout(pending, timeout).unwrap();
+            let (guard, _) = self
+                .condvar
+                .wait_timeout(pending, timeout)
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             pending = guard;
         }
         *pending = false;
@@ -26,7 +31,7 @@ impl WakeSignal {
 
     #[cfg(test)]
     pub fn is_pending(&self) -> bool {
-        *self.pending.lock().unwrap()
+        *lock_unpoisoned(&self.pending, "daemon.wake.pending")
     }
 }
 
@@ -39,7 +44,7 @@ pub struct JobSignal {
 
 impl JobSignal {
     pub fn notify(&self) {
-        let mut generation = self.generation.lock().unwrap();
+        let mut generation = lock_unpoisoned(&self.generation, "daemon.jobs.generation");
         *generation = generation.wrapping_add(1);
         self.condvar.notify_all();
     }
@@ -47,18 +52,21 @@ impl JobSignal {
     /// Test-only view of the notification counter.
     #[cfg(test)]
     pub fn generation(&self) -> u64 {
-        *self.generation.lock().unwrap()
+        *lock_unpoisoned(&self.generation, "daemon.jobs.generation")
     }
 
     /// Returns `true` when the generation changed. Each worker keeps its own
     /// `seen` value, so one notification wakes every worker.
     pub fn wait(&self, seen: &mut u64, timeout: Duration) -> bool {
-        let generation = self.generation.lock().unwrap();
+        let generation = lock_unpoisoned(&self.generation, "daemon.jobs.generation");
         if *generation != *seen {
             *seen = *generation;
             return true;
         }
-        let (generation, _) = self.condvar.wait_timeout(generation, timeout).unwrap();
+        let (generation, _) = self
+            .condvar
+            .wait_timeout(generation, timeout)
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let changed = *generation != *seen;
         if changed {
             *seen = *generation;
@@ -89,5 +97,28 @@ mod tests {
         signal.notify();
         assert!(signal.wait(&mut seen, Duration::from_millis(1)));
         assert!(!signal.wait(&mut seen, Duration::from_millis(1)));
+    }
+
+    #[test]
+    fn wake_signal_survives_a_poisoned_lock() {
+        let signal = WakeSignal::default();
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = signal.pending.lock().unwrap();
+            panic!("poison the wake signal");
+        }));
+        signal.notify();
+        assert!(signal.is_pending());
+    }
+
+    #[test]
+    fn job_signal_survives_a_poisoned_lock() {
+        let signal = JobSignal::default();
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = signal.generation.lock().unwrap();
+            panic!("poison the job signal");
+        }));
+        signal.notify();
+        let mut seen = 0;
+        assert!(signal.wait(&mut seen, Duration::from_millis(10)));
     }
 }
