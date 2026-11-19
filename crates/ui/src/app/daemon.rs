@@ -18,10 +18,9 @@ use crate::app::lifecycle::ScanProgressView;
 /// Whether an incoming status snapshot should replace the applied one.
 /// The daemon stamps each snapshot with the version of the state it was
 /// read from, so anything at or below the last applied version is a stale
-/// publish and must be dropped. Version 0 comes from a daemon without
-/// versioning and is always accepted.
+/// publish and must be dropped.
 pub(crate) fn status_snapshot_is_newer(version: u64, last_applied: u64) -> bool {
-    version == 0 || version > last_applied
+    version > last_applied
 }
 
 const DAEMON_LIVENESS_SECS: i64 = 20;
@@ -362,9 +361,8 @@ mod tests {
         assert!(status_snapshot_is_newer(3, 2));
         assert!(!status_snapshot_is_newer(2, 2));
         assert!(!status_snapshot_is_newer(1, 2));
-        // Unversioned snapshots (older daemon) always apply.
-        assert!(status_snapshot_is_newer(0, 2));
-        assert!(status_snapshot_is_newer(0, 0));
+        assert!(!status_snapshot_is_newer(0, 0));
+        assert!(!status_snapshot_is_newer(0, 2));
     }
 
     #[test]
