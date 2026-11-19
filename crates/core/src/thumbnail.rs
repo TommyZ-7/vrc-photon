@@ -207,9 +207,8 @@ where
     Ok(report)
 }
 
-/// Removes every known thumbnail artifact in the cache: WebP entries (old and
-/// current keys), their `.meta` sidecars, and temp files left by interrupted
-/// writers.
+/// Removes every known thumbnail artifact in the cache: `.bc7` entries, their
+/// `.meta` sidecars, and temp files left by interrupted writers.
 ///
 /// Unrelated regular files and subdirectories are left alone, so clearing the
 /// thumbnail cache can never delete a user file that happens to live beside
@@ -262,33 +261,6 @@ pub fn clear_thumbnail_cache_in(cache_dir: &Path) -> Result<ThumbnailCacheClearR
     report.remaining_files = remaining.files;
     report.remaining_bytes = remaining.bytes;
     Ok(report)
-}
-
-/// Removes legacy WebP thumbnails and their sidecars.
-///
-/// The BC7 cache has no migration path, so a one-time startup pass can discard
-/// files left by older versions. Unrelated files are left alone.
-pub fn remove_legacy_webp_entries(cache_dir: &Path) -> Result<usize> {
-    let entries = match fs::read_dir(cache_dir) {
-        Ok(entries) => entries,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
-        Err(error) => return Err(CoreError::Io(error)),
-    };
-    let mut removed = 0;
-    for entry in entries.flatten() {
-        let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
-            continue;
-        };
-        if !name.contains(".webp") || !is_thumbnail_artifact_name(&name) {
-            continue;
-        }
-        if entry.metadata().is_ok_and(|metadata| metadata.is_file())
-            && fs::remove_file(entry.path()).is_ok()
-        {
-            removed += 1;
-        }
-    }
-    Ok(removed)
 }
 
 /// Removes every cached thumbnail and sidecar for one photo, regardless of
@@ -363,31 +335,27 @@ fn thumbnail_artifact_belongs_to(name: &str, photo_id: i64) -> bool {
 }
 
 /// Returns the cache key stem before a known thumbnail suffix.
-///
-/// Both the current `.bc7` files and the legacy `.webp` files are recognised,
-/// so clearing the cache removes an installation's old thumbnails.
 fn thumbnail_artifact_stem(name: &str) -> Option<&str> {
-    for extension in [".bc7", ".webp"] {
-        if let Some(stem) = name.strip_suffix(extension) {
-            return Some(stem);
-        }
-        if let Some(stem) = name.strip_suffix(&format!("{extension}.meta")) {
-            return Some(stem);
-        }
-        if let Some((stem, suffix)) = name.split_once(&format!("{extension}.meta.tmp")) {
-            return is_temp_suffix(suffix).then_some(stem);
-        }
-        if let Some((stem, suffix)) = name.split_once(&format!("{extension}.tmp")) {
-            return is_temp_suffix(suffix).then_some(stem);
-        }
+    let extension = ".bc7";
+    if let Some(stem) = name.strip_suffix(extension) {
+        return Some(stem);
+    }
+    if let Some(stem) = name.strip_suffix(&format!("{extension}.meta")) {
+        return Some(stem);
+    }
+    if let Some((stem, suffix)) = name.split_once(&format!("{extension}.meta.tmp")) {
+        return is_temp_suffix(suffix).then_some(stem);
+    }
+    if let Some((stem, suffix)) = name.split_once(&format!("{extension}.tmp")) {
+        return is_temp_suffix(suffix).then_some(stem);
     }
     None
 }
 
-/// A temp suffix is empty (legacy shared name) or `-<pid>-<sequence>`.
+/// A temp suffix is `-<pid>-<sequence>`.
 fn is_temp_suffix(suffix: &str) -> bool {
     let Some(rest) = suffix.strip_prefix('-') else {
-        return suffix.is_empty();
+        return false;
     };
     let mut parts = rest.split('-');
     let Some(pid) = parts.next() else {
@@ -399,8 +367,7 @@ fn is_temp_suffix(suffix: &str) -> bool {
     parts.next().is_none() && pid.parse::<u32>().is_ok() && sequence.parse::<u64>().is_ok()
 }
 
-/// Accepts the current `<id>-s<width>x<height>` key, the legacy
-/// `<id>-q<quality>-s<size>` key, and the original `<id>` key.
+/// Accepts only the current `<id>-s<width>x<height>` key.
 fn is_thumbnail_stem(stem: &str) -> bool {
     let mut parts = stem.split('-');
     let Some(id) = parts.next() else {
@@ -409,40 +376,23 @@ fn is_thumbnail_stem(stem: &str) -> bool {
     if id.parse::<u64>().is_err() {
         return false;
     }
-    let Some(first) = parts.next() else {
-        // The original key has no variant suffix.
-        return true;
-    };
-    if first.starts_with('s') && first.contains('x') {
-        if parts.next().is_some() {
-            return false;
-        }
-        let Some((width, height)) = first[1..].split_once('x') else {
-            return false;
-        };
-        return width
-            .parse::<u32>()
-            .ok()
-            .is_some_and(|width| width > 0 && width % 4 == 0)
-            && height
-                .parse::<u32>()
-                .ok()
-                .is_some_and(|height| height > 0 && height % 4 == 0);
-    }
-    let Some(size) = parts.next() else {
+    let Some(variant) = parts.next() else {
         return false;
     };
     if parts.next().is_some() {
         return false;
     }
-    first
-        .strip_prefix('q')
-        .and_then(|value| value.parse::<u32>().ok())
-        .is_some_and(|value| (1..=100).contains(&value))
-        && size
-            .strip_prefix('s')
-            .and_then(|value| value.parse::<u32>().ok())
-            .is_some_and(|value| value > 0)
+    let Some((width, height)) = variant.strip_prefix('s').and_then(|v| v.split_once('x')) else {
+        return false;
+    };
+    width
+        .parse::<u32>()
+        .ok()
+        .is_some_and(|width| width > 0 && width % 4 == 0)
+        && height
+            .parse::<u32>()
+            .ok()
+            .is_some_and(|height| height > 0 && height % 4 == 0)
 }
 
 fn collect_thumbnail_entries(cache_dir: &Path) -> std::io::Result<Vec<ThumbnailEntry>> {
@@ -460,10 +410,7 @@ fn collect_thumbnail_entries(cache_dir: &Path) -> std::io::Result<Vec<ThumbnailE
             }
         };
         let path = entry.path();
-        if !matches!(
-            path.extension().and_then(|extension| extension.to_str()),
-            Some("bc7" | "webp")
-        ) {
+        if path.extension().and_then(|extension| extension.to_str()) != Some("bc7") {
             continue;
         }
         let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) else {
@@ -762,7 +709,7 @@ mod tests {
     #[test]
     fn racing_thumbnail_publish_keeps_the_existing_file() {
         let dir = tempdir().unwrap();
-        let output = dir.path().join("thumb.webp");
+        let output = dir.path().join("thumb.bc7");
         fs::write(&output, b"existing").unwrap();
 
         let outcome = publish_thumbnail_bytes(&output, b"new").unwrap();
@@ -776,21 +723,21 @@ mod tests {
         let dir = tempdir().unwrap();
         let now = SystemTime::now();
         write_cache_entry(
-            &dir.path().join("1.webp"),
+            &dir.path().join("1-s384x216.bc7"),
             1000,
             now - Duration::from_secs(30),
         );
         write_cache_entry(
-            &dir.path().join("2.webp"),
+            &dir.path().join("2-s384x216.bc7"),
             1000,
             now - Duration::from_secs(20),
         );
         write_cache_entry(
-            &dir.path().join("3.webp"),
+            &dir.path().join("3-s384x216.bc7"),
             1000,
             now - Duration::from_secs(10),
         );
-        write_cache_entry(&dir.path().join("4.webp"), 1000, now);
+        write_cache_entry(&dir.path().join("4-s384x216.bc7"), 1000, now);
 
         let report = prune_thumbnails_in(dir.path(), 2500).unwrap();
 
@@ -800,19 +747,19 @@ mod tests {
         assert_eq!(report.removed_bytes, 2000);
         assert_eq!(report.remaining_files, 2);
         assert_eq!(report.remaining_bytes, 2000);
-        assert!(!dir.path().join("1.webp").exists());
-        assert!(!dir.path().join("2.webp").exists());
-        assert!(dir.path().join("3.webp").exists());
-        assert!(dir.path().join("4.webp").exists());
+        assert!(!dir.path().join("1-s384x216.bc7").exists());
+        assert!(!dir.path().join("2-s384x216.bc7").exists());
+        assert!(dir.path().join("3-s384x216.bc7").exists());
+        assert!(dir.path().join("4-s384x216.bc7").exists());
     }
 
     #[test]
-    fn thumbnail_cache_usage_counts_numeric_webp_only() {
+    fn thumbnail_cache_usage_counts_current_thumbnail_files_only() {
         let dir = tempdir().unwrap();
-        write_cache_entry(&dir.path().join("1.webp"), 1000, SystemTime::now());
-        write_cache_entry(&dir.path().join("2.webp"), 2000, SystemTime::now());
-        write_cache_entry(&dir.path().join("keep.webp"), 3000, SystemTime::now());
-        write_cache_entry(&dir.path().join("3.webp.tmp"), 4000, SystemTime::now());
+        write_cache_entry(&dir.path().join("1-s384x216.bc7"), 1000, SystemTime::now());
+        write_cache_entry(&dir.path().join("2-s384x216.bc7"), 2000, SystemTime::now());
+        write_cache_entry(&dir.path().join("keep.bc7"), 3000, SystemTime::now());
+        write_cache_entry(&dir.path().join("3-s384x216.bc7.tmp"), 4000, SystemTime::now());
 
         let usage = thumbnail_cache_usage_in(dir.path()).unwrap();
 
@@ -821,52 +768,33 @@ mod tests {
     }
 
     #[test]
-    fn thumbnail_cache_usage_counts_old_and_spec_keys() {
+    fn clear_thumbnail_cache_removes_current_and_temporary_files() {
         let dir = tempdir().unwrap();
-        write_cache_entry(&dir.path().join("1.webp"), 1000, SystemTime::now());
-        write_cache_entry(&dir.path().join("2-q80-s256.webp"), 2000, SystemTime::now());
-        write_cache_entry(&dir.path().join("3-q95-s512.webp"), 3000, SystemTime::now());
+        write_cache_entry(&dir.path().join("1-s384x216.bc7"), 1000, SystemTime::now());
+        write_cache_entry(&dir.path().join("1-s384x216.bc7.meta"), 10, SystemTime::now());
+        write_cache_entry(&dir.path().join("2-s384x216.bc7"), 2000, SystemTime::now());
         write_cache_entry(
-            &dir.path().join("4-q80-s256.webp.tmp"),
-            4000,
-            SystemTime::now(),
-        );
-        write_cache_entry(&dir.path().join("notes.webp"), 5000, SystemTime::now());
-
-        let usage = thumbnail_cache_usage_in(dir.path()).unwrap();
-
-        assert_eq!(usage.files, 3);
-        assert_eq!(usage.bytes, 6000);
-    }
-
-    #[test]
-    fn clear_thumbnail_cache_removes_old_new_and_temporary_files() {
-        let dir = tempdir().unwrap();
-        write_cache_entry(&dir.path().join("1.webp"), 1000, SystemTime::now());
-        write_cache_entry(&dir.path().join("1.webp.meta"), 10, SystemTime::now());
-        write_cache_entry(&dir.path().join("2-q80-s384.webp"), 2000, SystemTime::now());
-        write_cache_entry(
-            &dir.path().join("2-q80-s384.webp.meta"),
+            &dir.path().join("2-s384x216.bc7.meta"),
             10,
             SystemTime::now(),
         );
         write_cache_entry(
-            &dir.path().join("3-q80-s384.webp.tmp"),
+            &dir.path().join("3-s384x216.bc7.tmp-42-6"),
             3000,
             SystemTime::now(),
         );
         write_cache_entry(
-            &dir.path().join("3-q80-s384.webp.tmp-42-7"),
+            &dir.path().join("3-s384x216.bc7.tmp-42-7"),
             3000,
             SystemTime::now(),
         );
         write_cache_entry(
-            &dir.path().join("3-q80-s384.webp.meta.tmp-42-8"),
+            &dir.path().join("3-s384x216.bc7.meta.tmp-42-8"),
             10,
             SystemTime::now(),
         );
         write_cache_entry(&dir.path().join("notes.txt"), 4000, SystemTime::now());
-        write_cache_entry(&dir.path().join("keep.webp"), 5000, SystemTime::now());
+        write_cache_entry(&dir.path().join("keep.bc7"), 5000, SystemTime::now());
         fs::create_dir(dir.path().join("sub")).unwrap();
 
         let report = clear_thumbnail_cache_in(dir.path()).unwrap();
@@ -877,7 +805,7 @@ mod tests {
         assert_eq!(report.remaining_bytes, 0);
         assert!(dir.path().join("sub").is_dir());
         assert!(dir.path().join("notes.txt").is_file());
-        assert!(dir.path().join("keep.webp").is_file());
+        assert!(dir.path().join("keep.bc7").is_file());
     }
 
     #[test]
@@ -930,44 +858,45 @@ mod tests {
     }
 
     #[test]
-    fn legacy_webp_entries_are_removed_without_touching_other_files() {
+    fn legacy_thumbnail_names_are_not_cache_entries() {
         let dir = tempdir().unwrap();
-        fs::write(dir.path().join("1.webp"), b"old").unwrap();
-        fs::write(dir.path().join("1.webp.meta"), b"old").unwrap();
-        fs::write(dir.path().join("2.bc7"), b"new").unwrap();
-        fs::write(dir.path().join("notes.txt"), b"keep").unwrap();
-
-        let removed = remove_legacy_webp_entries(dir.path()).unwrap();
-
-        assert_eq!(removed, 2);
-        assert!(!dir.path().join("1.webp").exists());
-        assert!(!dir.path().join("1.webp.meta").exists());
-        assert!(dir.path().join("2.bc7").exists());
-        assert!(dir.path().join("notes.txt").exists());
+        for name in [
+            "1.webp",
+            "1.webp.meta",
+            "1-s384x216.webp",
+            "2-q80-s256.bc7",
+            "3.bc7",
+            "4-s384x216.bc7.tmp",
+        ] {
+            fs::write(dir.path().join(name), vec![0u8; 100]).unwrap();
+        }
+        let usage = thumbnail_cache_usage_in(dir.path()).unwrap();
+        assert_eq!(usage.files, 0);
+        assert_eq!(usage.bytes, 0);
     }
 
     #[test]
     fn prune_thumbnails_keeps_files_when_under_limit() {
         let dir = tempdir().unwrap();
-        write_cache_entry(&dir.path().join("1.webp"), 1000, SystemTime::now());
+        write_cache_entry(&dir.path().join("1-s384x216.bc7"), 1000, SystemTime::now());
 
         let report = prune_thumbnails_in(dir.path(), 2000).unwrap();
 
         assert_eq!(report.removed_files, 0);
         assert_eq!(report.remaining_bytes, 1000);
-        assert!(dir.path().join("1.webp").exists());
+        assert!(dir.path().join("1-s384x216.bc7").exists());
     }
 
     #[test]
     fn prune_thumbnails_zero_limit_is_unlimited() {
         let dir = tempdir().unwrap();
-        write_cache_entry(&dir.path().join("1.webp"), 1000, SystemTime::now());
+        write_cache_entry(&dir.path().join("1-s384x216.bc7"), 1000, SystemTime::now());
 
         let report = prune_thumbnails_in(dir.path(), 0).unwrap();
 
         assert_eq!(report.removed_files, 0);
         assert_eq!(report.remaining_files, 1);
-        assert!(dir.path().join("1.webp").exists());
+        assert!(dir.path().join("1-s384x216.bc7").exists());
     }
 
     #[test]
@@ -975,17 +904,17 @@ mod tests {
         let dir = tempdir().unwrap();
         let now = SystemTime::now();
         write_cache_entry(
-            &dir.path().join("1.webp"),
+            &dir.path().join("1-s384x216.bc7"),
             5000,
             now - Duration::from_secs(10),
         );
         write_cache_entry(
-            &dir.path().join("keep.webp"),
+            &dir.path().join("keep.bc7"),
             5000,
             now - Duration::from_secs(20),
         );
         write_cache_entry(
-            &dir.path().join("2.webp.tmp"),
+            &dir.path().join("2-s384x216.bc7.tmp"),
             5000,
             now - Duration::from_secs(30),
         );
@@ -996,9 +925,9 @@ mod tests {
 
         assert_eq!(report.scanned_files, 1);
         assert_eq!(report.removed_files, 1);
-        assert!(!dir.path().join("1.webp").exists());
-        assert!(dir.path().join("keep.webp").exists());
-        assert!(dir.path().join("2.webp.tmp").exists());
+        assert!(!dir.path().join("1-s384x216.bc7").exists());
+        assert!(dir.path().join("keep.bc7").exists());
+        assert!(dir.path().join("2-s384x216.bc7.tmp").exists());
         assert!(dir.path().join("notes.txt").exists());
         assert!(dir.path().join("sub").is_dir());
     }
@@ -1016,13 +945,13 @@ mod tests {
     #[test]
     fn prune_thumbnails_removes_every_entry_when_limit_is_below_one_file() {
         let dir = tempdir().unwrap();
-        write_cache_entry(&dir.path().join("1.webp"), 1000, SystemTime::now());
+        write_cache_entry(&dir.path().join("1-s384x216.bc7"), 1000, SystemTime::now());
 
         let report = prune_thumbnails_in(dir.path(), 1).unwrap();
 
         assert_eq!(report.removed_files, 1);
         assert_eq!(report.remaining_bytes, 0);
-        assert!(!dir.path().join("1.webp").exists());
+        assert!(!dir.path().join("1-s384x216.bc7").exists());
     }
 
     #[test]
@@ -1030,23 +959,23 @@ mod tests {
         let dir = tempdir().unwrap();
         let now = SystemTime::now();
         write_cache_entry(
-            &dir.path().join("1.webp"),
+            &dir.path().join("1-s384x216.bc7"),
             1000,
             now - Duration::from_secs(30),
         );
         write_cache_entry(
-            &dir.path().join("2.webp"),
+            &dir.path().join("2-s384x216.bc7"),
             1000,
             now - Duration::from_secs(20),
         );
         write_cache_entry(
-            &dir.path().join("3.webp"),
+            &dir.path().join("3-s384x216.bc7"),
             1000,
             now - Duration::from_secs(10),
         );
 
         let report = prune_thumbnails_with(dir.path(), 2500, |path| {
-            if path.ends_with("1.webp") {
+            if path.ends_with("1-s384x216.bc7") {
                 Err(std::io::Error::new(
                     std::io::ErrorKind::PermissionDenied,
                     "injected removal failure",
@@ -1060,17 +989,17 @@ mod tests {
         assert_eq!(report.removed_files, 1);
         assert_eq!(report.removed_bytes, 1000);
         assert_eq!(report.remaining_bytes, 2000);
-        assert!(dir.path().join("1.webp").exists());
-        assert!(!dir.path().join("2.webp").exists());
-        assert!(dir.path().join("3.webp").exists());
+        assert!(dir.path().join("1-s384x216.bc7").exists());
+        assert!(!dir.path().join("2-s384x216.bc7").exists());
+        assert!(dir.path().join("3-s384x216.bc7").exists());
 
         // The failed entry is retried on the next pass once removal works.
         let retry = prune_thumbnails_with(dir.path(), 1500, |path| fs::remove_file(path)).unwrap();
 
         assert_eq!(retry.removed_files, 1);
         assert_eq!(retry.remaining_bytes, 1000);
-        assert!(!dir.path().join("1.webp").exists());
-        assert!(dir.path().join("3.webp").exists());
+        assert!(!dir.path().join("1-s384x216.bc7").exists());
+        assert!(dir.path().join("3-s384x216.bc7").exists());
     }
 
     #[test]
@@ -1078,23 +1007,23 @@ mod tests {
         let dir = tempdir().unwrap();
         let now = SystemTime::now();
         write_cache_entry(
-            &dir.path().join("1.webp"),
+            &dir.path().join("1-s384x216.bc7"),
             1000,
             now - Duration::from_secs(30),
         );
         write_cache_entry(
-            &dir.path().join("2.webp"),
+            &dir.path().join("2-s384x216.bc7"),
             1000,
             now - Duration::from_secs(20),
         );
         write_cache_entry(
-            &dir.path().join("3.webp"),
+            &dir.path().join("3-s384x216.bc7"),
             1000,
             now - Duration::from_secs(10),
         );
 
         let report = prune_thumbnails_with(dir.path(), 500, |path| {
-            if path.ends_with("1.webp") || path.ends_with("3.webp") {
+            if path.ends_with("1-s384x216.bc7") || path.ends_with("3-s384x216.bc7") {
                 Err(std::io::Error::new(
                     std::io::ErrorKind::PermissionDenied,
                     "injected removal failure",
@@ -1111,9 +1040,9 @@ mod tests {
         assert_eq!(report.removed_bytes, 1000);
         assert_eq!(report.remaining_files, 2);
         assert_eq!(report.remaining_bytes, 2000);
-        assert!(dir.path().join("1.webp").exists());
-        assert!(!dir.path().join("2.webp").exists());
-        assert!(dir.path().join("3.webp").exists());
+        assert!(dir.path().join("1-s384x216.bc7").exists());
+        assert!(!dir.path().join("2-s384x216.bc7").exists());
+        assert!(dir.path().join("3-s384x216.bc7").exists());
     }
 
     #[cfg(unix)]
@@ -1124,12 +1053,12 @@ mod tests {
         let dir = tempdir().unwrap();
         let now = SystemTime::now();
         write_cache_entry(
-            &dir.path().join("1.webp"),
+            &dir.path().join("1-s384x216.bc7"),
             1000,
             now - Duration::from_secs(20),
         );
         write_cache_entry(
-            &dir.path().join("2.webp"),
+            &dir.path().join("2-s384x216.bc7"),
             1000,
             now - Duration::from_secs(10),
         );
@@ -1152,8 +1081,8 @@ mod tests {
         assert_eq!(retried.removed_files, 2);
         assert_eq!(retried.remaining_files, 0);
         assert_eq!(retried.remaining_bytes, 0);
-        assert!(!dir.path().join("1.webp").exists());
-        assert!(!dir.path().join("2.webp").exists());
+        assert!(!dir.path().join("1-s384x216.bc7").exists());
+        assert!(!dir.path().join("2-s384x216.bc7").exists());
     }
 
     #[cfg(windows)]
@@ -1163,10 +1092,10 @@ mod tests {
 
         let dir = tempdir().unwrap();
         let now = SystemTime::now();
-        let locked_path = dir.path().join("1.webp");
+        let locked_path = dir.path().join("1-s384x216.bc7");
         write_cache_entry(&locked_path, 1000, now - Duration::from_secs(20));
         write_cache_entry(
-            &dir.path().join("2.webp"),
+            &dir.path().join("2-s384x216.bc7"),
             1000,
             now - Duration::from_secs(10),
         );
@@ -1183,7 +1112,7 @@ mod tests {
         assert_eq!(first.remaining_bytes, 1000);
         drop(locked);
         assert!(locked_path.exists());
-        assert!(!dir.path().join("2.webp").exists());
+        assert!(!dir.path().join("2-s384x216.bc7").exists());
 
         let second = prune_thumbnails_in(dir.path(), 500).unwrap();
 
@@ -1195,7 +1124,7 @@ mod tests {
     #[test]
     fn refresh_thumbnail_access_rewrites_a_stale_mtime() {
         let dir = tempdir().unwrap();
-        let path = dir.path().join("1.webp");
+        let path = dir.path().join("1-s384x216.bc7");
         let stale = SystemTime::now() - Duration::from_secs(2 * 60 * 60);
         write_cache_entry(&path, 10, stale);
         let before = fs::metadata(&path).unwrap().modified().unwrap();
@@ -1209,7 +1138,7 @@ mod tests {
     #[test]
     fn refresh_thumbnail_access_leaves_a_recent_mtime_alone() {
         let dir = tempdir().unwrap();
-        let path = dir.path().join("1.webp");
+        let path = dir.path().join("1-s384x216.bc7");
         let recent = SystemTime::now() - Duration::from_secs(5);
         write_cache_entry(&path, 10, recent);
         let before = fs::metadata(&path).unwrap().modified().unwrap();
@@ -1437,14 +1366,14 @@ mod tests {
     fn remove_thumbnail_files_removes_every_variant_and_sidecar() {
         let dir = tempdir().unwrap();
         for name in [
-            "7.webp",
-            "7.webp.meta",
-            "7-q80-s256.webp",
-            "7-q80-s256.webp.meta",
-            "7-q95-s512.webp.tmp-42-1",
-            "8-q80-s256.webp",
-            "8-q80-s256.webp.meta",
-            "17.webp",
+            "7-s256x144.bc7",
+            "7-s256x144.bc7.meta",
+            "7-s512x288.bc7",
+            "7-s512x288.bc7.meta",
+            "7-s512x288.bc7.tmp-42-1",
+            "8-s256x144.bc7",
+            "8-s256x144.bc7.meta",
+            "17-s384x216.bc7",
             "notes.txt",
         ] {
             fs::write(dir.path().join(name), b"data").unwrap();
@@ -1454,17 +1383,17 @@ mod tests {
 
         assert_eq!(removed, 5);
         for name in [
-            "7.webp",
-            "7.webp.meta",
-            "7-q80-s256.webp",
-            "7-q80-s256.webp.meta",
-            "7-q95-s512.webp.tmp-42-1",
+            "7-s256x144.bc7",
+            "7-s256x144.bc7.meta",
+            "7-s512x288.bc7",
+            "7-s512x288.bc7.meta",
+            "7-s512x288.bc7.tmp-42-1",
         ] {
             assert!(!dir.path().join(name).exists(), "still present: {name}");
         }
-        assert!(dir.path().join("8-q80-s256.webp").exists());
-        assert!(dir.path().join("8-q80-s256.webp.meta").exists());
-        assert!(dir.path().join("17.webp").exists());
+        assert!(dir.path().join("8-s256x144.bc7").exists());
+        assert!(dir.path().join("8-s256x144.bc7.meta").exists());
+        assert!(dir.path().join("17-s384x216.bc7").exists());
         assert!(dir.path().join("notes.txt").exists());
     }
 
@@ -1473,24 +1402,24 @@ mod tests {
         let dir = tempdir().unwrap();
         let now = SystemTime::now();
         write_cache_entry(
-            &dir.path().join("1.webp"),
+            &dir.path().join("1-s384x216.bc7"),
             1000,
             now - Duration::from_secs(20),
         );
         write_cache_entry(
-            &dir.path().join("1.webp.meta"),
+            &dir.path().join("1-s384x216.bc7.meta"),
             10,
             now - Duration::from_secs(20),
         );
-        write_cache_entry(&dir.path().join("2.webp"), 1000, now);
+        write_cache_entry(&dir.path().join("2-s384x216.bc7"), 1000, now);
 
         let report = prune_thumbnails_in(dir.path(), 1500).unwrap();
 
         assert_eq!(report.removed_files, 1);
         assert_eq!(report.removed_bytes, 1000);
-        assert!(!dir.path().join("1.webp").exists());
-        assert!(!dir.path().join("1.webp.meta").exists());
-        assert!(dir.path().join("2.webp").exists());
+        assert!(!dir.path().join("1-s384x216.bc7").exists());
+        assert!(!dir.path().join("1-s384x216.bc7.meta").exists());
+        assert!(dir.path().join("2-s384x216.bc7").exists());
     }
 
     #[test]

@@ -1540,11 +1540,6 @@ impl Daemon {
 
     pub(crate) fn start_workers(&mut self) {
         if self.thumbnail_tx.is_none() {
-            match thumbnail::remove_legacy_webp_entries(&self.thumbnail_dir) {
-                Ok(0) => {}
-                Ok(removed) => tracing::info!(removed, "removed legacy WebP thumbnails"),
-                Err(error) => tracing::warn!(%error, "cannot remove legacy WebP thumbnails"),
-            }
             let (tx, rx) = mpsc::channel();
             let db = self.db.clone();
             let running = self.running.clone();
