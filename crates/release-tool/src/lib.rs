@@ -32,10 +32,14 @@ pub fn build_manifest(
     repo: &str,
     notes_url: &str,
     ai_plugin: Option<AiPluginRelease>,
+    public_keys: &[String],
 ) -> Result<Manifest> {
     let version = tag.strip_prefix('v').unwrap_or(tag);
     if version.is_empty() {
         bail!("tag has no version");
+    }
+    if public_keys.is_empty() {
+        bail!("at least one public key is required to verify artifacts");
     }
 
     let appimage = unique_artifact(dist, |name| name.ends_with(".AppImage"), "AppImage")?;
@@ -56,21 +60,28 @@ pub fn build_manifest(
     let mut platforms = BTreeMap::new();
     platforms.insert(
         "linux-x86_64".to_string(),
-        asset(dist, &appimage, tag, repo, UpdateFormat::AppImage)?,
+        asset(
+            dist,
+            &appimage,
+            tag,
+            repo,
+            UpdateFormat::AppImage,
+            public_keys,
+        )?,
     );
     platforms.insert(
         "windows-x86_64".to_string(),
-        asset(dist, &nsis, tag, repo, UpdateFormat::Nsis)?,
+        asset(dist, &nsis, tag, repo, UpdateFormat::Nsis, public_keys)?,
     );
 
     let mut system_packages = BTreeMap::new();
     system_packages.insert(
         "pacman".to_string(),
-        asset(dist, &pacman, tag, repo, UpdateFormat::Pacman)?,
+        asset(dist, &pacman, tag, repo, UpdateFormat::Pacman, public_keys)?,
     );
     system_packages.insert(
         "deb".to_string(),
-        asset(dist, &deb, tag, repo, UpdateFormat::Deb)?,
+        asset(dist, &deb, tag, repo, UpdateFormat::Deb, public_keys)?,
     );
 
     Ok(Manifest {
@@ -112,8 +123,11 @@ fn asset(
     tag: &str,
     repo: &str,
     format: UpdateFormat,
+    public_keys: &[String],
 ) -> Result<PlatformAsset> {
     let name = file_name(path)?;
+    verify_file(path, public_keys)
+        .with_context(|| format!("refusing to embed an unverified signature for {name}"))?;
     let signature_path = dist.join(format!("{name}.minisig"));
     let signature = std::fs::read_to_string(&signature_path)
         .with_context(|| format!("missing signature {}", signature_path.display()))?;
@@ -200,17 +214,49 @@ pub fn collect_files(dist: Option<&Path>, files: Vec<PathBuf>) -> Result<Vec<Pat
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
+
     use super::*;
+
+    thread_local! {
+        static TEST_KEYPAIR: RefCell<Option<(minisign::KeyPair, String)>> =
+            const { RefCell::new(None) };
+    }
+
+    fn with_test_keypair<R>(f: impl FnOnce(&minisign::KeyPair, &str) -> R) -> R {
+        TEST_KEYPAIR.with(|cell| {
+            let mut slot = cell.borrow_mut();
+            let (keypair, public_key) = slot.get_or_insert_with(|| {
+                let keypair = minisign::KeyPair::generate_unencrypted_keypair().unwrap();
+                let public_key = keypair
+                    .pk
+                    .to_box()
+                    .unwrap()
+                    .to_string()
+                    .lines()
+                    .find(|line| line.starts_with("RW"))
+                    .unwrap()
+                    .to_string();
+                (keypair, public_key)
+            });
+            f(keypair, public_key)
+        })
+    }
+
+    fn test_public_keys() -> Vec<String> {
+        with_test_keypair(|_, public_key| vec![public_key.to_string()])
+    }
 
     fn write_artifact(dist: &Path, name: &str, content: &[u8]) -> PathBuf {
         let path = dist.join(name);
         std::fs::write(&path, content).unwrap();
-        let keypair = minisign::KeyPair::generate_unencrypted_keypair().unwrap();
-        let signature =
-            minisign::sign(None, &keypair.sk, std::io::Cursor::new(content), None, None)
-                .unwrap()
-                .into_string();
-        std::fs::write(dist.join(format!("{name}.minisig")), signature).unwrap();
+        with_test_keypair(|keypair, _| {
+            let signature =
+                minisign::sign(None, &keypair.sk, std::io::Cursor::new(content), None, None)
+                    .unwrap()
+                    .into_string();
+            std::fs::write(dist.join(format!("{name}.minisig")), signature).unwrap();
+        });
         path
     }
 
@@ -231,6 +277,7 @@ mod tests {
             "TommyZ-7/vrc-photon",
             "https://github.com/TommyZ-7/vrc-photon/releases/tag/v0.4.0",
             None,
+            &test_public_keys(),
         )
         .unwrap();
         assert_eq!(manifest.schema, 1);
@@ -281,6 +328,7 @@ mod tests {
             "TommyZ-7/vrc-photon",
             "https://example.com/notes",
             None,
+            &test_public_keys(),
         )
         .unwrap();
         assert_eq!(manifest.platforms.len(), 2);
@@ -323,6 +371,7 @@ mod tests {
             "TommyZ-7/vrc-photon",
             "https://example.com/notes",
             Some(ai_plugin.clone()),
+            &test_public_keys(),
         )
         .unwrap();
         assert_eq!(manifest.ai_plugin, Some(ai_plugin));
@@ -364,7 +413,17 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         write_artifact(dir.path(), "vrc-photon_0.4.0_x86_64.AppImage", b"appimage");
         write_artifact(dir.path(), "vrc-photon_0.4.0_x64-setup.exe", b"installer");
-        assert!(build_manifest(dir.path(), "v0.4.0", "x/y", "https://example.com", None).is_err());
+        assert!(
+            build_manifest(
+                dir.path(),
+                "v0.4.0",
+                "x/y",
+                "https://example.com",
+                None,
+                &test_public_keys()
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -383,7 +442,17 @@ mod tests {
             b"other pacman",
         );
         write_artifact(dir.path(), "vrc-photon_0.4.0_amd64.deb", b"deb");
-        assert!(build_manifest(dir.path(), "v0.4.0", "x/y", "https://example.com", None).is_err());
+        assert!(
+            build_manifest(
+                dir.path(),
+                "v0.4.0",
+                "x/y",
+                "https://example.com",
+                None,
+                &test_public_keys()
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -393,7 +462,17 @@ mod tests {
         write_artifact(dir.path(), "vrc-photon_0.4.0_x64-setup.exe", b"installer");
         write_artifact(dir.path(), "vrc-photon-x86_64.pkg.tar.zst", b"pacman");
         write_artifact(dir.path(), "vrc-photon_0.4.0_amd64.deb", b"deb");
-        assert!(build_manifest(dir.path(), "v0.4.0", "x/y", "https://example.com", None).is_err());
+        assert!(
+            build_manifest(
+                dir.path(),
+                "v0.4.0",
+                "x/y",
+                "https://example.com",
+                None,
+                &test_public_keys()
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -411,7 +490,17 @@ mod tests {
             b"pacman",
         );
         write_artifact(dir.path(), "vrc-photon_0.4.0_amd64.deb", b"deb");
-        assert!(build_manifest(dir.path(), "v0.4.0", "x/y", "https://example.com", None).is_err());
+        assert!(
+            build_manifest(
+                dir.path(),
+                "v0.4.0",
+                "x/y",
+                "https://example.com",
+                None,
+                &test_public_keys()
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -425,7 +514,17 @@ mod tests {
             b"pacman",
         );
         write_artifact(dir.path(), "vrc-photon_0.4.0_amd64.deb", b"deb");
-        assert!(build_manifest(dir.path(), "v0.4.0", "x/y", "https://example.com", None).is_err());
+        assert!(
+            build_manifest(
+                dir.path(),
+                "v0.4.0",
+                "x/y",
+                "https://example.com",
+                None,
+                &test_public_keys()
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -440,7 +539,17 @@ mod tests {
             b"pacman",
         );
         write_artifact(dir.path(), "vrc-photon_0.4.0_amd64.deb", b"deb");
-        assert!(build_manifest(dir.path(), "v0.4.0", "x/y", "https://example.com", None).is_err());
+        assert!(
+            build_manifest(
+                dir.path(),
+                "v0.4.0",
+                "x/y",
+                "https://example.com",
+                None,
+                &test_public_keys()
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -466,5 +575,30 @@ mod tests {
 
         std::fs::write(&file, b"tampered").unwrap();
         assert!(verify_file(&file, std::slice::from_ref(&public_key)).is_err());
+    }
+
+    #[test]
+    fn generate_rejects_an_artifact_changed_after_signing() {
+        let dir = tempfile::tempdir().unwrap();
+        let appimage = write_artifact(dir.path(), "vrc-photon_0.4.0_x86_64.AppImage", b"appimage");
+        write_artifact(dir.path(), "vrc-photon_0.4.0_x64-setup.exe", b"installer");
+        write_artifact(
+            dir.path(),
+            "vrc-photon-0.4.0-1-x86_64.pkg.tar.zst",
+            b"pacman",
+        );
+        write_artifact(dir.path(), "vrc-photon_0.4.0_amd64.deb", b"deb");
+        std::fs::write(&appimage, b"rebuilt without resigning").unwrap();
+        assert!(
+            build_manifest(
+                dir.path(),
+                "v0.4.0",
+                "x/y",
+                "https://example.com",
+                None,
+                &test_public_keys()
+            )
+            .is_err()
+        );
     }
 }

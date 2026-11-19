@@ -31,6 +31,9 @@ enum Command {
         /// Latest AI plugin release metadata checked into the repository.
         #[arg(long)]
         ai_plugin: Option<PathBuf>,
+        /// Public key (RW... line) used to verify each artifact's signature.
+        #[arg(long = "public-key", required = true)]
+        public_keys: Vec<String>,
         #[arg(long)]
         output: PathBuf,
     },
@@ -63,10 +66,11 @@ fn main() -> Result<()> {
             repo,
             notes_url,
             ai_plugin,
+            public_keys,
             output,
         } => {
             let ai_plugin = ai_plugin.as_deref().map(read_ai_plugin).transpose()?;
-            let manifest = build_manifest(&dist, &tag, &repo, &notes_url, ai_plugin)?;
+            let manifest = build_manifest(&dist, &tag, &repo, &notes_url, ai_plugin, &public_keys)?;
             if let Some(parent) = output.parent()
                 && !parent.as_os_str().is_empty()
             {
