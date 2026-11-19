@@ -353,17 +353,28 @@ impl<R> DeadlineReader<R> {
 impl<R: Read> Read for DeadlineReader<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         loop {
+            let Some(deadline) = self.deadline else {
+                // The handshake is over: blocking reads and EOF behave
+                // normally.
+                return self.inner.read(buf);
+            };
+            if Instant::now() >= deadline {
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "IPC hello handshake timed out",
+                ));
+            }
             match self.inner.read(buf) {
-                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
-                    let Some(deadline) = self.deadline else {
-                        return Err(error);
-                    };
-                    if Instant::now() >= deadline {
-                        return Err(io::Error::new(
-                            io::ErrorKind::TimedOut,
-                            "IPC hello handshake timed out",
-                        ));
-                    }
+                // A Windows named pipe in non-blocking mode reports an empty
+                // pipe as Ok(0) or ERROR_NO_DATA (232), which Rust maps to
+                // BrokenPipe. Both mean "not ready yet" until the deadline.
+                Ok(0) => thread::sleep(Duration::from_millis(10)),
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        io::ErrorKind::WouldBlock | io::ErrorKind::BrokenPipe
+                    ) || error.raw_os_error() == Some(232) =>
+                {
                     thread::sleep(Duration::from_millis(10));
                 }
                 result => return result,
@@ -2087,6 +2098,66 @@ mod tests {
         let mut byte = [0];
         assert_eq!(reader.read(&mut byte).unwrap(), 1);
         assert_eq!(byte[0], b'x');
+    }
+
+    #[test]
+    fn deadline_reader_retries_broken_pipe_until_data_arrives() {
+        struct OneBrokenPipe {
+            broken: bool,
+        }
+        impl std::io::Read for OneBrokenPipe {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                if self.broken {
+                    self.broken = false;
+                    return Err(std::io::ErrorKind::BrokenPipe.into());
+                }
+                buf[0] = b'x';
+                Ok(1)
+            }
+        }
+        let mut reader =
+            DeadlineReader::new(OneBrokenPipe { broken: true }, Duration::from_secs(1));
+        let mut byte = [0];
+        assert_eq!(reader.read(&mut byte).unwrap(), 1);
+        assert_eq!(byte[0], b'x');
+    }
+
+    #[test]
+    fn deadline_reader_retries_an_empty_read_until_data_arrives() {
+        struct OneEmptyRead {
+            empty: bool,
+        }
+        impl std::io::Read for OneEmptyRead {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                if self.empty {
+                    self.empty = false;
+                    return Ok(0);
+                }
+                buf[0] = b'x';
+                Ok(1)
+            }
+        }
+        let mut reader =
+            DeadlineReader::new(OneEmptyRead { empty: true }, Duration::from_secs(1));
+        let mut byte = [0];
+        assert_eq!(reader.read(&mut byte).unwrap(), 1);
+        assert_eq!(byte[0], b'x');
+    }
+
+    #[test]
+    fn deadline_reader_reports_eof_after_the_deadline_is_cleared() {
+        struct AlwaysEof;
+        impl std::io::Read for AlwaysEof {
+            fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+                Ok(0)
+            }
+        }
+        let mut reader = DeadlineReader {
+            inner: AlwaysEof,
+            deadline: None,
+        };
+        let mut byte = [0];
+        assert_eq!(reader.read(&mut byte).unwrap(), 0);
     }
 
     #[test]
