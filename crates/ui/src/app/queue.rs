@@ -23,10 +23,7 @@ impl App {
             QueueFeature::Discord => self.settings.discord_queue_paused = paused,
             QueueFeature::Tagging => self.settings.ai_tagging_queue_paused = paused,
         }
-        if let Err(error) = self.settings.save(&self.db) {
-            self.toast_error(tr_args!("settings.save_failed", error = error), cx);
-            return;
-        }
+        self.schedule_settings_save(cx);
         cx.notify();
     }
 

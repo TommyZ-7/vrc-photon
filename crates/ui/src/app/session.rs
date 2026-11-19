@@ -74,9 +74,7 @@ impl App {
         }
         let anchor = self.capture_top_photo(false);
         self.settings.ui_photos_view_mode = mode;
-        if let Err(error) = self.settings.save(&self.db) {
-            tracing::warn!(%error, "cannot save photos view mode");
-        }
+        self.schedule_settings_save(cx);
         if mode == PhotosViewMode::Sessions {
             self.ensure_library_session_rows();
         }

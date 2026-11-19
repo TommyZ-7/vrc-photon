@@ -353,14 +353,19 @@ impl PhotoApp {
                 } else {
                     1
                 };
-                let state = self.suggestion.as_mut().unwrap();
+                let Some(state) = self.suggestion.as_mut() else {
+                    return false;
+                };
                 state.selected =
                     move_suggestion_selection(state.selected, state.items.len(), delta);
                 cx.notify();
                 true
             }
             SuggestionKeyAction::Confirm => {
-                let index = self.suggestion.as_ref().unwrap().selected;
+                let Some(state) = self.suggestion.as_ref() else {
+                    return false;
+                };
+                let index = state.selected;
                 self.select_suggestion(index, window, cx);
                 true
             }

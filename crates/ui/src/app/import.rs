@@ -299,9 +299,7 @@ impl App {
     /// folder import. The dialog reads `AppSettings::import_options()` when
     /// the user starts the run.
     pub(crate) fn save_import_structure_settings(&mut self, cx: &mut Context<Self>) {
-        if let Err(error) = self.settings.save(&self.db) {
-            self.toast_error(tr_args!("settings.save_failed", error = error), cx);
-        }
+        self.schedule_settings_save(cx);
         cx.notify();
     }
 

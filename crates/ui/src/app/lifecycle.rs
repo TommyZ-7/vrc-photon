@@ -6,7 +6,7 @@
 use std::time::{Duration, Instant};
 
 use gpui_kit::*;
-use vrc_photon_core::model::{CompressionProfile, LibraryStats, PhotoSort};
+use vrc_photon_core::model::{CompressionProfile, LibraryStats, Photo, PhotoSort};
 use vrc_photon_core::settings::AppSettings;
 use vrc_photon_i18n::tr;
 use vrc_photon_ipc::{
@@ -199,7 +199,6 @@ impl App {
                 // A new connection may belong to a restarted daemon whose
                 // version counter started over; adopt its lineage.
                 self.last_status_version = status.version;
-                self.refresh_monitor();
                 self.apply_daemon_status(status);
                 // A restarted daemon may have finished an install/probe while
                 // the link was down. Reload the cards and the inspector.
@@ -225,7 +224,7 @@ impl App {
                 // the cards cannot stay on "Installing…".
                 self.ai.reset_connection();
                 if was_connected {
-                    self.refresh_monitor();
+                    self.refresh_live_async(cx);
                 }
                 true
             }
@@ -289,22 +288,12 @@ impl App {
                 let library_changed =
                     completed || matches!(&status, JobStatus::Failed | JobStatus::Cancelled);
                 if completed {
-                    // A `replace` job changed the displayed file. Only that
-                    // terminal state can publish a new derivative; failed and
-                    // cancelled jobs leave every cache entry valid. Check the
-                    // database because `keep` jobs also complete. The row and
-                    // thumbnail are refreshed together in the coalesced pass
-                    // so a render between them cannot decode the removed
-                    // original.
-                    let replaced = self
-                        .db
-                        .photo_by_id(photo_id)
-                        .ok()
-                        .flatten()
-                        .is_some_and(|photo| photo.status.is_replaced());
-                    if replaced {
-                        self.compression_replaced_photos.insert(photo_id);
-                    }
+                    // A `replace` job changed the displayed file, but `keep`
+                    // jobs also complete. Record the candidate here without a
+                    // per-event database read; the coalesced pass resolves the
+                    // whole burst with one `photos_by_ids` query and keeps the
+                    // rows that are actually replaced.
+                    self.compression_replaced_candidates.insert(photo_id);
                 }
                 self.schedule_compression_refresh(library_changed, cx);
                 true
@@ -329,7 +318,6 @@ impl App {
                 ) {
                     self.last_status_version = self.last_status_version.max(status.version);
                     self.apply_daemon_status(status);
-                    self.refresh_monitor();
                     true
                 } else {
                     false
@@ -452,10 +440,13 @@ impl App {
         }
         self.revision_debounce.reset();
         self.count_debounce.reset();
-        let replaced: Vec<i64> = self.compression_replaced_photos.drain().collect();
-        if !replaced.is_empty() {
-            match self.db.photos_by_ids(&replaced) {
+        let candidates: Vec<i64> = self.compression_replaced_candidates.drain().collect();
+        let mut replaced = Vec::new();
+        if !candidates.is_empty() {
+            match self.db.photos_by_ids(&candidates) {
                 Ok(photos) => {
+                    let photos = replaced_photo_rows(photos);
+                    replaced = photos.iter().map(|photo| photo.id).collect();
                     self.library.borrow_mut().update_photo_rows(&photos);
                     self.search_view.borrow_mut().update_photo_rows(&photos);
                     // Invalidate the media only after the cached row points at
@@ -526,7 +517,7 @@ impl App {
             }
         }
         self.reload_job_state(cx);
-        self.refresh_monitor();
+        self.refresh_monitor_sync();
         if let Some(id) = self.selected {
             self.load_selected_meta(id);
         }
@@ -786,7 +777,6 @@ impl App {
         let settings = settings_after_reload(&self.settings, AppSettings::load(&self.db));
         self.apply_loaded_settings(settings, cx);
         self.reload_send_history(cx);
-        self.refresh_monitor();
         if let Some(id) = self.selected {
             self.load_selected_meta(id);
         }
@@ -1044,9 +1034,7 @@ impl App {
         }
         self.hovered_nav = None;
         self.settings.ui_sidebar_collapsed = self.sidebar_collapsed;
-        if let Err(error) = self.settings.save(&self.db) {
-            tracing::warn!(%error, "cannot save sidebar state");
-        }
+        self.schedule_settings_save(cx);
         cx.notify();
     }
 
@@ -1062,9 +1050,7 @@ impl App {
             self.inspector_motion.animate_to(target, MOTION_SLOW);
         }
         self.settings.ui_inspector_collapsed = self.inspector_collapsed;
-        if let Err(error) = self.settings.save(&self.db) {
-            tracing::warn!(%error, "cannot save inspector state");
-        }
+        self.schedule_settings_save(cx);
         cx.notify();
     }
 
@@ -1081,9 +1067,7 @@ impl App {
             self.ribbon_motion.animate_to(target, MOTION_BASE);
         }
         self.settings.ui_ribbon_collapsed = collapsed;
-        if let Err(error) = self.settings.save(&self.db) {
-            tracing::warn!(%error, "cannot save ribbon state");
-        }
+        self.schedule_settings_save(cx);
         cx.notify();
     }
 
@@ -1103,15 +1087,26 @@ impl App {
     }
 }
 
+/// Keeps only the rows a `replace` job actually changed. `keep` jobs report
+/// the same terminal status but leave the display source untouched.
+fn replaced_photo_rows(photos: Vec<Photo>) -> Vec<Photo> {
+    photos
+        .into_iter()
+        .filter(|photo| photo.status.is_replaced())
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         IpcBatchNotify, ScanRefresh, drain_ipc_batch, import_scan_enqueued_count,
-        is_stale_revision, scan_refresh_action, settings_after_reload,
+        is_stale_revision, replaced_photo_rows, scan_refresh_action, settings_after_reload,
     };
     use crate::app::Screen;
     use crate::ipc_bridge::Incoming;
+    use vrc_photon_core::model::{Photo, PhotoStatus};
     use vrc_photon_core::settings::AppSettings;
+    use vrc_photon_ipc::Event as IpcEvent;
 
     #[test]
     fn settings_reload_keeps_the_live_values_when_the_row_is_malformed() {
@@ -1244,6 +1239,82 @@ mod tests {
         assert_eq!(
             scan_refresh_action(Screen::Settings, false, Some(6), 5, false),
             ScanRefresh::Dirty
+        );
+    }
+
+    #[test]
+    fn a_mixed_ipc_batch_is_drained_in_arrival_order() {
+        let (tx, rx) = async_channel::bounded(8);
+        tx.try_send(Incoming::Connected {
+            status: Default::default(),
+            daemon_pid: 42,
+        })
+        .unwrap();
+        tx.try_send(Incoming::Event(IpcEvent::ScanStarted {
+            roots: 1,
+            target: None,
+        }))
+        .unwrap();
+        tx.try_send(Incoming::Disconnected("closed".into()))
+            .unwrap();
+
+        let first = rx.try_recv().unwrap();
+        let batch = drain_ipc_batch(first, &rx);
+        assert_eq!(batch.len(), 3);
+        assert!(matches!(
+            batch[0],
+            Incoming::Connected { daemon_pid: 42, .. }
+        ));
+        assert!(matches!(
+            batch[1],
+            Incoming::Event(IpcEvent::ScanStarted { .. })
+        ));
+        assert!(matches!(batch[2], Incoming::Disconnected(_)));
+    }
+
+    fn photo_with_status(id: i64, status: PhotoStatus) -> Photo {
+        Photo {
+            id,
+            root_id: 1,
+            rel_path: String::new(),
+            abs_path: String::new(),
+            file_name: String::new(),
+            captured_at_utc: 0,
+            captured_at_local: String::new(),
+            tz_offset_sec: 0,
+            width: 0,
+            height: 0,
+            file_size: 0,
+            mtime: 0,
+            blake3: None,
+            status,
+            is_favorite: false,
+            note: None,
+            display_derivative_id: None,
+            display_path: None,
+            display_format: None,
+            display_file_size: None,
+            display_width: None,
+            display_height: None,
+            world_name: None,
+            world_id: None,
+            instance_id: None,
+            link_method: None,
+            confidence: None,
+            author: None,
+        }
+    }
+
+    #[test]
+    fn only_replaced_rows_are_refreshed_after_compression() {
+        let rows = vec![
+            photo_with_status(1, PhotoStatus::Present),
+            photo_with_status(2, PhotoStatus::Replaced),
+        ];
+        let kept = replaced_photo_rows(rows);
+        assert_eq!(
+            kept.iter().map(|photo| photo.id).collect::<Vec<_>>(),
+            vec![2]
         );
     }
 }

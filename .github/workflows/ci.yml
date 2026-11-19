@@ -101,6 +101,10 @@ jobs:
         if: needs.changes.outputs.docs_only != 'true'
         run: cargo test --workspace --locked
 
+      - name: Test demo fixtures
+        if: needs.changes.outputs.docs_only != 'true'
+        run: cargo test -p vrc-photon-ui --features demo --locked
+
   ipc-windows:
     needs: changes
     if: needs.changes.outputs.docs_only != 'true'

@@ -1,19 +1,27 @@
 //! Demo fixture generation and database selection for app startup.
 //!
 //! Demo mode writes a temporary photo library and thumbnails so the UI can run
-//! without a real VRChat library. `open_database` also owns the fallback to an
-//! in-memory library when the configured database cannot open.
+//! without a real VRChat library. The fixture generator is behind the `demo`
+//! feature; release builds refuse both `--demo` and the database-failure
+//! fallback.
 
+#[cfg(feature = "demo")]
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+#[cfg(feature = "demo")]
+use std::path::Path;
+use std::path::PathBuf;
 
+#[cfg(feature = "demo")]
 use chrono::{DateTime, Local, Utc};
 use vrc_photon_core::db::{Db, DbProfile};
+#[cfg(feature = "demo")]
 use vrc_photon_core::model::{CompressionOrigin, NewPhoto, PhotoContext};
 use vrc_photon_i18n::tr_args;
 
 use crate::app::cli::LaunchOptions;
+#[cfg(feature = "demo")]
 use crate::app::demo_fixture::{self, DEMO_WORLDS};
+#[cfg(feature = "demo")]
 use crate::ui::theme::lerp_color;
 
 pub(crate) struct DemoAssets {
@@ -23,9 +31,12 @@ pub(crate) struct DemoAssets {
 }
 
 /// Bump whenever the fixture layout changes so existing demo roots rebuild.
+#[cfg(feature = "demo")]
 const DEMO_DATA_VERSION: u32 = 1;
+#[cfg(feature = "demo")]
 const DEMO_VERSION_FILE: &str = "demo.version";
 
+#[cfg(feature = "demo")]
 fn demo_data_is_current(root: &Path) -> bool {
     std::fs::read_to_string(root.join(DEMO_VERSION_FILE))
         .ok()
@@ -34,6 +45,7 @@ fn demo_data_is_current(root: &Path) -> bool {
 }
 
 /// Entries a demo root may contain.
+#[cfg(feature = "demo")]
 const DEMO_ROOT_ENTRIES: [&str; 8] = [
     "photos",
     "thumbnails",
@@ -46,6 +58,7 @@ const DEMO_ROOT_ENTRIES: [&str; 8] = [
 ];
 
 /// First entry of `root` that demo data never creates, if any.
+#[cfg(feature = "demo")]
 fn demo_root_foreign_entry(root: &Path) -> Option<String> {
     let entries = std::fs::read_dir(root).ok()?;
     for entry in entries {
@@ -59,6 +72,7 @@ fn demo_root_foreign_entry(root: &Path) -> Option<String> {
     None
 }
 
+#[cfg(feature = "demo")]
 fn remove_demo_root_checked(root: &Path) -> Result<(), String> {
     if let Some(entry) = demo_root_foreign_entry(root) {
         return Err(tr_args!(
@@ -72,6 +86,7 @@ fn remove_demo_root_checked(root: &Path) -> Result<(), String> {
 
 /// Writes the version marker via a temporary file and rename, so a crash
 /// mid-write cannot leave a truncated marker behind.
+#[cfg(feature = "demo")]
 fn write_demo_marker(root: &Path) -> Result<(), String> {
     let tmp = root.join("demo.version.tmp");
     std::fs::write(&tmp, DEMO_DATA_VERSION.to_string())
@@ -81,6 +96,7 @@ fn write_demo_marker(root: &Path) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(feature = "demo")]
 fn create_demo_dirs(root: &Path) -> Result<(), String> {
     for name in ["photos", "thumbnails"] {
         let dir = root.join(name);
@@ -89,6 +105,7 @@ fn create_demo_dirs(root: &Path) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(feature = "demo")]
 fn remove_demo_root(root: &Path) -> Result<(), String> {
     match std::fs::remove_dir_all(root) {
         Ok(()) => Ok(()),
@@ -101,19 +118,31 @@ fn remove_demo_root(root: &Path) -> Result<(), String> {
     }
 }
 
+#[cfg(feature = "demo")]
 fn prepare_demo(reset: bool) -> Result<(Db, DemoAssets), String> {
     prepare_demo_at(&demo_root(), reset, Local::now())
 }
 
-/// Root of the throwaway demo library.
+#[cfg(not(feature = "demo"))]
+fn prepare_demo(_reset: bool) -> Result<(Db, DemoAssets), String> {
+    Err(vrc_photon_i18n::tr!("demo.unavailable"))
+}
+
+/// Root of the throwaway demo library. The UID keeps two users on a shared
+/// machine from fighting over one temporary directory.
 fn demo_root() -> PathBuf {
-    std::env::temp_dir().join("vrc-photon-demo")
+    #[cfg(unix)]
+    let name = format!("vrc-photon-demo-{}", unsafe { libc::getuid() });
+    #[cfg(not(unix))]
+    let name = "vrc-photon-demo".to_string();
+    std::env::temp_dir().join(name)
 }
 
 fn demo_db_path() -> PathBuf {
     demo_root().join("library.db")
 }
 
+#[cfg(feature = "demo")]
 fn prepare_demo_at(
     root: &Path,
     reset: bool,
@@ -171,10 +200,6 @@ pub(crate) fn demo_thumb_path(assets: &DemoAssets, photo_id: i64) -> PathBuf {
 pub(crate) const DEMO_THUMBNAIL_WIDTH: u32 = 384;
 pub(crate) const DEMO_THUMBNAIL_HEIGHT: u32 = 216;
 
-fn empty_database() -> Db {
-    Db::open_in_memory_with_profile(DbProfile::Ui).expect("fallback in-memory database")
-}
-
 /// Resolves the database the UI will open, before any window exists, so the
 /// single-instance lock can be scoped to the same library. Demo mode uses the
 /// generated fixture database; otherwise `VRC_PHOTON_DB`, the per-user default,
@@ -200,48 +225,67 @@ fn resolve_db_path_from(
         .unwrap_or_else(|| PathBuf::from("vrc-photon.db"))
 }
 
-pub(crate) fn open_database(
-    options: &LaunchOptions,
-) -> (Db, bool, bool, Option<String>, Option<DemoAssets>) {
+pub(crate) struct OpenedDatabase {
+    pub(crate) db: Db,
+    pub(crate) demo: bool,
+    pub(crate) database_ok: bool,
+    pub(crate) message: Option<String>,
+    pub(crate) demo_assets: Option<DemoAssets>,
+}
+
+pub(crate) fn open_database(options: &LaunchOptions) -> Result<OpenedDatabase, String> {
     if options.demo {
-        return match prepare_demo(options.demo_reset) {
-            Ok((db, assets)) => (db, true, false, None, Some(assets)),
-            Err(error) => (
-                empty_database(),
-                true,
-                false,
-                Some(tr_args!("demo.prepare_error", error = error)),
-                None,
-            ),
-        };
+        let (db, assets) = prepare_demo(options.demo_reset)?;
+        return Ok(OpenedDatabase {
+            db,
+            demo: true,
+            database_ok: false,
+            message: None,
+            demo_assets: Some(assets),
+        });
     }
     let path = resolve_db_path(options);
     match Db::open_with_profile(&path, DbProfile::Ui) {
-        Ok(db) => (db, false, true, None, None),
+        Ok(db) => Ok(OpenedDatabase {
+            db,
+            demo: false,
+            database_ok: true,
+            message: None,
+            demo_assets: None,
+        }),
         Err(error) => {
             let message = tr_args!("demo.db_error", error = error);
-            match prepare_demo(true) {
-                Ok((db, assets)) => (db, true, false, Some(message), Some(assets)),
-                Err(demo_error) => (
-                    empty_database(),
-                    true,
-                    false,
-                    Some(tr_args!(
+            #[cfg(feature = "demo")]
+            {
+                match prepare_demo(true) {
+                    Ok((db, assets)) => Ok(OpenedDatabase {
+                        db,
+                        demo: true,
+                        database_ok: false,
+                        message: Some(message),
+                        demo_assets: Some(assets),
+                    }),
+                    Err(demo_error) => Err(tr_args!(
                         "demo.db_and_prepare_error",
                         error = error,
                         demo_error = demo_error
                     )),
-                    None,
-                ),
+                }
+            }
+            #[cfg(not(feature = "demo"))]
+            {
+                Err(message)
             }
         }
     }
 }
 
+#[cfg(feature = "demo")]
 const DEMO_PALETTE: [u32; 8] = [
     0x1b1b3a, 0x2d1b4e, 0x5a2a5e, 0x8e3b5e, 0xc75a4a, 0xe08a4c, 0x4f6d8c, 0x22314f,
 ];
 
+#[cfg(feature = "demo")]
 fn demo_image(index: usize) -> image::RgbaImage {
     const WIDTH: u32 = 1280;
     const HEIGHT: u32 = 800;
@@ -286,6 +330,7 @@ fn demo_image(index: usize) -> image::RgbaImage {
 ///
 /// The fixture returns months newest-first, so group in capture order. A
 /// session is a run of the same world with at most four hours between photos.
+#[cfg(feature = "demo")]
 fn seed_demo_sessions(
     db: &Db,
     fixture: &[demo_fixture::DemoPhoto],
@@ -341,6 +386,7 @@ fn seed_demo_sessions(
     Ok(sessions)
 }
 
+#[cfg(feature = "demo")]
 fn seed_demo(db: &Db, photo_dir: &Path, now: DateTime<Local>) -> Result<(), String> {
     std::fs::create_dir_all(photo_dir)
         .map_err(|error| format!("{}: {error}", photo_dir.display()))?;
@@ -477,12 +523,16 @@ fn seed_demo(db: &Db, photo_dir: &Path, now: DateTime<Local>) -> Result<(), Stri
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::NaiveDate;
-    use std::collections::{BTreeMap, BTreeSet};
-    use vrc_photon_core::model::{PhotoSort, PhotoTextFilter};
-    use vrc_photon_core::time;
-
+    #[cfg(feature = "demo")]
     use crate::state::year_rail::build_year_buckets;
+    #[cfg(feature = "demo")]
+    use chrono::{DateTime, Local, NaiveDate};
+    #[cfg(feature = "demo")]
+    use std::collections::{BTreeMap, BTreeSet};
+    #[cfg(feature = "demo")]
+    use vrc_photon_core::model::{PhotoSort, PhotoTextFilter};
+    #[cfg(feature = "demo")]
+    use vrc_photon_core::time;
 
     #[test]
     fn resolve_db_path_uses_demo_database_in_demo_mode() {
@@ -516,6 +566,17 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn demo_root_is_scoped_to_the_user() {
+        let name = demo_root()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        assert!(name.ends_with(&format!("-{}", unsafe { libc::getuid() })));
+    }
+
     #[test]
     fn demo_thumb_path_uses_png_in_demo_dir() {
         let assets = DemoAssets {
@@ -527,6 +588,7 @@ mod tests {
         assert_eq!(path.parent(), Some(assets.thumb_dir.as_path()));
     }
 
+    #[cfg(feature = "demo")]
     #[test]
     fn demo_dirs_do_not_create_a_preview_cache() {
         let temp = tempfile::tempdir().unwrap();
@@ -536,6 +598,7 @@ mod tests {
         assert!(!temp.path().join("previews").exists());
     }
 
+    #[cfg(feature = "demo")]
     #[test]
     fn demo_version_marker_detects_stale_data() {
         let temp = tempfile::tempdir().unwrap();
@@ -559,6 +622,7 @@ mod tests {
         assert!(!demo_data_is_current(temp.path()));
     }
 
+    #[cfg(feature = "demo")]
     fn moment(reference: NaiveDate) -> DateTime<Local> {
         use chrono::TimeZone;
         Local
@@ -567,6 +631,7 @@ mod tests {
             .unwrap()
     }
 
+    #[cfg(feature = "demo")]
     #[test]
     fn seed_demo_populates_three_years_of_library() {
         let temp = tempfile::tempdir().unwrap();
@@ -668,6 +733,7 @@ mod tests {
         assert_eq!(std::fs::read_dir(pool).unwrap().count(), 16);
     }
 
+    #[cfg(feature = "demo")]
     #[test]
     fn demo_root_shape_check_flags_foreign_entries() {
         let temp = tempfile::tempdir().unwrap();
@@ -686,6 +752,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "demo")]
     #[test]
     fn prepare_demo_at_rebuilds_a_stale_marker() {
         let temp = tempfile::tempdir().unwrap();
@@ -702,6 +769,7 @@ mod tests {
         assert!(db.get_setting("demo_seeded_at").unwrap().is_some());
     }
 
+    #[cfg(feature = "demo")]
     #[test]
     fn prepare_demo_at_keeps_foreign_files_untouched() {
         let temp = tempfile::tempdir().unwrap();
@@ -718,6 +786,7 @@ mod tests {
         assert_eq!(std::fs::read(&foreign).unwrap(), b"keep me");
     }
 
+    #[cfg(feature = "demo")]
     #[test]
     fn prepare_demo_at_repairs_a_broken_database() {
         let temp = tempfile::tempdir().unwrap();
@@ -736,6 +805,7 @@ mod tests {
         assert_eq!(db.count_photos().unwrap(), 300);
     }
 
+    #[cfg(feature = "demo")]
     #[test]
     fn prepare_demo_at_reseeds_when_the_marker_version_changes() {
         let temp = tempfile::tempdir().unwrap();
@@ -773,6 +843,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "demo")]
     #[test]
     fn seed_demo_stores_fixture_context_players_and_tags() {
         let temp = tempfile::tempdir().unwrap();
@@ -837,6 +908,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "demo")]
     #[test]
     fn seed_demo_creates_sessions_with_players() {
         let temp = tempfile::tempdir().unwrap();

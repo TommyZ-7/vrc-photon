@@ -8,6 +8,7 @@ pub(crate) mod context_menu;
 pub(crate) mod daemon;
 pub(crate) mod deletion;
 pub(crate) mod demo;
+#[cfg(feature = "demo")]
 pub(crate) mod demo_fixture;
 pub(crate) mod discord;
 pub(crate) mod file_picker;
@@ -429,9 +430,14 @@ pub struct App {
     pub(crate) compression_refresh_scheduled: bool,
     /// The pending compression refresh must run the library-row pass.
     pub(crate) compression_library_refresh_pending: bool,
-    /// Photos whose display source changed in the pending compression refresh.
-    /// Their rows are patched into the page caches instead of clearing them.
-    pub(crate) compression_replaced_photos: HashSet<i64>,
+    /// A debounced settings save timer is already scheduled.
+    pub(crate) settings_save_scheduled: bool,
+    /// Settings changed after the debounced save was scheduled.
+    pub(crate) settings_save_pending: bool,
+    /// Photos that completed a compression job since the last coalesced
+    /// refresh. The refresh resolves them in one batch and keeps only rows
+    /// whose display source actually changed.
+    pub(crate) compression_replaced_candidates: HashSet<i64>,
     /// Coalescing gate for the background live refresh. The three-second
     /// poller and IPC-triggered refreshes share it.
     pub(crate) live_refresh: LiveRefreshGate,
@@ -662,6 +668,45 @@ impl App {
         }
     }
 
+    /// Saves the current settings after a short quiet period. Handlers that
+    /// can roll back on a failed write keep using `settings.save` directly;
+    /// this is for value changes whose next write can safely supersede them.
+    pub(crate) fn schedule_settings_save(&mut self, cx: &mut Context<Self>) {
+        self.settings_save_pending = true;
+        if self.settings_save_scheduled {
+            return;
+        }
+        self.settings_save_scheduled = true;
+        cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(Duration::from_millis(350))
+                .await;
+            this.update(cx, |this, cx| {
+                this.settings_save_scheduled = false;
+                if !std::mem::take(&mut this.settings_save_pending) {
+                    return;
+                }
+                if let Err(error) = this.settings.save(&this.db) {
+                    tracing::warn!(%error, "cannot save app settings");
+                    this.toast_error(tr_args!("settings.save_failed", error = error), cx);
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// Writes any pending settings before the process exits.
+    pub(crate) fn flush_settings_save(&mut self) {
+        if !std::mem::take(&mut self.settings_save_pending) {
+            return;
+        }
+        if let Err(error) = self.settings.save(&self.db) {
+            tracing::warn!(%error, "cannot flush app settings");
+        }
+    }
+
     pub(crate) fn set_language(&mut self, code: &str, window: &mut Window, cx: &mut Context<Self>) {
         let code = vrc_photon_i18n::normalize(code);
         if self.settings.language == code {
@@ -731,7 +776,14 @@ impl App {
         cx: &mut Context<Self>,
         options: &LaunchOptions,
     ) -> Self {
-        let (db, demo, database_ok, message, demo_assets) = open_database(options);
+        let opened = open_database(options).unwrap_or_else(|error| {
+            crate::exit_startup_failure("cannot open the library database", error)
+        });
+        let db = opened.db;
+        let demo = opened.demo;
+        let database_ok = opened.database_ok;
+        let message = opened.message;
+        let demo_assets = opened.demo_assets;
         let db_path = db.path().and_then(|path| std::fs::canonicalize(path).ok());
         let health_token = std::env::var("VRC_PHOTON_HEALTH_TOKEN").ok();
         let updating = health_token.is_some();
@@ -1353,7 +1405,9 @@ impl App {
             last_import_progress_notify: None,
             compression_refresh_scheduled: false,
             compression_library_refresh_pending: false,
-            compression_replaced_photos: HashSet::new(),
+            settings_save_scheduled: false,
+            settings_save_pending: false,
+            compression_replaced_candidates: HashSet::new(),
             live_refresh: LiveRefreshGate::default(),
             library_reload: LiveRefreshGate::default(),
             pending_library_reload: None,
@@ -1477,12 +1531,20 @@ impl App {
         // The supervisor is not loaded into App until the first monitor
         // refresh, so read the recorded value from the database.
         let supervisor = app.db.get_setting("daemon_supervisor").ok().flatten();
-        if !app.demo
-            && !app.daemon_active
-            && !updating
-            && let Err(error) = start_daemon(supervisor.as_deref())
-        {
-            app.toast_error(tr_args!("app.daemon_start_error", error = error), cx);
+        if !app.demo && !app.daemon_active && !updating {
+            cx.spawn(async move |this, cx| {
+                let result = cx
+                    .background_executor()
+                    .spawn(async move { start_daemon(supervisor.as_deref()) })
+                    .await;
+                if let Err(error) = result {
+                    this.update(cx, |this, cx| {
+                        this.toast_error(tr_args!("app.daemon_start_error", error = error), cx);
+                    })
+                    .ok();
+                }
+            })
+            .detach();
         }
         app.start_auto_refresh(cx);
         if !app.demo {
@@ -1613,7 +1675,10 @@ impl Render for App {
                 .child(
                     Button::new("thumbnail-array-error-quit")
                         .label(tr!("common.quit"))
-                        .on_click(cx.listener(|_, _, _, cx| cx.quit())),
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.flush_settings_save();
+                            cx.quit();
+                        })),
                 );
         }
         if self.setup.open {

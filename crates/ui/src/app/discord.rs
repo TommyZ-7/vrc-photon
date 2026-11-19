@@ -184,9 +184,7 @@ impl App {
             enabled,
             Utc::now().timestamp(),
         );
-        if let Err(error) = self.settings.save(&self.db) {
-            tracing::warn!(%error, "cannot save Discord integration setting");
-        }
+        self.schedule_settings_save(cx);
         cx.notify();
     }
 
@@ -255,9 +253,7 @@ impl App {
         let destination = normalized_destination(&raw);
         if self.settings.discord_destination != destination {
             self.settings.discord_destination = destination;
-            if let Err(error) = self.settings.save(&self.db) {
-                tracing::warn!(%error, "cannot save the Discord destination");
-            }
+            self.schedule_settings_save(cx);
         }
         cx.notify();
     }
@@ -267,9 +263,7 @@ impl App {
             return;
         }
         self.settings.discord_send_original = value;
-        if let Err(error) = self.settings.save(&self.db) {
-            tracing::warn!(%error, "cannot save the Discord original-image setting");
-        }
+        self.schedule_settings_save(cx);
         cx.notify();
     }
 
@@ -278,9 +272,7 @@ impl App {
             return;
         }
         self.settings.discord_include_players = value;
-        if let Err(error) = self.settings.save(&self.db) {
-            tracing::warn!(%error, "cannot save the Discord player-name setting");
-        }
+        self.schedule_settings_save(cx);
         cx.notify();
     }
 
@@ -348,9 +340,7 @@ impl App {
         cx: &mut Context<Self>,
     ) {
         self.settings.discord_auto.scope = scope;
-        if let Err(error) = self.settings.save(&self.db) {
-            tracing::warn!(%error, "cannot save the Discord bulk scope");
-        }
+        self.schedule_settings_save(cx);
         cx.notify();
     }
 
@@ -363,9 +353,7 @@ impl App {
 
     fn save_discord_auto_mode(&mut self, mode: AutoMode, was_off: bool, cx: &mut Context<Self>) {
         apply_discord_auto_mode(&mut self.settings, mode, Utc::now().timestamp(), was_off);
-        if let Err(error) = self.settings.save(&self.db) {
-            tracing::warn!(%error, "cannot save the Discord automatic-send mode");
-        }
+        self.schedule_settings_save(cx);
         cx.notify();
     }
 

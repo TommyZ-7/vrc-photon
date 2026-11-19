@@ -317,7 +317,10 @@ impl App {
         cx.notify();
     }
 
-    pub(crate) fn refresh_monitor(&mut self) {
+    /// Synchronous monitor refresh for in-memory/demo databases, which have
+    /// no second handle for the background snapshot. Live databases use
+    /// `apply_live_snapshot` instead.
+    pub(crate) fn refresh_monitor_sync(&mut self) {
         let now = Utc::now().timestamp();
         self.daemon_age_secs = self
             .db
