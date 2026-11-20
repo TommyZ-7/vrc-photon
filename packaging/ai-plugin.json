@@ -1,4 +1,4 @@
 {
-  "version": "0.5.1",
-  "host_version_min": "1.0.0"
+  "version": "0.5.2",
+  "host_version_min": "26.11.0"
 }

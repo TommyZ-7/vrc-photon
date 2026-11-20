@@ -262,8 +262,11 @@ Required check名を変更した場合は、GitHubのbranch protectionも更新�
   プラグイン版）と `host_version_min`（その版が要求する本体の最小版）を持つ。
   - 単一情報源は `packaging/ai-plugin.json`。autotag のリリース時に、リリースした
     プラグインの `plugin_version` と manifest の `host_version_min` でこのファイルを
-    更新し、photon のリリース前に `main` へマージする。初期値は
-    `version: 0.5.1`、`host_version_min: 1.0.0`。
+    更新し、photon のリリース前に `main` へマージする。現在は
+    `version: 0.5.2`、`host_version_min: 26.11.0`。
+  - `host_version_min` は通知の可否だけに使う値ではなく、その版を実際に
+    取り込める本体の最小版と一致させる。プラグインの `host_version_max` が
+    `0.0.0`（上限なし）の場合は、その指定に対応した本体版が下限になる。
   - `schema` は 1 のまま。`ai_plugin` を知らない旧クライアントは未知フィールドとして
     無視する。
   - `ai_plugin` が semver でない、型が違う、キーが欠落している場合は、プラグイン
