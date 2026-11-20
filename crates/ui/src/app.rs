@@ -31,6 +31,7 @@ pub(crate) use cli::LaunchOptions;
 
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -60,7 +61,7 @@ use crate::app::background_read::BackgroundReader;
 use crate::app::cli::{log_timing, process_start, timing_enabled};
 use crate::app::compression::{ManualCompressionDialog, profile_name_update};
 use crate::app::daemon::start_daemon;
-use crate::app::demo::{DemoAssets, open_database};
+use crate::app::demo::{DemoAssets, OpenedDatabase, open_database};
 use crate::app::import::{ImportDialogState, ImportReportView};
 use crate::app::live::{LiveRefreshGate, should_announce_empty_library};
 use crate::app::photos::PendingFullImage;
@@ -550,7 +551,7 @@ impl App {
         let notify = should_notify_library_error(self.library.error, error);
         self.library.error = Some(error);
         if notify {
-            self.toast_actionable(NotificationType::Error, tr!("app.library.error"), cx);
+            self.toast_actionable(NotificationType::Error, tr!("app.library_error"), cx);
         }
     }
 
@@ -673,45 +674,117 @@ impl App {
         cx: &mut Context<Self>,
         options: &LaunchOptions,
     ) -> Self {
-        let opened = open_database(options).unwrap_or_else(|error| {
-            crate::exit_startup_failure("cannot open the library database", error)
-        });
+        let (opened, db_path) = open_db(options);
+        let (settings, setup_open) = load_settings(&opened);
+        let health_token = std::env::var("VRC_PHOTON_HEALTH_TOKEN").ok();
+        let updating = health_token.is_some();
+        let mut app = Self::from_parts(
+            AppParts {
+                opened,
+                db_path,
+                settings,
+                setup_open,
+                health_token,
+            },
+            window,
+            cx,
+        );
+
+        app.finish_startup(window, cx, updating);
+        app
+    }
+
+    /// Runs the work that needs a fully built `App`: profiles, the first
+    /// library snapshot, the initial selection, and the background services.
+    fn finish_startup(&mut self, window: &mut Window, cx: &mut Context<Self>, updating: bool) {
+        self.ensure_profiles();
+        self.ai.apply_snapshot(ai::collect_ai_snapshot(&self.db));
+        // The file-backed startup index is built on the library reader; the
+        // first selection and the empty-library toast wait for that snapshot.
+        self.library.pending_initial_select = self.library_reader.is_some();
+        self.reload_all(true, cx);
+        self.apply_palette(self.palette, cx);
+        if should_announce_empty_library(
+            self.setup.open,
+            self.settings.current.photo_roots.is_empty(),
+        ) && !self.library.loading
+            && self.library.error.is_none()
+            && self.library.browser.borrow().index.total == 0
+        {
+            self.toast_info(tr!("app.empty_library"), cx);
+        }
+        if let Some(notice) = self.update.notice() {
+            self.toast_info(notice.message(), cx);
+        }
+        let first_photo_id = self
+            .library
+            .browser
+            .borrow()
+            .index
+            .entries
+            .first()
+            .map(|entry| entry.id);
+        if !self.library.loading
+            && let Some(id) = first_photo_id
+        {
+            self.select_photo(id, cx);
+            // The grid is not mounted until the first frame, so focus it once
+            // the initial render has attached it to the focus tree.
+            let photo_grid_focus = self.photo_grid_focus.clone();
+            window.defer(cx, move |window, cx| {
+                window.focus(&photo_grid_focus, cx);
+            });
+        }
+        // The supervisor is not loaded into App until the first monitor
+        // refresh, so read the recorded value from the database.
+        let supervisor = self.db.get_setting("daemon_supervisor").ok().flatten();
+        if !self.demo && !self.ipc.daemon_active && !updating {
+            cx.spawn(async move |this, cx| {
+                let result = cx
+                    .background_executor()
+                    .spawn(async move { start_daemon(supervisor.as_deref()) })
+                    .await;
+                if let Err(error) = result {
+                    this.update(cx, |this, cx| {
+                        this.toast_error(tr_args!("app.daemon_start_error", error = error), cx);
+                    })
+                    .ok();
+                }
+            })
+            .detach();
+        }
+        self.start_auto_refresh(cx);
+        if !self.demo {
+            self.start_ipc(cx);
+        }
+        self.start_update_timers(cx);
+        if updating {
+            cx.on_next_frame(window, move |app, window, cx| {
+                app.complete_update_startup(window, cx);
+            });
+        }
+        if timing_enabled() {
+            let started = process_start();
+            cx.on_next_frame(window, move |_, _, _| {
+                log_timing("first frame (from process start)", started)
+            });
+        }
+    }
+
+    /// Builds `App` from its already-opened database and settings.
+    fn from_parts(parts: AppParts, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let AppParts {
+            opened,
+            db_path,
+            settings: initial_settings,
+            setup_open,
+            health_token,
+        } = parts;
         let db = opened.db;
         let demo = opened.demo;
         let database_ok = opened.database_ok;
         let message = opened.message;
         let demo_assets = opened.demo_assets;
-        let db_path = db.path().and_then(|path| std::fs::canonicalize(path).ok());
-        let health_token = std::env::var("VRC_PHOTON_HEALTH_TOKEN").ok();
-        let updating = health_token.is_some();
-        let settings_row_present = db.get_setting("app_settings").ok().flatten().is_some();
-        let settings_load = AppSettings::load(&db);
-        let settings_load_failed = settings_load.is_err();
-        let mut initial_settings = settings_load.unwrap_or_else(|error| {
-            // `AppSettings::load` backs up malformed JSON before returning, so
-            // defaults only fill this first frame.
-            tracing::warn!(%error, "cannot load app settings; using defaults for this frame");
-            AppSettings::default()
-        });
-        if settings_load_failed {
-            // Never let a corrupt row fall back to a fresh-install default and
-            // rewrite itself as `setup_completed = false` later in the session.
-            initial_settings.setup_completed = true;
-        }
-        initial_settings.language = vrc_photon_i18n::set_locale(&initial_settings.language);
-        let library_photo_count = if settings_row_present {
-            0
-        } else {
-            db.count_photos().unwrap_or(0)
-        };
-        let setup_open = setup::should_show_setup(
-            demo,
-            database_ok,
-            settings_load_failed,
-            settings_row_present,
-            initial_settings.setup_completed,
-            library_photo_count,
-        );
         let initial_palette = resolve(
             &initial_settings.ui_theme_main,
             &initial_settings.ui_theme_accent,
@@ -720,6 +793,7 @@ impl App {
         let initial_ai_revision = db.ai_revision().unwrap_or(0);
         let initial_session_revision = db.session_revision().unwrap_or(0);
         cx.set_reduce_motion(initial_settings.ui_reduce_motion);
+
         let world_input = cx.new(|cx| InputState::new(window, cx).placeholder(tr!("input.world")));
         let player_input =
             cx.new(|cx| InputState::new(window, cx).placeholder(tr!("input.player")));
@@ -1391,84 +1465,12 @@ impl App {
             demo,
             demo_assets,
         };
-        app.ensure_profiles();
-        app.ai.apply_snapshot(ai::collect_ai_snapshot(&app.db));
-        // The file-backed startup index is built on the library reader; the
-        // first selection and the empty-library toast wait for that snapshot.
-        app.library.pending_initial_select = app.library_reader.is_some();
-        app.reload_all(true, cx);
-        app.apply_palette(app.palette, cx);
         if let Some(message) = message {
             if database_ok {
                 app.toast_warning(message, cx);
             } else {
                 app.toast_error(message, cx);
             }
-        }
-        if should_announce_empty_library(
-            app.setup.open,
-            app.settings.current.photo_roots.is_empty(),
-        ) && !app.library.loading
-            && app.library.error.is_none()
-            && app.library.browser.borrow().index.total == 0
-        {
-            app.toast_info(tr!("app.empty_library"), cx);
-        }
-        if let Some(notice) = app.update.notice() {
-            app.toast_info(notice.message(), cx);
-        }
-        let first_photo_id = app
-            .library
-            .browser
-            .borrow()
-            .index
-            .entries
-            .first()
-            .map(|entry| entry.id);
-        if !app.library.loading
-            && let Some(id) = first_photo_id
-        {
-            app.select_photo(id, cx);
-            // The grid is not mounted until the first frame, so focus it once
-            // the initial render has attached it to the focus tree.
-            let photo_grid_focus = app.photo_grid_focus.clone();
-            window.defer(cx, move |window, cx| {
-                window.focus(&photo_grid_focus, cx);
-            });
-        }
-        // The supervisor is not loaded into App until the first monitor
-        // refresh, so read the recorded value from the database.
-        let supervisor = app.db.get_setting("daemon_supervisor").ok().flatten();
-        if !app.demo && !app.ipc.daemon_active && !updating {
-            cx.spawn(async move |this, cx| {
-                let result = cx
-                    .background_executor()
-                    .spawn(async move { start_daemon(supervisor.as_deref()) })
-                    .await;
-                if let Err(error) = result {
-                    this.update(cx, |this, cx| {
-                        this.toast_error(tr_args!("app.daemon_start_error", error = error), cx);
-                    })
-                    .ok();
-                }
-            })
-            .detach();
-        }
-        app.start_auto_refresh(cx);
-        if !app.demo {
-            app.start_ipc(cx);
-        }
-        app.start_update_timers(cx);
-        if updating {
-            cx.on_next_frame(window, move |app, window, cx| {
-                app.complete_update_startup(window, cx);
-            });
-        }
-        if timing_enabled() {
-            let started = process_start();
-            cx.on_next_frame(window, move |_, _, _| {
-                log_timing("first frame (from process start)", started)
-            });
         }
         app
     }
@@ -1752,6 +1754,65 @@ impl Render for App {
             root
         }
     }
+}
+
+/// Inputs `App::new` gathers before the window-dependent construction.
+struct AppParts {
+    opened: OpenedDatabase,
+    db_path: Option<PathBuf>,
+    settings: AppSettings,
+    setup_open: bool,
+    health_token: Option<String>,
+}
+
+/// Opens the library database, exiting through the startup-failure path when
+/// it cannot be opened at all.
+fn open_db(options: &LaunchOptions) -> (OpenedDatabase, Option<PathBuf>) {
+    let opened = open_database(options).unwrap_or_else(|error| {
+        crate::exit_startup_failure("cannot open the library database", error)
+    });
+    let db_path = opened
+        .db
+        .path()
+        .and_then(|path| std::fs::canonicalize(path).ok());
+    (opened, db_path)
+}
+
+/// Loads the persisted settings and decides whether the setup wizard opens.
+///
+/// A corrupt settings row falls back to defaults for the first frame but keeps
+/// `setup_completed` set, so the failure is never rewritten as a fresh install.
+fn load_settings(opened: &OpenedDatabase) -> (AppSettings, bool) {
+    let db = &opened.db;
+    let settings_row_present = db.get_setting("app_settings").ok().flatten().is_some();
+    let settings_load = AppSettings::load(db);
+    let settings_load_failed = settings_load.is_err();
+    let mut settings = settings_load.unwrap_or_else(|error| {
+        // `AppSettings::load` backs up malformed JSON before returning, so
+        // defaults only fill this first frame.
+        tracing::warn!(%error, "cannot load app settings; using defaults for this frame");
+        AppSettings::default()
+    });
+    if settings_load_failed {
+        // Never let a corrupt row fall back to a fresh-install default and
+        // rewrite itself as `setup_completed = false` later in the session.
+        settings.setup_completed = true;
+    }
+    settings.language = vrc_photon_i18n::set_locale(&settings.language);
+    let library_photo_count = if settings_row_present {
+        0
+    } else {
+        db.count_photos().unwrap_or(0)
+    };
+    let setup_open = setup::should_show_setup(
+        opened.demo,
+        opened.database_ok,
+        settings_load_failed,
+        settings_row_present,
+        settings.setup_completed,
+        library_photo_count,
+    );
+    (settings, setup_open)
 }
 
 #[cfg(test)]
