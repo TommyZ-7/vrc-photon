@@ -768,7 +768,7 @@ impl From<CoreError> for JobFailure {
 
 fn map_snapshot_error(error: CoreError) -> JobFailure {
     match error {
-        CoreError::NotFound(_) => JobFailure::non_retryable(TaggingErrorCode::ImageMissing),
+        CoreError::NotFound { .. } => JobFailure::non_retryable(TaggingErrorCode::ImageMissing),
         CoreError::Invalid(_) => JobFailure::non_retryable(TaggingErrorCode::ImageDecodeFailed),
         other => JobFailure::Unexpected(other.into()),
     }

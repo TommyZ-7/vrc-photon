@@ -258,9 +258,10 @@ impl Db {
             let count = usize_from_i64(count);
             if count != chunk.len() {
                 let missing = chunk.len() - count;
-                return Err(CoreError::NotFound(format!(
-                    "{missing} photo(s) in a bulk tag operation"
-                )));
+                return Err(CoreError::NotFound {
+                    entity: "bulk tag operation",
+                    id: format!("{missing} photo(s) missing"),
+                });
             }
         }
         Ok(())

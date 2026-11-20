@@ -6864,7 +6864,7 @@ fn reorder_profiles_persists_and_rolls_back_bad_lists() {
 
     assert!(matches!(
         db.reorder_profiles(&order(&["c", "a", "missing"])),
-        Err(CoreError::NotFound(_))
+        Err(CoreError::NotFound { .. })
     ));
     assert_eq!(ids(), vec!["c", "a", "b"]);
 }
@@ -6945,7 +6945,7 @@ fn duplicate_profile_inserts_named_copy_after_source() {
 
     assert!(matches!(
         db.duplicate_profile("missing"),
-        Err(CoreError::NotFound(_))
+        Err(CoreError::NotFound { .. })
     ));
 }
 
@@ -7049,7 +7049,7 @@ fn delete_profile_blocks_active_jobs_and_keeps_history() {
     assert_eq!(db.list_profiles().unwrap().len(), 1);
     assert!(matches!(
         db.delete_profile("missing"),
-        Err(CoreError::NotFound(_))
+        Err(CoreError::NotFound { .. })
     ));
 }
 

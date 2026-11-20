@@ -54,10 +54,10 @@ pub fn prepare_tagging_snapshot(
 ) -> Result<TaggingSnapshot> {
     let (output, temp) = snapshot_paths(cache_dir, job_id)?;
     if !source.is_file() {
-        return Err(CoreError::NotFound(format!(
-            "tagging source not found: {}",
-            source.display()
-        )));
+        return Err(CoreError::NotFound {
+            entity: "tagging source",
+            id: source.display().to_string(),
+        });
     }
     let image = crate::image_decode::decode_image(source).ok_or_else(|| {
         CoreError::Invalid(format!("cannot decode tagging source {}", source.display()))
@@ -382,7 +382,7 @@ mod tests {
         )
         .unwrap_err();
 
-        assert!(matches!(error, CoreError::NotFound(_)));
+        assert!(matches!(error, CoreError::NotFound { .. }));
     }
 
     #[test]
