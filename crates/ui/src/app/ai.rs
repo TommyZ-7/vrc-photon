@@ -1994,7 +1994,7 @@ impl App {
     /// `load_selected_meta` also loads the AI rows, so this stays the single
     /// refresh path for the inspector.
     pub(crate) fn refresh_selected_ai(&mut self, cx: &mut Context<Self>) {
-        if let Some(id) = self.selected {
+        if let Some(id) = self.library.selected {
             self.load_selected_meta(id);
         }
         cx.notify();

@@ -436,10 +436,10 @@ impl App {
         // Claim the revision before the (background) metadata refresh so a
         // poll that lands mid-refresh does not start a full index reload.
         if let Ok(revision) = self.db.library_revision() {
-            self.last_library_revision = revision;
+            self.library.last_revision = revision;
         }
-        self.revision_debounce.reset();
-        self.count_debounce.reset();
+        self.library.revision_debounce.reset();
+        self.library.count_debounce.reset();
         let candidates: Vec<i64> = self.compression_replaced_candidates.drain().collect();
         let mut replaced = Vec::new();
         if !candidates.is_empty() {
@@ -447,7 +447,7 @@ impl App {
                 Ok(photos) => {
                     let photos = replaced_photo_rows(photos);
                     replaced = photos.iter().map(|photo| photo.id).collect();
-                    self.library.borrow_mut().update_photo_rows(&photos);
+                    self.library.browser.borrow_mut().update_photo_rows(&photos);
                     self.search_view.borrow_mut().update_photo_rows(&photos);
                     // Invalidate the media only after the cached row points at
                     // the new display source, so a re-request cannot decode the
@@ -461,15 +461,20 @@ impl App {
                 }
             }
         }
-        if let Some(id) = self.selected {
+        if let Some(id) = self.library.selected {
             self.load_selected_meta(id);
-            if let Some(photo) = self.selected_photo.clone() {
+            if let Some(photo) = self.library.selected_photo.clone() {
                 // A replace invalidation drops the pinned thumbnail; request
                 // it again now that the display derivative is known.
                 self.request_thumbnail(&photo, cx);
             }
         }
-        if self.quick_look_open && self.selected.is_some_and(|id| replaced.contains(&id)) {
+        if self.quick_look_open
+            && self
+                .library
+                .selected
+                .is_some_and(|id| replaced.contains(&id))
+        {
             // The replacement dropped the decoded full image for the selected
             // photo (and cancelled any decode in flight). Ask for it again so
             // the viewer does not stay on the thumbnail until the next
@@ -490,35 +495,38 @@ impl App {
         let revision = self.db.library_revision();
         let revision_value = revision.as_ref().ok().copied();
         if let Ok(ai_revision) = self.db.ai_revision()
-            && ai_revision > self.last_ai_revision
+            && ai_revision > self.library.last_ai_revision
         {
-            self.last_ai_revision = ai_revision;
+            self.library.last_ai_revision = ai_revision;
             self.refresh_search_after_ai_tag_edit(cx);
             self.refresh_selected_ai(cx);
         }
         if let Ok(session_revision) = self.db.session_revision()
-            && session_revision > self.last_session_revision
+            && session_revision > self.library.last_session_revision
         {
-            self.last_session_revision = session_revision;
-            self.library.borrow_mut().invalidate_session_summaries();
+            self.library.last_session_revision = session_revision;
+            self.library
+                .browser
+                .borrow_mut()
+                .invalidate_session_summaries();
         }
         if let Some(revision) = revision_value
-            && revision != self.stats_revision
+            && revision != self.library.stats_revision
         {
             if let Ok(stats) = self.db.stats() {
-                self.stats = stats;
-                self.stats_revision = revision;
+                self.library.stats = stats;
+                self.library.stats_revision = revision;
             }
             if let Ok(ids) = self.db.compressed_photo_ids() {
-                self.compressed_ids = ids.into_iter().collect();
+                self.library.compressed_ids = ids.into_iter().collect();
             }
             if let Ok(ids) = self.db.duplicate_photo_ids() {
-                self.duplicate_ids = ids.into_iter().collect();
+                self.library.duplicate_ids = ids.into_iter().collect();
             }
         }
         self.reload_job_state(cx);
         self.refresh_monitor_sync();
-        if let Some(id) = self.selected {
+        if let Some(id) = self.library.selected {
             self.load_selected_meta(id);
         }
 
@@ -541,7 +549,7 @@ impl App {
         // A snapshot can be collected just before the UI bumps the revision
         // (trash, compression). Revisions are monotonic, so ignore an older
         // observation instead of reacting to it as a new change.
-        if is_stale_revision(revision, self.last_library_revision) {
+        if is_stale_revision(revision, self.library.last_revision) {
             return false;
         }
         let now = Instant::now();
@@ -551,7 +559,7 @@ impl App {
         // revision instead of racing it with a full reload.
         let compression_refresh_pending = self.compression_library_refresh_pending;
         if let Some(revision) = revision
-            && revision > self.last_library_revision
+            && revision > self.library.last_revision
             && !compression_refresh_pending
         {
             let expensive = self.screen == Screen::Photos
@@ -561,6 +569,7 @@ impl App {
                 // on every poll tick. Wait until the revision has been stable
                 // for one quiet period.
                 if self
+                    .library
                     .revision_debounce
                     .observe(revision, now, LIBRARY_QUIET_PERIOD)
                 {
@@ -569,8 +578,8 @@ impl App {
                             changed = true;
                         }
                     } else {
-                        self.last_library_revision = revision;
-                        self.revision_debounce.reset();
+                        self.library.last_revision = revision;
+                        self.library.revision_debounce.reset();
                         if self.applied_search.is_some() {
                             self.refresh_search_keeping_anchor(cx);
                             changed = true;
@@ -580,9 +589,9 @@ impl App {
                     self.mark_library_dirty();
                 }
             } else {
-                self.last_library_revision = revision;
+                self.library.last_revision = revision;
                 self.mark_library_dirty();
-                if let Some(id) = self.selected {
+                if let Some(id) = self.library.selected {
                     self.load_selected_meta(id);
                 }
             }
@@ -591,13 +600,14 @@ impl App {
         // Only compare counts when the query succeeds; treating a transient
         // error as zero used to blank the whole library.
         if let Some(count) = count {
-            if count != self.library.borrow().index.total as i64 {
+            if count != self.library.browser.borrow().index.total as i64 {
                 // A burst of files arriving from the daemon must not rebuild
                 // the 100k-entry index on every three-second tick. Wait until
                 // the observed count has been stable for a quiet period.
                 self.mark_library_dirty();
                 if self.screen == Screen::Photos
                     && self
+                        .library
                         .count_debounce
                         .observe(count, now, LIBRARY_QUIET_PERIOD)
                     && self.apply_library_snapshot(revision, cx)
@@ -605,7 +615,7 @@ impl App {
                     changed = true;
                 }
             } else {
-                self.count_debounce.reset();
+                self.library.count_debounce.reset();
             }
         }
         changed
@@ -638,12 +648,12 @@ impl App {
         // A background rebuild records the observed revision when its
         // snapshot lands. Claiming it here would swallow a failed rebuild and
         // suppress the retry.
-        if !self.library_loading {
+        if !self.library.loading {
             if let Some(revision) = observed_revision {
-                self.last_library_revision = self.last_library_revision.max(revision);
+                self.library.last_revision = self.library.last_revision.max(revision);
             }
-            self.count_debounce.reset();
-            self.revision_debounce.reset();
+            self.library.count_debounce.reset();
+            self.library.revision_debounce.reset();
         }
         true
     }
@@ -658,8 +668,8 @@ impl App {
             self.screen,
             self.applied_search.is_some(),
             revision,
-            self.last_library_revision,
-            self.library_dirty,
+            self.library.last_revision,
+            self.library.dirty,
         );
         match action {
             ScanRefresh::Snapshot => {
@@ -674,26 +684,26 @@ impl App {
             }
             ScanRefresh::Search => {
                 if let Some(revision) = revision {
-                    self.last_library_revision = self.last_library_revision.max(revision);
+                    self.library.last_revision = self.library.last_revision.max(revision);
                 }
-                self.revision_debounce.reset();
-                self.count_debounce.reset();
+                self.library.revision_debounce.reset();
+                self.library.count_debounce.reset();
                 self.refresh_search_keeping_anchor(cx);
             }
             ScanRefresh::Dirty => {
                 if let Some(revision) = revision {
-                    self.last_library_revision = self.last_library_revision.max(revision);
+                    self.library.last_revision = self.library.last_revision.max(revision);
                 }
                 self.mark_library_dirty();
             }
             ScanRefresh::None => {
-                self.revision_debounce.reset();
-                self.count_debounce.reset();
+                self.library.revision_debounce.reset();
+                self.library.count_debounce.reset();
             }
         }
         // The index did not need a rebuild, but the scan can still have moved
         // job counters and the monitor. Collect those off the UI thread.
-        if let Some(id) = self.selected {
+        if let Some(id) = self.library.selected {
             self.load_selected_meta(id);
         }
         self.refresh_live_async(cx);
@@ -737,16 +747,16 @@ impl App {
     fn reload_aux_live(&mut self, cx: &mut Context<Self>) {
         match self.db.stats() {
             Ok(stats) => {
-                self.stats = stats;
-                self.stats_revision = self.db.library_revision().unwrap_or(-1);
+                self.library.stats = stats;
+                self.library.stats_revision = self.db.library_revision().unwrap_or(-1);
             }
             Err(error) => {
                 tracing::warn!(%error, "cannot load library stats");
-                self.stats = LibraryStats::default();
-                self.stats_revision = -1;
+                self.library.stats = LibraryStats::default();
+                self.library.stats_revision = -1;
             }
         }
-        self.compressed_ids = self
+        self.library.compressed_ids = self
             .db
             .compressed_photo_ids()
             .unwrap_or_else(|error| {
@@ -755,7 +765,7 @@ impl App {
             })
             .into_iter()
             .collect();
-        self.duplicate_ids = self
+        self.library.duplicate_ids = self
             .db
             .duplicate_photo_ids()
             .unwrap_or_else(|error| {
@@ -777,7 +787,7 @@ impl App {
         let settings = settings_after_reload(&self.settings, AppSettings::load(&self.db));
         self.apply_loaded_settings(settings, cx);
         self.reload_send_history(cx);
-        if let Some(id) = self.selected {
+        if let Some(id) = self.library.selected {
             self.load_selected_meta(id);
         }
     }
@@ -798,7 +808,7 @@ impl App {
             notify = true;
         }
         if let Some(selected) = aux.selected
-            && self.selected == Some(selected.id)
+            && self.library.selected == Some(selected.id)
         {
             self.apply_selected_meta(selected);
             notify = true;
@@ -825,7 +835,7 @@ impl App {
             self.thumbnails.borrow_mut().clear();
         }
         if language_changed {
-            self.library.borrow_mut().invalidate_labels();
+            self.library.browser.borrow_mut().invalidate_labels();
             self.search_view.borrow_mut().invalidate_labels();
         }
         cx.set_reduce_motion(self.settings.ui_reduce_motion);
@@ -841,7 +851,7 @@ impl App {
     pub(crate) fn apply_palette(&mut self, palette: Palette, cx: &mut Context<Self>) {
         self.palette = palette;
         apply_component_theme(palette, cx);
-        self.library.borrow_mut().labels = None;
+        self.library.browser.borrow_mut().labels = None;
         self.search_view.borrow_mut().labels = None;
         self.viewer_morph_view
             .update(cx, |view, cx| view.set_palette(palette, cx));
@@ -871,14 +881,14 @@ impl App {
     }
 
     fn request_library_reload(&mut self, preserve_anchor: bool, cx: &mut Context<Self>) {
-        self.pending_library_reload = Some(preserve_anchor);
+        self.library.pending_reload = Some(preserve_anchor);
         if self.library_reload.request() == LiveRefreshRequest::StartNow {
             self.spawn_library_reload(cx);
         }
     }
 
     fn spawn_library_reload(&mut self, cx: &mut Context<Self>) {
-        let Some(preserve_anchor) = self.pending_library_reload.take() else {
+        let Some(preserve_anchor) = self.library.pending_reload.take() else {
             return;
         };
         let Some(reader) = self.library_reader.clone() else {
@@ -888,9 +898,9 @@ impl App {
         let anchor = preserve_anchor
             .then(|| self.capture_top_photo(false))
             .flatten();
-        let stats_revision = self.stats_revision;
-        let selected_id = self.selected;
-        self.library_loading = true;
+        let stats_revision = self.library.stats_revision;
+        let selected_id = self.library.selected;
+        self.library.loading = true;
         cx.spawn(async move |this, cx| {
             let snapshot = cx
                 .background_executor()
@@ -910,7 +920,7 @@ impl App {
                         cx,
                     ),
                     None => {
-                        this.library_loading = false;
+                        this.library.loading = false;
                         this.note_library_error("photos.index_error", cx);
                         this.refresh_live_async(cx);
                     }
@@ -932,7 +942,7 @@ impl App {
         let index_start = Instant::now();
         let result = self.db.photo_index_snapshot(PhotoSort::Newest);
         log_timing("photo_index", index_start);
-        let applied = apply_library_index(&mut self.library.borrow_mut(), result);
+        let applied = apply_library_index(&mut self.library.browser.borrow_mut(), result);
         if let Some(error) = applied.error {
             self.note_library_error(error, cx);
             // Leave the mounted view and side panels untouched; the next
@@ -941,10 +951,10 @@ impl App {
         }
 
         self.note_library_truncation(applied.truncated, cx);
-        self.library_error = None;
-        self.library_dirty = false;
+        self.library.error = None;
+        self.library.dirty = false;
         let anchor_present =
-            anchor.is_some_and(|id| self.library.borrow().index.row_of_id(id).is_some());
+            anchor.is_some_and(|id| self.library.browser.borrow().index.row_of_id(id).is_some());
         if let Some(id) = anchor.filter(|_| anchor_present) {
             self.scroll_to_photo(false, id, ScrollStrategy::Top);
         } else {
@@ -954,7 +964,7 @@ impl App {
         // An active result set stays mounted until the user clears it or runs
         // a new search; the inactive mirror only needs the fresh snapshot.
         if !self.search_active {
-            let index = self.library.borrow().index.clone();
+            let index = self.library.browser.borrow().index.clone();
             self.search_view.borrow_mut().replace_index(index);
         }
         self.reload_aux(cx);
@@ -967,7 +977,7 @@ impl App {
     }
 
     fn mark_library_dirty(&mut self) {
-        self.library_dirty = true;
+        self.library.dirty = true;
     }
 
     /// Changes screens without rebuilding the library unless Photos was marked
@@ -999,19 +1009,19 @@ impl App {
             // one query when Search becomes visible again.
             self.search_refresh_dirty = false;
             self.refresh_search_keeping_anchor(cx);
-        } else if screen == Screen::Photos && self.library_dirty {
+        } else if screen == Screen::Photos && self.library.dirty {
             let revision = self.db.library_revision().ok();
             self.apply_library_snapshot(revision, cx);
         } else if screen == Screen::Search && !self.search_active {
             // The no-query mirror only needs a refresh when the library
             // snapshot changed while another screen was mounted. A dirty
             // library is rebuilt first so the mirror also sees new photos.
-            if self.library_dirty {
+            if self.library.dirty {
                 let revision = self.db.library_revision().ok();
                 self.apply_library_snapshot(revision, cx);
             } else {
                 let mut search = self.search_view.borrow_mut();
-                let library = self.library.borrow();
+                let library = self.library.browser.borrow();
                 sync_search_mirror(&mut search, &library);
             }
         }

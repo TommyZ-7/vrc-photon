@@ -470,7 +470,7 @@ impl App {
 
     fn ribbon_photo(&mut self, metrics: RibbonMetrics, cx: &mut Context<Self>) -> AnyElement {
         let focusable = !self.ribbon_collapsed;
-        let has_selection = self.selected_photo.is_some();
+        let has_selection = self.library.selected_photo.is_some();
         let select_group = ribbon_group(
             &self.palette,
             vec![
@@ -495,7 +495,7 @@ impl App {
                 large_button(
                     RibbonButtonStyle {
                         palette: &self.palette,
-                        look: if self.selected_ids.is_empty() {
+                        look: if self.library.selected_ids.is_empty() {
                             RibbonLook::Disabled
                         } else {
                             RibbonLook::Normal
@@ -645,7 +645,7 @@ impl App {
         if self.screen == Screen::Search {
             self.search_view.borrow().index.entries.is_empty()
         } else {
-            self.library.borrow().index.entries.is_empty()
+            self.library.browser.borrow().index.entries.is_empty()
         }
     }
 }

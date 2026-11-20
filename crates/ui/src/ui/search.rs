@@ -42,7 +42,8 @@ impl App {
         let p = self.palette;
         let total = self.search_view.borrow().index.total;
         let count = tr_args!("search.count", total = total);
-        let selection = (self.selected_ids.len() > 1).then(|| self.selection_bar(window, cx));
+        let selection =
+            (self.library.selected_ids.len() > 1).then(|| self.selection_bar(window, cx));
         let mut card = glass_panel(&self.palette)
             .flex()
             .flex_col()

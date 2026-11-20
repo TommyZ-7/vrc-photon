@@ -235,13 +235,13 @@ impl App {
         };
         // A full rebuild collects the same aggregates. Let it land instead of
         // running a second live pass over the same revision.
-        if self.library_loading {
+        if self.library.loading {
             return;
         }
         if self.live_refresh.request() == LiveRefreshRequest::FollowUpQueued {
             return;
         }
-        let stats_revision = self.stats_revision;
+        let stats_revision = self.library.stats_revision;
         cx.spawn(async move |this, cx| {
             let snapshot = cx
                 .background_executor()
@@ -277,7 +277,7 @@ impl App {
         anchor: Option<i64>,
         cx: &mut Context<Self>,
     ) {
-        self.library_loading = false;
+        self.library.loading = false;
         let index = match snapshot.index {
             Ok(index) => index,
             Err(error) => {
@@ -289,18 +289,18 @@ impl App {
         };
 
         let truncated = index.truncated;
-        self.library.borrow_mut().replace_index(index);
+        self.library.browser.borrow_mut().replace_index(index);
         self.note_library_truncation(truncated, cx);
-        self.library_error = None;
-        self.library_dirty = false;
+        self.library.error = None;
+        self.library.dirty = false;
         if let Some(revision) = snapshot.live.revision {
-            self.last_library_revision = self.last_library_revision.max(revision);
+            self.library.last_revision = self.library.last_revision.max(revision);
         }
-        self.count_debounce.reset();
-        self.revision_debounce.reset();
+        self.library.count_debounce.reset();
+        self.library.revision_debounce.reset();
 
         let anchor_present =
-            anchor.is_some_and(|id| self.library.borrow().index.row_of_id(id).is_some());
+            anchor.is_some_and(|id| self.library.browser.borrow().index.row_of_id(id).is_some());
         if preserve_anchor && let Some(id) = anchor.filter(|_| anchor_present) {
             self.scroll_to_photo(false, id, ScrollStrategy::Top);
         } else {
@@ -308,16 +308,17 @@ impl App {
         }
 
         if !self.search_active {
-            let index = self.library.borrow().index.clone();
+            let index = self.library.browser.borrow().index.clone();
             self.search_view.borrow_mut().replace_index(index);
         }
 
         self.apply_live_snapshot(snapshot.live, true, cx);
         self.apply_aux_snapshot(snapshot.aux, cx);
 
-        if std::mem::take(&mut self.pending_initial_select) {
+        if std::mem::take(&mut self.library.pending_initial_select) {
             let first_id = self
                 .library
+                .browser
                 .borrow()
                 .index
                 .entries
@@ -326,7 +327,7 @@ impl App {
             if let Some(id) = first_id {
                 self.select_photo(id, cx);
                 self.initial_focus_pending = true;
-            } else if self.library_error.is_none()
+            } else if self.library.error.is_none()
                 && should_announce_empty_library(
                     self.setup.open,
                     self.settings.photo_roots.is_empty(),
@@ -537,14 +538,14 @@ impl App {
         if let Some(stats) = snapshot.stats
             && snapshot
                 .revision
-                .is_none_or(|revision| revision >= self.stats_revision)
+                .is_none_or(|revision| revision >= self.library.stats_revision)
         {
-            if self.stats != stats {
-                self.stats = stats;
+            if self.library.stats != stats {
+                self.library.stats = stats;
                 notify = true;
             }
             if let Some(revision) = snapshot.revision {
-                self.stats_revision = revision;
+                self.library.stats_revision = revision;
             }
         }
 
@@ -559,19 +560,19 @@ impl App {
         if let Some(ids) = snapshot.compressed_ids
             && snapshot
                 .revision
-                .is_none_or(|revision| revision >= self.stats_revision)
-            && ids != self.compressed_ids
+                .is_none_or(|revision| revision >= self.library.stats_revision)
+            && ids != self.library.compressed_ids
         {
-            self.compressed_ids = ids;
+            self.library.compressed_ids = ids;
             notify = true;
         }
         if let Some(ids) = snapshot.duplicate_ids
             && snapshot
                 .revision
-                .is_none_or(|revision| revision >= self.stats_revision)
-            && ids != self.duplicate_ids
+                .is_none_or(|revision| revision >= self.library.stats_revision)
+            && ids != self.library.duplicate_ids
         {
-            self.duplicate_ids = ids;
+            self.library.duplicate_ids = ids;
             notify = true;
         }
 
@@ -620,17 +621,20 @@ impl App {
         }
 
         if let Some(revision) = snapshot.session_revision
-            && revision > self.last_session_revision
+            && revision > self.library.last_session_revision
         {
-            self.last_session_revision = revision;
-            self.library.borrow_mut().invalidate_session_summaries();
+            self.library.last_session_revision = revision;
+            self.library
+                .browser
+                .borrow_mut()
+                .invalidate_session_summaries();
             notify = true;
         }
 
         if let Some(revision) = snapshot.ai_revision
-            && revision > self.last_ai_revision
+            && revision > self.library.last_ai_revision
         {
-            self.last_ai_revision = revision;
+            self.library.last_ai_revision = revision;
             self.refresh_search_after_ai_tag_edit(cx);
             self.refresh_selected_ai(cx);
             notify = true;

@@ -23,6 +23,7 @@ pub(crate) mod search;
 pub(crate) mod search_suggest;
 pub(crate) mod session;
 pub(crate) mod setup;
+pub(crate) mod state;
 pub(crate) mod tag_edit;
 pub(crate) mod viewer;
 
@@ -42,11 +43,10 @@ use gpui_kit::component::notification::NotificationType;
 use gpui_kit::component::slider::{SliderEvent, SliderState};
 use gpui_kit::component::*;
 use gpui_kit::*;
-use vrc_photon_core::ai::{PhotoAi, PhotoAiTagView};
 use vrc_photon_core::db::Db;
 use vrc_photon_core::model::{
-    CompressionJob, CompressionProfile, DaemonError, DeletionCounts, DeletionRequest, Derivative,
-    LibraryStats, Photo, PhotoPlayer, PhotoTextFilter, SendHistoryEntry,
+    CompressionJob, CompressionProfile, DaemonError, DeletionCounts, DeletionRequest, LibraryStats,
+    PhotoTextFilter, SendHistoryEntry,
 };
 use vrc_photon_core::queue::{QueueCounts, QueueEntry, QueueProgress};
 use vrc_photon_core::settings::{
@@ -66,6 +66,7 @@ use crate::app::import::{ImportDialogState, ImportReportView};
 use crate::app::lifecycle::ScanProgressView;
 use crate::app::live::{LiveRefreshGate, should_announce_empty_library};
 use crate::app::photos::PendingFullImage;
+use crate::app::state::LibraryState;
 use crate::state::display_image::{DecodeQueue, DisplayKey};
 use crate::state::full_image::FullImageTexture;
 use crate::state::motion::ToggleMotion;
@@ -180,11 +181,7 @@ pub struct App {
     /// 0 = expanded, 1 = collapsed.
     pub(crate) ribbon_motion: ToggleMotion,
     pub(crate) render_epoch: u64,
-    pub(crate) library_bounds: CardBoundsMap,
     pub(crate) search_bounds: CardBoundsMap,
-    /// Frame counters for the gallery-owned card bounds. Scroll repaints the
-    /// grid without re-rendering App, so App's render epoch cannot tag them.
-    pub(crate) library_bounds_epoch: Rc<Cell<u64>>,
     pub(crate) search_bounds_epoch: Rc<Cell<u64>>,
     pub(crate) inspector_preview_bounds: InspectorBounds,
     pub(crate) viewer_morph: Option<ViewerMorph>,
@@ -217,52 +214,11 @@ pub struct App {
     pub(crate) ipc_error: Option<String>,
     pub(crate) daemon_paused: bool,
     pub(crate) scan_progress: Option<ScanProgressView>,
-    /// Last daemon-side library revision observed by the UI. Path changes and
-    /// replacement status changes do not alter the photo count, so the count
-    /// alone cannot tell the grid to rebuild.
-    pub(crate) last_library_revision: i64,
-    /// Last daemon-side AI metadata revision observed by the UI. AI results do
-    /// not change the photo index, so this refresh path must not rebuild it.
-    pub(crate) last_ai_revision: i64,
-    /// Last daemon-side session revision observed by the UI. Session lifecycle
-    /// changes update summaries without rebuilding the photo index.
-    pub(crate) last_session_revision: i64,
-    pub(crate) library: Rc<RefCell<PhotoBrowser>>,
+    /// Library browser, index, selection, and the metadata the
+    /// inspector shows for the current selection.
+    pub(crate) library: LibraryState,
     pub(crate) search_view: Rc<RefCell<PhotoBrowser>>,
-    pub(crate) library_gallery: Entity<GalleryView>,
     pub(crate) search_gallery: Entity<GalleryView>,
-    /// The library index changed while another screen was mounted; the next
-    /// visit to Photos rebuilds it.
-    pub(crate) library_dirty: bool,
-    /// A failed index/page query kept the previous snapshot mounted; retry from
-    /// the Photos header.
-    pub(crate) library_error: Option<&'static str>,
-    /// The row-limit toast was already shown for the current truncated state.
-    /// Reset when a reload fits within the limit again.
-    pub(crate) library_truncated_notified: bool,
-    pub(crate) count_debounce: CountDebounce,
-    /// Quiet-period tracker for daemon revision bursts. A full index rebuild
-    /// waits until the revision has stopped moving for `LIBRARY_QUIET_PERIOD`.
-    pub(crate) revision_debounce: CountDebounce,
-    pub(crate) selected: Option<i64>,
-    /// Multi-selection in the current photo tab. `selected` is the primary
-    /// item used by the inspector and viewer. An empty selection means nothing
-    /// is selected; otherwise the primary is always included.
-    pub(crate) selected_ids: PhotoSelection,
-    pub(crate) selection_anchor: Option<i64>,
-    pub(crate) selected_photo: Option<Photo>,
-    pub(crate) selected_players: Vec<PhotoPlayer>,
-    pub(crate) selected_tags: Vec<String>,
-    pub(crate) selected_ai: Option<PhotoAi>,
-    pub(crate) selected_ai_tags: Vec<PhotoAiTagView>,
-    /// Bumped whenever the selected AI rows are reloaded. Keeps the cached
-    /// inspector block from surviving a tagging result or tag edit.
-    pub(crate) ai_meta_revision: u64,
-    /// Cached AI metadata block shared by the inspector and Quick Look.
-    pub(crate) ai_meta_cache: ai::AiMetaCache,
-    pub(crate) selected_derivatives: Vec<Derivative>,
-    pub(crate) compressed_ids: HashSet<i64>,
-    pub(crate) duplicate_ids: HashSet<i64>,
     pub(crate) thumbnails: Rc<RefCell<ThumbnailCache>>,
     /// Set when the device cannot create the BC7 texture array. The render
     /// path then shows a fatal error instead of the normal shell.
@@ -339,9 +295,6 @@ pub struct App {
     pub(crate) profile_output_input: Entity<InputState>,
     pub(crate) _profile_output_subscription: Subscription,
     pub(crate) manual_compress: Option<ManualCompressionDialog>,
-    pub(crate) stats: LibraryStats,
-    /// Library revision the cached stats were computed for.
-    pub(crate) stats_revision: i64,
     pub(crate) settings: AppSettings,
     /// AI tagging plugin, model, queue, and transient operation state.
     pub(crate) ai: ai::AiUiState,
@@ -447,15 +400,6 @@ pub struct App {
     /// than the quiet period that requests it, so overlapping requests are
     /// folded into one follow-up pass.
     pub(crate) library_reload: LiveRefreshGate,
-    /// Preservation mode for the latest queued rebuild, if one is waiting for
-    /// the in-flight pass to finish.
-    pub(crate) pending_library_reload: Option<bool>,
-    /// A full rebuild is running on the background executor. The first frame
-    /// keeps the previous (possibly empty) snapshot mounted until it lands.
-    pub(crate) library_loading: bool,
-    /// The startup rebuild must select the first photo and report an empty
-    /// library once the background snapshot arrives.
-    pub(crate) pending_initial_select: bool,
     /// Focus the photo grid after the async startup snapshot has been applied.
     pub(crate) initial_focus_pending: bool,
     pub(crate) monitor_world: Option<String>,
@@ -652,10 +596,10 @@ impl App {
     }
 
     pub(crate) fn note_library_error(&mut self, error: &'static str, cx: &mut Context<Self>) {
-        let notify = should_notify_library_error(self.library_error, error);
-        self.library_error = Some(error);
+        let notify = should_notify_library_error(self.library.error, error);
+        self.library.error = Some(error);
         if notify {
-            self.toast_actionable(NotificationType::Error, tr!("app.library_error"), cx);
+            self.toast_actionable(NotificationType::Error, tr!("app.library.error"), cx);
         }
     }
 
@@ -663,8 +607,8 @@ impl App {
     /// state. A later reload that fits within the limit resets the latch, so a
     /// future truncation notifies again.
     pub(crate) fn note_library_truncation(&mut self, truncated: bool, cx: &mut Context<Self>) {
-        let notify = should_notify_truncation(self.library_truncated_notified, truncated);
-        self.library_truncated_notified = truncated;
+        let notify = should_notify_truncation(self.library.truncated_notified, truncated);
+        self.library.truncated_notified = truncated;
         if notify {
             self.toast_info(tr!("photos.index_truncated"), cx);
         }
@@ -724,7 +668,7 @@ impl App {
         }
         vrc_photon_i18n::set_locale(&code);
         self.update_input_placeholders(window, cx);
-        self.library.borrow_mut().invalidate_labels();
+        self.library.browser.borrow_mut().invalidate_labels();
         self.search_view.borrow_mut().invalidate_labels();
         // The connection detail was formatted when it arrived; the next
         // heartbeat/reconnect repopulates it in the new language.
@@ -1222,9 +1166,7 @@ impl App {
                 0.0
             }),
             render_epoch: 0,
-            library_bounds,
             search_bounds,
-            library_bounds_epoch,
             search_bounds_epoch,
             inspector_preview_bounds: Rc::new(RefCell::new(None)),
             viewer_morph: None,
@@ -1269,31 +1211,40 @@ impl App {
             ipc_error: None,
             daemon_paused: false,
             scan_progress: None,
-            last_library_revision: initial_library_revision,
-            last_ai_revision: initial_ai_revision,
-            last_session_revision: initial_session_revision,
-            library,
+            library: LibraryState {
+                browser: library,
+                gallery: library_gallery,
+                bounds: library_bounds,
+                bounds_epoch: library_bounds_epoch,
+                dirty: false,
+                error: None,
+                truncated_notified: false,
+                count_debounce: CountDebounce::default(),
+                revision_debounce: CountDebounce::default(),
+                selected: None,
+                selected_ids: PhotoSelection::default(),
+                selection_anchor: None,
+                selected_photo: None,
+                selected_players: Vec::new(),
+                selected_tags: Vec::new(),
+                selected_ai: None,
+                selected_ai_tags: Vec::new(),
+                ai_meta_revision: 0,
+                ai_meta_cache: ai::AiMetaCache::default(),
+                selected_derivatives: Vec::new(),
+                compressed_ids: HashSet::new(),
+                duplicate_ids: HashSet::new(),
+                last_revision: initial_library_revision,
+                last_ai_revision: initial_ai_revision,
+                last_session_revision: initial_session_revision,
+                loading: false,
+                pending_reload: None,
+                pending_initial_select: false,
+                stats: LibraryStats::default(),
+                stats_revision: -1,
+            },
             search_view,
-            library_gallery,
             search_gallery,
-            library_dirty: false,
-            library_error: None,
-            library_truncated_notified: false,
-            count_debounce: CountDebounce::default(),
-            revision_debounce: CountDebounce::default(),
-            selected: None,
-            selected_ids: PhotoSelection::default(),
-            selection_anchor: None,
-            selected_photo: None,
-            selected_players: Vec::new(),
-            selected_tags: Vec::new(),
-            selected_ai: None,
-            selected_ai_tags: Vec::new(),
-            ai_meta_revision: 0,
-            ai_meta_cache: ai::AiMetaCache::default(),
-            selected_derivatives: Vec::new(),
-            compressed_ids: HashSet::new(),
-            duplicate_ids: HashSet::new(),
             thumbnails,
             thumbnail_notify_pending: false,
             thumbnail_notice: ThumbnailNoticeBatch::default(),
@@ -1347,8 +1298,6 @@ impl App {
             profile_output_input,
             _profile_output_subscription: profile_output_subscription,
             manual_compress: None,
-            stats: LibraryStats::default(),
-            stats_revision: -1,
             settings: initial_settings.clone(),
             ai: ai::AiUiState::default(),
             ai_refresh_scheduled: false,
@@ -1412,9 +1361,6 @@ impl App {
             compression_replaced_candidates: HashSet::new(),
             live_refresh: LiveRefreshGate::default(),
             library_reload: LiveRefreshGate::default(),
-            pending_library_reload: None,
-            library_loading: false,
-            pending_initial_select: false,
             initial_focus_pending: false,
             monitor_world: None,
             monitor_instance: None,
@@ -1492,7 +1438,7 @@ impl App {
         app.ai.apply_snapshot(ai::collect_ai_snapshot(&app.db));
         // The file-backed startup index is built on the library reader; the
         // first selection and the empty-library toast wait for that snapshot.
-        app.pending_initial_select = app.library_reader.is_some();
+        app.library.pending_initial_select = app.library_reader.is_some();
         app.reload_all(true, cx);
         app.apply_palette(app.palette, cx);
         if let Some(message) = message {
@@ -1503,9 +1449,9 @@ impl App {
             }
         }
         if should_announce_empty_library(app.setup.open, app.settings.photo_roots.is_empty())
-            && !app.library_loading
-            && app.library_error.is_none()
-            && app.library.borrow().index.total == 0
+            && !app.library.loading
+            && app.library.error.is_none()
+            && app.library.browser.borrow().index.total == 0
         {
             app.toast_info(tr!("app.empty_library"), cx);
         }
@@ -1514,12 +1460,13 @@ impl App {
         }
         let first_photo_id = app
             .library
+            .browser
             .borrow()
             .index
             .entries
             .first()
             .map(|entry| entry.id);
-        if !app.library_loading
+        if !app.library.loading
             && let Some(id) = first_photo_id
         {
             app.select_photo(id, cx);

@@ -851,15 +851,15 @@ impl App {
                     .border_color(rgba(p.highlight))
                     .child(self.editor_stat(
                         tr!("compression.stats.total"),
-                        self.stats.compressed_count.to_string(),
+                        self.library.stats.compressed_count.to_string(),
                     ))
                     .child(self.editor_stat(
                         tr!("compression.stats.photos"),
-                        self.stats.photo_count.to_string(),
+                        self.library.stats.photo_count.to_string(),
                     ))
                     .child(self.editor_stat(
                         tr!("compression.stats.compressed_total"),
-                        format_bytes(self.stats.derivative_bytes),
+                        format_bytes(self.library.stats.derivative_bytes),
                     )),
             )
     }

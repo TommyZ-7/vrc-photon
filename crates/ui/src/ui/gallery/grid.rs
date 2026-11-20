@@ -196,7 +196,7 @@ pub(super) fn render_grid(
                 // empty library is not an empty result set.
                 div().into_any_element()
             }
-        } else if let Some(error) = app.library_error {
+        } else if let Some(error) = app.library.error {
             div()
                 .mt(px(18.))
                 .max_w(px(560.))

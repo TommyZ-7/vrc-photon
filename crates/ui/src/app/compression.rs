@@ -150,10 +150,10 @@ impl App {
         photo_id: i64,
         cx: &mut Context<Self>,
     ) {
-        let ids = if self.selected_ids.is_empty() {
+        let ids = if self.library.selected_ids.is_empty() {
             vec![photo_id]
         } else {
-            self.selected_ids.to_vec()
+            self.library.selected_ids.to_vec()
         };
         self.open_manual_compression(ids, cx);
     }

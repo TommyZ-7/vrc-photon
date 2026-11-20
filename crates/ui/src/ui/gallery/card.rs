@@ -13,9 +13,9 @@ pub(super) fn render_card(
     let card_width = Some(metrics.card_width);
     let p = app.palette;
     let id = photo.id;
-    let selected = app.selected_ids.contains(id);
-    let primary = app.selected == Some(id);
-    let compressed = app.compressed_ids.contains(&id);
+    let selected = app.library.selected_ids.contains(id);
+    let primary = app.library.selected == Some(id);
+    let compressed = app.library.compressed_ids.contains(&id);
     let show_status = app.settings.ui_card_show_status;
     let show_world = app.settings.ui_card_show_world;
     let card_strings = shared

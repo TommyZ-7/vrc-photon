@@ -31,7 +31,7 @@ pub(crate) fn viewer_nav_frame(t: f32, direction: f32) -> (f32, f32, f32, f32) {
 impl App {
     pub(crate) fn quick_look(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let p = self.palette;
-        let Some(photo) = self.selected_photo.clone() else {
+        let Some(photo) = self.library.selected_photo.clone() else {
             return div().into_any_element();
         };
         let color = self.color_for(&photo);

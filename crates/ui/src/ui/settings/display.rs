@@ -358,7 +358,7 @@ impl App {
         }
         let library_anchor = self.capture_top_photo(false);
         let search_anchor = self.capture_top_photo(true);
-        let mut library = self.library.borrow_mut();
+        let mut library = self.library.browser.borrow_mut();
         if library.pending_anchor.is_none() {
             library.pending_anchor = library_anchor;
         }

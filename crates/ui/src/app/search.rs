@@ -114,7 +114,7 @@ impl App {
             self.search_refresh_pending = true;
             return;
         }
-        if !self.selected_ids.is_empty() {
+        if !self.library.selected_ids.is_empty() {
             self.clear_selection(cx);
         }
         self.pending_search_anchor = None;
@@ -243,7 +243,7 @@ impl App {
 
     pub(crate) fn clear_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.close_suggestion(cx);
-        if !self.selected_ids.is_empty() {
+        if !self.library.selected_ids.is_empty() {
             self.clear_selection(cx);
         }
         self.search_active = false;
@@ -267,7 +267,7 @@ impl App {
         }
         // Invalidate an in-flight request so it cannot revive the cleared view.
         self.search_request = self.search_request.wrapping_add(1);
-        let index = self.library.borrow().index.clone();
+        let index = self.library.browser.borrow().index.clone();
         let mut view = self.search_view.borrow_mut();
         view.replace_index(index);
         view.scroll.scroll_to_item_strict(0, ScrollStrategy::Top);

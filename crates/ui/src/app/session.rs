@@ -89,10 +89,10 @@ impl App {
     /// Builds the mixed session row model with the current library layout.
     pub(crate) fn ensure_library_session_rows(&mut self) {
         let (columns, row_height) = {
-            let browser = self.library.borrow();
+            let browser = self.library.browser.borrow();
             (browser.columns.max(1), browser.row_height)
         };
-        self.library.borrow_mut().ensure_session_rows(
+        self.library.browser.borrow_mut().ensure_session_rows(
             columns,
             row_height,
             SESSION_HEADER_ROW_HEIGHT + self.grid_gap(),
@@ -108,7 +108,7 @@ impl App {
             let browser = if search {
                 self.search_view.borrow()
             } else {
-                self.library.borrow()
+                self.library.browser.borrow()
             };
             return anchor_photo_id(
                 &browser.index,
@@ -118,10 +118,10 @@ impl App {
             );
         }
         let (columns, row_height) = {
-            let browser = self.library.borrow();
+            let browser = self.library.browser.borrow();
             (browser.columns.max(1), browser.row_height)
         };
-        let mut browser = self.library.borrow_mut();
+        let mut browser = self.library.browser.borrow_mut();
         browser.settle_all_session_collapses();
         let rows = browser.ensure_session_rows(
             columns,
@@ -141,7 +141,7 @@ impl App {
             let browser = if search {
                 self.search_view.borrow()
             } else {
-                self.library.borrow()
+                self.library.browser.borrow()
             };
             let Some(position) = browser.index.row_of_id(id) else {
                 return;
@@ -152,10 +152,10 @@ impl App {
         }
 
         let (columns, row_height) = {
-            let browser = self.library.borrow();
+            let browser = self.library.browser.borrow();
             (browser.columns.max(1), browser.row_height)
         };
-        let mut browser = self.library.borrow_mut();
+        let mut browser = self.library.browser.borrow_mut();
         browser.settle_all_session_collapses();
         let rows = browser.ensure_session_rows(
             columns,
@@ -185,12 +185,12 @@ impl App {
             let browser = if search {
                 self.search_view.borrow()
             } else {
-                self.library.borrow()
+                self.library.browser.borrow()
             };
             browser.scroll.scroll_to_item_strict(0, ScrollStrategy::Top);
             return;
         }
-        let browser = self.library.borrow();
+        let browser = self.library.browser.borrow();
         browser.session_scroll.set_offset(point(px(0.), px(0.)));
     }
 
@@ -201,7 +201,7 @@ impl App {
             return;
         }
         let session_id = {
-            let browser = self.library.borrow();
+            let browser = self.library.browser.borrow();
             browser
                 .index
                 .row_of_id(id)
@@ -213,11 +213,12 @@ impl App {
         };
         let collapsed = self
             .library
+            .browser
             .borrow()
             .collapsed_sessions
             .contains(&session_id);
         if collapsed {
-            let mut browser = self.library.borrow_mut();
+            let mut browser = self.library.browser.borrow_mut();
             browser.toggle_session_collapsed(session_id);
             browser.settle_session_collapse(session_id);
             drop(browser);
@@ -233,10 +234,10 @@ impl App {
     ) {
         let now = Instant::now();
         let (columns, row_height) = {
-            let browser = self.library.borrow();
+            let browser = self.library.browser.borrow();
             (browser.columns.max(1), browser.row_height)
         };
-        let mut browser = self.library.borrow_mut();
+        let mut browser = self.library.browser.borrow_mut();
         let before = browser.session_layout(
             columns,
             row_height,
@@ -297,10 +298,10 @@ impl App {
     ) {
         let now = Instant::now();
         let (columns, row_height) = {
-            let browser = self.library.borrow();
+            let browser = self.library.browser.borrow();
             (browser.columns.max(1), browser.row_height)
         };
-        let mut browser = self.library.borrow_mut();
+        let mut browser = self.library.browser.borrow_mut();
         let before = browser.session_layout(
             columns,
             row_height,
@@ -372,7 +373,7 @@ impl App {
         if search || ids.is_empty() {
             return;
         }
-        if self.library.borrow().generation != generation {
+        if self.library.browser.borrow().generation != generation {
             return;
         }
 
@@ -410,6 +411,7 @@ impl App {
         cx: &mut Context<Self>,
     ) {
         self.library
+            .browser
             .borrow_mut()
             .insert_session_summaries(generation, requested, summaries);
         cx.notify();
@@ -424,6 +426,7 @@ impl App {
     ) {
         tracing::warn!(%error, "session_summaries failed");
         self.library
+            .browser
             .borrow_mut()
             .fail_session_summaries(generation, ids);
         cx.notify();

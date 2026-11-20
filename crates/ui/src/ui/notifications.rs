@@ -319,7 +319,7 @@ impl App {
         notification_attention_for(
             self.update.pending_version().is_some(),
             self.import_report.is_some(),
-            self.library_error.is_some(),
+            self.library.error.is_some(),
             self.job_failures.total_jobs(),
             self.daemon_errors.len(),
         )
@@ -421,7 +421,7 @@ impl App {
             self.notification_modal_open,
             update_version.is_some(),
             self.import_report.is_some(),
-            self.library_error.is_some(),
+            self.library.error.is_some(),
             self.job_failures.compression_failed,
             self.job_failures.discord_failed,
             self.job_failures.tagging_failed,
@@ -437,7 +437,7 @@ impl App {
         let sections = notification_sections(
             update_version.is_some(),
             self.import_report.is_some(),
-            self.library_error.is_some(),
+            self.library.error.is_some(),
             self.job_failures.compression_failed,
             self.job_failures.discord_failed,
             self.job_failures.tagging_failed,
@@ -447,7 +447,7 @@ impl App {
         // a copy of every issue. The import card only needs a shared borrow
         // while it builds the sections.
         let import_report = self.import_report.clone();
-        let library_error = self.library_error;
+        let library_error = self.library.error;
         let job_failures = self.job_failures.clone();
         let daemon_errors = self.daemon_errors.len();
 

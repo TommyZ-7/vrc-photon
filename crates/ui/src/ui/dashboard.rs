@@ -35,7 +35,7 @@ impl App {
                 tr!("dashboard.stat.photos"),
                 tr_args!(
                     "dashboard.stat.photos_value",
-                    count = self.stats.photo_count
+                    count = self.library.stats.photo_count
                 ),
             ))
             .child(self.stat_card(
@@ -47,7 +47,7 @@ impl App {
             ))
             .child(self.stat_card(
                 tr!("dashboard.stat.library_size"),
-                format_bytes(self.stats.total_bytes),
+                format_bytes(self.library.stats.total_bytes),
             ))
             .child(self.stat_card(
                 tr!("dashboard.daemon.title"),

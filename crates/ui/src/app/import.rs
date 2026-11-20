@@ -629,7 +629,7 @@ impl App {
         }
         let revision = self.db.library_revision().ok();
         if !self.apply_library_snapshot(revision, cx)
-            && let Some(error) = self.library_error
+            && let Some(error) = self.library.error
         {
             append_scan_error(report, error);
         }

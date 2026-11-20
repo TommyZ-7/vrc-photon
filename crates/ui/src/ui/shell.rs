@@ -49,7 +49,7 @@ impl App {
         let p = self.palette;
         let collapsed = self.sidebar_collapsed;
         let motion = self.sidebar_motion;
-        let photo_count = format_count(self.stats.photo_count);
+        let photo_count = format_count(self.library.stats.photo_count);
         let status_tabs = sidebar_status_tabs(
             self.settings.auto_compress_enabled,
             self.settings.discord_enabled,
@@ -157,7 +157,7 @@ impl App {
                             div()
                                 .text_size(px(10.))
                                 .text_color(rgb(p.muted))
-                                .child(format_bytes(self.stats.total_bytes)),
+                                .child(format_bytes(self.library.stats.total_bytes)),
                         ),
                 )
             })
@@ -248,7 +248,7 @@ impl App {
                     .whitespace_nowrap()
                     .child(tr_args!(
                         "sidebar.photo_count_short",
-                        count = format_count(self.stats.photo_count)
+                        count = format_count(self.library.stats.photo_count)
                     )),
             )
             .child(
@@ -257,7 +257,7 @@ impl App {
                     .text_color(rgb(p.muted))
                     .whitespace_nowrap()
                     .truncate()
-                    .child(format_bytes(self.stats.total_bytes)),
+                    .child(format_bytes(self.library.stats.total_bytes)),
             )
             .into_any_element()
     }

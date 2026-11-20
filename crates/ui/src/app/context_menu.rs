@@ -31,8 +31,8 @@ impl ContextMenuSnapshot {
         Self {
             screen: app.screen,
             generation: app.active_generation(),
-            selection: app.selected_ids.to_vec(),
-            primary: app.selected,
+            selection: app.library.selected_ids.to_vec(),
+            primary: app.library.selected,
         }
     }
 }
@@ -88,7 +88,7 @@ impl PhotoApp {
             .photo_context_menu
             .take()
             .map(|state| state.source_focus);
-        if right_click_replaces_selection(&self.selected_ids, photo_id) {
+        if right_click_replaces_selection(&self.library.selected_ids, photo_id) {
             self.select_photo(photo_id, cx);
         }
         let source_focus = previous_source
@@ -103,13 +103,14 @@ impl PhotoApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.overlay_open() || self.selected_ids.is_empty() {
+        if self.overlay_open() || self.library.selected_ids.is_empty() {
             return;
         }
         let Some(anchor) = self
+            .library
             .selected
-            .filter(|id| self.selected_ids.contains(*id))
-            .or_else(|| self.selected_ids.last())
+            .filter(|id| self.library.selected_ids.contains(*id))
+            .or_else(|| self.library.selected_ids.last())
         else {
             return;
         };
@@ -388,7 +389,7 @@ impl PhotoApp {
         if self.screen == Screen::Search {
             self.search_view.borrow().generation
         } else {
-            self.library.borrow().generation
+            self.library.browser.borrow().generation
         }
     }
 
@@ -399,7 +400,8 @@ impl PhotoApp {
                 .get(&photo_id)
                 .map(|(_, bounds)| *bounds)
         } else {
-            self.library_bounds
+            self.library
+                .bounds
                 .borrow()
                 .get(&photo_id)
                 .map(|(_, bounds)| *bounds)
