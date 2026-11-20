@@ -21,7 +21,7 @@ use vrc_photon_core::queue::QueueFeature;
 use vrc_photon_core::tagging_image::TAGGING_MAX_EDGES;
 
 use crate::ui::auto_behavior::{
-    auto_mode_segmented, bulk_action_available, bulk_action_block, segment,
+    AutoBulkAction, auto_mode_segmented, bulk_action_available, bulk_action_block, segment,
 };
 use crate::ui::components::{card_divider, chip, compression_policy_warning, glass_panel};
 use crate::ui::queue::queue_section;
@@ -230,10 +230,12 @@ impl App {
             .child(card_divider(&p))
             .child(bulk_action_block(
                 &p,
-                "integrations-auto",
-                behavior,
-                enabled,
-                tr!("integrations.auto.process_uncompressed"),
+                AutoBulkAction {
+                    id_prefix: "integrations-auto",
+                    behavior,
+                    enabled,
+                    button_label: tr!("integrations.auto.process_uncompressed"),
+                },
                 cx,
                 App::set_auto_compress_scope,
                 App::process_uncompressed_compression_action,
@@ -380,10 +382,12 @@ impl App {
             .child(card_divider(&p))
             .child(bulk_action_block(
                 &p,
-                "integrations-ai",
-                behavior,
-                bulk_action_available(enabled, ready),
-                tr!("integrations.ai.process_untagged"),
+                AutoBulkAction {
+                    id_prefix: "integrations-ai",
+                    behavior,
+                    enabled: bulk_action_available(enabled, ready),
+                    button_label: tr!("integrations.ai.process_untagged"),
+                },
                 cx,
                 App::set_ai_auto_scope,
                 App::process_untagged_ai_action,

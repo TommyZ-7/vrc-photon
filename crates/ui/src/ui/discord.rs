@@ -18,7 +18,7 @@ use vrc_photon_i18n::tr;
 use crate::app::App;
 use crate::app::compression::FeatureCompressionTarget;
 use crate::app::discord::discord_backlog_available;
-use crate::ui::auto_behavior::{auto_mode_segmented, bulk_action_block};
+use crate::ui::auto_behavior::{AutoBulkAction, auto_mode_segmented, bulk_action_block};
 use crate::ui::components::{card_divider, glass_panel};
 
 /// Warning shown when the Discord compression settings use a format Discord
@@ -320,10 +320,12 @@ impl App {
             .child(card_divider(&p))
             .child(bulk_action_block(
                 &p,
-                "integrations-discord",
-                behavior,
-                bulk_enabled,
-                tr!("integrations.discord.backlog.button"),
+                AutoBulkAction {
+                    id_prefix: "integrations-discord",
+                    behavior,
+                    enabled: bulk_enabled,
+                    button_label: tr!("integrations.discord.backlog.button"),
+                },
                 cx,
                 App::set_discord_auto_scope,
                 App::send_discord_backlog,

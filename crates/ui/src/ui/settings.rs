@@ -63,6 +63,25 @@ impl ThemeAxis {
     }
 }
 
+/// One theme swatch: its axis and position plus the values the swatch renders.
+struct ThemeSwatch {
+    axis: ThemeAxis,
+    index: usize,
+    id: &'static str,
+    label: String,
+    swatch: u32,
+    selected: bool,
+}
+
+/// One AI plugin action button: its identity, effect, copy, and emphasis.
+struct AiActionButton {
+    id: &'static str,
+    action: AiPluginAction,
+    label: String,
+    primary: bool,
+    danger: bool,
+}
+
 /// Whether a library path edit changed the photo root, and whether anything
 /// changed at all. The photo root needs a library snapshot refresh; any path
 /// change needs a daemon rescan.
@@ -881,12 +900,14 @@ impl App {
                 let (id, label, swatch, selected) = item;
                 let index = chunk_index * 6 + offset;
                 row = row.child(self.theme_swatch(
-                    axis,
-                    index,
-                    id,
-                    label.clone(),
-                    *swatch,
-                    *selected,
+                    ThemeSwatch {
+                        axis,
+                        index,
+                        id,
+                        label: label.clone(),
+                        swatch: *swatch,
+                        selected: *selected,
+                    },
                     cx,
                 ));
             }
@@ -923,17 +944,15 @@ impl App {
             .child(rows)
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn theme_swatch(
-        &self,
-        axis: ThemeAxis,
-        index: usize,
-        id: &'static str,
-        label: String,
-        swatch: u32,
-        selected: bool,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
+    fn theme_swatch(&self, swatch: ThemeSwatch, cx: &mut Context<Self>) -> impl IntoElement {
+        let ThemeSwatch {
+            axis,
+            index,
+            id,
+            label,
+            swatch,
+            selected,
+        } = swatch;
         let p = self.palette;
         let focus = match axis {
             ThemeAxis::Main => self.theme_main_focus[index].clone(),
@@ -1325,27 +1344,33 @@ impl App {
                         )
                     })
                     .child(self.ai_action_button(
-                        "ai-import-zip",
-                        AiPluginAction::InstallZip,
-                        tr!("settings.ai.update"),
-                        false,
-                        false,
+                        AiActionButton {
+                            id: "ai-import-zip",
+                            action: AiPluginAction::InstallZip,
+                            label: tr!("settings.ai.update"),
+                            primary: false,
+                            danger: false,
+                        },
                         cx,
                     ))
                     .child(self.ai_action_button(
-                        "ai-delete-model",
-                        AiPluginAction::DeleteModel,
-                        tr!("settings.ai.delete_model"),
-                        false,
-                        false,
+                        AiActionButton {
+                            id: "ai-delete-model",
+                            action: AiPluginAction::DeleteModel,
+                            label: tr!("settings.ai.delete_model"),
+                            primary: false,
+                            danger: false,
+                        },
                         cx,
                     ))
                     .child(self.ai_action_button(
-                        "ai-uninstall",
-                        AiPluginAction::Uninstall,
-                        tr!("settings.ai.uninstall"),
-                        false,
-                        true,
+                        AiActionButton {
+                            id: "ai-uninstall",
+                            action: AiPluginAction::Uninstall,
+                            label: tr!("settings.ai.uninstall"),
+                            primary: false,
+                            danger: true,
+                        },
                         cx,
                     )),
             );
@@ -1375,27 +1400,33 @@ impl App {
                         .gap(px(8.))
                         .child(self.ai_primary_action_button(view.primary_action, true, cx))
                         .child(self.ai_action_button(
-                            "ai-error-import",
-                            AiPluginAction::ImportModel,
-                            tr!("settings.ai.import_model"),
-                            false,
-                            false,
+                            AiActionButton {
+                                id: "ai-error-import",
+                                action: AiPluginAction::ImportModel,
+                                label: tr!("settings.ai.import_model"),
+                                primary: false,
+                                danger: false,
+                            },
                             cx,
                         ))
                         .child(self.ai_action_button(
-                            "ai-error-recheck",
-                            AiPluginAction::Recheck,
-                            tr!("settings.ai.recheck"),
-                            false,
-                            false,
+                            AiActionButton {
+                                id: "ai-error-recheck",
+                                action: AiPluginAction::Recheck,
+                                label: tr!("settings.ai.recheck"),
+                                primary: false,
+                                danger: false,
+                            },
                             cx,
                         ))
                         .child(self.ai_action_button(
-                            "ai-error-uninstall",
-                            AiPluginAction::Uninstall,
-                            tr!("settings.ai.uninstall"),
-                            false,
-                            true,
+                            AiActionButton {
+                                id: "ai-error-uninstall",
+                                action: AiPluginAction::Uninstall,
+                                label: tr!("settings.ai.uninstall"),
+                                primary: false,
+                                danger: true,
+                            },
                             cx,
                         )),
                 );
@@ -1411,35 +1442,43 @@ impl App {
                         .gap(px(8.))
                         .child(self.ai_primary_action_button(view.primary_action, false, cx))
                         .child(self.ai_action_button(
-                            "ai-import-model",
-                            AiPluginAction::ImportModel,
-                            tr!("settings.ai.import_model"),
-                            false,
-                            false,
+                            AiActionButton {
+                                id: "ai-import-model",
+                                action: AiPluginAction::ImportModel,
+                                label: tr!("settings.ai.import_model"),
+                                primary: false,
+                                danger: false,
+                            },
                             cx,
                         ))
                         .child(self.ai_action_button(
-                            "ai-recheck",
-                            AiPluginAction::Recheck,
-                            tr!("settings.ai.recheck"),
-                            false,
-                            false,
+                            AiActionButton {
+                                id: "ai-recheck",
+                                action: AiPluginAction::Recheck,
+                                label: tr!("settings.ai.recheck"),
+                                primary: false,
+                                danger: false,
+                            },
                             cx,
                         ))
                         .child(self.ai_action_button(
-                            "ai-import-zip",
-                            AiPluginAction::InstallZip,
-                            tr!("settings.ai.update"),
-                            false,
-                            false,
+                            AiActionButton {
+                                id: "ai-import-zip",
+                                action: AiPluginAction::InstallZip,
+                                label: tr!("settings.ai.update"),
+                                primary: false,
+                                danger: false,
+                            },
                             cx,
                         ))
                         .child(self.ai_action_button(
-                            "ai-missing-uninstall",
-                            AiPluginAction::Uninstall,
-                            tr!("settings.ai.uninstall"),
-                            false,
-                            true,
+                            AiActionButton {
+                                id: "ai-missing-uninstall",
+                                action: AiPluginAction::Uninstall,
+                                label: tr!("settings.ai.uninstall"),
+                                primary: false,
+                                danger: true,
+                            },
                             cx,
                         )),
                 );
@@ -1797,19 +1836,26 @@ impl App {
             AiPluginAction::Uninstall => (tr!("settings.ai.uninstall"), true),
             AiPluginAction::None => return div().into_any_element(),
         };
-        self.ai_action_button("ai-primary-action", action, label, true, danger, cx)
+        self.ai_action_button(
+            AiActionButton {
+                id: "ai-primary-action",
+                action,
+                label,
+                primary: true,
+                danger,
+            },
+            cx,
+        )
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn ai_action_button(
-        &self,
-        id: &'static str,
-        action: AiPluginAction,
-        label: String,
-        primary: bool,
-        danger: bool,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
+    fn ai_action_button(&self, button: AiActionButton, cx: &mut Context<Self>) -> AnyElement {
+        let AiActionButton {
+            id,
+            action,
+            label,
+            primary,
+            danger,
+        } = button;
         let mut button = Button::new(id).label(label).small();
         if primary {
             button = button.primary();

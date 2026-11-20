@@ -80,17 +80,27 @@ fn mode_segment(
         .on_click(cx.listener(move |this, _, window, cx| on_mode(this, mode, window, cx)))
 }
 
-#[allow(clippy::too_many_arguments)]
+/// The per-feature values a bulk action block displays.
+pub(crate) struct AutoBulkAction {
+    pub(crate) id_prefix: &'static str,
+    pub(crate) behavior: AutoBehavior,
+    pub(crate) enabled: bool,
+    pub(crate) button_label: String,
+}
+
 pub(crate) fn bulk_action_block(
     palette: &Palette,
-    id_prefix: &'static str,
-    behavior: AutoBehavior,
-    enabled: bool,
-    button_label: String,
+    action: AutoBulkAction,
     cx: &mut Context<App>,
     on_scope: fn(&mut App, AutoScope, &mut Window, &mut Context<App>),
     on_bulk: fn(&mut App, &mut Window, &mut Context<App>),
 ) -> AnyElement {
+    let AutoBulkAction {
+        id_prefix,
+        behavior,
+        enabled,
+        button_label,
+    } = action;
     let p = palette;
     v_flex()
         .gap(px(7.))

@@ -299,26 +299,30 @@ impl App {
             &self.palette,
             vec![
                 large_button(
-                    &self.palette,
+                    RibbonButtonStyle {
+                        palette: &self.palette,
+                        look: RibbonLook::Normal,
+                        metrics,
+                        focus: self.ribbon_import_copy_focus.clone(),
+                        focusable,
+                    },
                     "ribbon-import-copy",
                     tr!("chrome.import.copy"),
                     IconName::Copy,
-                    RibbonLook::Normal,
-                    metrics,
-                    self.ribbon_import_copy_focus.clone(),
-                    focusable,
                     cx,
                     |this, window, cx| this.open_import_dialog(ImportMode::Copy, window, cx),
                 ),
                 large_button(
-                    &self.palette,
+                    RibbonButtonStyle {
+                        palette: &self.palette,
+                        look: RibbonLook::Normal,
+                        metrics,
+                        focus: self.ribbon_import_move_focus.clone(),
+                        focusable,
+                    },
                     "ribbon-import-move",
                     tr!("chrome.import.move"),
                     IconName::Replace,
-                    RibbonLook::Normal,
-                    metrics,
-                    self.ribbon_import_move_focus.clone(),
-                    focusable,
                     cx,
                     |this, window, cx| this.open_import_dialog(ImportMode::Move, window, cx),
                 ),
@@ -329,14 +333,16 @@ impl App {
         );
 
         let reload = large_button(
-            &self.palette,
+            RibbonButtonStyle {
+                palette: &self.palette,
+                look: RibbonLook::Normal,
+                metrics,
+                focus: self.ribbon_reload_focus.clone(),
+                focusable,
+            },
             "ribbon-reload",
             tr!("chrome.reload"),
             IconName::RefreshCw,
-            RibbonLook::Normal,
-            metrics,
-            self.ribbon_reload_focus.clone(),
-            focusable,
             cx,
             |this, _, cx| {
                 if matches!(this.screen, Screen::Photos | Screen::Search) {
@@ -358,14 +364,16 @@ impl App {
 
         let mut display_items = vec![self.card_size_selector(metrics, cx)];
         display_items.push(large_button(
-            &self.palette,
+            RibbonButtonStyle {
+                palette: &self.palette,
+                look: inspector_button_look(self.screen, self.inspector_collapsed),
+                metrics,
+                focus: self.ribbon_inspector_focus.clone(),
+                focusable,
+            },
             "ribbon-toggle-inspector",
             tr!("chrome.group.details"),
             IconName::PanelRight,
-            inspector_button_look(self.screen, self.inspector_collapsed),
-            metrics,
-            self.ribbon_inspector_focus.clone(),
-            focusable,
             cx,
             |this, _, cx| this.toggle_inspector(cx),
         ));
@@ -467,34 +475,38 @@ impl App {
             &self.palette,
             vec![
                 large_button(
-                    &self.palette,
+                    RibbonButtonStyle {
+                        palette: &self.palette,
+                        look: if self.photo_browser_empty() {
+                            RibbonLook::Disabled
+                        } else {
+                            RibbonLook::Normal
+                        },
+                        metrics,
+                        focus: self.ribbon_select_all_focus.clone(),
+                        focusable,
+                    },
                     "ribbon-select-all",
                     tr!("chrome.select_all"),
                     IconName::Check,
-                    if self.photo_browser_empty() {
-                        RibbonLook::Disabled
-                    } else {
-                        RibbonLook::Normal
-                    },
-                    metrics,
-                    self.ribbon_select_all_focus.clone(),
-                    focusable,
                     cx,
                     |this, _, cx| this.select_all_photos(cx),
                 ),
                 large_button(
-                    &self.palette,
+                    RibbonButtonStyle {
+                        palette: &self.palette,
+                        look: if self.selected_ids.is_empty() {
+                            RibbonLook::Disabled
+                        } else {
+                            RibbonLook::Normal
+                        },
+                        metrics,
+                        focus: self.ribbon_clear_selection_focus.clone(),
+                        focusable,
+                    },
                     "ribbon-clear-selection",
                     tr!("chrome.clear_selection"),
                     IconName::Close,
-                    if self.selected_ids.is_empty() {
-                        RibbonLook::Disabled
-                    } else {
-                        RibbonLook::Normal
-                    },
-                    metrics,
-                    self.ribbon_clear_selection_focus.clone(),
-                    focusable,
                     cx,
                     |this, _, cx| this.clear_selection(cx),
                 ),
@@ -508,30 +520,34 @@ impl App {
             &self.palette,
             vec![
                 large_button(
-                    &self.palette,
+                    RibbonButtonStyle {
+                        palette: &self.palette,
+                        look: if !has_selection {
+                            RibbonLook::Disabled
+                        } else {
+                            RibbonLook::Normal
+                        },
+                        metrics,
+                        focus: self.ribbon_trash_focus.clone(),
+                        focusable,
+                    },
                     "ribbon-trash",
                     tr!("chrome.trash"),
                     IconName::Delete,
-                    if !has_selection {
-                        RibbonLook::Disabled
-                    } else {
-                        RibbonLook::Normal
-                    },
-                    metrics,
-                    self.ribbon_trash_focus.clone(),
-                    focusable,
                     cx,
                     |this, window, cx| this.trash_selected(window, cx),
                 ),
                 large_button(
-                    &self.palette,
+                    RibbonButtonStyle {
+                        palette: &self.palette,
+                        look: selection_look(self.has_action_selection()),
+                        metrics,
+                        focus: self.ribbon_auto_compress_focus.clone(),
+                        focusable,
+                    },
                     "ribbon-auto-compress",
                     tr!("chrome.group.compress"),
                     IconName::Minimize,
-                    selection_look(self.has_action_selection()),
-                    metrics,
-                    self.ribbon_auto_compress_focus.clone(),
-                    focusable,
                     cx,
                     |this, _, cx| this.compress_selection_auto(cx),
                 ),
@@ -557,54 +573,62 @@ impl App {
             &self.palette,
             vec![
                 large_button(
-                    &self.palette,
+                    RibbonButtonStyle {
+                        palette: &self.palette,
+                        look: selection_look(has_selection),
+                        metrics,
+                        focus: self.ribbon_compress_folder_focus.clone(),
+                        focusable,
+                    },
                     "ribbon-compress-folder",
                     tr!("chrome.output.folder"),
                     IconName::FolderOpen,
-                    selection_look(has_selection),
-                    metrics,
-                    self.ribbon_compress_folder_focus.clone(),
-                    focusable,
                     cx,
                     |this, window, cx| this.compress_selection_to_folder(window, cx),
                 ),
                 large_button(
-                    &self.palette,
+                    RibbonButtonStyle {
+                        palette: &self.palette,
+                        look: selection_look(has_selection),
+                        metrics,
+                        focus: self.ribbon_compress_profile_focus.clone(),
+                        focusable,
+                    },
                     "ribbon-compress-profile",
                     tr!("chrome.output.profile"),
                     IconName::FolderOpen,
-                    selection_look(has_selection),
-                    metrics,
-                    self.ribbon_compress_profile_focus.clone(),
-                    focusable,
                     cx,
                     |this, _, cx| this.compress_selection_to_profile_folder(cx),
                 ),
                 large_button(
-                    &self.palette,
+                    RibbonButtonStyle {
+                        palette: &self.palette,
+                        look: selection_look(has_selection),
+                        metrics,
+                        focus: self.ribbon_compress_clipboard_focus.clone(),
+                        focusable,
+                    },
                     "ribbon-compress-clipboard",
                     tr!("chrome.output.clipboard"),
                     IconName::Copy,
-                    selection_look(has_selection),
-                    metrics,
-                    self.ribbon_compress_clipboard_focus.clone(),
-                    focusable,
                     cx,
                     |this, _, cx| this.compress_selection_to_clipboard(cx),
                 ),
                 large_button(
-                    &self.palette,
+                    RibbonButtonStyle {
+                        palette: &self.palette,
+                        look: if waiting > 0 {
+                            RibbonLook::Normal
+                        } else {
+                            RibbonLook::Disabled
+                        },
+                        metrics,
+                        focus: self.ribbon_release_waiting_focus.clone(),
+                        focusable,
+                    },
                     "ribbon-release-waiting",
                     tr!("chrome.compress_waiting"),
                     IconName::Play,
-                    if waiting > 0 {
-                        RibbonLook::Normal
-                    } else {
-                        RibbonLook::Disabled
-                    },
-                    metrics,
-                    self.ribbon_release_waiting_focus.clone(),
-                    focusable,
                     cx,
                     |this, window, cx| this.request_release_waiting_jobs(window, cx),
                 ),
@@ -787,20 +811,30 @@ fn selection_look(enabled: bool) -> RibbonLook {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn large_button(
-    palette: &Palette,
-    id: &'static str,
-    label: impl Into<SharedString>,
-    icon: IconName,
+/// Everything a ribbon command button reads besides its own label and icon.
+struct RibbonButtonStyle<'a> {
+    palette: &'a Palette,
     look: RibbonLook,
     metrics: RibbonMetrics,
     focus: FocusHandle,
     focusable: bool,
+}
+
+fn large_button(
+    style: RibbonButtonStyle<'_>,
+    id: &'static str,
+    label: impl Into<SharedString>,
+    icon: IconName,
     cx: &mut Context<App>,
     on_click: impl Fn(&mut App, &mut Window, &mut Context<App>) + 'static,
 ) -> AnyElement {
-    let p = palette;
+    let RibbonButtonStyle {
+        palette: p,
+        look,
+        metrics,
+        focus,
+        focusable,
+    } = style;
     let label = label.into();
     let enabled = look.enabled();
     let active = look.active();

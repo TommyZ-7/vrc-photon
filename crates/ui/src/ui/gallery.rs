@@ -1093,11 +1093,13 @@ fn render_session_grid(
                             rendered.push(render_session_header(
                                 app,
                                 list_shared.as_ref(),
-                                session_id,
-                                photo_count,
-                                collapsed,
-                                summary.as_deref(),
-                                failed,
+                                SessionHeaderInput {
+                                    session_id,
+                                    photo_count,
+                                    collapsed,
+                                    summary: summary.as_deref(),
+                                    failed,
+                                },
                                 &mut missing_thumbnails,
                             ));
                         }
@@ -1333,17 +1335,28 @@ fn session_grid_viewport_height(window: &Window) -> f32 {
         .max(SESSION_HEADER_ROW_HEIGHT)
 }
 
-#[allow(clippy::too_many_arguments)]
-fn render_session_header(
-    app: &App,
-    shared: &GalleryShared,
+/// The per-row values a session header displays.
+struct SessionHeaderInput<'a> {
     session_id: i64,
     photo_count: usize,
     collapsed: bool,
-    summary: Option<&SessionSummary>,
+    summary: Option<&'a SessionSummary>,
     failed: bool,
+}
+
+fn render_session_header(
+    app: &App,
+    shared: &GalleryShared,
+    header: SessionHeaderInput<'_>,
     missing_thumbnails: &mut Vec<Arc<Photo>>,
 ) -> AnyElement {
+    let SessionHeaderInput {
+        session_id,
+        photo_count,
+        collapsed,
+        summary,
+        failed,
+    } = header;
     let p = app.palette;
     let (world_name, count, time, players, ongoing, cover) = if let Some(summary) = summary {
         (
