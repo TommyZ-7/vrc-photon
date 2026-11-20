@@ -4636,6 +4636,33 @@ fn ai_filters_use_the_ai_indexes() {
 }
 
 #[test]
+fn ai_tag_filter_caps_the_placeholder_count() {
+    let db = Db::open_in_memory().unwrap();
+    let ids = seed_photos(&db, 2);
+    seed_ai_tag(&db, ids[0], AI_PLUGIN, "tag0", 0.9, true);
+
+    let mut tags: Vec<String> = (0..600).map(|index| format!("tag{index}")).collect();
+    let filter = PhotoTextFilter {
+        ai: AiPhotoFilter {
+            tags: tags.clone(),
+            people_count: None,
+        },
+        ..Default::default()
+    };
+    assert_eq!(db.count_photos_text(&filter).unwrap(), 1);
+
+    tags.rotate_left(1);
+    let filter = PhotoTextFilter {
+        ai: AiPhotoFilter {
+            tags,
+            people_count: None,
+        },
+        ..Default::default()
+    };
+    assert_eq!(db.count_photos_text(&filter).unwrap(), 0);
+}
+
+#[test]
 fn save_photo_ai_skips_missing_or_deleting_photos() {
     let db = Db::open_in_memory().unwrap();
     let photo = seed_photo(&db);

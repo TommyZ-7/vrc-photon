@@ -1090,16 +1090,22 @@ fn photo_order(sort: PhotoSort) -> &'static str {
     }
 }
 
+/// Caps the AI tag filter at the same chunk size as bulk tag writes. SQLite
+/// accepts at most 32,766 bound parameters, and a filter built from an
+/// unbounded key list would fail the whole request.
+const MAX_AI_FILTER_TAGS: usize = 500;
+
 fn push_ai_filter(clauses: &mut Vec<String>, values: &mut Vec<Value>, ai: &AiPhotoFilter) {
-    if !ai.tags.is_empty() {
-        let placeholders = vec!["?"; ai.tags.len()].join(",");
+    let tags = &ai.tags[..ai.tags.len().min(MAX_AI_FILTER_TAGS)];
+    if !tags.is_empty() {
+        let placeholders = vec!["?"; tags.len()].join(",");
         clauses.push(format!(
             "EXISTS (SELECT 1 FROM photo_ai_tags at \
              WHERE at.photo_id = p.id AND at.plugin_id = ? AND at.applied = 1 \
              AND at.tag_key IN ({placeholders}))"
         ));
         values.push(Value::Text(AI_PLUGIN_ID.to_string()));
-        values.extend(ai.tags.iter().map(|tag| Value::Text(tag.clone())));
+        values.extend(tags.iter().map(|tag| Value::Text(tag.clone())));
     }
 
     if let Some(count) = ai.people_count {

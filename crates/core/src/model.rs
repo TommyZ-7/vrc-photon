@@ -1061,6 +1061,8 @@ pub struct PhotoIndexEntry {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AiPhotoFilter {
     /// Tag keys matched with OR. Only applied tags of the AI plugin match.
+    /// At most the first 500 keys are honored; the core filter builder
+    /// truncates longer lists.
     pub tags: Vec<String>,
     /// A single people count contained in the stored estimate interval.
     pub people_count: Option<u32>,
