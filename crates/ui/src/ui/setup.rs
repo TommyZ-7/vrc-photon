@@ -177,7 +177,7 @@ impl App {
 
     fn setup_welcome(&self, cx: &mut Context<Self>) -> Div {
         let p = self.palette;
-        let active = vrc_photon_i18n::normalize(&self.settings.language);
+        let active = vrc_photon_i18n::normalize(&self.settings.current.language);
         let chips =
             h_flex()
                 .flex_wrap()
@@ -230,11 +230,11 @@ impl App {
                 &p,
                 tr!("settings.startup.autostart"),
                 "setup-autostart",
-                self.settings.autostart,
+                self.settings.current.autostart,
                 cx,
                 |app, value, _, cx| {
-                    app.settings.autostart = value;
-                    if let Err(error) = app.settings.save(&app.db) {
+                    app.settings.current.autostart = value;
+                    if let Err(error) = app.settings.current.save(&app.db) {
                         tracing::warn!(%error, "cannot save autostart setting");
                     }
                     cx.notify();
@@ -244,11 +244,11 @@ impl App {
                 &p,
                 tr!("settings.startup.tray"),
                 "setup-tray",
-                self.settings.tray,
+                self.settings.current.tray,
                 cx,
                 |app, value, _, cx| {
-                    app.settings.tray = value;
-                    if let Err(error) = app.settings.save(&app.db) {
+                    app.settings.current.tray = value;
+                    if let Err(error) = app.settings.current.save(&app.db) {
                         tracing::warn!(%error, "cannot save tray setting");
                     }
                     cx.notify();
@@ -258,7 +258,7 @@ impl App {
                 &p,
                 tr!("settings.startup.reduce_motion"),
                 "setup-reduce-motion",
-                self.settings.ui_reduce_motion,
+                self.settings.current.ui_reduce_motion,
                 cx,
                 |app, value, _, cx| app.set_reduce_motion(value, cx),
             ))
@@ -299,158 +299,159 @@ impl App {
 
     fn setup_display(&self, cx: &mut Context<Self>) -> Div {
         let p = self.palette;
-        let left =
-            v_flex()
-                .w(px(240.))
-                .flex_shrink_0()
-                .gap(px(10.))
-                .child(
-                    div()
-                        .text_size(px(13.))
-                        .font_semibold()
-                        .text_color(rgb(p.text))
-                        .child(tr!("settings.display.title")),
-                )
-                .child(
-                    v_flex()
-                        .gap(px(7.))
-                        .child(setup_switch_row(
-                            &p,
-                            tr!("settings.display.status.label"),
-                            "setup-card-status",
-                            self.settings.ui_card_show_status,
-                            cx,
-                            |app, value, _, cx| {
-                                app.settings.ui_card_show_status = value;
-                                if let Err(error) = app.settings.save(&app.db) {
-                                    tracing::warn!(%error, "cannot save card status setting");
-                                }
-                                cx.notify();
-                            },
-                        ))
-                        .child(setup_switch_row(
-                            &p,
-                            tr!("settings.display.world.label"),
-                            "setup-card-world",
-                            self.settings.ui_card_show_world,
-                            cx,
-                            |app, value, _, cx| {
-                                app.settings.ui_card_show_world = value;
-                                if let Err(error) = app.settings.save(&app.db) {
-                                    tracing::warn!(%error, "cannot save card world setting");
-                                }
-                                cx.notify();
-                            },
-                        ))
-                        .child(setup_switch_row(
-                            &p,
-                            tr!("settings.display.date.label"),
-                            "setup-card-date",
-                            self.settings.ui_card_show_date,
-                            cx,
-                            |app, value, _, cx| {
-                                app.settings.ui_card_show_date = value;
-                                if let Err(error) = app.settings.save(&app.db) {
-                                    tracing::warn!(%error, "cannot save card date setting");
-                                }
-                                cx.notify();
-                            },
-                        ))
-                        .child(setup_switch_row(
-                            &p,
-                            tr!("settings.display.size.label"),
-                            "setup-card-size",
-                            self.settings.ui_card_show_size,
-                            cx,
-                            |app, value, _, cx| {
-                                app.settings.ui_card_show_size = value;
-                                if let Err(error) = app.settings.save(&app.db) {
-                                    tracing::warn!(%error, "cannot save card size setting");
-                                }
-                                cx.notify();
-                            },
-                        )),
-                )
-                .child(card_divider(&p))
-                .child(
-                    v_flex()
-                        .gap(px(6.))
-                        .child(
-                            h_flex()
-                                .items_baseline()
-                                .justify_between()
-                                .child(
-                                    div()
-                                        .text_size(px(12.))
-                                        .text_color(rgb(p.text))
-                                        .child(tr!("settings.display.grid_gap.label")),
-                                )
-                                .child(
-                                    div()
-                                        .text_size(px(12.))
-                                        .font_semibold()
-                                        .text_color(rgb(p.text))
-                                        .child(format!("{} px", self.settings.ui_grid_gap)),
-                                ),
-                        )
-                        .child(Slider::new(&self.grid_gap_slider).w_full()),
-                )
-                .child(
-                    v_flex()
-                        .gap(px(6.))
-                        .child(
-                            h_flex()
-                                .items_baseline()
-                                .justify_between()
-                                .child(
-                                    div()
-                                        .text_size(px(12.))
-                                        .text_color(rgb(p.text))
-                                        .child(tr!("settings.display.card_radius.label")),
-                                )
-                                .child(
-                                    div()
-                                        .text_size(px(12.))
-                                        .font_semibold()
-                                        .text_color(rgb(p.text))
-                                        .child(format!("{} px", self.settings.ui_card_radius)),
-                                ),
-                        )
-                        .child(Slider::new(&self.card_radius_slider).w_full()),
-                )
-                .child(card_divider(&p))
-                .child(
-                    div()
-                        .text_size(px(13.))
-                        .font_semibold()
-                        .text_color(rgb(p.text))
-                        .child(tr!("settings.thumbnail.title")),
-                )
-                .child(
-                    h_flex()
-                        .gap(px(4.))
-                        .children(THUMBNAIL_SIZES.into_iter().map(|size| {
-                            let active = self.settings.thumbnail_size == size;
-                            div()
-                                .id(SharedString::from(format!("setup-thumbnail-{size}")))
-                                .px(px(10.))
-                                .py(px(5.))
-                                .rounded(px(8.))
-                                .bg(if active {
-                                    rgb(p.accent_soft)
-                                } else {
-                                    rgba(0x00000000)
-                                })
-                                .text_size(px(11.))
-                                .font_medium()
-                                .text_color(if active { rgb(p.accent) } else { rgb(p.muted) })
-                                .cursor_pointer()
-                                .on_click(cx.listener(move |this, _, _, cx| {
+        let left = v_flex()
+            .w(px(240.))
+            .flex_shrink_0()
+            .gap(px(10.))
+            .child(
+                div()
+                    .text_size(px(13.))
+                    .font_semibold()
+                    .text_color(rgb(p.text))
+                    .child(tr!("settings.display.title")),
+            )
+            .child(
+                v_flex()
+                    .gap(px(7.))
+                    .child(setup_switch_row(
+                        &p,
+                        tr!("settings.display.status.label"),
+                        "setup-card-status",
+                        self.settings.current.ui_card_show_status,
+                        cx,
+                        |app, value, _, cx| {
+                            app.settings.current.ui_card_show_status = value;
+                            if let Err(error) = app.settings.current.save(&app.db) {
+                                tracing::warn!(%error, "cannot save card status setting");
+                            }
+                            cx.notify();
+                        },
+                    ))
+                    .child(setup_switch_row(
+                        &p,
+                        tr!("settings.display.world.label"),
+                        "setup-card-world",
+                        self.settings.current.ui_card_show_world,
+                        cx,
+                        |app, value, _, cx| {
+                            app.settings.current.ui_card_show_world = value;
+                            if let Err(error) = app.settings.current.save(&app.db) {
+                                tracing::warn!(%error, "cannot save card world setting");
+                            }
+                            cx.notify();
+                        },
+                    ))
+                    .child(setup_switch_row(
+                        &p,
+                        tr!("settings.display.date.label"),
+                        "setup-card-date",
+                        self.settings.current.ui_card_show_date,
+                        cx,
+                        |app, value, _, cx| {
+                            app.settings.current.ui_card_show_date = value;
+                            if let Err(error) = app.settings.current.save(&app.db) {
+                                tracing::warn!(%error, "cannot save card date setting");
+                            }
+                            cx.notify();
+                        },
+                    ))
+                    .child(setup_switch_row(
+                        &p,
+                        tr!("settings.display.size.label"),
+                        "setup-card-size",
+                        self.settings.current.ui_card_show_size,
+                        cx,
+                        |app, value, _, cx| {
+                            app.settings.current.ui_card_show_size = value;
+                            if let Err(error) = app.settings.current.save(&app.db) {
+                                tracing::warn!(%error, "cannot save card size setting");
+                            }
+                            cx.notify();
+                        },
+                    )),
+            )
+            .child(card_divider(&p))
+            .child(
+                v_flex()
+                    .gap(px(6.))
+                    .child(
+                        h_flex()
+                            .items_baseline()
+                            .justify_between()
+                            .child(
+                                div()
+                                    .text_size(px(12.))
+                                    .text_color(rgb(p.text))
+                                    .child(tr!("settings.display.grid_gap.label")),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(12.))
+                                    .font_semibold()
+                                    .text_color(rgb(p.text))
+                                    .child(format!("{} px", self.settings.current.ui_grid_gap)),
+                            ),
+                    )
+                    .child(Slider::new(&self.grid_gap_slider).w_full()),
+            )
+            .child(
+                v_flex()
+                    .gap(px(6.))
+                    .child(
+                        h_flex()
+                            .items_baseline()
+                            .justify_between()
+                            .child(
+                                div()
+                                    .text_size(px(12.))
+                                    .text_color(rgb(p.text))
+                                    .child(tr!("settings.display.card_radius.label")),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(12.))
+                                    .font_semibold()
+                                    .text_color(rgb(p.text))
+                                    .child(format!("{} px", self.settings.current.ui_card_radius)),
+                            ),
+                    )
+                    .child(Slider::new(&self.card_radius_slider).w_full()),
+            )
+            .child(card_divider(&p))
+            .child(
+                div()
+                    .text_size(px(13.))
+                    .font_semibold()
+                    .text_color(rgb(p.text))
+                    .child(tr!("settings.thumbnail.title")),
+            )
+            .child(
+                h_flex()
+                    .gap(px(4.))
+                    .children(THUMBNAIL_SIZES.into_iter().map(|size| {
+                        let active = self.settings.current.thumbnail_size == size;
+                        div()
+                            .id(SharedString::from(format!("setup-thumbnail-{size}")))
+                            .px(px(10.))
+                            .py(px(5.))
+                            .rounded(px(8.))
+                            .bg(if active {
+                                rgb(p.accent_soft)
+                            } else {
+                                rgba(0x00000000)
+                            })
+                            .text_size(px(11.))
+                            .font_medium()
+                            .text_color(if active { rgb(p.accent) } else { rgb(p.muted) })
+                            .cursor_pointer()
+                            .on_click(
+                                cx.listener(move |this, _, _, cx| {
                                     this.set_thumbnail_size(size, cx)
-                                }))
-                                .child(format!("{size}×{}", size * 9 / 16))
-                        })),
-                );
+                                }),
+                            )
+                            .child(format!("{size}×{}", size * 9 / 16))
+                    })),
+            );
 
         h_flex()
             .items_start()
@@ -461,8 +462,8 @@ impl App {
 
     fn setup_display_preview(&self) -> Div {
         let p = self.palette;
-        let radius = f32::from(self.settings.ui_card_radius);
-        let gap = f32::from(self.settings.ui_grid_gap);
+        let radius = f32::from(self.settings.current.ui_card_radius);
+        let gap = f32::from(self.settings.current.ui_grid_gap);
         let inner_radius = inner_corner_radius(radius, 1.0);
         let worlds = [
             "VRChat Home",
@@ -474,9 +475,9 @@ impl App {
         let sizes = ["1.2 MB", "980 KB", "2.4 MB", "1.7 MB"];
         let tints = [p.accent, p.green, p.amber, p.red];
         let has_body = display_preview_has_body(
-            self.settings.ui_card_show_world,
-            self.settings.ui_card_show_date,
-            self.settings.ui_card_show_size,
+            self.settings.current.ui_card_show_world,
+            self.settings.current.ui_card_show_date,
+            self.settings.current.ui_card_show_size,
         );
         let card = |index: usize| -> Div {
             let image = linear_gradient(
@@ -500,7 +501,7 @@ impl App {
                         .rounded_tl(px(inner_radius))
                         .rounded_tr(px(inner_radius))
                         .bg(image)
-                        .when(self.settings.ui_card_show_status, |this| {
+                        .when(self.settings.current.ui_card_show_status, |this| {
                             this.child(
                                 div()
                                     .absolute()
@@ -522,7 +523,7 @@ impl App {
                         v_flex()
                             .p(px(5.))
                             .gap(px(2.))
-                            .when(self.settings.ui_card_show_world, |this| {
+                            .when(self.settings.current.ui_card_show_world, |this| {
                                 this.child(
                                     div()
                                         .truncate()
@@ -533,7 +534,8 @@ impl App {
                                 )
                             })
                             .when(
-                                self.settings.ui_card_show_date || self.settings.ui_card_show_size,
+                                self.settings.current.ui_card_show_date
+                                    || self.settings.current.ui_card_show_size,
                                 |this| {
                                     this.child(
                                         h_flex()
@@ -541,17 +543,18 @@ impl App {
                                             .gap(px(3.))
                                             .text_size(px(7.5))
                                             .text_color(rgb(p.muted_2))
-                                            .when(self.settings.ui_card_show_date, |this| {
+                                            .when(self.settings.current.ui_card_show_date, |this| {
                                                 this.child(dates[index])
                                             })
                                             .when(
-                                                self.settings.ui_card_show_date
-                                                    && self.settings.ui_card_show_size,
+                                                self.settings.current.ui_card_show_date
+                                                    && self.settings.current.ui_card_show_size,
                                                 |this| this.child("·"),
                                             )
-                                            .when(self.settings.ui_card_show_size, |this| {
-                                                this.child(sizes[index])
-                                            }),
+                                            .when(
+                                                self.settings.current.ui_card_show_size,
+                                                |this| this.child(sizes[index]),
+                                            ),
                                     )
                                 },
                             ),
@@ -594,7 +597,7 @@ impl App {
 
     fn setup_discord(&self, cx: &mut Context<Self>) -> AnyElement {
         let p = self.palette;
-        let enabled = self.settings.discord_enabled;
+        let enabled = self.settings.current.discord_enabled;
         let fields = v_flex()
             .gap(px(14.))
             .child(
@@ -623,7 +626,7 @@ impl App {
                 &p,
                 tr!("integrations.discord.players.label"),
                 "setup-discord-players",
-                self.settings.discord_include_players,
+                self.settings.current.discord_include_players,
                 cx,
                 |app, value, _, cx| app.set_discord_include_players(value, cx),
             ))
@@ -631,14 +634,14 @@ impl App {
                 &p,
                 tr!("integrations.discord.source.prefer_original"),
                 "setup-discord-original",
-                self.settings.discord_send_original,
+                self.settings.current.discord_send_original,
                 cx,
                 |app, value, _, cx| app.set_discord_send_original(value, cx),
             ))
             .child(auto_mode_segmented(
                 &p,
                 "setup-discord",
-                self.settings.discord_auto.mode,
+                self.settings.current.discord_auto.mode,
                 cx,
                 App::set_discord_auto_mode,
             ));
@@ -665,8 +668,8 @@ impl App {
 
     fn setup_compression(&self, cx: &mut Context<Self>) -> AnyElement {
         let p = self.palette;
-        let enabled = self.settings.auto_compress_enabled;
-        let options = self.settings.auto_compression.clone();
+        let enabled = self.settings.current.auto_compress_enabled;
+        let options = self.settings.current.auto_compression.clone();
 
         let settings_body = v_flex()
             .gap(px(7.))
@@ -674,12 +677,15 @@ impl App {
                 &p,
                 tr!("settings.startup.keep_original"),
                 "setup-auto-keep",
-                self.settings.auto_compress_keep_original,
+                self.settings.current.auto_compress_keep_original,
                 cx,
                 |app, value, _, cx| app.set_setup_keep_original(value, cx),
             ))
             .when_some(
-                compression_policy_warning(self.settings.auto_compress_keep_original, enabled),
+                compression_policy_warning(
+                    self.settings.current.auto_compress_keep_original,
+                    enabled,
+                ),
                 |this, warning| {
                     this.child(
                         div()
@@ -770,7 +776,7 @@ impl App {
             .child(auto_mode_segmented(
                 &p,
                 "setup-auto",
-                self.settings.auto_compress.mode,
+                self.settings.current.auto_compress.mode,
                 cx,
                 App::set_auto_compress_mode,
             ));

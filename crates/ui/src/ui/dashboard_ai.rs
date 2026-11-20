@@ -19,7 +19,7 @@ impl App {
     pub(crate) fn ai_dashboard_card(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let p = self.palette;
         let language = vrc_photon_i18n::current_locale();
-        let view = ai_dashboard_view(&self.ai, self.settings.ai_tagging_enabled);
+        let view = ai_dashboard_view(&self.ai, self.settings.current.ai_tagging_enabled);
         let counts = self.ai.job_counts;
         let jobs = view.jobs.clone();
         let more = view.more;

@@ -111,9 +111,9 @@ pub(super) fn render_grid(
         search_grid_metrics(
             width,
             app.sidebar_collapsed,
-            app.settings.ui_card_size,
-            app.settings.ui_card_show_world,
-            app.settings.ui_card_show_date || app.settings.ui_card_show_size,
+            app.settings.current.ui_card_size,
+            app.settings.current.ui_card_show_world,
+            app.settings.current.ui_card_show_date || app.settings.current.ui_card_show_size,
             grid_gap,
         )
     } else {
@@ -121,9 +121,9 @@ pub(super) fn render_grid(
             width,
             app.sidebar_collapsed,
             app.inspector_collapsed,
-            app.settings.ui_card_size,
-            app.settings.ui_card_show_world,
-            app.settings.ui_card_show_date || app.settings.ui_card_show_size,
+            app.settings.current.ui_card_size,
+            app.settings.current.ui_card_show_world,
+            app.settings.current.ui_card_show_date || app.settings.current.ui_card_show_size,
             grid_gap,
         )
     };
@@ -451,9 +451,9 @@ pub(super) fn render_session_grid(
         width,
         app.sidebar_collapsed,
         app.inspector_collapsed,
-        app.settings.ui_card_size,
-        app.settings.ui_card_show_world,
-        app.settings.ui_card_show_date || app.settings.ui_card_show_size,
+        app.settings.current.ui_card_size,
+        app.settings.current.ui_card_show_world,
+        app.settings.current.ui_card_show_date || app.settings.current.ui_card_show_size,
         grid_gap,
     );
 

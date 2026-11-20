@@ -150,7 +150,7 @@ impl App {
                     .min_w_0()
                     .min_h_0()
                     .overflow_y_scroll()
-                    .track_scroll(&self.settings_scroll)
+                    .track_scroll(&self.settings.scroll)
                     .gap(px(CARD_GAP))
                     .child(self.language_card(cx))
                     .child(self.theme_card(cx))
@@ -177,7 +177,7 @@ impl App {
                     )
                     .child(self.developer_card(cx)),
             )
-            .vertical_scrollbar(&self.settings_scroll)
+            .vertical_scrollbar(&self.settings.scroll)
     }
 }
 

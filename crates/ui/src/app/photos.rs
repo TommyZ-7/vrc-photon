@@ -111,7 +111,7 @@ impl App {
         let spec = if self.demo_assets.is_some() {
             thumbnail::ThumbnailSpec::new(crate::app::demo::DEMO_THUMBNAIL_WIDTH)
         } else {
-            self.settings.thumbnail_spec()
+            self.settings.current.thumbnail_spec()
         };
         let cache_path = match &self.demo_assets {
             Some(assets) => demo_thumb_path(assets, id),

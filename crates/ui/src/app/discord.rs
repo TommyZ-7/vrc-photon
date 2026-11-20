@@ -171,15 +171,15 @@ pub(crate) fn auto_activation_for_webhook_resume(
 
 impl App {
     pub(crate) fn set_discord_enabled(&mut self, enabled: bool, cx: &mut Context<Self>) {
-        if self.settings.discord_enabled == enabled {
+        if self.settings.current.discord_enabled == enabled {
             return;
         }
-        let was_enabled = self.settings.discord_enabled;
-        self.settings.discord_enabled = enabled;
+        let was_enabled = self.settings.current.discord_enabled;
+        self.settings.current.discord_enabled = enabled;
         // Enabling again after a pause restarts the automatic window, so
         // photos captured while the feature was off are not posted.
         auto_activation_for_feature_resume(
-            &mut self.settings,
+            &mut self.settings.current,
             was_enabled,
             enabled,
             Utc::now().timestamp(),
@@ -214,11 +214,11 @@ impl App {
                 // The first webhook resumes automatic sending; the cutoff must
                 // move so photos captured while it was missing stay behind.
                 if auto_activation_for_webhook_resume(
-                    &mut self.settings,
+                    &mut self.settings.current,
                     had_webhook,
                     true,
                     Utc::now().timestamp(),
-                ) && let Err(error) = self.settings.save(&self.db)
+                ) && let Err(error) = self.settings.current.save(&self.db)
                 {
                     tracing::warn!(%error, "cannot save the Discord automatic-send cutoff");
                 }
@@ -251,27 +251,27 @@ impl App {
     pub(crate) fn save_discord_destination(&mut self, cx: &mut Context<Self>) {
         let raw = self.discord_destination_input.read(cx).value();
         let destination = normalized_destination(&raw);
-        if self.settings.discord_destination != destination {
-            self.settings.discord_destination = destination;
+        if self.settings.current.discord_destination != destination {
+            self.settings.current.discord_destination = destination;
             self.schedule_settings_save(cx);
         }
         cx.notify();
     }
 
     pub(crate) fn set_discord_send_original(&mut self, value: bool, cx: &mut Context<Self>) {
-        if self.settings.discord_send_original == value {
+        if self.settings.current.discord_send_original == value {
             return;
         }
-        self.settings.discord_send_original = value;
+        self.settings.current.discord_send_original = value;
         self.schedule_settings_save(cx);
         cx.notify();
     }
 
     pub(crate) fn set_discord_include_players(&mut self, value: bool, cx: &mut Context<Self>) {
-        if self.settings.discord_include_players == value {
+        if self.settings.current.discord_include_players == value {
             return;
         }
-        self.settings.discord_include_players = value;
+        self.settings.current.discord_include_players = value;
         self.schedule_settings_save(cx);
         cx.notify();
     }
@@ -288,11 +288,11 @@ impl App {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let was_off = self.settings.discord_auto.mode == AutoMode::Off;
+        let was_off = self.settings.current.discord_auto.mode == AutoMode::Off;
 
         if mode == AutoMode::Off {
-            self.settings.discord_auto.mode = AutoMode::Off;
-            if let Err(error) = self.settings.save(&self.db) {
+            self.settings.current.discord_auto.mode = AutoMode::Off;
+            if let Err(error) = self.settings.current.save(&self.db) {
                 tracing::warn!(%error, "cannot save the Discord automatic-send mode");
             }
             match self.db.cancel_waiting_auto_sends() {
@@ -309,7 +309,7 @@ impl App {
             return;
         }
 
-        if needs_discord_consent(&self.settings) {
+        if needs_discord_consent(&self.settings.current) {
             let entity = cx.entity();
             let panel_deep = self.palette.panel_deep;
             window.open_alert_dialog(cx, move |alert, _, _| {
@@ -339,20 +339,25 @@ impl App {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.settings.discord_auto.scope = scope;
+        self.settings.current.discord_auto.scope = scope;
         self.schedule_settings_save(cx);
         cx.notify();
     }
 
     /// Records consent and applies the mode chosen in the consent dialog.
     pub(crate) fn confirm_discord_auto_mode(&mut self, mode: AutoMode, cx: &mut Context<Self>) {
-        let was_off = self.settings.discord_auto.mode == AutoMode::Off;
-        self.settings.discord_consent_at = Some(Utc::now().timestamp());
+        let was_off = self.settings.current.discord_auto.mode == AutoMode::Off;
+        self.settings.current.discord_consent_at = Some(Utc::now().timestamp());
         self.save_discord_auto_mode(mode, was_off, cx);
     }
 
     fn save_discord_auto_mode(&mut self, mode: AutoMode, was_off: bool, cx: &mut Context<Self>) {
-        apply_discord_auto_mode(&mut self.settings, mode, Utc::now().timestamp(), was_off);
+        apply_discord_auto_mode(
+            &mut self.settings.current,
+            mode,
+            Utc::now().timestamp(),
+            was_off,
+        );
         self.schedule_settings_save(cx);
         cx.notify();
     }
@@ -417,7 +422,8 @@ impl App {
     }
 
     pub(crate) fn send_test_message(&mut self, cx: &mut Context<Self>) {
-        if let Err(error) = discord_send_guard(&self.settings, self.discord_url.as_deref()) {
+        if let Err(error) = discord_send_guard(&self.settings.current, self.discord_url.as_deref())
+        {
             self.toast_warning(manual_send_toast(Err(error)), cx);
             cx.notify();
             return;
@@ -461,7 +467,7 @@ impl App {
     /// Sends every never-sent photo that has no active send. The count is
     /// shown in a count-only confirmation before anything is queued.
     pub(crate) fn send_discord_backlog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let since = self.settings.discord_auto.bulk_since();
+        let since = self.settings.current.discord_auto.bulk_since();
         match self.db.count_unsent_photo_backlog(since) {
             Ok(0) => {
                 self.toast_info(tr!("integrations.discord.backlog.empty"), cx);
@@ -500,13 +506,13 @@ impl App {
     }
 
     pub(crate) fn confirm_discord_backlog(&mut self, cx: &mut Context<Self>) {
-        let since = self.settings.discord_auto.bulk_since();
+        let since = self.settings.current.discord_auto.bulk_since();
         match self.db.enqueue_unsent_photo_backlog(since) {
             Ok(0) => self.toast_info(tr!("integrations.discord.backlog.empty"), cx),
             Ok(count) => {
-                if self.settings.discord_consent_at.is_none() {
-                    self.settings.discord_consent_at = Some(Utc::now().timestamp());
-                    if let Err(error) = self.settings.save(&self.db) {
+                if self.settings.current.discord_consent_at.is_none() {
+                    self.settings.current.discord_consent_at = Some(Utc::now().timestamp());
+                    if let Err(error) = self.settings.current.save(&self.db) {
                         tracing::warn!(%error, "cannot save Discord consent");
                     }
                 }
@@ -535,7 +541,8 @@ impl App {
     /// navigated to the Integrations screen. A modal viewer uses that to close
     /// itself and reveal the screen; every other outcome returns `false`.
     pub(crate) fn enqueue_photo_send(&mut self, photo_id: i64, cx: &mut Context<Self>) -> bool {
-        if let Err(error) = discord_send_guard(&self.settings, self.discord_url.as_deref()) {
+        if let Err(error) = discord_send_guard(&self.settings.current, self.discord_url.as_deref())
+        {
             self.toast_warning(manual_send_toast(Err(error)), cx);
             self.switch_screen(Screen::Integrations, cx);
             return true;

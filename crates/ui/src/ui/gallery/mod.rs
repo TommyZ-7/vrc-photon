@@ -85,10 +85,10 @@ impl CardStringsKey {
     fn new(app: &App, generation: u64) -> Self {
         Self {
             generation,
-            language: app.settings.language.clone().into(),
-            show_world: app.settings.ui_card_show_world,
-            show_date: app.settings.ui_card_show_date,
-            show_size: app.settings.ui_card_show_size,
+            language: app.settings.current.language.clone().into(),
+            show_world: app.settings.current.ui_card_show_world,
+            show_date: app.settings.current.ui_card_show_date,
+            show_size: app.settings.current.ui_card_show_size,
         }
     }
 }
@@ -203,7 +203,8 @@ impl Render for GalleryView {
             return div().into_any_element();
         };
         let app = app_entity.read(cx);
-        let motion_fps = effective_motion_fps(app.settings.ui_max_fps, window.refresh_interval(cx));
+        let motion_fps =
+            effective_motion_fps(app.settings.current.ui_max_fps, window.refresh_interval(cx));
         let frame = self.shared.bounds_epoch.get().wrapping_add(1);
         self.shared.bounds_epoch.set(frame);
         retain_recent_bounds(&mut self.shared.bounds.borrow_mut(), frame);
@@ -212,7 +213,7 @@ impl Render for GalleryView {
             render_grid(app, &self.shared, frame, window)
         } else {
             let header = render_header(app, &self.shared, window);
-            let grid = if app.settings.ui_photos_view_mode == PhotosViewMode::Sessions {
+            let grid = if app.settings.current.ui_photos_view_mode == PhotosViewMode::Sessions {
                 render_session_grid(app, &self.shared, frame, window, motion_fps)
             } else {
                 render_grid(app, &self.shared, frame, window)
@@ -248,7 +249,7 @@ fn render_panel(app: &App, header: AnyElement, grid: AnyElement) -> AnyElement {
 
 fn view_mode_toggle(app: &App, app_entity: WeakEntity<App>) -> AnyElement {
     let p = app.palette;
-    let current = app.settings.ui_photos_view_mode;
+    let current = app.settings.current.ui_photos_view_mode;
     let timeline = view_mode_button(
         "photos-view-mode-timeline",
         tr!("session.mode.timeline"),
@@ -306,12 +307,12 @@ fn render_header(app: &App, shared: &Rc<GalleryShared>, window: &Window) -> AnyE
         width,
         app.sidebar_collapsed,
         app.inspector_collapsed,
-        app.settings.ui_card_size,
-        app.settings.ui_card_show_world,
-        app.settings.ui_card_show_date || app.settings.ui_card_show_size,
+        app.settings.current.ui_card_size,
+        app.settings.current.ui_card_show_world,
+        app.settings.current.ui_card_show_date || app.settings.current.ui_card_show_size,
         app.grid_gap(),
     );
-    let first_visible = if app.settings.ui_photos_view_mode == PhotosViewMode::Sessions {
+    let first_visible = if app.settings.current.ui_photos_view_mode == PhotosViewMode::Sessions {
         browser
             .top_photo_index(session_scroll_top(&browser.session_scroll))
             .unwrap_or(0)
@@ -329,7 +330,7 @@ fn render_header(app: &App, shared: &Rc<GalleryShared>, window: &Window) -> AnyE
         let (month, count) = visible_month(&browser.index, first_visible);
         (format_captured_month(month), count)
     };
-    let mode = app.settings.ui_photos_view_mode;
+    let mode = app.settings.current.ui_photos_view_mode;
     let header_width = gallery_header_width(width, app.sidebar_collapsed, app.inspector_collapsed);
     let summary = browser.session_collapse_summary();
 

@@ -761,7 +761,7 @@ impl App {
                         .on_click(cx.listener(|this, _, window, cx| {
                             this.close_notification_modal(window, cx);
                             this.switch_screen(Screen::Settings, cx);
-                            this.settings_scroll.scroll_to_bottom();
+                            this.settings.scroll.scroll_to_bottom();
                         })),
                 ),
             )

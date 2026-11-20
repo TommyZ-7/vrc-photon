@@ -132,11 +132,12 @@ impl PhotoApp {
             return;
         }
         let selection_len = snapshot.selection.len();
-        let discord_ready = discord_send_guard(&self.settings, self.discord_url.as_deref()).is_ok();
+        let discord_ready =
+            discord_send_guard(&self.settings.current, self.discord_url.as_deref()).is_ok();
         let enablement = ContextMenuEnablement::new(
             selection_len,
             discord_ready,
-            self.settings.ai_tagging_enabled,
+            self.settings.current.ai_tagging_enabled,
             self.ai.ready(),
         );
         let clipboard_label = if selection_len != 1 {

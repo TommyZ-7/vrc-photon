@@ -48,7 +48,7 @@ impl App {
         {
             self.thumbnails.borrow_mut().pin(*id);
         }
-        let max_fps = self.settings.ui_max_fps;
+        let max_fps = self.settings.current.ui_max_fps;
         self.viewer_morph = morph.clone();
         self.viewer_morph_view.update(cx, |view, cx| {
             view.set_morph(morph, max_fps, cx);

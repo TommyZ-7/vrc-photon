@@ -15,15 +15,17 @@ use vrc_photon_core::ai::{PhotoAi, PhotoAiTagView};
 use vrc_photon_core::model::{
     DaemonError, Derivative, LibraryStats, Photo, PhotoPlayer, PhotoTextFilter,
 };
+use vrc_photon_core::settings::AppSettings;
+use vrc_photon_ipc::Endpoint;
 
 use super::CardBoundsMap;
+use super::IntegrationsSection;
 use super::ai;
 use super::lifecycle::ScanProgressView;
 use super::search_suggest;
 use crate::state::photo_browser::{CountDebounce, PhotoBrowser};
 use crate::state::selection::PhotoSelection;
 use crate::ui::gallery::GalleryView;
-use vrc_photon_ipc::Endpoint;
 
 /// The photo library browser: index, pages, selection, and the metadata the
 /// inspector shows for the current selection.
@@ -114,4 +116,15 @@ pub(crate) struct IpcState {
     pub(crate) monitor_world: Option<String>,
     pub(crate) monitor_instance: Option<String>,
     pub(crate) monitor_players: Vec<String>,
+}
+
+/// The settings draft, its debounced save, and the scrolling positions the
+/// settings and integrations screens keep between frames.
+pub(crate) struct SettingsState {
+    pub(crate) current: AppSettings,
+    pub(crate) save_scheduled: bool,
+    pub(crate) save_pending: bool,
+    pub(crate) scroll: ScrollHandle,
+    pub(crate) integrations_scroll: ScrollHandle,
+    pub(crate) integrations_selected: IntegrationsSection,
 }

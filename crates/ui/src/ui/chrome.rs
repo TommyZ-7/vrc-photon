@@ -396,7 +396,7 @@ impl App {
 
     fn card_size_selector(&mut self, metrics: RibbonMetrics, cx: &mut Context<Self>) -> AnyElement {
         let p = self.palette;
-        let current = self.settings.ui_card_size;
+        let current = self.settings.current.ui_card_size;
         let focusable = !self.ribbon_collapsed;
         let mut row = h_flex().gap(px(2.)).items_center();
         for (index, size) in [

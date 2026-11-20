@@ -480,8 +480,8 @@ impl App {
                         if capture_layout {
                             this.capture_display_layout_anchors();
                         }
-                        apply(&mut this.settings, *value);
-                        if let Err(error) = this.settings.save(&this.db) {
+                        apply(&mut this.settings.current, *value);
+                        if let Err(error) = this.settings.current.save(&this.db) {
                             tracing::warn!(%error, setting = %label, "cannot save setting");
                         }
                         cx.notify();

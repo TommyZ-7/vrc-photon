@@ -16,8 +16,8 @@ pub(super) fn render_card(
     let selected = app.library.selected_ids.contains(id);
     let primary = app.library.selected == Some(id);
     let compressed = app.library.compressed_ids.contains(&id);
-    let show_status = app.settings.ui_card_show_status;
-    let show_world = app.settings.ui_card_show_world;
+    let show_status = app.settings.current.ui_card_show_status;
+    let show_world = app.settings.current.ui_card_show_world;
     let card_strings = shared
         .card_strings
         .borrow_mut()
@@ -31,7 +31,7 @@ pub(super) fn render_card(
         .borrow()
         .color(id)
         .unwrap_or_else(|| p.scene_color(photo_scene_key(photo)));
-    let card_radius = f32::from(app.settings.ui_card_radius);
+    let card_radius = f32::from(app.settings.current.ui_card_radius);
     let image_radius = inner_corner_radius(card_radius, 1.0);
     let meta_line = card_strings.meta.clone();
     let has_info = show_world || meta_line.is_some();

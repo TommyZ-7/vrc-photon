@@ -784,7 +784,7 @@ impl App {
         if self.profile_index >= self.profiles.len() {
             self.profile_index = 0;
         }
-        let settings = settings_after_reload(&self.settings, AppSettings::load(&self.db));
+        let settings = settings_after_reload(&self.settings.current, AppSettings::load(&self.db));
         self.apply_loaded_settings(settings, cx);
         self.reload_send_history(cx);
         if let Some(id) = self.library.selected {
@@ -826,20 +826,23 @@ impl App {
     }
 
     fn apply_loaded_settings(&mut self, mut settings: AppSettings, cx: &mut Context<Self>) {
-        let previous_language = self.settings.language.clone();
-        let previous_thumbnail_spec = self.settings.thumbnail_spec();
+        let previous_language = self.settings.current.language.clone();
+        let previous_thumbnail_spec = self.settings.current.thumbnail_spec();
         settings.language = vrc_photon_i18n::set_locale(&settings.language);
         let language_changed = settings.language != previous_language;
-        self.settings = settings;
-        if self.settings.thumbnail_spec() != previous_thumbnail_spec {
+        self.settings.current = settings;
+        if self.settings.current.thumbnail_spec() != previous_thumbnail_spec {
             self.thumbnails.borrow_mut().clear();
         }
         if language_changed {
             self.library.browser.borrow_mut().invalidate_labels();
             self.search.view.borrow_mut().invalidate_labels();
         }
-        cx.set_reduce_motion(self.settings.ui_reduce_motion);
-        let palette = resolve(&self.settings.ui_theme_main, &self.settings.ui_theme_accent);
+        cx.set_reduce_motion(self.settings.current.ui_reduce_motion);
+        let palette = resolve(
+            &self.settings.current.ui_theme_main,
+            &self.settings.current.ui_theme_accent,
+        );
         if palette != self.palette {
             self.palette = palette;
             apply_component_theme(self.palette, cx);
@@ -1043,7 +1046,7 @@ impl App {
             self.sidebar_motion.animate_to(target, MOTION_SIDEBAR);
         }
         self.hovered_nav = None;
-        self.settings.ui_sidebar_collapsed = self.sidebar_collapsed;
+        self.settings.current.ui_sidebar_collapsed = self.sidebar_collapsed;
         self.schedule_settings_save(cx);
         cx.notify();
     }
@@ -1059,7 +1062,7 @@ impl App {
         } else {
             self.inspector_motion.animate_to(target, MOTION_SLOW);
         }
-        self.settings.ui_inspector_collapsed = self.inspector_collapsed;
+        self.settings.current.ui_inspector_collapsed = self.inspector_collapsed;
         self.schedule_settings_save(cx);
         cx.notify();
     }
@@ -1076,7 +1079,7 @@ impl App {
         } else {
             self.ribbon_motion.animate_to(target, MOTION_BASE);
         }
-        self.settings.ui_ribbon_collapsed = collapsed;
+        self.settings.current.ui_ribbon_collapsed = collapsed;
         self.schedule_settings_save(cx);
         cx.notify();
     }

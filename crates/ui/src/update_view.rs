@@ -459,7 +459,7 @@ impl App {
     }
 
     fn maybe_auto_update_check(&mut self, cx: &mut Context<Self>) {
-        if !self.settings.auto_update_check
+        if !self.settings.current.auto_update_check
             || !self.update.install.automatic_check()
             || self.update.busy()
             || !phase_allows_auto_check(&self.update.phase)
@@ -469,6 +469,7 @@ impl App {
         let now = Utc::now().timestamp();
         if self
             .settings
+            .current
             .update_last_checked_at
             .is_some_and(|last| now - last < 86_400)
         {
@@ -870,8 +871,8 @@ impl App {
                     next_pending_version(result.as_ref(), self.update.pending_version.as_ref());
                 self.update.pending_version = pending;
                 let resume = self.update.resume_available.take();
-                self.settings.update_last_checked_at = Some(Utc::now().timestamp());
-                if let Err(error) = self.settings.save(&self.db) {
+                self.settings.current.update_last_checked_at = Some(Utc::now().timestamp());
+                if let Err(error) = self.settings.current.save(&self.db) {
                     tracing::warn!(%error, "cannot save update check time");
                 }
                 if let Ok(feed) = result.as_ref()
@@ -957,7 +958,7 @@ impl App {
         let p = self.palette;
         let phase = self.update.phase.clone();
         let install = self.update.install.clone();
-        let last_checked = last_checked_label(self.settings.update_last_checked_at);
+        let last_checked = last_checked_label(self.settings.current.update_last_checked_at);
         let demo = self.demo;
         let busy = self.update.busy();
         let has_asset = match &phase {
@@ -1023,7 +1024,7 @@ impl App {
         card = card.child(card_divider(&p)).child(self.setting_switch(
             tr!("update.auto_check"),
             "",
-            self.settings.auto_update_check,
+            self.settings.current.auto_update_check,
             false,
             cx,
             |settings, value| settings.auto_update_check = value,

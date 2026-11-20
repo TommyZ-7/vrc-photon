@@ -20,7 +20,7 @@ impl App {
             .child(self.setting_switch(
                 tr!("settings.display.status.label"),
                 "",
-                self.settings.ui_card_show_status,
+                self.settings.current.ui_card_show_status,
                 true,
                 cx,
                 |settings, value| settings.ui_card_show_status = value,
@@ -29,7 +29,7 @@ impl App {
             .child(self.setting_switch(
                 tr!("settings.display.world.label"),
                 "",
-                self.settings.ui_card_show_world,
+                self.settings.current.ui_card_show_world,
                 true,
                 cx,
                 |settings, value| settings.ui_card_show_world = value,
@@ -38,7 +38,7 @@ impl App {
             .child(self.setting_switch(
                 tr!("settings.display.date.label"),
                 "",
-                self.settings.ui_card_show_date,
+                self.settings.current.ui_card_show_date,
                 true,
                 cx,
                 |settings, value| settings.ui_card_show_date = value,
@@ -47,7 +47,7 @@ impl App {
             .child(self.setting_switch(
                 tr!("settings.display.size.label"),
                 "",
-                self.settings.ui_card_show_size,
+                self.settings.current.ui_card_show_size,
                 true,
                 cx,
                 |settings, value| settings.ui_card_show_size = value,
@@ -72,7 +72,7 @@ impl App {
                                     .text_size(px(12.))
                                     .font_semibold()
                                     .text_color(rgb(p.text))
-                                    .child(format!("{} px", self.settings.ui_grid_gap)),
+                                    .child(format!("{} px", self.settings.current.ui_grid_gap)),
                             ),
                     )
                     .child(Slider::new(&self.grid_gap_slider).w_full())
@@ -103,7 +103,7 @@ impl App {
                                     .text_size(px(12.))
                                     .font_semibold()
                                     .text_color(rgb(p.text))
-                                    .child(format!("{} px", self.settings.ui_card_radius)),
+                                    .child(format!("{} px", self.settings.current.ui_card_radius)),
                             ),
                     )
                     .child(Slider::new(&self.card_radius_slider).w_full())
@@ -159,7 +159,7 @@ impl App {
                             ]
                             .into_iter()
                             .map(|(fps, label)| {
-                                let active = self.settings.ui_max_fps == fps;
+                                let active = self.settings.current.ui_max_fps == fps;
                                 div()
                                     .id(SharedString::from(format!("max-fps-{fps}")))
                                     .px(px(10.))
@@ -213,7 +213,7 @@ impl App {
                     )
                     .child(h_flex().gap(px(4.)).children(
                         thumbnail::THUMBNAIL_SIZES.into_iter().map(|size| {
-                            let active = self.settings.thumbnail_size == size;
+                            let active = self.settings.current.thumbnail_size == size;
                             div()
                                 .id(SharedString::from(format!("thumbnail-size-{size}")))
                                 .px(px(10.))
@@ -293,7 +293,7 @@ impl App {
             .child(self.setting_switch(
                 tr!("settings.startup.autostart"),
                 "",
-                self.settings.autostart,
+                self.settings.current.autostart,
                 false,
                 cx,
                 |settings, value| settings.autostart = value,
@@ -302,7 +302,7 @@ impl App {
             .child(self.setting_switch(
                 tr!("settings.startup.tray"),
                 "",
-                self.settings.tray,
+                self.settings.current.tray,
                 false,
                 cx,
                 |settings, value| settings.tray = value,
@@ -322,7 +322,7 @@ impl App {
                     .child(div().flex_1())
                     .child(
                         Switch::new("reduce-motion")
-                            .checked(self.settings.ui_reduce_motion)
+                            .checked(self.settings.current.ui_reduce_motion)
                             .on_click(cx.listener(|this, value, _, cx| {
                                 this.set_reduce_motion(*value, cx);
                             })),
@@ -331,20 +331,20 @@ impl App {
     }
 
     pub(crate) fn set_max_fps(&mut self, fps: u32, cx: &mut Context<Self>) {
-        if self.settings.ui_max_fps == fps {
+        if self.settings.current.ui_max_fps == fps {
             return;
         }
-        self.settings.ui_max_fps = fps;
+        self.settings.current.ui_max_fps = fps;
         self.schedule_settings_save(cx);
         cx.notify();
     }
 
     pub(crate) fn set_card_size(&mut self, size: CardSize, cx: &mut Context<Self>) {
-        if self.settings.ui_card_size == size {
+        if self.settings.current.ui_card_size == size {
             return;
         }
         self.capture_display_layout_anchors();
-        self.settings.ui_card_size = size;
+        self.settings.current.ui_card_size = size;
         self.schedule_settings_save(cx);
         cx.notify();
     }
@@ -352,7 +352,8 @@ impl App {
     /// Remembers the top-left photo before a display change alters columns or
     /// row height. The next render of each grid restores that photo.
     pub(crate) fn capture_display_layout_anchors(&mut self) {
-        if self.settings.ui_photos_view_mode == vrc_photon_core::settings::PhotosViewMode::Sessions
+        if self.settings.current.ui_photos_view_mode
+            == vrc_photon_core::settings::PhotosViewMode::Sessions
         {
             self.ensure_library_session_rows();
         }
@@ -385,10 +386,10 @@ impl App {
     }
 
     pub(crate) fn set_thumbnail_size(&mut self, size: u32, cx: &mut Context<Self>) {
-        if self.settings.thumbnail_size == size {
+        if self.settings.current.thumbnail_size == size {
             return;
         }
-        self.settings.thumbnail_size = size;
+        self.settings.current.thumbnail_size = size;
         self.save_thumbnail_settings(cx);
     }
 
@@ -468,7 +469,7 @@ impl App {
     }
 
     pub(crate) fn set_reduce_motion(&mut self, enabled: bool, cx: &mut Context<Self>) {
-        self.settings.ui_reduce_motion = enabled;
+        self.settings.current.ui_reduce_motion = enabled;
         self.schedule_settings_save(cx);
         cx.set_reduce_motion(enabled);
         cx.notify();

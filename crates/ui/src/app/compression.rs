@@ -102,8 +102,8 @@ impl App {
         cx: &mut Context<Self>,
     ) {
         let options = match target {
-            FeatureCompressionTarget::Auto => &mut self.settings.auto_compression,
-            FeatureCompressionTarget::Discord => &mut self.settings.discord_compression,
+            FeatureCompressionTarget::Auto => &mut self.settings.current.auto_compression,
+            FeatureCompressionTarget::Discord => &mut self.settings.current.discord_compression,
         };
         edit(options);
         options.normalize();
@@ -116,8 +116,8 @@ impl App {
         edit: impl FnOnce(&mut ResizeSettings),
         cx: &mut Context<Self>,
     ) {
-        edit(&mut self.settings.clipboard_compression);
-        self.settings.clipboard_compression.normalize();
+        edit(&mut self.settings.current.clipboard_compression);
+        self.settings.current.clipboard_compression.normalize();
         self.schedule_settings_save(cx);
         cx.notify();
     }
@@ -192,7 +192,7 @@ impl App {
             return;
         }
         let options = DialogOptions {
-            directory: Some(self.settings.import_dir()),
+            directory: Some(self.settings.current.import_dir()),
             ..DialogOptions::default()
         };
         let dialog = options.dialog(Some(window));
@@ -242,7 +242,7 @@ impl App {
             return;
         };
         let source = PathBuf::from(photo.effective_path());
-        let resize = self.settings.clipboard_compression;
+        let resize = self.settings.current.clipboard_compression;
         self.toast_info(tr!("compression.clipboard_copying"), cx);
         cx.notify();
         cx.spawn(async move |this, cx| {
@@ -303,7 +303,7 @@ impl App {
             cx.notify();
             return;
         }
-        let policy = compression_policy(self.settings.auto_compress_keep_original);
+        let policy = compression_policy(self.settings.current.auto_compress_keep_original);
         let mut enqueued = 0usize;
         let mut failed = 0usize;
         for photo_id in &ids {
@@ -358,11 +358,11 @@ impl App {
     /// Queues every visible photo that has no derivative yet for automatic
     /// compression, then releases the waiting queue so the whole backlog runs.
     pub(crate) fn process_uncompressed_compression(&mut self, cx: &mut Context<Self>) {
-        let policy = compression_policy(self.settings.auto_compress_keep_original);
-        match self
-            .db
-            .enqueue_auto_jobs_for_uncompressed(policy, self.settings.auto_compress.bulk_since())
-        {
+        let policy = compression_policy(self.settings.current.auto_compress_keep_original);
+        match self.db.enqueue_auto_jobs_for_uncompressed(
+            policy,
+            self.settings.current.auto_compress.bulk_since(),
+        ) {
             Ok(queued) => match self.db.release_waiting_jobs(policy) {
                 Ok(0) if queued == 0 => self.toast_info(tr!("compression.auto.bulk.empty"), cx),
                 Ok(count) if count > 0 => {
@@ -396,12 +396,13 @@ impl App {
     }
 
     pub(crate) fn set_auto_compress_enabled(&mut self, enabled: bool, cx: &mut Context<Self>) {
-        if self.settings.auto_compress_enabled == enabled {
+        if self.settings.current.auto_compress_enabled == enabled {
             return;
         }
-        self.settings.auto_compress_enabled = enabled;
+        self.settings.current.auto_compress_enabled = enabled;
         if enabled {
             self.settings
+                .current
                 .auto_compress
                 .touch_activation(Utc::now().timestamp());
         }
@@ -416,6 +417,7 @@ impl App {
         cx: &mut Context<Self>,
     ) {
         self.settings
+            .current
             .auto_compress
             .set_mode(mode, Utc::now().timestamp());
         self.schedule_settings_save(cx);
@@ -428,7 +430,7 @@ impl App {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.settings.auto_compress.scope = scope;
+        self.settings.current.auto_compress.scope = scope;
         self.schedule_settings_save(cx);
         cx.notify();
     }
@@ -812,7 +814,7 @@ impl App {
         cx: &mut Context<Self>,
     ) {
         let Some(description) = release_confirmation(
-            self.settings.auto_compress_keep_original,
+            self.settings.current.auto_compress_keep_original,
             self.waiting_job_count,
         ) else {
             self.release_waiting_jobs(cx);
@@ -839,7 +841,7 @@ impl App {
     }
 
     fn release_waiting_jobs(&mut self, cx: &mut Context<Self>) {
-        let policy = compression_policy(self.settings.auto_compress_keep_original);
+        let policy = compression_policy(self.settings.current.auto_compress_keep_original);
         match self.db.release_waiting_jobs(policy) {
             Ok(0) => self.toast_info(tr!("compression.release.none"), cx),
             Ok(count) => {

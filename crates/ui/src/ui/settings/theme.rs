@@ -34,8 +34,8 @@ impl App {
 
     pub(crate) fn theme_axis(&self, axis: ThemeAxis, cx: &mut Context<Self>) -> impl IntoElement {
         let p = self.palette;
-        let selected_main = find_main(&self.settings.ui_theme_main);
-        let selected_accent = find_accent(&self.settings.ui_theme_accent);
+        let selected_main = find_main(&self.settings.current.ui_theme_main);
+        let selected_accent = find_accent(&self.settings.current.ui_theme_accent);
         let selected_label = match axis {
             ThemeAxis::Main => selected_main.label(),
             ThemeAxis::Accent => selected_accent.label(),
@@ -210,15 +210,18 @@ impl App {
 
     pub(crate) fn set_main_theme(&mut self, id: &str, cx: &mut Context<Self>) {
         let id = find_main(id);
-        if self.settings.ui_theme_main == id.id {
+        if self.settings.current.ui_theme_main == id.id {
             return;
         }
-        let previous = (self.settings.ui_theme_main.clone(), self.palette);
-        self.settings.ui_theme_main = id.id.to_string();
-        let palette = resolve(&self.settings.ui_theme_main, &self.settings.ui_theme_accent);
+        let previous = (self.settings.current.ui_theme_main.clone(), self.palette);
+        self.settings.current.ui_theme_main = id.id.to_string();
+        let palette = resolve(
+            &self.settings.current.ui_theme_main,
+            &self.settings.current.ui_theme_accent,
+        );
         self.palette = palette;
-        if let Err(error) = self.settings.save(&self.db) {
-            self.settings.ui_theme_main = previous.0;
+        if let Err(error) = self.settings.current.save(&self.db) {
+            self.settings.current.ui_theme_main = previous.0;
             self.palette = previous.1;
             self.toast_error(tr_args!("settings.language.save_failed", error = error), cx);
             tracing::warn!(%error, "cannot save theme setting");
@@ -230,15 +233,18 @@ impl App {
 
     pub(crate) fn set_accent_theme(&mut self, id: &str, cx: &mut Context<Self>) {
         let id = find_accent(id);
-        if self.settings.ui_theme_accent == id.id {
+        if self.settings.current.ui_theme_accent == id.id {
             return;
         }
-        let previous = (self.settings.ui_theme_accent.clone(), self.palette);
-        self.settings.ui_theme_accent = id.id.to_string();
-        let palette = resolve(&self.settings.ui_theme_main, &self.settings.ui_theme_accent);
+        let previous = (self.settings.current.ui_theme_accent.clone(), self.palette);
+        self.settings.current.ui_theme_accent = id.id.to_string();
+        let palette = resolve(
+            &self.settings.current.ui_theme_main,
+            &self.settings.current.ui_theme_accent,
+        );
         self.palette = palette;
-        if let Err(error) = self.settings.save(&self.db) {
-            self.settings.ui_theme_accent = previous.0;
+        if let Err(error) = self.settings.current.save(&self.db) {
+            self.settings.current.ui_theme_accent = previous.0;
             self.palette = previous.1;
             self.toast_error(tr_args!("settings.language.save_failed", error = error), cx);
             tracing::warn!(%error, "cannot save theme setting");

@@ -27,7 +27,8 @@ use crate::ui::theme::*;
 
 impl App {
     pub(crate) fn dashboard_screen(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let show_ai_card = ai_dashboard_view(&self.ai, self.settings.ai_tagging_enabled).visible;
+        let show_ai_card =
+            ai_dashboard_view(&self.ai, self.settings.current.ai_tagging_enabled).visible;
         let stats = h_flex()
             .flex_shrink_0()
             .gap(px(CARD_GAP))
@@ -53,7 +54,7 @@ impl App {
                 tr!("dashboard.daemon.title"),
                 if self.ipc.daemon_active {
                     daemon_state_label(true, self.ipc.daemon_paused).to_string()
-                } else if self.settings.log_dir.is_some() {
+                } else if self.settings.current.log_dir.is_some() {
                     tr!("dashboard.daemon.stopped")
                 } else {
                     tr!("dashboard.daemon.unset")
@@ -170,7 +171,7 @@ impl App {
                     .text_color(rgb(p.text))
                     .child(tr!("dashboard.monitor.path")),
             )
-            .children(self.settings.photo_roots.iter().map(|path| {
+            .children(self.settings.current.photo_roots.iter().map(|path| {
                 div()
                     .min_w_0()
                     .truncate()
@@ -188,6 +189,7 @@ impl App {
                     .text_color(rgb(p.muted))
                     .child(
                         self.settings
+                            .current
                             .log_dir
                             .clone()
                             .unwrap_or_else(|| tr!("dashboard.log_dir.unset")),

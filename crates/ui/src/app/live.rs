@@ -330,7 +330,7 @@ impl App {
             } else if self.library.error.is_none()
                 && should_announce_empty_library(
                     self.setup.open,
-                    self.settings.photo_roots.is_empty(),
+                    self.settings.current.photo_roots.is_empty(),
                 )
             {
                 self.toast_info(vrc_photon_i18n::tr!("app.empty_library"), cx);

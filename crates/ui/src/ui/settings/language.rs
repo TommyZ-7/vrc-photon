@@ -3,7 +3,7 @@ use super::*;
 impl App {
     pub(super) fn language_card(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let p = self.palette;
-        let active = vrc_photon_i18n::normalize(&self.settings.language);
+        let active = vrc_photon_i18n::normalize(&self.settings.current.language);
         glass_panel(&self.palette)
             .flex()
             .flex_col()

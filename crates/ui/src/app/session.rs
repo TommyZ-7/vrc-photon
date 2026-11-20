@@ -69,11 +69,11 @@ fn bulk_anchor_for_scroll(
 
 impl App {
     pub(crate) fn set_photos_view_mode(&mut self, mode: PhotosViewMode, cx: &mut Context<Self>) {
-        if self.settings.ui_photos_view_mode == mode {
+        if self.settings.current.ui_photos_view_mode == mode {
             return;
         }
         let anchor = self.capture_top_photo(false);
-        self.settings.ui_photos_view_mode = mode;
+        self.settings.current.ui_photos_view_mode = mode;
         self.schedule_settings_save(cx);
         if mode == PhotosViewMode::Sessions {
             self.ensure_library_session_rows();
@@ -104,7 +104,7 @@ impl App {
     /// Returns the photo at the top-left of the current viewport for the
     /// active grid. Search always uses the timeline geometry.
     pub(crate) fn capture_top_photo(&mut self, search: bool) -> Option<i64> {
-        if search || self.settings.ui_photos_view_mode == PhotosViewMode::Timeline {
+        if search || self.settings.current.ui_photos_view_mode == PhotosViewMode::Timeline {
             let browser = if search {
                 self.search.view.borrow()
             } else {
@@ -137,7 +137,7 @@ impl App {
     /// Scrolls to `id` in the active grid. Timeline rows use the uniform-list
     /// row; session rows use the mixed row model's photo offset.
     pub(crate) fn scroll_to_photo(&mut self, search: bool, id: i64, strategy: ScrollStrategy) {
-        if search || self.settings.ui_photos_view_mode == PhotosViewMode::Timeline {
+        if search || self.settings.current.ui_photos_view_mode == PhotosViewMode::Timeline {
             let browser = if search {
                 self.search.view.borrow()
             } else {
@@ -181,7 +181,7 @@ impl App {
 
     /// Returns the active grid to the first row without clearing selection.
     pub(crate) fn scroll_grid_to_top(&mut self, search: bool) {
-        if search || self.settings.ui_photos_view_mode == PhotosViewMode::Timeline {
+        if search || self.settings.current.ui_photos_view_mode == PhotosViewMode::Timeline {
             let browser = if search {
                 self.search.view.borrow()
             } else {
@@ -197,7 +197,7 @@ impl App {
     /// Expands the session that contains `id` when the session is collapsed.
     /// Callers scroll to `id` afterwards.
     pub(crate) fn reveal_photo_session(&mut self, id: i64) {
-        if self.settings.ui_photos_view_mode != PhotosViewMode::Sessions {
+        if self.settings.current.ui_photos_view_mode != PhotosViewMode::Sessions {
             return;
         }
         let session_id = {

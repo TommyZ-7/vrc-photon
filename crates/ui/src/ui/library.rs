@@ -672,7 +672,7 @@ impl App {
             return div().hidden().into_any_element();
         }
         let p = self.palette;
-        let language = self.settings.language.clone();
+        let language = self.settings.current.language.clone();
         let ai = self.library.selected_ai.clone();
         let key = AiMetaKey::new(id, &language, self.library.ai_meta_revision);
         // The identifier, language, and reload revision form the key, so

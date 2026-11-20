@@ -66,7 +66,7 @@ impl App {
             .child(self.setting_switch(
                 tr!("settings.world_name.enabled"),
                 tr!("settings.world_name.hint"),
-                self.settings.world_name_resolution_enabled,
+                self.settings.current.world_name_resolution_enabled,
                 false,
                 cx,
                 |settings, value| settings.world_name_resolution_enabled = value,
@@ -80,10 +80,10 @@ impl App {
         let root = self.photo_root_input.read(cx).value().to_string();
         let log = self.log_dir_input.read(cx).value().to_string();
         let imported = self.import_dir_input.read(cx).value().to_string();
-        let previous = self.settings.clone();
-        let changes = apply_library_path_inputs(&mut self.settings, &root, &log, &imported);
-        if let Err(error) = self.settings.save(&self.db) {
-            self.settings = previous;
+        let previous = self.settings.current.clone();
+        let changes = apply_library_path_inputs(&mut self.settings.current, &root, &log, &imported);
+        if let Err(error) = self.settings.current.save(&self.db) {
+            self.settings.current = previous;
             let message = tr_args!("settings.language.save_failed", error = error);
             self.toast_error(message.clone(), cx);
             if self.setup.open {

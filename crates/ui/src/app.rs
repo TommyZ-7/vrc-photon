@@ -64,7 +64,7 @@ use crate::app::demo::{DemoAssets, open_database};
 use crate::app::import::{ImportDialogState, ImportReportView};
 use crate::app::live::{LiveRefreshGate, should_announce_empty_library};
 use crate::app::photos::PendingFullImage;
-use crate::app::state::{IpcState, LibraryState, SearchState};
+use crate::app::state::{IpcState, LibraryState, SearchState, SettingsState};
 use crate::state::display_image::{DecodeQueue, DisplayKey};
 use crate::state::full_image::FullImageTexture;
 use crate::state::motion::ToggleMotion;
@@ -170,11 +170,6 @@ pub struct App {
     /// Screen-enter progress: 0 = entering, 1 = settled.
     pub(crate) screen_motion: ToggleMotion,
     pub(crate) screen_direction: f32,
-    /// Scroll position of the settings section column, shared with its
-    /// scrollbar.
-    pub(crate) settings_scroll: ScrollHandle,
-    pub(crate) integrations_scroll: ScrollHandle,
-    pub(crate) integrations_selected: IntegrationsSection,
     pub(crate) ribbon_collapsed: bool,
     /// 0 = expanded, 1 = collapsed.
     pub(crate) ribbon_motion: ToggleMotion,
@@ -204,6 +199,8 @@ pub struct App {
     pub(crate) search: SearchState,
     /// Daemon bridge, status snapshot, and monitor selection.
     pub(crate) ipc: IpcState,
+    /// Settings draft, debounced save, and the settings screens' scroll state.
+    pub(crate) settings: SettingsState,
     pub(crate) thumbnails: Rc<RefCell<ThumbnailCache>>,
     /// Set when the device cannot create the BC7 texture array. The render
     /// path then shows a fatal error instead of the normal shell.
@@ -279,7 +276,6 @@ pub struct App {
     pub(crate) profile_output_input: Entity<InputState>,
     pub(crate) _profile_output_subscription: Subscription,
     pub(crate) manual_compress: Option<ManualCompressionDialog>,
-    pub(crate) settings: AppSettings,
     /// AI tagging plugin, model, queue, and transient operation state.
     pub(crate) ai: ai::AiUiState,
     /// A 250 ms event-burst refresh of the AI cards is already queued.
@@ -368,10 +364,6 @@ pub struct App {
     pub(crate) compression_refresh_scheduled: bool,
     /// The pending compression refresh must run the library-row pass.
     pub(crate) compression_library_refresh_pending: bool,
-    /// A debounced settings save timer is already scheduled.
-    pub(crate) settings_save_scheduled: bool,
-    /// Settings changed after the debounced save was scheduled.
-    pub(crate) settings_save_pending: bool,
     /// Photos that completed a compression job since the last coalesced
     /// refresh. The refresh resolves them in one batch and keeps only rows
     /// whose display source actually changed.
@@ -517,12 +509,15 @@ impl App {
     /// Animation frame cap from settings, resolved against the window's
     /// display. `0` disables throttling.
     pub(crate) fn motion_fps(&self, window: &Window, cx: &Context<Self>) -> f32 {
-        effective_motion_fps(self.settings.ui_max_fps, window.refresh_interval(cx))
+        effective_motion_fps(
+            self.settings.current.ui_max_fps,
+            window.refresh_interval(cx),
+        )
     }
 
     /// Horizontal and vertical gap between photo cards, in pixels.
     pub(crate) fn grid_gap(&self) -> f32 {
-        f32::from(self.settings.ui_grid_gap)
+        f32::from(self.settings.current.ui_grid_gap)
     }
 
     pub(crate) fn overlay_open(&self) -> bool {
@@ -574,21 +569,21 @@ impl App {
     /// can roll back on a failed write keep using `settings.save` directly;
     /// this is for value changes whose next write can safely supersede them.
     pub(crate) fn schedule_settings_save(&mut self, cx: &mut Context<Self>) {
-        self.settings_save_pending = true;
-        if self.settings_save_scheduled {
+        self.settings.save_pending = true;
+        if self.settings.save_scheduled {
             return;
         }
-        self.settings_save_scheduled = true;
+        self.settings.save_scheduled = true;
         cx.spawn(async move |this, cx| {
             cx.background_executor()
                 .timer(Duration::from_millis(350))
                 .await;
             this.update(cx, |this, cx| {
-                this.settings_save_scheduled = false;
-                if !std::mem::take(&mut this.settings_save_pending) {
+                this.settings.save_scheduled = false;
+                if !std::mem::take(&mut this.settings.save_pending) {
                     return;
                 }
-                if let Err(error) = this.settings.save(&this.db) {
+                if let Err(error) = this.settings.current.save(&this.db) {
                     tracing::warn!(%error, "cannot save app settings");
                     this.toast_error(tr_args!("settings.save_failed", error = error), cx);
                 }
@@ -601,23 +596,23 @@ impl App {
 
     /// Writes any pending settings before the process exits.
     pub(crate) fn flush_settings_save(&mut self) {
-        if !std::mem::take(&mut self.settings_save_pending) {
+        if !std::mem::take(&mut self.settings.save_pending) {
             return;
         }
-        if let Err(error) = self.settings.save(&self.db) {
+        if let Err(error) = self.settings.current.save(&self.db) {
             tracing::warn!(%error, "cannot flush app settings");
         }
     }
 
     pub(crate) fn set_language(&mut self, code: &str, window: &mut Window, cx: &mut Context<Self>) {
         let code = vrc_photon_i18n::normalize(code);
-        if self.settings.language == code {
+        if self.settings.current.language == code {
             return;
         }
-        let previous = self.settings.clone();
-        self.settings.language = code.clone();
-        if let Err(error) = self.settings.save(&self.db) {
-            self.settings = previous;
+        let previous = self.settings.current.clone();
+        self.settings.current.language = code.clone();
+        if let Err(error) = self.settings.current.save(&self.db) {
+            self.settings.current = previous;
             self.toast_error(tr_args!("settings.language.save_failed", error = error), cx);
             cx.notify();
             return;
@@ -900,15 +895,15 @@ impl App {
             |this, _, event: &SliderEvent, cx| match event {
                 SliderEvent::Change(value) => {
                     let gap = clamp_grid_gap(value.end());
-                    if this.settings.ui_grid_gap != gap {
-                        this.settings.ui_grid_gap = gap;
+                    if this.settings.current.ui_grid_gap != gap {
+                        this.settings.current.ui_grid_gap = gap;
                         cx.notify();
                     }
                 }
                 SliderEvent::Release(value) => {
                     let gap = clamp_grid_gap(value.end());
-                    if this.settings.ui_grid_gap != gap {
-                        this.settings.ui_grid_gap = gap;
+                    if this.settings.current.ui_grid_gap != gap {
+                        this.settings.current.ui_grid_gap = gap;
                     }
                     // Do not capture the anchor here: the setting is already
                     // updated, and the gallery's `layout_changed` path reads
@@ -929,15 +924,15 @@ impl App {
             |this, _, event: &SliderEvent, cx| match event {
                 SliderEvent::Change(value) => {
                     let radius = clamp_card_radius(value.end());
-                    if this.settings.ui_card_radius != radius {
-                        this.settings.ui_card_radius = radius;
+                    if this.settings.current.ui_card_radius != radius {
+                        this.settings.current.ui_card_radius = radius;
                         cx.notify();
                     }
                 }
                 SliderEvent::Release(value) => {
                     let radius = clamp_card_radius(value.end());
-                    if this.settings.ui_card_radius != radius {
-                        this.settings.ui_card_radius = radius;
+                    if this.settings.current.ui_card_radius != radius {
+                        this.settings.current.ui_card_radius = radius;
                     }
                     // Card radius does not change the grid geometry, so the
                     // scroll anchor does not need to be recaptured.
@@ -1112,9 +1107,6 @@ impl App {
             nav_epoch: 0,
             screen_motion: ToggleMotion::settled(1.0),
             screen_direction: 1.0,
-            settings_scroll: ScrollHandle::new(),
-            integrations_scroll: ScrollHandle::new(),
-            integrations_selected: IntegrationsSection::default(),
             ribbon_collapsed: initial_settings.ui_ribbon_collapsed,
             ribbon_motion: ToggleMotion::settled(if initial_settings.ui_ribbon_collapsed {
                 1.0
@@ -1156,6 +1148,14 @@ impl App {
                 0.0
             }),
             hovered_nav: None,
+            settings: SettingsState {
+                current: initial_settings.clone(),
+                save_scheduled: false,
+                save_pending: false,
+                scroll: ScrollHandle::new(),
+                integrations_scroll: ScrollHandle::new(),
+                integrations_selected: IntegrationsSection::default(),
+            },
             ipc: IpcState {
                 daemon_age_secs: None,
                 daemon_supervisor: None,
@@ -1287,7 +1287,6 @@ impl App {
             profile_output_input,
             _profile_output_subscription: profile_output_subscription,
             manual_compress: None,
-            settings: initial_settings.clone(),
             ai: ai::AiUiState::default(),
             ai_refresh_scheduled: false,
             ai_selected_refresh_pending: false,
@@ -1344,8 +1343,6 @@ impl App {
             last_import_progress_notify: None,
             compression_refresh_scheduled: false,
             compression_library_refresh_pending: false,
-            settings_save_scheduled: false,
-            settings_save_pending: false,
             compression_replaced_candidates: HashSet::new(),
             live_refresh: LiveRefreshGate::default(),
             library_reload: LiveRefreshGate::default(),
@@ -1408,8 +1405,10 @@ impl App {
                 app.toast_error(message, cx);
             }
         }
-        if should_announce_empty_library(app.setup.open, app.settings.photo_roots.is_empty())
-            && !app.library.loading
+        if should_announce_empty_library(
+            app.setup.open,
+            app.settings.current.photo_roots.is_empty(),
+        ) && !app.library.loading
             && app.library.error.is_none()
             && app.library.browser.borrow().index.total == 0
         {
@@ -1486,7 +1485,7 @@ impl App {
                 crate::app::demo::DEMO_THUMBNAIL_HEIGHT,
             )
         } else {
-            self.settings.thumbnail_spec().dimensions()
+            self.settings.current.thumbnail_spec().dimensions()
         };
         match window.create_texture_array(
             size(DevicePixels(width as i32), DevicePixels(height as i32)),

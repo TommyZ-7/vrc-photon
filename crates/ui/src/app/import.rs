@@ -215,7 +215,7 @@ impl App {
         let dialog = ImportDialogState {
             origin: ImportDialogOrigin::New,
             mode,
-            dest: self.settings.import_dir(),
+            dest: self.settings.current.import_dir(),
             source_root: None,
             options: ImportOptions::default(),
             source: None,
@@ -304,7 +304,7 @@ impl App {
     }
 
     pub(crate) fn start_import_from_source(&mut self, cx: &mut Context<Self>) {
-        let folder_options = self.settings.import_options();
+        let folder_options = self.settings.current.import_options();
         let Some(dialog) = self.import_dialog.as_mut() else {
             return;
         };
@@ -557,9 +557,11 @@ impl App {
         cx: &mut Context<Self>,
     ) {
         let dest_string = report.dest.to_string_lossy().to_string();
-        if let Err(error) = add_photo_root_and_save(&mut self.settings, &dest_string, |settings| {
-            settings.save(&self.db)
-        }) {
+        if let Err(error) =
+            add_photo_root_and_save(&mut self.settings.current, &dest_string, |settings| {
+                settings.save(&self.db)
+            })
+        {
             tracing::warn!(%error, "cannot save photo roots after import");
             append_scan_error(
                 report,
