@@ -45,7 +45,7 @@ use gpui_kit::component::*;
 use gpui_kit::*;
 use vrc_photon_core::db::Db;
 use vrc_photon_core::model::{
-    CompressionJob, CompressionProfile, DaemonError, DeletionCounts, DeletionRequest, LibraryStats,
+    CompressionJob, CompressionProfile, DeletionCounts, DeletionRequest, LibraryStats,
     SendHistoryEntry,
 };
 use vrc_photon_core::queue::{QueueCounts, QueueEntry, QueueProgress};
@@ -55,7 +55,6 @@ use vrc_photon_core::settings::{
 };
 use vrc_photon_core::thumbnail::ThumbnailCacheUsage;
 use vrc_photon_i18n::{tr, tr_args};
-use vrc_photon_ipc::Endpoint;
 
 use crate::app::background_read::BackgroundReader;
 use crate::app::cli::{log_timing, process_start, timing_enabled};
@@ -63,10 +62,9 @@ use crate::app::compression::{ManualCompressionDialog, profile_name_update};
 use crate::app::daemon::start_daemon;
 use crate::app::demo::{DemoAssets, open_database};
 use crate::app::import::{ImportDialogState, ImportReportView};
-use crate::app::lifecycle::ScanProgressView;
 use crate::app::live::{LiveRefreshGate, should_announce_empty_library};
 use crate::app::photos::PendingFullImage;
-use crate::app::state::{LibraryState, SearchState};
+use crate::app::state::{IpcState, LibraryState, SearchState};
 use crate::state::display_image::{DecodeQueue, DisplayKey};
 use crate::state::full_image::FullImageTexture;
 use crate::state::motion::ToggleMotion;
@@ -199,24 +197,13 @@ pub struct App {
     /// 0 = expanded, 1 = collapsed.
     pub(crate) inspector_motion: ToggleMotion,
     pub(crate) hovered_nav: Option<Screen>,
-    pub(crate) daemon_age_secs: Option<i64>,
-    pub(crate) daemon_supervisor: Option<String>,
-    pub(crate) daemon_pid: Option<u32>,
-    /// Version of the last daemon status snapshot applied from the event
-    /// stream. Snapshots stamped with an older version are stale (read
-    /// before a state change but published after it) and must not revive
-    /// state the daemon has already moved past.
-    pub(crate) last_status_version: u64,
-    pub(crate) ipc_endpoint: Option<Endpoint>,
-    pub(crate) ipc_connected: bool,
-    pub(crate) ipc_error: Option<String>,
-    pub(crate) daemon_paused: bool,
-    pub(crate) scan_progress: Option<ScanProgressView>,
     /// Library browser, index, selection, and the metadata the
     /// inspector shows for the current selection.
     pub(crate) library: LibraryState,
     /// Search screen browser, filters, and suggestion state.
     pub(crate) search: SearchState,
+    /// Daemon bridge, status snapshot, and monitor selection.
+    pub(crate) ipc: IpcState,
     pub(crate) thumbnails: Rc<RefCell<ThumbnailCache>>,
     /// Set when the device cannot create the BC7 texture array. The render
     /// path then shows a fatal error instead of the normal shell.
@@ -356,7 +343,6 @@ pub struct App {
     pub(crate) discord_queue_progress: QueueProgress,
     pub(crate) tagging_queue_progress: QueueProgress,
     pub(crate) waiting_job_count: i64,
-    pub(crate) daemon_errors: Vec<DaemonError>,
     pub(crate) failed_job_count: i64,
     /// Failed jobs still below the retry cap, from a DB aggregate. Retry
     /// affordances read this rather than scanning the loaded page of
@@ -399,10 +385,6 @@ pub struct App {
     pub(crate) library_reload: LiveRefreshGate,
     /// Focus the photo grid after the async startup snapshot has been applied.
     pub(crate) initial_focus_pending: bool,
-    pub(crate) monitor_world: Option<String>,
-    pub(crate) monitor_instance: Option<String>,
-    pub(crate) monitor_players: Vec<String>,
-    pub(crate) daemon_active: bool,
     pub(crate) tag_edit_input: Entity<InputState>,
     pub(crate) tag_edit: tag_edit::TagEditState,
     /// First-run wizard state. The wizard owns the window until it closes.
@@ -412,7 +394,6 @@ pub struct App {
     pub(crate) photo_root_input: Entity<InputState>,
     pub(crate) log_dir_input: Entity<InputState>,
     pub(crate) import_dir_input: Entity<InputState>,
-    pub(crate) daemon_shutdown_armed: bool,
     pub(crate) pending_toasts: Vec<ToastSpec>,
     pub(crate) toast_flush_scheduled: bool,
     pub(crate) notification_modal_open: bool,
@@ -647,7 +628,7 @@ impl App {
         self.search.view.borrow_mut().invalidate_labels();
         // The connection detail was formatted when it arrived; the next
         // heartbeat/reconnect repopulates it in the new language.
-        self.ipc_error = None;
+        self.ipc.error = None;
         cx.notify();
     }
 
@@ -1175,15 +1156,23 @@ impl App {
                 0.0
             }),
             hovered_nav: None,
-            daemon_age_secs: None,
-            daemon_supervisor: None,
-            daemon_pid: None,
-            last_status_version: 0,
-            ipc_endpoint: None,
-            ipc_connected: false,
-            ipc_error: None,
-            daemon_paused: false,
-            scan_progress: None,
+            ipc: IpcState {
+                daemon_age_secs: None,
+                daemon_supervisor: None,
+                daemon_pid: None,
+                daemon_paused: false,
+                daemon_active: false,
+                daemon_errors: Vec::new(),
+                last_status_version: 0,
+                endpoint: None,
+                connected: false,
+                error: None,
+                scan_progress: None,
+                shutdown_armed: false,
+                monitor_world: None,
+                monitor_instance: None,
+                monitor_players: Vec::new(),
+            },
             library: LibraryState {
                 browser: library,
                 gallery: library_gallery,
@@ -1343,7 +1332,6 @@ impl App {
             discord_queue_progress: QueueProgress::default(),
             tagging_queue_progress: QueueProgress::default(),
             waiting_job_count: 0,
-            daemon_errors: Vec::new(),
             failed_job_count: 0,
             retryable_failed_count: 0,
             failed_jobs: Vec::new(),
@@ -1362,10 +1350,6 @@ impl App {
             live_refresh: LiveRefreshGate::default(),
             library_reload: LiveRefreshGate::default(),
             initial_focus_pending: false,
-            monitor_world: None,
-            monitor_instance: None,
-            monitor_players: Vec::new(),
-            daemon_active: false,
             tag_edit_input,
             tag_edit,
             setup,
@@ -1374,7 +1358,6 @@ impl App {
             photo_root_input,
             log_dir_input,
             import_dir_input,
-            daemon_shutdown_armed: false,
             pending_toasts: Vec::new(),
             toast_flush_scheduled: false,
             notification_modal_open: false,
@@ -1457,7 +1440,7 @@ impl App {
         // The supervisor is not loaded into App until the first monitor
         // refresh, so read the recorded value from the database.
         let supervisor = app.db.get_setting("daemon_supervisor").ok().flatten();
-        if !app.demo && !app.daemon_active && !updating {
+        if !app.demo && !app.ipc.daemon_active && !updating {
             cx.spawn(async move |this, cx| {
                 let result = cx
                     .background_executor()

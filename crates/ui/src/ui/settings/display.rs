@@ -412,12 +412,12 @@ impl App {
     }
 
     pub(crate) fn clear_thumbnail_cache(&mut self, cx: &mut Context<Self>) {
-        if !self.ipc_connected {
+        if !self.ipc.connected {
             self.toast_error(tr!("settings.thumbnail.clear_daemon_required"), cx);
             cx.notify();
             return;
         }
-        let Some(endpoint) = self.ipc_endpoint.clone() else {
+        let Some(endpoint) = self.ipc.endpoint.clone() else {
             self.toast_error(tr!("daemon.ipc.resolve_error"), cx);
             cx.notify();
             return;

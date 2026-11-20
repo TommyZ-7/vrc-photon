@@ -674,11 +674,11 @@ impl App {
         if !can_apply(
             &self.update.install,
             true,
-            self.daemon_active,
-            self.ipc_connected,
+            self.ipc.daemon_active,
+            self.ipc.connected,
             self.update.system_apply_available,
         ) {
-            if self.daemon_active && !self.ipc_connected {
+            if self.ipc.daemon_active && !self.ipc.connected {
                 self.toast_error(tr!("update.error.daemon_connected"), cx);
             } else {
                 self.toast_warning(tr!("update.error.not_supported"), cx);
@@ -750,7 +750,7 @@ impl App {
             signature: asset.signature,
             sha256: asset.sha256,
             ui_pid: std::process::id(),
-            daemon_pid: self.daemon_pid,
+            daemon_pid: self.ipc.daemon_pid,
             restart_args,
             working_dir,
             database: self
@@ -768,11 +768,12 @@ impl App {
         // The supervisor is not loaded into App until the first monitor
         // refresh, so read the recorded value from the database.
         let supervisor = self
+            .ipc
             .daemon_supervisor
             .clone()
             .or_else(|| self.db.get_setting("daemon_supervisor").ok().flatten());
-        let endpoint = self.ipc_endpoint.clone();
-        let shutdown = self.ipc_connected;
+        let endpoint = self.ipc.endpoint.clone();
+        let shutdown = self.ipc.connected;
         let apply_data_dir = job.data_dir.clone();
         cx.spawn(async move |this, cx| {
             if shutdown
@@ -798,7 +799,7 @@ impl App {
                         let message = update_error_message(&error);
                         this.update.phase = UpdatePhase::Error(message.clone());
                         this.toast_error(message.message(), cx);
-                        if this.daemon_active {
+                        if this.ipc.daemon_active {
                             let supervisor = supervisor.clone();
                             cx.spawn(async move |this, cx| {
                                 let result = cx
@@ -839,6 +840,7 @@ impl App {
         // A restarted UI has not refreshed the monitor yet, so the recorded
         // supervisor is read from the database when the field is empty.
         let supervisor = self
+            .ipc
             .daemon_supervisor
             .clone()
             .or_else(|| self.db.get_setting("daemon_supervisor").ok().flatten());
@@ -1188,8 +1190,8 @@ impl App {
         let apply_ok = can_apply(
             &self.update.install,
             update.asset.is_some(),
-            self.daemon_active,
-            self.ipc_connected,
+            self.ipc.daemon_active,
+            self.ipc.connected,
             self.update.system_apply_available,
         ) && self.update.cached_appimage_writable();
         v_flex()
@@ -1212,7 +1214,7 @@ impl App {
             )
             .when(!apply_ok, |this| {
                 this.child(div().text_size(px(10.)).text_color(rgb(p.amber)).child(
-                    if self.daemon_active && !self.ipc_connected {
+                    if self.ipc.daemon_active && !self.ipc.connected {
                         tr!("update.error.daemon_connected")
                     } else {
                         tr!("update.error.not_supported")

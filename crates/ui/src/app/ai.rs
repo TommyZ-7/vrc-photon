@@ -1341,7 +1341,7 @@ impl App {
                 ..
             }
         );
-        if !self.ipc_connected {
+        if !self.ipc.connected {
             if clears_install_busy {
                 self.ai.install_busy = false;
             }
@@ -1352,7 +1352,7 @@ impl App {
             cx.notify();
             return;
         }
-        let Some(endpoint) = self.ipc_endpoint.clone() else {
+        let Some(endpoint) = self.ipc.endpoint.clone() else {
             if clears_install_busy {
                 self.ai.install_busy = false;
             }

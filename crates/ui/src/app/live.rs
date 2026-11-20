@@ -202,7 +202,7 @@ impl App {
         cx.spawn(async move |this, cx| {
             loop {
                 let interval =
-                    match this.update(cx, |this, _| live_poll_interval(this.ipc_connected)) {
+                    match this.update(cx, |this, _| live_poll_interval(this.ipc.connected)) {
                         Ok(interval) => interval,
                         Err(_) => break,
                     };
@@ -417,7 +417,7 @@ impl App {
             || snapshot
                 .daemon_errors
                 .as_ref()
-                .is_some_and(|errors| errors != &self.daemon_errors);
+                .is_some_and(|errors| errors != &self.ipc.daemon_errors);
         if changed {
             if let Some(jobs) = snapshot.jobs {
                 self.jobs = jobs;
@@ -477,7 +477,7 @@ impl App {
                 self.job_failures = failures;
             }
             if let Some(errors) = snapshot.daemon_errors {
-                self.daemon_errors = errors;
+                self.ipc.daemon_errors = errors;
             }
         }
         JobApply {
@@ -603,19 +603,19 @@ impl App {
         // and by revision-driven `reload_aux`; polling it here would race a
         // tag edit with a stale background snapshot.
 
-        let next_active = daemon_liveness(snapshot.monitor.age_secs, self.ipc_connected);
-        let age_changed = self.daemon_age_secs != snapshot.monitor.age_secs;
-        let monitor_changed = self.daemon_active != next_active
-            || self.daemon_supervisor != snapshot.monitor.supervisor
-            || self.monitor_world != snapshot.monitor.world
-            || self.monitor_instance != snapshot.monitor.instance
-            || self.monitor_players != snapshot.monitor.players;
-        self.daemon_age_secs = snapshot.monitor.age_secs;
-        self.daemon_active = next_active;
-        self.daemon_supervisor = snapshot.monitor.supervisor;
-        self.monitor_world = snapshot.monitor.world;
-        self.monitor_instance = snapshot.monitor.instance;
-        self.monitor_players = snapshot.monitor.players;
+        let next_active = daemon_liveness(snapshot.monitor.age_secs, self.ipc.connected);
+        let age_changed = self.ipc.daemon_age_secs != snapshot.monitor.age_secs;
+        let monitor_changed = self.ipc.daemon_active != next_active
+            || self.ipc.daemon_supervisor != snapshot.monitor.supervisor
+            || self.ipc.monitor_world != snapshot.monitor.world
+            || self.ipc.monitor_instance != snapshot.monitor.instance
+            || self.ipc.monitor_players != snapshot.monitor.players;
+        self.ipc.daemon_age_secs = snapshot.monitor.age_secs;
+        self.ipc.daemon_active = next_active;
+        self.ipc.daemon_supervisor = snapshot.monitor.supervisor;
+        self.ipc.monitor_world = snapshot.monitor.world;
+        self.ipc.monitor_instance = snapshot.monitor.instance;
+        self.ipc.monitor_players = snapshot.monitor.players;
         if monitor_changed || (age_changed && self.screen == crate::app::Screen::Dashboard) {
             notify = true;
         }

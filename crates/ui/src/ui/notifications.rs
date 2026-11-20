@@ -321,7 +321,7 @@ impl App {
             self.import_report.is_some(),
             self.library.error.is_some(),
             self.job_failures.total_jobs(),
-            self.daemon_errors.len(),
+            self.ipc.daemon_errors.len(),
         )
     }
 
@@ -425,7 +425,7 @@ impl App {
             self.job_failures.compression_failed,
             self.job_failures.discord_failed,
             self.job_failures.tagging_failed,
-            self.daemon_errors.len(),
+            self.ipc.daemon_errors.len(),
         ) {
             cx.defer_in(window, |this, window, cx| {
                 if this.notification_modal_open && !this.notification_attention() {
@@ -441,7 +441,7 @@ impl App {
             self.job_failures.compression_failed,
             self.job_failures.discord_failed,
             self.job_failures.tagging_failed,
-            self.daemon_errors.len(),
+            self.ipc.daemon_errors.len(),
         );
         // `App` stores the report behind an Rc so this is a pointer clone, not
         // a copy of every issue. The import card only needs a shared borrow
@@ -449,7 +449,7 @@ impl App {
         let import_report = self.import_report.clone();
         let library_error = self.library.error;
         let job_failures = self.job_failures.clone();
-        let daemon_errors = self.daemon_errors.len();
+        let daemon_errors = self.ipc.daemon_errors.len();
 
         let mut items = Vec::new();
         for section in sections {

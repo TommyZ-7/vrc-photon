@@ -232,7 +232,7 @@ impl App {
     /// daemon connection is up. A batch held across a disconnect is kept for
     /// the reconnect path to flush.
     pub(crate) fn flush_thumbnail_notice(&mut self, cx: &mut Context<Self>) {
-        if !self.ipc_connected {
+        if !self.ipc.connected {
             return;
         }
         let Some((files, bytes)) = self.thumbnail_notice.take() else {
@@ -1190,7 +1190,7 @@ impl App {
         }
         let removed: HashSet<i64> = requested.iter().copied().collect();
         self.remove_photos_from_ui(&removed, false, cx);
-        if self.daemon_active {
+        if self.ipc.daemon_active {
             self.toast_success(
                 tr_args!("photos.delete.registered", count = requested.len()),
                 cx,

@@ -154,7 +154,7 @@ impl App {
                 return;
             }
         };
-        self.ipc_endpoint = Some(endpoint.clone());
+        self.ipc.endpoint = Some(endpoint.clone());
         let (tx, rx) = async_channel::bounded(ipc_bridge::INCOMING_QUEUE_CAPACITY);
         ipc_bridge::start(endpoint, tx);
         cx.spawn(async move |this, cx| {
@@ -192,13 +192,13 @@ impl App {
     ) -> bool {
         match incoming {
             ipc_bridge::Incoming::Connected { status, daemon_pid } => {
-                self.ipc_connected = true;
-                self.daemon_pid = Some(daemon_pid);
-                self.ipc_error = None;
-                self.daemon_shutdown_armed = false;
+                self.ipc.connected = true;
+                self.ipc.daemon_pid = Some(daemon_pid);
+                self.ipc.error = None;
+                self.ipc.shutdown_armed = false;
                 // A new connection may belong to a restarted daemon whose
                 // version counter started over; adopt its lineage.
-                self.last_status_version = status.version;
+                self.ipc.last_status_version = status.version;
                 self.apply_daemon_status(status);
                 // A restarted daemon may have finished an install/probe while
                 // the link was down. Reload the cards and the inspector.
@@ -209,15 +209,15 @@ impl App {
                 true
             }
             ipc_bridge::Incoming::Disconnected(error) => {
-                let was_connected = self.ipc_connected;
-                self.ipc_connected = false;
+                let was_connected = self.ipc.connected;
+                self.ipc.connected = false;
                 // Keep the last PID: the daemon may still be alive with a dead
                 // IPC server. The update helper will wait for it (or time out)
                 // instead of replacing files under a running process.
-                self.ipc_error = Some(error);
-                self.daemon_paused = false;
-                self.daemon_shutdown_armed = false;
-                self.scan_progress = None;
+                self.ipc.error = Some(error);
+                self.ipc.daemon_paused = false;
+                self.ipc.shutdown_armed = false;
+                self.ipc.scan_progress = None;
                 self.import_scan_target = None;
                 // No daemon event can finish an in-flight install, probe, or
                 // download while the link is down. Drop the transient state so
@@ -235,7 +235,7 @@ impl App {
     fn handle_ipc_event(&mut self, event: IpcEvent, cx: &mut Context<Self>) -> bool {
         match event {
             IpcEvent::ScanStarted { roots, .. } => {
-                self.scan_progress = Some(ScanProgressView {
+                self.ipc.scan_progress = Some(ScanProgressView {
                     phase: IpcScanPhase::Walking,
                     processed: 0,
                     total: None,
@@ -253,7 +253,7 @@ impl App {
                 root,
                 roots,
             } => {
-                self.scan_progress = Some(ScanProgressView {
+                self.ipc.scan_progress = Some(ScanProgressView {
                     phase,
                     processed,
                     total,
@@ -277,7 +277,7 @@ impl App {
                     self.import_scan_target = None;
                     self.import_auto_compress_enqueued = count;
                 }
-                self.scan_progress = None;
+                self.ipc.scan_progress = None;
                 self.refresh_library_after_scan(cx);
                 true
             }
@@ -314,9 +314,9 @@ impl App {
             IpcEvent::StatusChanged { status } => {
                 if crate::app::daemon::status_snapshot_is_newer(
                     status.version,
-                    self.last_status_version,
+                    self.ipc.last_status_version,
                 ) {
-                    self.last_status_version = self.last_status_version.max(status.version);
+                    self.ipc.last_status_version = self.ipc.last_status_version.max(status.version);
                     self.apply_daemon_status(status);
                     true
                 } else {
@@ -333,10 +333,10 @@ impl App {
     }
 
     pub(crate) fn wake_daemon(&self, request: IpcRequest, cx: &mut Context<Self>) {
-        if !self.ipc_connected {
+        if !self.ipc.connected {
             return;
         }
-        let Some(endpoint) = self.ipc_endpoint.clone() else {
+        let Some(endpoint) = self.ipc.endpoint.clone() else {
             return;
         };
         cx.spawn(async move |this, cx| {
@@ -359,14 +359,14 @@ impl App {
         failure: Option<String>,
         cx: &mut Context<Self>,
     ) {
-        if !self.ipc_connected {
+        if !self.ipc.connected {
             if let Some(message) = failure {
                 self.toast_error(message, cx);
             }
             cx.notify();
             return;
         }
-        let Some(endpoint) = self.ipc_endpoint.clone() else {
+        let Some(endpoint) = self.ipc.endpoint.clone() else {
             self.toast_error(tr!("daemon.ipc.resolve_error"), cx);
             cx.notify();
             return;

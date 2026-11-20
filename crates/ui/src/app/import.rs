@@ -595,7 +595,7 @@ impl App {
             Ok(_) => {
                 self.import_scan_target = Some(report.dest.to_string_lossy().to_string());
                 self.send_wake_commands(cx);
-                if !self.ipc_connected {
+                if !self.ipc.connected {
                     self.toast_warning(tr!("import.daemon_offline_scan"), cx);
                 }
             }

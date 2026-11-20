@@ -12,14 +12,18 @@ use std::rc::Rc;
 use gpui_kit::component::input::InputState;
 use gpui_kit::*;
 use vrc_photon_core::ai::{PhotoAi, PhotoAiTagView};
-use vrc_photon_core::model::{Derivative, LibraryStats, Photo, PhotoPlayer, PhotoTextFilter};
+use vrc_photon_core::model::{
+    DaemonError, Derivative, LibraryStats, Photo, PhotoPlayer, PhotoTextFilter,
+};
 
 use super::CardBoundsMap;
 use super::ai;
+use super::lifecycle::ScanProgressView;
 use super::search_suggest;
 use crate::state::photo_browser::{CountDebounce, PhotoBrowser};
 use crate::state::selection::PhotoSelection;
 use crate::ui::gallery::GalleryView;
+use vrc_photon_ipc::Endpoint;
 
 /// The photo library browser: index, pages, selection, and the metadata the
 /// inspector shows for the current selection.
@@ -86,4 +90,28 @@ pub(crate) struct SearchState {
         Rc<RefCell<HashMap<search_suggest::SuggestionKind, Bounds<Pixels>>>>,
     pub(crate) _suggestion_subscriptions: Vec<Subscription>,
     pub(crate) _suggestion_keys: Subscription,
+}
+
+/// The daemon bridge: connection state, the latest status snapshot, the
+/// monitor selection, and the failures worth showing to the user.
+pub(crate) struct IpcState {
+    pub(crate) daemon_age_secs: Option<i64>,
+    pub(crate) daemon_supervisor: Option<String>,
+    pub(crate) daemon_pid: Option<u32>,
+    pub(crate) daemon_paused: bool,
+    pub(crate) daemon_active: bool,
+    pub(crate) daemon_errors: Vec<DaemonError>,
+    /// Version of the last daemon status snapshot applied from the event
+    /// stream. Snapshots stamped with an older version are stale (read
+    /// before a state change but published after it) and must not revive
+    /// state the daemon has already moved past.
+    pub(crate) last_status_version: u64,
+    pub(crate) endpoint: Option<Endpoint>,
+    pub(crate) connected: bool,
+    pub(crate) error: Option<String>,
+    pub(crate) scan_progress: Option<ScanProgressView>,
+    pub(crate) shutdown_armed: bool,
+    pub(crate) monitor_world: Option<String>,
+    pub(crate) monitor_instance: Option<String>,
+    pub(crate) monitor_players: Vec<String>,
 }
