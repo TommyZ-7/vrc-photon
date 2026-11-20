@@ -428,8 +428,8 @@ vrc-photon-autotag-<version>-<os>-<backend>.zip
 | `plugin_id` | string | プラグイン識別子。`vrc-photon-autotag` |
 | `plugin_version` | string | プラグインの semver |
 | `protocol_version` | integer | sidecar 通信規約。v1 は `1` |
-| `host_version_min` | string | 対応する本体の最小 semver |
-| `host_version_max` | string | 対応する本体の最大 semver |
+| `host_version_min` | string | 対応する本体の最小 semver。厳格に検証する |
+| `host_version_max` | string | 対応する本体の最大 semver。同一メジャー版の範囲だけを制限する。`0.0.0` は上限なし |
 | `platform` | string | `linux` / `windows` |
 | `backend` | string | `vulkan` / `cuda` / `rocm` / `cpu` |
 | `variant` | string | `<platform>-<backend>`。インストール単位 |
@@ -473,7 +473,9 @@ vrc-photon-autotag-<version>-<os>-<backend>.zip
 4. manifest を型変換し、次を検証する。
    - `format_version == 1`
    - `protocol_version` のメジャーが本体の対応版（1）と一致
-   - `host_version_min <= 本体バージョン <= host_version_max`（semver）
+   - `host_version_min <= 本体バージョン`（semver）
+   - `host_version_max` が `0.0.0` でなければ、`host_version_max` のメジャーが
+     本体と一致する場合のみ `本体バージョン <= host_version_max`
    - `platform` が現在の OS と一致
    - `variant == <platform>-<backend>`
    - `entrypoint` が `files` に含まれる
