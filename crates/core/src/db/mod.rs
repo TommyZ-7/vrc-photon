@@ -266,8 +266,7 @@ impl Db {
     }
 }
 
-/// Writes one AI result and its judged tags. Returns false without touching
-/// the database when the photo is no longer in the library.
+/// Reads `PRAGMA user_version`. Zero means a brand-new file.
 fn schema_version(conn: &Connection) -> Result<i64> {
     Ok(conn.pragma_query_value(None, "user_version", |row| row.get(0))?)
 }
