@@ -90,46 +90,47 @@ impl App {
         self.close_suggestion(cx);
         // Build the filter before the in-flight guard: favorite/date/AI edits
         // made while a query runs must replace the draft immediately.
-        let world = self.world_input.read(cx).value().to_string();
-        let player = self.player_input.read(cx).value().to_string();
-        let tag = self.tag_input.read(cx).value().to_string();
-        let people = self.search_people_input.read(cx).value().to_string();
+        let world = self.search.world_input.read(cx).value().to_string();
+        let player = self.search.player_input.read(cx).value().to_string();
+        let tag = self.search.tag_input.read(cx).value().to_string();
+        let people = self.search.people_input.read(cx).value().to_string();
         let from_utc = self
-            .search_days
+            .search
+            .days
             .map(|days| Utc::now().timestamp() - days * 86_400);
         let filter = PhotoTextFilter {
             world: Some(world),
             player: Some(player),
             tag: Some(tag),
-            favorite: self.search_favorite,
+            favorite: self.search.favorite,
             from_utc,
             to_utc: None,
-            ai: build_ai_filter(self.search_ai_tags.clone(), &people),
+            ai: build_ai_filter(self.search.ai_tags.clone(), &people),
         };
-        self.applied_search = Some(filter.clone());
-        self.search_refresh_dirty = false;
+        self.search.applied = Some(filter.clone());
+        self.search.refresh_dirty = false;
         // One 100k text query at a time. Keep this filter and let the result
         // path start a single refresh with it once the running query lands.
-        if self.searching {
-            self.search_refresh_pending = true;
+        if self.search.searching {
+            self.search.refresh_pending = true;
             return;
         }
         if !self.library.selected_ids.is_empty() {
             self.clear_selection(cx);
         }
-        self.pending_search_anchor = None;
-        self.search_view.borrow_mut().pending_anchor = None;
-        self.search_refresh_pending = false;
+        self.search.pending_anchor = None;
+        self.search.view.borrow_mut().pending_anchor = None;
+        self.search.refresh_pending = false;
         self.start_search(filter, cx);
     }
 
     pub(crate) fn start_search(&mut self, filter: PhotoTextFilter, cx: &mut Context<Self>) {
         // A new query already carries the latest filter, so it supersedes any
         // refresh that was queued behind an older in-flight result.
-        self.search_refresh_pending = false;
-        self.search_view.borrow_mut().pending_anchor = None;
-        self.search_request = self.search_request.wrapping_add(1);
-        let generation = self.search_request;
+        self.search.refresh_pending = false;
+        self.search.view.borrow_mut().pending_anchor = None;
+        self.search.request = self.search.request.wrapping_add(1);
+        let generation = self.search.request;
 
         let Some(reader) = self.background_reader.clone() else {
             // In-memory demo/fallback databases have no reusable reader.
@@ -138,7 +139,7 @@ impl App {
             return;
         };
 
-        self.searching = true;
+        self.search.searching = true;
         cx.notify();
         cx.spawn(async move |this, cx| {
             let background_filter = filter.clone();
@@ -152,7 +153,7 @@ impl App {
                 })
                 .await;
             this.update(cx, |this, cx| {
-                if generation != this.search_request {
+                if generation != this.search.request {
                     return;
                 }
                 match result {
@@ -179,14 +180,14 @@ impl App {
         result: vrc_photon_core::error::Result<Vec<PhotoIndexEntry>>,
         cx: &mut Context<Self>,
     ) {
-        if generation != self.search_request {
+        if generation != self.search.request {
             return;
         }
-        let requested_anchor = take_requested_search_anchor(&mut self.pending_search_anchor);
+        let requested_anchor = take_requested_search_anchor(&mut self.search.pending_anchor);
         match result {
             Ok(entries) => {
                 let anchor = {
-                    let mut view = self.search_view.borrow_mut();
+                    let mut view = self.search.view.borrow_mut();
                     let changed = view.replace_index_if_changed(Arc::new(PhotoIndex::new(entries)));
                     let anchor = search_anchor_after_result(requested_anchor, &view.index);
                     if changed {
@@ -204,13 +205,13 @@ impl App {
                     }
                     anchor
                 };
-                self.search_active = true;
-                self.searching = false;
+                self.search.active = true;
+                self.search.searching = false;
                 self.finish_pending_search_refresh(anchor, cx);
             }
             Err(error) => {
-                self.searching = false;
-                if self.search_refresh_pending {
+                self.search.searching = false;
+                if self.search.refresh_pending {
                     // A filter change or tag edit is queued. Retry with the
                     // latest filter before surfacing the error; a failed retry
                     // reports its own error.
@@ -227,17 +228,17 @@ impl App {
     /// Starts the single refresh queued while a query was running, or keeps the
     /// search dirty until it is visible again.
     fn finish_pending_search_refresh(&mut self, anchor: Option<i64>, cx: &mut Context<Self>) {
-        if !self.search_refresh_pending {
+        if !self.search.refresh_pending {
             return;
         }
-        self.search_refresh_pending = false;
+        self.search.refresh_pending = false;
         if self.screen == Screen::Search {
             self.start_search_refresh(anchor, cx);
         } else {
             // The edit was scheduled while Search was visible, but the user
             // left before the query finished. Do not run a hidden query;
             // refresh when Search is shown again.
-            self.search_refresh_dirty = true;
+            self.search.refresh_dirty = true;
         }
     }
 
@@ -246,29 +247,29 @@ impl App {
         if !self.library.selected_ids.is_empty() {
             self.clear_selection(cx);
         }
-        self.search_active = false;
-        self.searching = false;
-        self.applied_search = None;
-        self.pending_search_anchor = None;
-        self.search_view.borrow_mut().pending_anchor = None;
-        self.search_refresh_pending = false;
-        self.search_refresh_dirty = false;
-        self.search_ai_tags.clear();
+        self.search.active = false;
+        self.search.searching = false;
+        self.search.applied = None;
+        self.search.pending_anchor = None;
+        self.search.view.borrow_mut().pending_anchor = None;
+        self.search.refresh_pending = false;
+        self.search.refresh_dirty = false;
+        self.search.ai_tags.clear();
         // Clear every text field, not only the AI people count: leaving the
         // world/tag text behind after the results reset made the panel show a
         // filter that was no longer applied.
         for input in [
-            &self.world_input,
-            &self.player_input,
-            &self.tag_input,
-            &self.search_people_input,
+            &self.search.world_input,
+            &self.search.player_input,
+            &self.search.tag_input,
+            &self.search.people_input,
         ] {
             input.update(cx, |input, cx| input.set_value("", window, cx));
         }
         // Invalidate an in-flight request so it cannot revive the cleared view.
-        self.search_request = self.search_request.wrapping_add(1);
+        self.search.request = self.search.request.wrapping_add(1);
         let index = self.library.browser.borrow().index.clone();
-        let mut view = self.search_view.borrow_mut();
+        let mut view = self.search.view.borrow_mut();
         view.replace_index(index);
         view.scroll.scroll_to_item_strict(0, ScrollStrategy::Top);
         drop(view);
@@ -288,13 +289,13 @@ impl App {
         predicate: fn(&PhotoTextFilter) -> bool,
         cx: &mut Context<Self>,
     ) {
-        let Some(filter) = self.applied_search.clone() else {
+        let Some(filter) = self.search.applied.clone() else {
             return;
         };
         if !predicate(&filter) {
             return;
         }
-        match filter_refresh_action(self.screen, self.searching) {
+        match filter_refresh_action(self.screen, self.search.searching) {
             FilterRefreshAction::Now => {
                 let anchor = self.current_search_anchor();
                 self.start_search_refresh(anchor, cx);
@@ -302,12 +303,12 @@ impl App {
             FilterRefreshAction::AfterQuery => {
                 // The in-flight query may have started before the tag write.
                 // Apply its result first, then refresh from the new state.
-                self.search_refresh_pending = true;
+                self.search.refresh_pending = true;
             }
             FilterRefreshAction::OnVisible => {
                 // Search is hidden. Re-query when the screen is mounted again
                 // instead of running a query the user cannot see.
-                self.search_refresh_dirty = true;
+                self.search.refresh_dirty = true;
             }
         }
     }
@@ -320,7 +321,7 @@ impl App {
 
     /// Top photo of the visible search grid, used as the refresh anchor.
     fn current_search_anchor(&self) -> Option<i64> {
-        let view = self.search_view.borrow();
+        let view = self.search.view.borrow();
         anchor_photo_id(
             &view.index,
             list_scroll_top(&view.scroll),
@@ -330,10 +331,10 @@ impl App {
     }
 
     fn start_search_refresh(&mut self, anchor: Option<i64>, cx: &mut Context<Self>) {
-        let Some(filter) = self.applied_search.clone() else {
+        let Some(filter) = self.search.applied.clone() else {
             return;
         };
-        self.pending_search_anchor = anchor;
+        self.search.pending_anchor = anchor;
         self.start_search(filter, cx);
     }
 }

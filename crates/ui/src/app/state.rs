@@ -6,15 +6,17 @@
 //! the settings draft.
 
 use std::cell::{Cell, RefCell};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
+use gpui_kit::component::input::InputState;
 use gpui_kit::*;
 use vrc_photon_core::ai::{PhotoAi, PhotoAiTagView};
-use vrc_photon_core::model::{Derivative, LibraryStats, Photo, PhotoPlayer};
+use vrc_photon_core::model::{Derivative, LibraryStats, Photo, PhotoPlayer, PhotoTextFilter};
 
 use super::CardBoundsMap;
 use super::ai;
+use super::search_suggest;
 use crate::state::photo_browser::{CountDebounce, PhotoBrowser};
 use crate::state::selection::PhotoSelection;
 use crate::ui::gallery::GalleryView;
@@ -52,4 +54,36 @@ pub(crate) struct LibraryState {
     pub(crate) pending_initial_select: bool,
     pub(crate) stats: LibraryStats,
     pub(crate) stats_revision: i64,
+}
+
+/// The search screen: its own browser and card bounds, the applied filter
+/// state, and the suggestion popover.
+pub(crate) struct SearchState {
+    pub(crate) view: Rc<RefCell<PhotoBrowser>>,
+    pub(crate) gallery: Entity<GalleryView>,
+    pub(crate) bounds: CardBoundsMap,
+    pub(crate) bounds_epoch: Rc<Cell<u64>>,
+    pub(crate) grid_focus: FocusHandle,
+    pub(crate) active: bool,
+    pub(crate) searching: bool,
+    pub(crate) request: u64,
+    pub(crate) applied: Option<PhotoTextFilter>,
+    pub(crate) pending_anchor: Option<i64>,
+    pub(crate) refresh_pending: bool,
+    /// A tag/AI edit changed the applied search while the Search screen was
+    /// hidden. Refresh once when the user returns to Search.
+    pub(crate) refresh_dirty: bool,
+    pub(crate) favorite: bool,
+    pub(crate) days: Option<i64>,
+    pub(crate) ai_tags: Vec<String>,
+    pub(crate) people_input: Entity<InputState>,
+    pub(crate) world_input: Entity<InputState>,
+    pub(crate) player_input: Entity<InputState>,
+    pub(crate) tag_input: Entity<InputState>,
+    pub(crate) suggestion: Option<search_suggest::SuggestionState>,
+    pub(crate) suggestion_request: u64,
+    pub(crate) suggestion_bounds:
+        Rc<RefCell<HashMap<search_suggest::SuggestionKind, Bounds<Pixels>>>>,
+    pub(crate) _suggestion_subscriptions: Vec<Subscription>,
+    pub(crate) _suggestion_keys: Subscription,
 }

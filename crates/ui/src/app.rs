@@ -46,7 +46,7 @@ use gpui_kit::*;
 use vrc_photon_core::db::Db;
 use vrc_photon_core::model::{
     CompressionJob, CompressionProfile, DaemonError, DeletionCounts, DeletionRequest, LibraryStats,
-    PhotoTextFilter, SendHistoryEntry,
+    SendHistoryEntry,
 };
 use vrc_photon_core::queue::{QueueCounts, QueueEntry, QueueProgress};
 use vrc_photon_core::settings::{
@@ -66,7 +66,7 @@ use crate::app::import::{ImportDialogState, ImportReportView};
 use crate::app::lifecycle::ScanProgressView;
 use crate::app::live::{LiveRefreshGate, should_announce_empty_library};
 use crate::app::photos::PendingFullImage;
-use crate::app::state::LibraryState;
+use crate::app::state::{LibraryState, SearchState};
 use crate::state::display_image::{DecodeQueue, DisplayKey};
 use crate::state::full_image::FullImageTexture;
 use crate::state::motion::ToggleMotion;
@@ -181,8 +181,6 @@ pub struct App {
     /// 0 = expanded, 1 = collapsed.
     pub(crate) ribbon_motion: ToggleMotion,
     pub(crate) render_epoch: u64,
-    pub(crate) search_bounds: CardBoundsMap,
-    pub(crate) search_bounds_epoch: Rc<Cell<u64>>,
     pub(crate) inspector_preview_bounds: InspectorBounds,
     pub(crate) viewer_morph: Option<ViewerMorph>,
     pub(crate) viewer_morph_view: Entity<crate::ui::viewer::ViewerMorphView>,
@@ -217,8 +215,8 @@ pub struct App {
     /// Library browser, index, selection, and the metadata the
     /// inspector shows for the current selection.
     pub(crate) library: LibraryState,
-    pub(crate) search_view: Rc<RefCell<PhotoBrowser>>,
-    pub(crate) search_gallery: Entity<GalleryView>,
+    /// Search screen browser, filters, and suggestion state.
+    pub(crate) search: SearchState,
     pub(crate) thumbnails: Rc<RefCell<ThumbnailCache>>,
     /// Set when the device cannot create the BC7 texture array. The render
     /// path then shows a fatal error instead of the normal shell.
@@ -235,7 +233,6 @@ pub struct App {
     /// An allocator collection timer is already queued.
     pub(crate) allocator_collect_pending: bool,
     pub(crate) photo_grid_focus: FocusHandle,
-    pub(crate) search_grid_focus: FocusHandle,
     pub(crate) photo_context_menu: Option<context_menu::PhotoContextMenuState>,
     pub(crate) import_dialog_focus: FocusHandle,
     pub(crate) quick_look_open: bool,
@@ -406,9 +403,6 @@ pub struct App {
     pub(crate) monitor_instance: Option<String>,
     pub(crate) monitor_players: Vec<String>,
     pub(crate) daemon_active: bool,
-    pub(crate) world_input: Entity<InputState>,
-    pub(crate) player_input: Entity<InputState>,
-    pub(crate) tag_input: Entity<InputState>,
     pub(crate) tag_edit_input: Entity<InputState>,
     pub(crate) tag_edit: tag_edit::TagEditState,
     /// First-run wizard state. The wizard owns the window until it closes.
@@ -418,25 +412,6 @@ pub struct App {
     pub(crate) photo_root_input: Entity<InputState>,
     pub(crate) log_dir_input: Entity<InputState>,
     pub(crate) import_dir_input: Entity<InputState>,
-    pub(crate) search_active: bool,
-    pub(crate) searching: bool,
-    pub(crate) search_request: u64,
-    pub(crate) applied_search: Option<PhotoTextFilter>,
-    pub(crate) pending_search_anchor: Option<i64>,
-    pub(crate) search_refresh_pending: bool,
-    /// A tag/AI edit changed the applied search while the Search screen was
-    /// hidden. Refresh once when the user returns to Search.
-    pub(crate) search_refresh_dirty: bool,
-    pub(crate) search_favorite: bool,
-    pub(crate) search_days: Option<i64>,
-    pub(crate) search_ai_tags: Vec<String>,
-    pub(crate) search_people_input: Entity<InputState>,
-    pub(crate) suggestion: Option<search_suggest::SuggestionState>,
-    pub(crate) suggestion_request: u64,
-    pub(crate) suggestion_bounds:
-        Rc<RefCell<HashMap<search_suggest::SuggestionKind, Bounds<Pixels>>>>,
-    pub(crate) _search_suggestion_subscriptions: Vec<Subscription>,
-    pub(crate) _suggestion_keys: Subscription,
     pub(crate) daemon_shutdown_armed: bool,
     pub(crate) pending_toasts: Vec<ToastSpec>,
     pub(crate) toast_flush_scheduled: bool,
@@ -669,7 +644,7 @@ impl App {
         vrc_photon_i18n::set_locale(&code);
         self.update_input_placeholders(window, cx);
         self.library.browser.borrow_mut().invalidate_labels();
-        self.search_view.borrow_mut().invalidate_labels();
+        self.search.view.borrow_mut().invalidate_labels();
         // The connection detail was formatted when it arrived; the next
         // heartbeat/reconnect repopulates it in the new language.
         self.ipc_error = None;
@@ -678,9 +653,9 @@ impl App {
 
     fn update_input_placeholders(&self, window: &mut Window, cx: &mut Context<Self>) {
         let inputs = [
-            (&self.world_input, "input.world"),
-            (&self.player_input, "input.player"),
-            (&self.tag_input, "input.tag"),
+            (&self.search.world_input, "input.world"),
+            (&self.search.player_input, "input.player"),
+            (&self.search.tag_input, "input.tag"),
             (&self.tag_edit_input, "input.tag_add"),
             (&self.tag_edit.input, "input.tag_add"),
             (&self.photo_root_input, "input.photo_root"),
@@ -689,7 +664,7 @@ impl App {
             (&self.profile_name_input, "input.profile_name"),
             (&self.profile_suffix_input, "input.profile_suffix"),
             (&self.profile_output_input, "input.profile_output"),
-            (&self.search_people_input, "search.ai.people_placeholder"),
+            (&self.search.people_input, "search.ai.people_placeholder"),
             (
                 &self.ai_tag_picker.query,
                 "ai.tags.picker.search_placeholder",
@@ -1166,8 +1141,6 @@ impl App {
                 0.0
             }),
             render_epoch: 0,
-            search_bounds,
-            search_bounds_epoch,
             inspector_preview_bounds: Rc::new(RefCell::new(None)),
             viewer_morph: None,
             viewer_morph_view: cx.new(|_| crate::ui::viewer::ViewerMorphView::new(initial_palette)),
@@ -1243,8 +1216,36 @@ impl App {
                 stats: LibraryStats::default(),
                 stats_revision: -1,
             },
-            search_view,
-            search_gallery,
+            search: SearchState {
+                view: search_view,
+                gallery: search_gallery,
+                bounds: search_bounds,
+                bounds_epoch: search_bounds_epoch,
+                grid_focus: search_grid_focus,
+                active: false,
+                searching: false,
+                request: 0,
+                applied: None,
+                pending_anchor: None,
+                refresh_pending: false,
+                refresh_dirty: false,
+                favorite: false,
+                days: crate::app::search::DEFAULT_SEARCH_DAYS,
+                ai_tags: Vec::new(),
+                people_input: search_people_input,
+                world_input,
+                player_input,
+                tag_input,
+                suggestion: None,
+                suggestion_request: 0,
+                suggestion_bounds: Rc::new(RefCell::new(HashMap::new())),
+                _suggestion_subscriptions: vec![
+                    world_suggestion_subscription,
+                    player_suggestion_subscription,
+                    tag_suggestion_subscription,
+                ],
+                _suggestion_keys: suggestion_keys,
+            },
             thumbnails,
             thumbnail_notify_pending: false,
             thumbnail_notice: ThumbnailNoticeBatch::default(),
@@ -1252,7 +1253,6 @@ impl App {
             allocator_collect_epoch: 0,
             allocator_collect_pending: false,
             photo_grid_focus,
-            search_grid_focus,
             photo_context_menu: None,
             import_dialog_focus,
             quick_look_open: false,
@@ -1366,9 +1366,6 @@ impl App {
             monitor_instance: None,
             monitor_players: Vec::new(),
             daemon_active: false,
-            world_input,
-            player_input,
-            tag_input,
             tag_edit_input,
             tag_edit,
             setup,
@@ -1377,26 +1374,6 @@ impl App {
             photo_root_input,
             log_dir_input,
             import_dir_input,
-            search_active: false,
-            searching: false,
-            search_request: 0,
-            applied_search: None,
-            pending_search_anchor: None,
-            search_refresh_pending: false,
-            search_refresh_dirty: false,
-            search_favorite: false,
-            search_days: crate::app::search::DEFAULT_SEARCH_DAYS,
-            search_ai_tags: Vec::new(),
-            search_people_input,
-            suggestion: None,
-            suggestion_request: 0,
-            suggestion_bounds: Rc::new(RefCell::new(HashMap::new())),
-            _search_suggestion_subscriptions: vec![
-                world_suggestion_subscription,
-                player_suggestion_subscription,
-                tag_suggestion_subscription,
-            ],
-            _suggestion_keys: suggestion_keys,
             daemon_shutdown_armed: false,
             pending_toasts: Vec::new(),
             toast_flush_scheduled: false,

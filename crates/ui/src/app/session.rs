@@ -106,7 +106,7 @@ impl App {
     pub(crate) fn capture_top_photo(&mut self, search: bool) -> Option<i64> {
         if search || self.settings.ui_photos_view_mode == PhotosViewMode::Timeline {
             let browser = if search {
-                self.search_view.borrow()
+                self.search.view.borrow()
             } else {
                 self.library.browser.borrow()
             };
@@ -139,7 +139,7 @@ impl App {
     pub(crate) fn scroll_to_photo(&mut self, search: bool, id: i64, strategy: ScrollStrategy) {
         if search || self.settings.ui_photos_view_mode == PhotosViewMode::Timeline {
             let browser = if search {
-                self.search_view.borrow()
+                self.search.view.borrow()
             } else {
                 self.library.browser.borrow()
             };
@@ -183,7 +183,7 @@ impl App {
     pub(crate) fn scroll_grid_to_top(&mut self, search: bool) {
         if search || self.settings.ui_photos_view_mode == PhotosViewMode::Timeline {
             let browser = if search {
-                self.search_view.borrow()
+                self.search.view.borrow()
             } else {
                 self.library.browser.borrow()
             };

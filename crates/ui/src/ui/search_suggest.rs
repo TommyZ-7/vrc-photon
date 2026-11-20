@@ -68,7 +68,7 @@ impl PhotoApp {
     ) -> impl IntoElement {
         let p = self.palette;
         let label: String = label.into();
-        let bounds_map = self.suggestion_bounds.clone();
+        let bounds_map = self.search.suggestion_bounds.clone();
         v_flex()
             .gap(px(6.))
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
@@ -105,11 +105,11 @@ impl PhotoApp {
         window: &Window,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
-        let state = self.suggestion.as_ref()?;
+        let state = self.search.suggestion.as_ref()?;
         if state.dismissed || state.items.is_empty() {
             return None;
         }
-        let bounds = *self.suggestion_bounds.borrow().get(&state.kind)?;
+        let bounds = *self.search.suggestion_bounds.borrow().get(&state.kind)?;
         let items = state.items.clone();
         let selected = state.selected;
         let kind = state.kind;

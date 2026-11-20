@@ -633,7 +633,7 @@ impl App {
 
     fn photo_browser(&self) -> Ref<'_, PhotoBrowser> {
         if self.screen == Screen::Search {
-            self.search_view.borrow()
+            self.search.view.borrow()
         } else {
             self.library.browser.borrow()
         }
@@ -679,7 +679,7 @@ impl App {
 
     pub(crate) fn browser_mut(&self, search: bool) -> RefMut<'_, PhotoBrowser> {
         if search {
-            self.search_view.borrow_mut()
+            self.search.view.borrow_mut()
         } else {
             self.library.browser.borrow_mut()
         }
@@ -1229,13 +1229,14 @@ impl App {
             .browser
             .borrow_mut()
             .remove_photos_with_anchor(removed, library_anchor);
-        self.search_view
+        self.search
+            .view
             .borrow_mut()
             .remove_photos_with_anchor(removed, search_anchor);
         if promoted {
             // Kept cards now display the promoted derivative.
             self.library.browser.borrow_mut().invalidate_pages();
-            self.search_view.borrow_mut().invalidate_pages();
+            self.search.view.borrow_mut().invalidate_pages();
         }
         for id in removed {
             self.thumbnails.borrow_mut().remove_photo(*id);

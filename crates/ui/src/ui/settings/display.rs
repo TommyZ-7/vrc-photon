@@ -363,7 +363,7 @@ impl App {
             library.pending_anchor = library_anchor;
         }
         drop(library);
-        let mut search = self.search_view.borrow_mut();
+        let mut search = self.search.view.borrow_mut();
         if search.pending_anchor.is_none() {
             search.pending_anchor = search_anchor;
         }

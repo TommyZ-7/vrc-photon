@@ -448,7 +448,7 @@ impl App {
                     let photos = replaced_photo_rows(photos);
                     replaced = photos.iter().map(|photo| photo.id).collect();
                     self.library.browser.borrow_mut().update_photo_rows(&photos);
-                    self.search_view.borrow_mut().update_photo_rows(&photos);
+                    self.search.view.borrow_mut().update_photo_rows(&photos);
                     // Invalidate the media only after the cached row points at
                     // the new display source, so a re-request cannot decode the
                     // removed original.
@@ -563,7 +563,7 @@ impl App {
             && !compression_refresh_pending
         {
             let expensive = self.screen == Screen::Photos
-                || (self.screen == Screen::Search && self.applied_search.is_some());
+                || (self.screen == Screen::Search && self.search.applied.is_some());
             if expensive {
                 // A burst of revisions must not rebuild the 100k-entry index
                 // on every poll tick. Wait until the revision has been stable
@@ -580,7 +580,7 @@ impl App {
                     } else {
                         self.library.last_revision = revision;
                         self.library.revision_debounce.reset();
-                        if self.applied_search.is_some() {
+                        if self.search.applied.is_some() {
                             self.refresh_search_keeping_anchor(cx);
                             changed = true;
                         }
@@ -666,7 +666,7 @@ impl App {
         let revision = self.db.library_revision().ok();
         let action = scan_refresh_action(
             self.screen,
-            self.applied_search.is_some(),
+            self.search.applied.is_some(),
             revision,
             self.library.last_revision,
             self.library.dirty,
@@ -836,7 +836,7 @@ impl App {
         }
         if language_changed {
             self.library.browser.borrow_mut().invalidate_labels();
-            self.search_view.borrow_mut().invalidate_labels();
+            self.search.view.borrow_mut().invalidate_labels();
         }
         cx.set_reduce_motion(self.settings.ui_reduce_motion);
         let palette = resolve(&self.settings.ui_theme_main, &self.settings.ui_theme_accent);
@@ -852,7 +852,7 @@ impl App {
         self.palette = palette;
         apply_component_theme(palette, cx);
         self.library.browser.borrow_mut().labels = None;
-        self.search_view.borrow_mut().labels = None;
+        self.search.view.borrow_mut().labels = None;
         self.viewer_morph_view
             .update(cx, |view, cx| view.set_palette(palette, cx));
         cx.notify();
@@ -963,9 +963,9 @@ impl App {
 
         // An active result set stays mounted until the user clears it or runs
         // a new search; the inactive mirror only needs the fresh snapshot.
-        if !self.search_active {
+        if !self.search.active {
             let index = self.library.browser.borrow().index.clone();
-            self.search_view.borrow_mut().replace_index(index);
+            self.search.view.borrow_mut().replace_index(index);
         }
         self.reload_aux(cx);
         true
@@ -1004,15 +1004,15 @@ impl App {
         if screen == Screen::Settings {
             self.refresh_thumbnail_cache_usage(cx);
         }
-        if screen == Screen::Search && self.search_refresh_dirty {
+        if screen == Screen::Search && self.search.refresh_dirty {
             // Tag edits made while another screen was mounted are applied with
             // one query when Search becomes visible again.
-            self.search_refresh_dirty = false;
+            self.search.refresh_dirty = false;
             self.refresh_search_keeping_anchor(cx);
         } else if screen == Screen::Photos && self.library.dirty {
             let revision = self.db.library_revision().ok();
             self.apply_library_snapshot(revision, cx);
-        } else if screen == Screen::Search && !self.search_active {
+        } else if screen == Screen::Search && !self.search.active {
             // The no-query mirror only needs a refresh when the library
             // snapshot changed while another screen was mounted. A dirty
             // library is rebuilt first so the mirror also sees new photos.
@@ -1020,7 +1020,7 @@ impl App {
                 let revision = self.db.library_revision().ok();
                 self.apply_library_snapshot(revision, cx);
             } else {
-                let mut search = self.search_view.borrow_mut();
+                let mut search = self.search.view.borrow_mut();
                 let library = self.library.browser.borrow();
                 sync_search_mirror(&mut search, &library);
             }
@@ -1086,7 +1086,7 @@ impl App {
             return;
         }
         self.switch_screen(Screen::Search, cx);
-        let focus_handle = self.world_input.read(cx).focus_handle(cx);
+        let focus_handle = self.search.world_input.read(cx).focus_handle(cx);
         window.focus(&focus_handle, cx);
         // The search screen may not be mounted yet when the action fires, so
         // retry after the deferred update has attached the input to the tree.

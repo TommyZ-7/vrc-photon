@@ -594,8 +594,8 @@ impl App {
     }
 
     fn viewer_source_ids(&self) -> Vec<i64> {
-        let browser = if self.screen == Screen::Search && self.search_active {
-            self.search_view.borrow()
+        let browser = if self.screen == Screen::Search && self.search.active {
+            self.search.view.borrow()
         } else {
             self.library.browser.borrow()
         };
@@ -846,7 +846,7 @@ impl App {
         _source: ViewerOpenSource,
     ) -> Option<(ViewerOpenSource, Bounds<Pixels>)> {
         let (bounds, bounds_epoch) = if self.screen == Screen::Search {
-            (&self.search_bounds, self.search_bounds_epoch.get())
+            (&self.search.bounds, self.search.bounds_epoch.get())
         } else {
             (&self.library.bounds, self.library.bounds_epoch.get())
         };

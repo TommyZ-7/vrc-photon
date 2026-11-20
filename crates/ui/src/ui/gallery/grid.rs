@@ -184,7 +184,7 @@ pub(super) fn render_grid(
 
     if rows == 0 {
         let empty = if search {
-            if app.search_active {
+            if app.search.active {
                 glass_panel(&p)
                     .p(px(20.))
                     .text_size(px(12.))
@@ -384,7 +384,7 @@ pub(super) fn render_grid(
         .min_h_0();
     if search {
         wrapper = wrapper
-            .track_focus(&app.search_grid_focus)
+            .track_focus(&app.search.grid_focus)
             .key_context("search_grid")
             .tab_stop(true);
     } else {
@@ -1013,7 +1013,7 @@ pub(super) fn focus_grid_or_search(app: &App, window: &mut Window, cx: &mut Cont
         // Photos-only. Focus the search grid so Menu / Shift+F10 can open
         // the same context menu without stealing focus from filter inputs
         // until a result card is clicked.
-        window.focus(&app.search_grid_focus, cx);
+        window.focus(&app.search.grid_focus, cx);
     }
 }
 

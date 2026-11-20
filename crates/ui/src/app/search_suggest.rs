@@ -120,9 +120,9 @@ fn query_suggestions(
 impl PhotoApp {
     fn suggestion_input(&self, kind: SuggestionKind) -> &Entity<InputState> {
         match kind {
-            SuggestionKind::World => &self.world_input,
-            SuggestionKind::Player => &self.player_input,
-            SuggestionKind::Tag => &self.tag_input,
+            SuggestionKind::World => &self.search.world_input,
+            SuggestionKind::Player => &self.search.player_input,
+            SuggestionKind::Tag => &self.search.tag_input,
         }
     }
 
@@ -145,12 +145,12 @@ impl PhotoApp {
                     self.close_suggestion(cx);
                     return;
                 };
-                if focus_should_start(self.suggestion.as_ref(), kind, &query) {
+                if focus_should_start(self.search.suggestion.as_ref(), kind, &query) {
                     self.begin_suggestion_query(kind, query, cx);
                 }
             }
             InputEvent::Blur => {
-                if blur_action(self.suggestion.as_ref(), kind) == BlurAction::Close {
+                if blur_action(self.search.suggestion.as_ref(), kind) == BlurAction::Close {
                     self.close_suggestion(cx);
                 }
             }
@@ -173,10 +173,10 @@ impl PhotoApp {
         query: String,
         cx: &mut Context<Self>,
     ) {
-        let request = self.suggestion_request.wrapping_add(1);
-        self.suggestion_request = request;
-        self.suggestion = Some(begin_suggestion_state(
-            self.suggestion.as_ref(),
+        let request = self.search.suggestion_request.wrapping_add(1);
+        self.search.suggestion_request = request;
+        self.search.suggestion = Some(begin_suggestion_state(
+            self.search.suggestion.as_ref(),
             kind,
             query.clone(),
         ));
@@ -184,10 +184,10 @@ impl PhotoApp {
         cx.spawn(async move |this, cx| {
             cx.background_executor().timer(SUGGESTION_DEBOUNCE).await;
             this.update(cx, |this, cx| {
-                if !suggestion_result_is_current(request, this.suggestion_request) {
+                if !suggestion_result_is_current(request, this.search.suggestion_request) {
                     return;
                 }
-                let still_wanted = this.suggestion.as_ref().is_some_and(|state| {
+                let still_wanted = this.search.suggestion.as_ref().is_some_and(|state| {
                     state.kind == kind && state.query == query && !state.dismissed
                 });
                 if still_wanted {
@@ -223,7 +223,7 @@ impl PhotoApp {
                 })
                 .await;
             this.update(cx, |this, cx| {
-                if !suggestion_result_is_current(request, this.suggestion_request) {
+                if !suggestion_result_is_current(request, this.search.suggestion_request) {
                     return;
                 }
                 match result {
@@ -245,12 +245,12 @@ impl PhotoApp {
         result: vrc_photon_core::error::Result<Vec<SearchSuggestion>>,
         cx: &mut Context<Self>,
     ) {
-        if !suggestion_result_is_current(request, self.suggestion_request)
+        if !suggestion_result_is_current(request, self.search.suggestion_request)
             || self.screen != Screen::Search
         {
             return;
         }
-        let Some(state) = self.suggestion.as_mut() else {
+        let Some(state) = self.search.suggestion.as_mut() else {
             return;
         };
         if state.dismissed {
@@ -262,14 +262,14 @@ impl PhotoApp {
                 state.selected = 0;
             }
             Err(_) => {
-                self.suggestion = None;
+                self.search.suggestion = None;
             }
         }
         cx.notify();
     }
 
     pub(crate) fn dismiss_suggestion(&mut self, cx: &mut Context<Self>) {
-        let Some(state) = self.suggestion.as_mut() else {
+        let Some(state) = self.search.suggestion.as_mut() else {
             return;
         };
         state.dismissed = true;
@@ -278,8 +278,8 @@ impl PhotoApp {
     }
 
     pub(crate) fn close_suggestion(&mut self, cx: &mut Context<Self>) {
-        let had_suggestion = self.suggestion.take().is_some();
-        self.suggestion_request = self.suggestion_request.wrapping_add(1);
+        let had_suggestion = self.search.suggestion.take().is_some();
+        self.search.suggestion_request = self.search.suggestion_request.wrapping_add(1);
         if had_suggestion {
             cx.notify();
         }
@@ -289,7 +289,7 @@ impl PhotoApp {
     /// anchored to the input's cached bounds and would otherwise drift away
     /// from its field.
     pub(crate) fn close_suggestion_on_scroll(&mut self, cx: &mut Context<Self>) {
-        if self.suggestion.is_some() {
+        if self.search.suggestion.is_some() {
             self.close_suggestion(cx);
         }
     }
@@ -300,7 +300,7 @@ impl PhotoApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(state) = self.suggestion.as_ref() else {
+        let Some(state) = self.search.suggestion.as_ref() else {
             return;
         };
         let Some(item) = state.items.get(index) else {
@@ -330,7 +330,7 @@ impl PhotoApp {
         ) else {
             return false;
         };
-        let Some(state) = self.suggestion.as_ref() else {
+        let Some(state) = self.search.suggestion.as_ref() else {
             return false;
         };
         if state.dismissed || state.items.is_empty() {
@@ -353,7 +353,7 @@ impl PhotoApp {
                 } else {
                     1
                 };
-                let Some(state) = self.suggestion.as_mut() else {
+                let Some(state) = self.search.suggestion.as_mut() else {
                     return false;
                 };
                 state.selected =
@@ -362,7 +362,7 @@ impl PhotoApp {
                 true
             }
             SuggestionKeyAction::Confirm => {
-                let Some(state) = self.suggestion.as_ref() else {
+                let Some(state) = self.search.suggestion.as_ref() else {
                     return false;
                 };
                 let index = state.selected;

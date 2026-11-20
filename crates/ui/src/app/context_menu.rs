@@ -379,7 +379,7 @@ impl PhotoApp {
 
     fn active_grid_focus(&self) -> FocusHandle {
         if self.screen == Screen::Search {
-            self.search_grid_focus.clone()
+            self.search.grid_focus.clone()
         } else {
             self.photo_grid_focus.clone()
         }
@@ -387,7 +387,7 @@ impl PhotoApp {
 
     fn active_generation(&self) -> u64 {
         if self.screen == Screen::Search {
-            self.search_view.borrow().generation
+            self.search.view.borrow().generation
         } else {
             self.library.browser.borrow().generation
         }
@@ -395,7 +395,8 @@ impl PhotoApp {
 
     fn photo_context_menu_position(&self, photo_id: i64, window: &Window) -> Point<Pixels> {
         let bounds = if self.screen == Screen::Search {
-            self.search_bounds
+            self.search
+                .bounds
                 .borrow()
                 .get(&photo_id)
                 .map(|(_, bounds)| *bounds)

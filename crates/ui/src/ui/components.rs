@@ -413,12 +413,12 @@ impl App {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let label: String = label.into();
-        let active = self.search_days == days;
+        let active = self.search.days == days;
         chip(&self.palette, &label, active)
             .id(SharedString::from(format!("preset-{label}")))
             .cursor_pointer()
             .on_click(cx.listener(move |this, _, _, cx| {
-                this.search_days = days;
+                this.search.days = days;
                 this.run_search(cx);
             }))
     }

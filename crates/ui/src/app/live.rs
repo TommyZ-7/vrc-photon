@@ -307,9 +307,9 @@ impl App {
             self.scroll_grid_to_top(false);
         }
 
-        if !self.search_active {
+        if !self.search.active {
             let index = self.library.browser.borrow().index.clone();
-            self.search_view.borrow_mut().replace_index(index);
+            self.search.view.borrow_mut().replace_index(index);
         }
 
         self.apply_live_snapshot(snapshot.live, true, cx);
