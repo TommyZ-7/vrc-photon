@@ -7671,6 +7671,33 @@ fn worlds_with_photo_counts_group_visible_photos_and_skip_missing() {
 }
 
 #[test]
+fn random_photos_text_matches_a_full_sort_sample() {
+    let db = Db::open_in_memory().unwrap();
+    let ids = seed_photos(&db, 1_000);
+    let mut reference: Vec<(u64, i64)> = ids
+        .iter()
+        .map(|&id| (splitmix64(42 ^ id.cast_unsigned()), id))
+        .collect();
+    reference.sort_unstable();
+    reference.truncate(7);
+    let expected: Vec<i64> = reference.into_iter().map(|(_, id)| id).collect();
+
+    let sample = db
+        .random_photos_text(&PhotoTextFilter::default(), 7, 42)
+        .unwrap();
+
+    assert_eq!(sample.total, 1_000);
+    assert_eq!(
+        sample
+            .photos
+            .iter()
+            .map(|photo| photo.id)
+            .collect::<Vec<_>>(),
+        expected
+    );
+}
+
+#[test]
 fn random_photos_text_is_deterministic_for_a_seed() {
     let db = Db::open_in_memory().unwrap();
     seed_photos(&db, 20);

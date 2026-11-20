@@ -287,14 +287,6 @@ impl Db {
         Ok(count)
     }
 
-    fn photo_ids_text(&self, filter: &PhotoTextFilter) -> Result<Vec<i64>> {
-        let (where_sql, values) = build_text_filter(filter);
-        let sql = format!("SELECT p.id{PHOTO_FROM} WHERE {where_sql}");
-        let mut stmt = self.conn.prepare_cached(&sql)?;
-        let rows = stmt.query_map(params_from_iter(values), |row| row.get(0))?;
-        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
-    }
-
     /// Deterministically samples up to `limit` matching photos using `seed`.
     /// `total` is the number of matches before sampling; `limit` follows
     /// [`clamp_limit`].
@@ -304,15 +296,31 @@ impl Db {
         limit: i64,
         seed: u64,
     ) -> Result<RandomPhotoSample> {
-        let ids = self.photo_ids_text(filter)?;
-        let total = i64_from_usize(ids.len());
+        let (where_sql, values) = build_text_filter(filter);
+        let sql = format!("SELECT p.id{PHOTO_FROM} WHERE {where_sql}");
         let take = usize_from_i64(clamp_limit(limit));
-        let mut keyed: Vec<(u64, i64)> = ids
-            .iter()
-            .map(|&id| (splitmix64(seed ^ id.cast_unsigned()), id))
-            .collect();
+        let mut stmt = self.conn.prepare_cached(&sql)?;
+        let rows = stmt.query_map(params_from_iter(values), |row| row.get::<_, i64>(0))?;
+        // Keep the `take` smallest keys in a max-heap so memory stays O(limit)
+        // while the output keeps the same order a full sort produced.
+        let mut best: std::collections::BinaryHeap<(u64, i64)> =
+            std::collections::BinaryHeap::with_capacity(take + 1);
+        let mut total = 0_i64;
+        for row in rows {
+            let id = row?;
+            total += 1;
+            let key = (splitmix64(seed ^ id.cast_unsigned()), id);
+            if best.len() < take {
+                best.push(key);
+            } else if let Some(worst) = best.peek()
+                && key < *worst
+            {
+                best.pop();
+                best.push(key);
+            }
+        }
+        let mut keyed = best.into_vec();
         keyed.sort_unstable();
-        keyed.truncate(take.min(keyed.len()));
         let ids: Vec<i64> = keyed.into_iter().map(|(_, id)| id).collect();
         let photos = self.photos_by_ids(&ids)?;
         Ok(RandomPhotoSample { photos, total })
