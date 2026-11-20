@@ -1308,13 +1308,25 @@ impl App {
                     if let Err(error) = self.db.mark_missing(id) {
                         tracing::warn!(%error, photo_id = id, "cannot mark trashed photo missing");
                     }
-                    let _ = self.db.clear_display_derivative(id);
+                    if let Err(error) = self.db.clear_display_derivative(id) {
+                        tracing::warn!(
+                            %error,
+                            photo_id = id,
+                            "cannot clear the display derivative of a trashed photo"
+                        );
+                    }
                     TrashOutcome::Removed
                 }
             }
             Err(error) => {
-                if derivative_to_promote.is_some() {
-                    let _ = self.db.restore_present(id);
+                if derivative_to_promote.is_some()
+                    && let Err(error) = self.db.restore_present(id)
+                {
+                    tracing::warn!(
+                        %error,
+                        photo_id = id,
+                        "cannot restore a photo after its trash move failed"
+                    );
                 }
                 tracing::warn!(%error, photo_id = id, "cannot move photo to trash");
                 TrashOutcome::Failed(tr_args!("photos.trash.move_error", error = error))
