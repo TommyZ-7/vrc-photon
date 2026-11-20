@@ -4,8 +4,12 @@
 
 - 単一の情報源: ワークスペース `Cargo.toml` の `[workspace.package] version`
 - 各クレートは `version.workspace = true` を継承する。
-- `Cargo.lock` も同じPRで更新する。
-- タグは `v<MAJOR>.<MINOR>.<PATCH>`（例: `v0.1.0`）。
+- バンプは `Cargo.toml`／`Packager.toml`／`Cargo.lock`／`packaging/licenses/THIRD-PARTY-NOTICES.md` の4ファイルを同じPRで更新する。`THIRD-PARTY-NOTICES.md` は `cargo about generate about.hbs --locked -o <file>` で再生成する。
+- 1.0.0 までは SemVer。タグは `v<MAJOR>.<MINOR>.<PATCH>`（例: `v1.0.0`）。
+- 1.0.0 の次のリリースから CalVer `YY.MM.MICRO` とする。タグは `v<YY>.<MM>.<MICRO>`（例: 2026年11月の最初のリリースは `v26.11.0`）。
+  - `YY` は西暦の下2桁、`MM` は月（ゼロ埋めしない。1〜9月は1桁）、`MICRO` はその月内の通し番号（0始まり。同月内は +1、月が変われば 0 に戻す）。
+  - 形式は SemVer として解釈可能な3要素の数値を維持し、Cargo／Packager／アップデータの版比較は従来どおり動作する。
+  - 破壊的変更（DB 再構築等）の警告は版番号では表さず、リリースノートで明示する。
 
 ## 2. リリースフロー
 
@@ -231,7 +235,7 @@ Required check名を変更した場合は、GitHubのbranch protectionも更新�
 
 ## 9. ロールバック
 
-- 不具合のあるリリースは、修正版を新しいパッチバージョンで出す。
+- 不具合のあるリリースは、修正版を新しいバージョン（CalVer では次の MICRO）で出す。
 - 既存タグの付け替えはしない。
 - GitHub Releaseを非公開/削除する場合も、タグは残す。ユーザーの明示指示が必要。
 - DB は v1 のみをサポートする。1.0.0 未満の DB は自動移行せず、明示エラーで開かない。
