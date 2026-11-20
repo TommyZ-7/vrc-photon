@@ -9,6 +9,8 @@ pub(crate) mod daemon;
 pub(crate) mod deletion;
 pub(crate) mod demo;
 #[cfg(feature = "demo")]
+pub(crate) mod demo_build;
+#[cfg(feature = "demo")]
 pub(crate) mod demo_fixture;
 pub(crate) mod discord;
 pub(crate) mod file_picker;
