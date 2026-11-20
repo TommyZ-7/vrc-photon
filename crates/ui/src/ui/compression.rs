@@ -33,7 +33,6 @@ fn section_divider(palette: &Palette) -> AnyElement {
 }
 
 /// Whether a failed job can return to the queue without exceeding the cap.
-#[allow(dead_code)] // Used by the notification failure rows (Task 10).
 pub(crate) fn job_retry_available(job: &CompressionJob) -> bool {
     job.status == QueueStatus::Failed && job.retry_count < MAX_JOB_RETRIES
 }
@@ -41,7 +40,7 @@ pub(crate) fn job_retry_available(job: &CompressionJob) -> bool {
 /// The failure reason shown on a failed job's row. A job that failed
 /// without a recorded reason still gets a line, so the row never reads
 /// as if nothing went wrong.
-#[allow(dead_code)] // Used by the notification failure rows (Task 10).
+#[cfg(test)]
 fn job_error_label(job: &CompressionJob) -> String {
     job.error
         .as_deref()
@@ -52,7 +51,7 @@ fn job_error_label(job: &CompressionJob) -> String {
 }
 
 /// Retry usage for a failed job, or the cap explanation once exhausted.
-#[allow(dead_code)] // Used by the notification failure rows (Task 10).
+#[cfg(test)]
 fn job_retry_label(job: &CompressionJob) -> String {
     if job_retry_available(job) {
         tr_args!(
@@ -852,15 +851,15 @@ impl App {
                     .border_color(rgba(p.highlight))
                     .child(self.editor_stat(
                         tr!("compression.stats.total"),
-                        self.stats.compressed_count.to_string(),
+                        self.library.stats.compressed_count.to_string(),
                     ))
                     .child(self.editor_stat(
                         tr!("compression.stats.photos"),
-                        self.stats.photo_count.to_string(),
+                        self.library.stats.photo_count.to_string(),
                     ))
                     .child(self.editor_stat(
                         tr!("compression.stats.compressed_total"),
-                        format_bytes(self.stats.derivative_bytes),
+                        format_bytes(self.library.stats.derivative_bytes),
                     )),
             )
     }

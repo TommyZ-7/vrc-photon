@@ -45,7 +45,8 @@ impl App {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let selection = (self.selected_ids.len() > 1).then(|| self.selection_bar(window, cx));
+        let selection =
+            (self.library.selected_ids.len() > 1).then(|| self.selection_bar(window, cx));
         let mut screen = v_flex().flex_1().min_h_0().gap(px(CARD_GAP));
         if let Some(selection) = selection {
             screen = screen.child(selection);
@@ -53,14 +54,14 @@ impl App {
         let layout = h_flex()
             .flex_1()
             .min_h_0()
-            .child(self.library_gallery.clone())
+            .child(self.library.gallery.clone())
             .child(self.inspector_column(window, cx));
         screen.child(layout).into_any_element()
     }
 
     pub(crate) fn selection_bar(&mut self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let p = self.palette;
-        let count = self.selected_ids.len();
+        let count = self.library.selected_ids.len();
         if count <= 1 {
             return div().into_any_element();
         }
@@ -90,7 +91,7 @@ impl App {
                     .small()
                     .primary()
                     .on_click(cx.listener(|this, _, _, cx| {
-                        let ids = this.selected_ids.to_vec();
+                        let ids = this.library.selected_ids.to_vec();
                         this.enqueue_ai_tagging(&ids, cx);
                     })),
             )
@@ -312,7 +313,7 @@ impl App {
         let column_width = inspector_column_width(content_width);
         let card_width = inspector_card_width(content_width);
         let preview_height = inspector_preview_height(content_height);
-        let Some(photo) = self.selected_photo.as_ref() else {
+        let Some(photo) = self.library.selected_photo.as_ref() else {
             // Keep the inspector card mounted when nothing is selected; an
             // empty column looks like the panel vanished and leaves a gap
             // beside the gallery.
@@ -350,14 +351,15 @@ impl App {
         let id = photo.id;
         let current_color = self.selected_color();
         let thumbnail = self.thumbnails.borrow_mut().get(id);
-        let compressed = self.compressed_ids.contains(&id);
+        let compressed = self.library.compressed_ids.contains(&id);
         let world = photo_world_label(photo);
         let players = self
+            .library
             .selected_players
             .iter()
             .map(|player| player.display_name.clone())
             .collect::<Vec<_>>();
-        let tags = self.selected_tags.clone();
+        let tags = self.library.selected_tags.clone();
         let section = |label: String| {
             div()
                 .text_size(px(10.))
@@ -621,7 +623,7 @@ impl App {
                     })),
             )
             .child({
-                let count = self.selected_ids.len();
+                let count = self.library.selected_ids.len();
                 let label = if count > 1 {
                     tr_args!("photos.compress_count", count = count)
                 } else {
@@ -670,16 +672,19 @@ impl App {
             return div().hidden().into_any_element();
         }
         let p = self.palette;
-        let language = self.settings.language.clone();
-        let ai = self.selected_ai.clone();
-        let key = AiMetaKey::new(id, &language, self.ai_meta_revision);
+        let language = self.settings.current.language.clone();
+        let ai = self.library.selected_ai.clone();
+        let key = AiMetaKey::new(id, &language, self.library.ai_meta_revision);
         // The identifier, language, and reload revision form the key, so
         // switching photos or reloading AI rows rebuilds this once instead of
         // formatting every chip and parsing the place JSON per frame.
         let (tags, people, place) = {
-            let view = self
-                .ai_meta_cache
-                .view(key, &language, ai.as_ref(), &self.selected_ai_tags);
+            let view = self.library.ai_meta_cache.view(
+                key,
+                &language,
+                ai.as_ref(),
+                &self.library.selected_ai_tags,
+            );
             (view.tags.clone(), view.people.clone(), view.place.clone())
         };
         let focus_states: Vec<Entity<AiTagFocusState>> = (0..tags.len())
@@ -910,12 +915,13 @@ impl App {
         let id = photo.id;
         let world = photo_world_label(photo);
         let players = self
+            .library
             .selected_players
             .iter()
             .map(|player| player.display_name.clone())
             .collect::<Vec<_>>();
-        let tags = self.selected_tags.clone();
-        let derivatives = self.selected_derivatives.clone();
+        let tags = self.library.selected_tags.clone();
+        let derivatives = self.library.selected_derivatives.clone();
         let favorite = photo.is_favorite;
         let note = photo.note.clone();
         let has_note = note.as_deref().is_some_and(|text| !text.trim().is_empty());
@@ -964,6 +970,7 @@ impl App {
                             && let Some(session_id) = context.session_id
                         {
                             this.library
+                                .browser
                                 .borrow_mut()
                                 .invalidate_session_summary(session_id);
                         }
@@ -1051,7 +1058,7 @@ impl App {
             cx,
             move |this, window, cx| {
                 this.trash_selected(window, cx);
-                if this.selected.is_none() {
+                if this.library.selected.is_none() {
                     this.close_quick_look(window, cx);
                 }
             },

@@ -413,12 +413,12 @@ impl App {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let label: String = label.into();
-        let active = self.search_days == days;
+        let active = self.search.days == days;
         chip(&self.palette, &label, active)
             .id(SharedString::from(format!("preset-{label}")))
             .cursor_pointer()
             .on_click(cx.listener(move |this, _, _, cx| {
-                this.search_days = days;
+                this.search.days = days;
                 this.run_search(cx);
             }))
     }
@@ -480,8 +480,8 @@ impl App {
                         if capture_layout {
                             this.capture_display_layout_anchors();
                         }
-                        apply(&mut this.settings, *value);
-                        if let Err(error) = this.settings.save(&this.db) {
+                        apply(&mut this.settings.current, *value);
+                        if let Err(error) = this.settings.current.save(&this.db) {
                             tracing::warn!(%error, setting = %label, "cannot save setting");
                         }
                         cx.notify();

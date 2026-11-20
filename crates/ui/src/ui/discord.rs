@@ -18,7 +18,7 @@ use vrc_photon_i18n::tr;
 use crate::app::App;
 use crate::app::compression::FeatureCompressionTarget;
 use crate::app::discord::discord_backlog_available;
-use crate::ui::auto_behavior::{auto_mode_segmented, bulk_action_block};
+use crate::ui::auto_behavior::{AutoBulkAction, auto_mode_segmented, bulk_action_block};
 use crate::ui::components::{card_divider, glass_panel};
 
 /// Warning shown when the Discord compression settings use a format Discord
@@ -41,20 +41,20 @@ fn stored_webhook_error(url: Option<&str>) -> Option<String> {
 impl App {
     pub(crate) fn discord_card(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let p = self.palette;
-        let enabled = self.settings.discord_enabled;
+        let enabled = self.settings.current.discord_enabled;
         let webhook = self.discord_url.clone();
         let editing = self.discord_url_editing;
         let url_error = self.discord_url_error.clone();
         let destination_value = self.discord_destination_input.read(cx).value().to_string();
-        let stored_destination = self.settings.discord_destination.clone();
+        let stored_destination = self.settings.current.discord_destination.clone();
         let can_test = enabled
             && webhook
                 .as_deref()
                 .is_some_and(|url| validate_webhook_url(url).is_ok());
         let stored_webhook_error = stored_webhook_error(webhook.as_deref());
-        let send_original = self.settings.discord_send_original;
-        let include_players = self.settings.discord_include_players;
-        let options = self.settings.discord_compression.clone();
+        let send_original = self.settings.current.discord_send_original;
+        let include_players = self.settings.current.discord_include_players;
+        let options = self.settings.current.discord_compression.clone();
         let format_warning = discord_format_warning(&options);
 
         let body = v_flex()
@@ -148,7 +148,7 @@ impl App {
                 &self.discord_queue_entries,
                 self.discord_queue_counts,
                 enabled,
-                self.settings.discord_queue_paused,
+                self.settings.current.discord_queue_paused,
                 cx,
             ));
 
@@ -306,8 +306,9 @@ impl App {
     /// integration and webhook are valid.
     fn discord_auto_section(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let p = self.palette;
-        let behavior = self.settings.discord_auto;
-        let bulk_enabled = discord_backlog_available(&self.settings, self.discord_url.as_deref());
+        let behavior = self.settings.current.discord_auto;
+        let bulk_enabled =
+            discord_backlog_available(&self.settings.current, self.discord_url.as_deref());
         v_flex()
             .gap(px(12.))
             .child(auto_mode_segmented(
@@ -320,10 +321,12 @@ impl App {
             .child(card_divider(&p))
             .child(bulk_action_block(
                 &p,
-                "integrations-discord",
-                behavior,
-                bulk_enabled,
-                tr!("integrations.discord.backlog.button"),
+                AutoBulkAction {
+                    id_prefix: "integrations-discord",
+                    behavior,
+                    enabled: bulk_enabled,
+                    button_label: tr!("integrations.discord.backlog.button"),
+                },
                 cx,
                 App::set_discord_auto_scope,
                 App::send_discord_backlog,

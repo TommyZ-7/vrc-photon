@@ -259,10 +259,10 @@ impl App {
     }
 
     pub(crate) fn set_setup_keep_original(&mut self, keep: bool, cx: &mut Context<Self>) {
-        if self.settings.auto_compress_keep_original == keep {
+        if self.settings.current.auto_compress_keep_original == keep {
             return;
         }
-        self.settings.auto_compress_keep_original = keep;
+        self.settings.current.auto_compress_keep_original = keep;
         self.schedule_settings_save(cx);
         cx.notify();
     }
@@ -276,8 +276,8 @@ impl App {
     }
 
     fn finish_setup(&mut self, cx: &mut Context<Self>) {
-        self.settings.setup_completed = true;
-        if let Err(error) = self.settings.save(&self.db) {
+        self.settings.current.setup_completed = true;
+        if let Err(error) = self.settings.current.save(&self.db) {
             tracing::warn!(%error, "cannot save the setup completion flag");
             self.toast_error(tr_args!("settings.save_failed", error = error), cx);
         }

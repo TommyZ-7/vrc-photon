@@ -173,8 +173,8 @@ impl App {
                     );
 
                 if shows_folder_structure(source) {
-                    let preserve = self.settings.import_preserve_folder_structure;
-                    let include_root = preserve && self.settings.import_include_root_folder;
+                    let preserve = self.settings.current.import_preserve_folder_structure;
+                    let include_root = preserve && self.settings.current.import_include_root_folder;
                     body = body
                         .child(self.section_label(tr!("import.section.structure")))
                         .child(
@@ -215,10 +215,12 @@ impl App {
                                                 .checked(preserve)
                                                 .on_click(cx.listener(|this, value, _, cx| {
                                                     this.settings
+                                                        .current
                                                         .import_preserve_folder_structure = *value;
                                                     if !*value {
-                                                        this.settings.import_include_root_folder =
-                                                            false;
+                                                        this.settings
+                                                            .current
+                                                            .import_include_root_folder = false;
                                                     }
                                                     this.save_import_structure_settings(cx);
                                                 })),
@@ -272,8 +274,9 @@ impl App {
                                                 .checked(include_root)
                                                 .disabled(!include_root_enabled(preserve))
                                                 .on_click(cx.listener(|this, value, _, cx| {
-                                                    this.settings.import_include_root_folder =
-                                                        *value;
+                                                    this.settings
+                                                        .current
+                                                        .import_include_root_folder = *value;
                                                     this.save_import_structure_settings(cx);
                                                 })),
                                         ),

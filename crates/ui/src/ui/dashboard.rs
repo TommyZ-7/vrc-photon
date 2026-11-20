@@ -27,7 +27,8 @@ use crate::ui::theme::*;
 
 impl App {
     pub(crate) fn dashboard_screen(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let show_ai_card = ai_dashboard_view(&self.ai, self.settings.ai_tagging_enabled).visible;
+        let show_ai_card =
+            ai_dashboard_view(&self.ai, self.settings.current.ai_tagging_enabled).visible;
         let stats = h_flex()
             .flex_shrink_0()
             .gap(px(CARD_GAP))
@@ -35,7 +36,7 @@ impl App {
                 tr!("dashboard.stat.photos"),
                 tr_args!(
                     "dashboard.stat.photos_value",
-                    count = self.stats.photo_count
+                    count = self.library.stats.photo_count
                 ),
             ))
             .child(self.stat_card(
@@ -47,13 +48,13 @@ impl App {
             ))
             .child(self.stat_card(
                 tr!("dashboard.stat.library_size"),
-                format_bytes(self.stats.total_bytes),
+                format_bytes(self.library.stats.total_bytes),
             ))
             .child(self.stat_card(
                 tr!("dashboard.daemon.title"),
-                if self.daemon_active {
-                    daemon_state_label(true, self.daemon_paused).to_string()
-                } else if self.settings.log_dir.is_some() {
+                if self.ipc.daemon_active {
+                    daemon_state_label(true, self.ipc.daemon_paused).to_string()
+                } else if self.settings.current.log_dir.is_some() {
                     tr!("dashboard.daemon.stopped")
                 } else {
                     tr!("dashboard.daemon.unset")
@@ -90,7 +91,7 @@ impl App {
                             .when(!self.deletion_requests.is_empty(), |this| {
                                 this.child(self.deletion_card(cx))
                             })
-                            .when(!self.daemon_errors.is_empty(), |this| {
+                            .when(!self.ipc.daemon_errors.is_empty(), |this| {
                                 this.child(self.daemon_error_card(cx))
                             })
                             .child(self.session_card())
@@ -119,7 +120,8 @@ impl App {
             .child(
                 self.meta_row(
                     tr!("dashboard.meta.world"),
-                    self.monitor_world
+                    self.ipc
+                        .monitor_world
                         .clone()
                         .unwrap_or_else(|| "—".to_string()),
                 ),
@@ -127,7 +129,8 @@ impl App {
             .child(
                 self.meta_row(
                     tr!("dashboard.meta.instance"),
-                    self.monitor_instance
+                    self.ipc
+                        .monitor_instance
                         .clone()
                         .unwrap_or_else(|| "—".to_string()),
                 ),
@@ -136,15 +139,15 @@ impl App {
                 tr!("dashboard.meta.players"),
                 tr_args!(
                     "dashboard.players.count",
-                    count = self.monitor_players.len()
+                    count = self.ipc.monitor_players.len()
                 ),
             ))
-            .child(self.section_label(if self.monitor_players.is_empty() {
+            .child(self.section_label(if self.ipc.monitor_players.is_empty() {
                 tr!("dashboard.players.empty")
             } else {
                 tr!("dashboard.players.title")
             }))
-            .children(self.monitor_players.iter().map(|player| {
+            .children(self.ipc.monitor_players.iter().map(|player| {
                 div()
                     .text_size(px(11.))
                     .text_color(rgb(p.muted))
@@ -168,7 +171,7 @@ impl App {
                     .text_color(rgb(p.text))
                     .child(tr!("dashboard.monitor.path")),
             )
-            .children(self.settings.photo_roots.iter().map(|path| {
+            .children(self.settings.current.photo_roots.iter().map(|path| {
                 div()
                     .min_w_0()
                     .truncate()
@@ -186,6 +189,7 @@ impl App {
                     .text_color(rgb(p.muted))
                     .child(
                         self.settings
+                            .current
                             .log_dir
                             .clone()
                             .unwrap_or_else(|| tr!("dashboard.log_dir.unset")),
@@ -342,19 +346,22 @@ impl App {
 
     pub(crate) fn daemon_card(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let p = self.palette;
-        let status = if !self.daemon_active {
+        let status = if !self.ipc.daemon_active {
             Some((tr!("dashboard.daemon.state.stopped"), p.muted, p.panel_2))
-        } else if self.daemon_paused {
+        } else if self.ipc.daemon_paused {
             Some((tr!("dashboard.daemon.state.paused"), p.amber, p.amber_soft))
         } else {
             None
         };
-        let sync = daemon_sync_label(self.daemon_age_secs, self.daemon_supervisor.as_deref());
-        let ipc = (!self.ipc_connected).then(|| tr!("dashboard.ipc.disconnected"));
-        let ipc_detail = ipc_status_label(self.ipc_connected, self.ipc_error.as_deref());
-        let scan = self.scan_progress;
-        let armed = self.daemon_shutdown_armed;
-        let pause_label = if self.daemon_paused {
+        let sync = daemon_sync_label(
+            self.ipc.daemon_age_secs,
+            self.ipc.daemon_supervisor.as_deref(),
+        );
+        let ipc = (!self.ipc.connected).then(|| tr!("dashboard.ipc.disconnected"));
+        let ipc_detail = ipc_status_label(self.ipc.connected, self.ipc.error.as_deref());
+        let scan = self.ipc.scan_progress;
+        let armed = self.ipc.shutdown_armed;
+        let pause_label = if self.ipc.daemon_paused {
             tr!("dashboard.daemon.resume")
         } else {
             tr!("dashboard.daemon.pause")
@@ -389,7 +396,7 @@ impl App {
             .child(self.meta_row("IPC", ipc_detail))
             .child(self.meta_row(
                 tr!("dashboard.daemon.watching"),
-                daemon_state_label(self.daemon_active, self.daemon_paused).to_string(),
+                daemon_state_label(self.ipc.daemon_active, self.ipc.daemon_paused).to_string(),
             ));
 
         if let Some(progress) = scan {
@@ -433,7 +440,7 @@ impl App {
                     Button::new("daemon-pause")
                         .label(pause_label)
                         .small()
-                        .disabled(!self.ipc_connected)
+                        .disabled(!self.ipc.connected)
                         .on_click(cx.listener(|this, _, _, cx| this.toggle_daemon_pause(cx))),
                 )
                 .child(
@@ -444,7 +451,7 @@ impl App {
                             tr!("dashboard.daemon.quit")
                         })
                         .small()
-                        .disabled(!self.ipc_connected)
+                        .disabled(!self.ipc.connected)
                         .on_click(cx.listener(|this, _, _, cx| this.toggle_daemon_shutdown(cx))),
                 ),
         )
@@ -471,12 +478,15 @@ impl App {
                             .child(tr!("dashboard.errors.title")),
                     )
                     .child(self.badge(
-                        tr_args!("dashboard.errors.count", count = self.daemon_errors.len()),
+                        tr_args!(
+                            "dashboard.errors.count",
+                            count = self.ipc.daemon_errors.len()
+                        ),
                         p.red,
                         p.red_soft,
                     )),
             );
-        for error in &self.daemon_errors {
+        for error in &self.ipc.daemon_errors {
             let command = error.operation.retry_command();
             card =
                 card.child(
@@ -547,7 +557,7 @@ impl App {
                         ),
                 );
         }
-        card.when(!self.daemon_active, |this| {
+        card.when(!self.ipc.daemon_active, |this| {
             this.child(
                 div()
                     .text_size(px(10.))

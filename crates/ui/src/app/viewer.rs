@@ -28,7 +28,7 @@ impl App {
             // clone of the `Arc` goes away; nothing is cached per photo.
             ViewerStill::Full(_) => {}
             ViewerStill::Thumbnail { id, .. } => {
-                if Some(id) != self.selected {
+                if Some(id) != self.library.selected {
                     self.thumbnails.borrow_mut().unpin(id);
                 }
             }
@@ -38,17 +38,17 @@ impl App {
     fn set_viewer_morph(&mut self, morph: Option<ViewerMorph>, cx: &mut Context<Self>) {
         if let Some(old) = self.viewer_morph.take()
             && let Some(ViewerStill::Thumbnail { id, .. }) = old.thumbnail
-            && Some(id) != self.selected
+            && Some(id) != self.library.selected
         {
             self.thumbnails.borrow_mut().unpin(id);
         }
         if let Some(ViewerStill::Thumbnail { id, .. }) =
             morph.as_ref().and_then(|m| m.thumbnail.as_ref())
-            && Some(*id) != self.selected
+            && Some(*id) != self.library.selected
         {
             self.thumbnails.borrow_mut().pin(*id);
         }
-        let max_fps = self.settings.ui_max_fps;
+        let max_fps = self.settings.current.ui_max_fps;
         self.viewer_morph = morph.clone();
         self.viewer_morph_view.update(cx, |view, cx| {
             view.set_morph(morph, max_fps, cx);
@@ -56,7 +56,7 @@ impl App {
     }
 
     fn zoom_geometry(&self, window: &Window) -> Option<((u32, u32), Size<f32>)> {
-        let photo = self.selected_photo.as_ref()?;
+        let photo = self.library.selected_photo.as_ref()?;
         let bounds = self.viewer_frame_bounds.get();
         let frame = if bounds.size.width > px(0.) && bounds.size.height > px(0.) {
             size(f32::from(bounds.size.width), f32::from(bounds.size.height))
@@ -73,7 +73,7 @@ impl App {
 
     fn viewer_zoom_allowed(&self) -> bool {
         self.quick_look_open
-            && self.selected_photo.is_some()
+            && self.library.selected_photo.is_some()
             && !self
                 .viewer_morph
                 .as_ref()
@@ -282,7 +282,7 @@ impl App {
         cx: &mut Context<Self>,
         source: ViewerOpenSource,
     ) {
-        if self.overlay_open() || self.selected_photo.is_none() {
+        if self.overlay_open() || self.library.selected_photo.is_none() {
             return;
         }
         if self
@@ -299,10 +299,11 @@ impl App {
         self.quick_look_index = self
             .quick_look_photo_ids
             .iter()
-            .position(|id| Some(*id) == self.selected)
+            .position(|id| Some(*id) == self.library.selected)
             .unwrap_or(0);
-        let id = self.selected.expect("selected photo");
+        let id = self.library.selected.expect("selected photo");
         let aspect = self
+            .library
             .selected_photo
             .as_ref()
             .map(|photo| {
@@ -351,6 +352,7 @@ impl App {
             && let Some((actual_source, from)) = resolved
         {
             let dimensions = self
+                .library
                 .selected_photo
                 .as_ref()
                 .map(|photo| photo.effective_dimensions())
@@ -368,6 +370,7 @@ impl App {
                 self.viewer_morph_epoch = self.viewer_morph_epoch.wrapping_add(1);
                 let epoch = self.viewer_morph_epoch;
                 let color = self
+                    .library
                     .selected_photo
                     .as_ref()
                     .map(|photo| self.color_for(photo))
@@ -452,7 +455,7 @@ impl App {
             .map(|(_, source)| source)
             .or(self.viewer_return_source)
             .unwrap_or(ViewerOpenSource::Auto);
-        let id = self.selected.unwrap_or_default();
+        let id = self.library.selected.unwrap_or_default();
         let target = self
             .actual_source(id, source)
             .map(|(kind, bounds)| (kind, content_bounds(bounds, content_insets(window))));
@@ -466,6 +469,7 @@ impl App {
             Instant::now(),
         );
         let dimensions = self
+            .library
             .selected_photo
             .as_ref()
             .map(|photo| photo.effective_dimensions())
@@ -480,6 +484,7 @@ impl App {
                 dimensions,
             });
         let color = self
+            .library
             .selected_photo
             .as_ref()
             .map(|photo| self.color_for(photo))
@@ -556,7 +561,7 @@ impl App {
     /// Closes a viewer whose backing photo vanished (for example, an external
     /// delete picked up by the three-second refresh) and restores focus.
     pub(crate) fn guard_viewer_selection(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.quick_look_open || self.selected_photo.is_some() {
+        if !self.quick_look_open || self.library.selected_photo.is_some() {
             return;
         }
         self.quick_look_open = false;
@@ -564,11 +569,11 @@ impl App {
         self.set_viewer_morph(None, cx);
         self.viewer_morph_epoch = self.viewer_morph_epoch.wrapping_add(1);
         self.viewer_return_source = None;
-        if let Some(id) = self.selected.take() {
+        if let Some(id) = self.library.selected.take() {
             self.thumbnails.borrow_mut().unpin(id);
         }
-        self.selected_ids.clear();
-        self.selection_anchor = None;
+        self.library.selected_ids.clear();
+        self.library.selection_anchor = None;
         self.quick_look_photo_ids.clear();
         self.quick_look_index = 0;
         self.previous_image_release_task = None;
@@ -589,13 +594,13 @@ impl App {
     }
 
     fn viewer_source_ids(&self) -> Vec<i64> {
-        let browser = if self.screen == Screen::Search && self.search_active {
-            self.search_view.borrow()
+        let browser = if self.screen == Screen::Search && self.search.active {
+            self.search.view.borrow()
         } else {
-            self.library.borrow()
+            self.library.browser.borrow()
         };
         let source: Vec<i64> = browser.index.entries.iter().map(|entry| entry.id).collect();
-        match self.selected {
+        match self.library.selected {
             Some(id) if source.contains(&id) => source,
             Some(id) => vec![id],
             None => Vec::new(),
@@ -637,7 +642,7 @@ impl App {
         }
         // Keep the top-bar navigation focused; only the library selection and
         // the displayed photo change behind the overlay.
-        let visible_image = self.selected_photo.as_ref().and_then(|photo| {
+        let visible_image = self.library.selected_photo.as_ref().and_then(|photo| {
             let key = display_key(photo);
             if let Some(full) = self
                 .full_image
@@ -665,11 +670,12 @@ impl App {
         }
         self.previous_image = visible_image;
         if let Some(ViewerStill::Thumbnail { id, .. }) = self.previous_image.as_ref()
-            && Some(*id) != self.selected
+            && Some(*id) != self.library.selected
         {
             self.thumbnails.borrow_mut().pin(*id);
         }
         let new_aspect = self
+            .library
             .selected_photo
             .as_ref()
             .map(|photo| {
@@ -736,6 +742,7 @@ impl App {
             0.0
         };
         let aspect = self
+            .library
             .selected_photo
             .as_ref()
             .map(|photo| {
@@ -839,9 +846,9 @@ impl App {
         _source: ViewerOpenSource,
     ) -> Option<(ViewerOpenSource, Bounds<Pixels>)> {
         let (bounds, bounds_epoch) = if self.screen == Screen::Search {
-            (&self.search_bounds, self.search_bounds_epoch.get())
+            (&self.search.bounds, self.search.bounds_epoch.get())
         } else {
-            (&self.library_bounds, self.library_bounds_epoch.get())
+            (&self.library.bounds, self.library.bounds_epoch.get())
         };
         let card_entry = bounds.borrow().get(&id).copied();
         let inspector_entry = *self.inspector_preview_bounds.borrow();

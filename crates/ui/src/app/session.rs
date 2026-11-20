@@ -69,11 +69,11 @@ fn bulk_anchor_for_scroll(
 
 impl App {
     pub(crate) fn set_photos_view_mode(&mut self, mode: PhotosViewMode, cx: &mut Context<Self>) {
-        if self.settings.ui_photos_view_mode == mode {
+        if self.settings.current.ui_photos_view_mode == mode {
             return;
         }
         let anchor = self.capture_top_photo(false);
-        self.settings.ui_photos_view_mode = mode;
+        self.settings.current.ui_photos_view_mode = mode;
         self.schedule_settings_save(cx);
         if mode == PhotosViewMode::Sessions {
             self.ensure_library_session_rows();
@@ -89,10 +89,10 @@ impl App {
     /// Builds the mixed session row model with the current library layout.
     pub(crate) fn ensure_library_session_rows(&mut self) {
         let (columns, row_height) = {
-            let browser = self.library.borrow();
+            let browser = self.library.browser.borrow();
             (browser.columns.max(1), browser.row_height)
         };
-        self.library.borrow_mut().ensure_session_rows(
+        self.library.browser.borrow_mut().ensure_session_rows(
             columns,
             row_height,
             SESSION_HEADER_ROW_HEIGHT + self.grid_gap(),
@@ -104,11 +104,11 @@ impl App {
     /// Returns the photo at the top-left of the current viewport for the
     /// active grid. Search always uses the timeline geometry.
     pub(crate) fn capture_top_photo(&mut self, search: bool) -> Option<i64> {
-        if search || self.settings.ui_photos_view_mode == PhotosViewMode::Timeline {
+        if search || self.settings.current.ui_photos_view_mode == PhotosViewMode::Timeline {
             let browser = if search {
-                self.search_view.borrow()
+                self.search.view.borrow()
             } else {
-                self.library.borrow()
+                self.library.browser.borrow()
             };
             return anchor_photo_id(
                 &browser.index,
@@ -118,10 +118,10 @@ impl App {
             );
         }
         let (columns, row_height) = {
-            let browser = self.library.borrow();
+            let browser = self.library.browser.borrow();
             (browser.columns.max(1), browser.row_height)
         };
-        let mut browser = self.library.borrow_mut();
+        let mut browser = self.library.browser.borrow_mut();
         browser.settle_all_session_collapses();
         let rows = browser.ensure_session_rows(
             columns,
@@ -137,11 +137,11 @@ impl App {
     /// Scrolls to `id` in the active grid. Timeline rows use the uniform-list
     /// row; session rows use the mixed row model's photo offset.
     pub(crate) fn scroll_to_photo(&mut self, search: bool, id: i64, strategy: ScrollStrategy) {
-        if search || self.settings.ui_photos_view_mode == PhotosViewMode::Timeline {
+        if search || self.settings.current.ui_photos_view_mode == PhotosViewMode::Timeline {
             let browser = if search {
-                self.search_view.borrow()
+                self.search.view.borrow()
             } else {
-                self.library.borrow()
+                self.library.browser.borrow()
             };
             let Some(position) = browser.index.row_of_id(id) else {
                 return;
@@ -152,10 +152,10 @@ impl App {
         }
 
         let (columns, row_height) = {
-            let browser = self.library.borrow();
+            let browser = self.library.browser.borrow();
             (browser.columns.max(1), browser.row_height)
         };
-        let mut browser = self.library.borrow_mut();
+        let mut browser = self.library.browser.borrow_mut();
         browser.settle_all_session_collapses();
         let rows = browser.ensure_session_rows(
             columns,
@@ -181,27 +181,27 @@ impl App {
 
     /// Returns the active grid to the first row without clearing selection.
     pub(crate) fn scroll_grid_to_top(&mut self, search: bool) {
-        if search || self.settings.ui_photos_view_mode == PhotosViewMode::Timeline {
+        if search || self.settings.current.ui_photos_view_mode == PhotosViewMode::Timeline {
             let browser = if search {
-                self.search_view.borrow()
+                self.search.view.borrow()
             } else {
-                self.library.borrow()
+                self.library.browser.borrow()
             };
             browser.scroll.scroll_to_item_strict(0, ScrollStrategy::Top);
             return;
         }
-        let browser = self.library.borrow();
+        let browser = self.library.browser.borrow();
         browser.session_scroll.set_offset(point(px(0.), px(0.)));
     }
 
     /// Expands the session that contains `id` when the session is collapsed.
     /// Callers scroll to `id` afterwards.
     pub(crate) fn reveal_photo_session(&mut self, id: i64) {
-        if self.settings.ui_photos_view_mode != PhotosViewMode::Sessions {
+        if self.settings.current.ui_photos_view_mode != PhotosViewMode::Sessions {
             return;
         }
         let session_id = {
-            let browser = self.library.borrow();
+            let browser = self.library.browser.borrow();
             browser
                 .index
                 .row_of_id(id)
@@ -213,11 +213,12 @@ impl App {
         };
         let collapsed = self
             .library
+            .browser
             .borrow()
             .collapsed_sessions
             .contains(&session_id);
         if collapsed {
-            let mut browser = self.library.borrow_mut();
+            let mut browser = self.library.browser.borrow_mut();
             browser.toggle_session_collapsed(session_id);
             browser.settle_session_collapse(session_id);
             drop(browser);
@@ -233,10 +234,10 @@ impl App {
     ) {
         let now = Instant::now();
         let (columns, row_height) = {
-            let browser = self.library.borrow();
+            let browser = self.library.browser.borrow();
             (browser.columns.max(1), browser.row_height)
         };
-        let mut browser = self.library.borrow_mut();
+        let mut browser = self.library.browser.borrow_mut();
         let before = browser.session_layout(
             columns,
             row_height,
@@ -297,10 +298,10 @@ impl App {
     ) {
         let now = Instant::now();
         let (columns, row_height) = {
-            let browser = self.library.borrow();
+            let browser = self.library.browser.borrow();
             (browser.columns.max(1), browser.row_height)
         };
-        let mut browser = self.library.borrow_mut();
+        let mut browser = self.library.browser.borrow_mut();
         let before = browser.session_layout(
             columns,
             row_height,
@@ -372,7 +373,7 @@ impl App {
         if search || ids.is_empty() {
             return;
         }
-        if self.library.borrow().generation != generation {
+        if self.library.browser.borrow().generation != generation {
             return;
         }
 
@@ -410,6 +411,7 @@ impl App {
         cx: &mut Context<Self>,
     ) {
         self.library
+            .browser
             .borrow_mut()
             .insert_session_summaries(generation, requested, summaries);
         cx.notify();
@@ -424,6 +426,7 @@ impl App {
     ) {
         tracing::warn!(%error, "session_summaries failed");
         self.library
+            .browser
             .borrow_mut()
             .fail_session_summaries(generation, ids);
         cx.notify();

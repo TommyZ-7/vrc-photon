@@ -19,9 +19,9 @@ impl App {
         cx: &mut Context<Self>,
     ) {
         match feature {
-            QueueFeature::Compression => self.settings.auto_compress_queue_paused = paused,
-            QueueFeature::Discord => self.settings.discord_queue_paused = paused,
-            QueueFeature::Tagging => self.settings.ai_tagging_queue_paused = paused,
+            QueueFeature::Compression => self.settings.current.auto_compress_queue_paused = paused,
+            QueueFeature::Discord => self.settings.current.discord_queue_paused = paused,
+            QueueFeature::Tagging => self.settings.current.ai_tagging_queue_paused = paused,
         }
         self.schedule_settings_save(cx);
         cx.notify();

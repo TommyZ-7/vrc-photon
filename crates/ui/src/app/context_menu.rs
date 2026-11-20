@@ -31,8 +31,8 @@ impl ContextMenuSnapshot {
         Self {
             screen: app.screen,
             generation: app.active_generation(),
-            selection: app.selected_ids.to_vec(),
-            primary: app.selected,
+            selection: app.library.selected_ids.to_vec(),
+            primary: app.library.selected,
         }
     }
 }
@@ -88,7 +88,7 @@ impl PhotoApp {
             .photo_context_menu
             .take()
             .map(|state| state.source_focus);
-        if right_click_replaces_selection(&self.selected_ids, photo_id) {
+        if right_click_replaces_selection(&self.library.selected_ids, photo_id) {
             self.select_photo(photo_id, cx);
         }
         let source_focus = previous_source
@@ -103,13 +103,14 @@ impl PhotoApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.overlay_open() || self.selected_ids.is_empty() {
+        if self.overlay_open() || self.library.selected_ids.is_empty() {
             return;
         }
         let Some(anchor) = self
+            .library
             .selected
-            .filter(|id| self.selected_ids.contains(*id))
-            .or_else(|| self.selected_ids.last())
+            .filter(|id| self.library.selected_ids.contains(*id))
+            .or_else(|| self.library.selected_ids.last())
         else {
             return;
         };
@@ -131,11 +132,12 @@ impl PhotoApp {
             return;
         }
         let selection_len = snapshot.selection.len();
-        let discord_ready = discord_send_guard(&self.settings, self.discord_url.as_deref()).is_ok();
+        let discord_ready =
+            discord_send_guard(&self.settings.current, self.discord_url.as_deref()).is_ok();
         let enablement = ContextMenuEnablement::new(
             selection_len,
             discord_ready,
-            self.settings.ai_tagging_enabled,
+            self.settings.current.ai_tagging_enabled,
             self.ai.ready(),
         );
         let clipboard_label = if selection_len != 1 {
@@ -378,7 +380,7 @@ impl PhotoApp {
 
     fn active_grid_focus(&self) -> FocusHandle {
         if self.screen == Screen::Search {
-            self.search_grid_focus.clone()
+            self.search.grid_focus.clone()
         } else {
             self.photo_grid_focus.clone()
         }
@@ -386,20 +388,22 @@ impl PhotoApp {
 
     fn active_generation(&self) -> u64 {
         if self.screen == Screen::Search {
-            self.search_view.borrow().generation
+            self.search.view.borrow().generation
         } else {
-            self.library.borrow().generation
+            self.library.browser.borrow().generation
         }
     }
 
     fn photo_context_menu_position(&self, photo_id: i64, window: &Window) -> Point<Pixels> {
         let bounds = if self.screen == Screen::Search {
-            self.search_bounds
+            self.search
+                .bounds
                 .borrow()
                 .get(&photo_id)
                 .map(|(_, bounds)| *bounds)
         } else {
-            self.library_bounds
+            self.library
+                .bounds
                 .borrow()
                 .get(&photo_id)
                 .map(|(_, bounds)| *bounds)

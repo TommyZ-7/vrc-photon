@@ -1216,7 +1216,10 @@ mod tests {
         let mut files = Vec::new();
         collect(&src, &mut files);
         for file in files {
-            if file.ends_with("ui/palette.rs") || file.ends_with("app/demo.rs") {
+            if file.ends_with("ui/palette.rs")
+                || file.ends_with("app/demo.rs")
+                || file.ends_with("app/demo_build.rs")
+            {
                 continue;
             }
             let text = std::fs::read_to_string(&file).expect("read source file");

@@ -108,7 +108,7 @@ impl App {
                     tracing::warn!(%error, "cannot refresh AI tag definitions");
                     Vec::new()
                 });
-        self.ai_tag_picker.selected = self.search_ai_tags.iter().cloned().collect();
+        self.ai_tag_picker.selected = self.search.ai_tags.iter().cloned().collect();
         self.ai_tag_picker.branch = None;
         self.ai_tag_picker
             .query
@@ -171,7 +171,7 @@ impl App {
                 ordered.push(key.clone());
             }
         }
-        self.search_ai_tags = ordered;
+        self.search.ai_tags = ordered;
         self.close_ai_tag_picker(window, cx);
         self.run_search(cx);
     }
@@ -179,8 +179,8 @@ impl App {
     /// Removes one chip from the filter sidebar. A running search is refreshed
     /// immediately; otherwise only the draft filter changes.
     pub(crate) fn remove_search_ai_tag(&mut self, key: &str, cx: &mut Context<Self>) {
-        self.search_ai_tags.retain(|tag| tag != key);
-        if self.applied_search.is_some() {
+        self.search.ai_tags.retain(|tag| tag != key);
+        if self.search.applied.is_some() {
             self.run_search(cx);
         } else {
             cx.notify();

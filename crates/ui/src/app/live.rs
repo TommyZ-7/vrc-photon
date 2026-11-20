@@ -202,7 +202,7 @@ impl App {
         cx.spawn(async move |this, cx| {
             loop {
                 let interval =
-                    match this.update(cx, |this, _| live_poll_interval(this.ipc_connected)) {
+                    match this.update(cx, |this, _| live_poll_interval(this.ipc.connected)) {
                         Ok(interval) => interval,
                         Err(_) => break,
                     };
@@ -235,13 +235,13 @@ impl App {
         };
         // A full rebuild collects the same aggregates. Let it land instead of
         // running a second live pass over the same revision.
-        if self.library_loading {
+        if self.library.loading {
             return;
         }
         if self.live_refresh.request() == LiveRefreshRequest::FollowUpQueued {
             return;
         }
-        let stats_revision = self.stats_revision;
+        let stats_revision = self.library.stats_revision;
         cx.spawn(async move |this, cx| {
             let snapshot = cx
                 .background_executor()
@@ -277,7 +277,7 @@ impl App {
         anchor: Option<i64>,
         cx: &mut Context<Self>,
     ) {
-        self.library_loading = false;
+        self.library.loading = false;
         let index = match snapshot.index {
             Ok(index) => index,
             Err(error) => {
@@ -289,35 +289,36 @@ impl App {
         };
 
         let truncated = index.truncated;
-        self.library.borrow_mut().replace_index(index);
+        self.library.browser.borrow_mut().replace_index(index);
         self.note_library_truncation(truncated, cx);
-        self.library_error = None;
-        self.library_dirty = false;
+        self.library.error = None;
+        self.library.dirty = false;
         if let Some(revision) = snapshot.live.revision {
-            self.last_library_revision = self.last_library_revision.max(revision);
+            self.library.last_revision = self.library.last_revision.max(revision);
         }
-        self.count_debounce.reset();
-        self.revision_debounce.reset();
+        self.library.count_debounce.reset();
+        self.library.revision_debounce.reset();
 
         let anchor_present =
-            anchor.is_some_and(|id| self.library.borrow().index.row_of_id(id).is_some());
+            anchor.is_some_and(|id| self.library.browser.borrow().index.row_of_id(id).is_some());
         if preserve_anchor && let Some(id) = anchor.filter(|_| anchor_present) {
             self.scroll_to_photo(false, id, ScrollStrategy::Top);
         } else {
             self.scroll_grid_to_top(false);
         }
 
-        if !self.search_active {
-            let index = self.library.borrow().index.clone();
-            self.search_view.borrow_mut().replace_index(index);
+        if !self.search.active {
+            let index = self.library.browser.borrow().index.clone();
+            self.search.view.borrow_mut().replace_index(index);
         }
 
         self.apply_live_snapshot(snapshot.live, true, cx);
         self.apply_aux_snapshot(snapshot.aux, cx);
 
-        if std::mem::take(&mut self.pending_initial_select) {
+        if std::mem::take(&mut self.library.pending_initial_select) {
             let first_id = self
                 .library
+                .browser
                 .borrow()
                 .index
                 .entries
@@ -326,10 +327,10 @@ impl App {
             if let Some(id) = first_id {
                 self.select_photo(id, cx);
                 self.initial_focus_pending = true;
-            } else if self.library_error.is_none()
+            } else if self.library.error.is_none()
                 && should_announce_empty_library(
                     self.setup.open,
-                    self.settings.photo_roots.is_empty(),
+                    self.settings.current.photo_roots.is_empty(),
                 )
             {
                 self.toast_info(vrc_photon_i18n::tr!("app.empty_library"), cx);
@@ -416,7 +417,7 @@ impl App {
             || snapshot
                 .daemon_errors
                 .as_ref()
-                .is_some_and(|errors| errors != &self.daemon_errors);
+                .is_some_and(|errors| errors != &self.ipc.daemon_errors);
         if changed {
             if let Some(jobs) = snapshot.jobs {
                 self.jobs = jobs;
@@ -476,7 +477,7 @@ impl App {
                 self.job_failures = failures;
             }
             if let Some(errors) = snapshot.daemon_errors {
-                self.daemon_errors = errors;
+                self.ipc.daemon_errors = errors;
             }
         }
         JobApply {
@@ -537,14 +538,14 @@ impl App {
         if let Some(stats) = snapshot.stats
             && snapshot
                 .revision
-                .is_none_or(|revision| revision >= self.stats_revision)
+                .is_none_or(|revision| revision >= self.library.stats_revision)
         {
-            if self.stats != stats {
-                self.stats = stats;
+            if self.library.stats != stats {
+                self.library.stats = stats;
                 notify = true;
             }
             if let Some(revision) = snapshot.revision {
-                self.stats_revision = revision;
+                self.library.stats_revision = revision;
             }
         }
 
@@ -559,19 +560,19 @@ impl App {
         if let Some(ids) = snapshot.compressed_ids
             && snapshot
                 .revision
-                .is_none_or(|revision| revision >= self.stats_revision)
-            && ids != self.compressed_ids
+                .is_none_or(|revision| revision >= self.library.stats_revision)
+            && ids != self.library.compressed_ids
         {
-            self.compressed_ids = ids;
+            self.library.compressed_ids = ids;
             notify = true;
         }
         if let Some(ids) = snapshot.duplicate_ids
             && snapshot
                 .revision
-                .is_none_or(|revision| revision >= self.stats_revision)
-            && ids != self.duplicate_ids
+                .is_none_or(|revision| revision >= self.library.stats_revision)
+            && ids != self.library.duplicate_ids
         {
-            self.duplicate_ids = ids;
+            self.library.duplicate_ids = ids;
             notify = true;
         }
 
@@ -602,35 +603,38 @@ impl App {
         // and by revision-driven `reload_aux`; polling it here would race a
         // tag edit with a stale background snapshot.
 
-        let next_active = daemon_liveness(snapshot.monitor.age_secs, self.ipc_connected);
-        let age_changed = self.daemon_age_secs != snapshot.monitor.age_secs;
-        let monitor_changed = self.daemon_active != next_active
-            || self.daemon_supervisor != snapshot.monitor.supervisor
-            || self.monitor_world != snapshot.monitor.world
-            || self.monitor_instance != snapshot.monitor.instance
-            || self.monitor_players != snapshot.monitor.players;
-        self.daemon_age_secs = snapshot.monitor.age_secs;
-        self.daemon_active = next_active;
-        self.daemon_supervisor = snapshot.monitor.supervisor;
-        self.monitor_world = snapshot.monitor.world;
-        self.monitor_instance = snapshot.monitor.instance;
-        self.monitor_players = snapshot.monitor.players;
+        let next_active = daemon_liveness(snapshot.monitor.age_secs, self.ipc.connected);
+        let age_changed = self.ipc.daemon_age_secs != snapshot.monitor.age_secs;
+        let monitor_changed = self.ipc.daemon_active != next_active
+            || self.ipc.daemon_supervisor != snapshot.monitor.supervisor
+            || self.ipc.monitor_world != snapshot.monitor.world
+            || self.ipc.monitor_instance != snapshot.monitor.instance
+            || self.ipc.monitor_players != snapshot.monitor.players;
+        self.ipc.daemon_age_secs = snapshot.monitor.age_secs;
+        self.ipc.daemon_active = next_active;
+        self.ipc.daemon_supervisor = snapshot.monitor.supervisor;
+        self.ipc.monitor_world = snapshot.monitor.world;
+        self.ipc.monitor_instance = snapshot.monitor.instance;
+        self.ipc.monitor_players = snapshot.monitor.players;
         if monitor_changed || (age_changed && self.screen == crate::app::Screen::Dashboard) {
             notify = true;
         }
 
         if let Some(revision) = snapshot.session_revision
-            && revision > self.last_session_revision
+            && revision > self.library.last_session_revision
         {
-            self.last_session_revision = revision;
-            self.library.borrow_mut().invalidate_session_summaries();
+            self.library.last_session_revision = revision;
+            self.library
+                .browser
+                .borrow_mut()
+                .invalidate_session_summaries();
             notify = true;
         }
 
         if let Some(revision) = snapshot.ai_revision
-            && revision > self.last_ai_revision
+            && revision > self.library.last_ai_revision
         {
-            self.last_ai_revision = revision;
+            self.library.last_ai_revision = revision;
             self.refresh_search_after_ai_tag_edit(cx);
             self.refresh_selected_ai(cx);
             notify = true;

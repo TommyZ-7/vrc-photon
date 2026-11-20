@@ -222,8 +222,8 @@ pub(crate) fn run_background_supervisor() -> Result<(), String> {
 
 impl App {
     pub(crate) fn apply_daemon_status(&mut self, status: StatusSnapshot) {
-        self.daemon_paused = status.paused;
-        self.scan_progress = status.scanning.then(|| ScanProgressView {
+        self.ipc.daemon_paused = status.paused;
+        self.ipc.scan_progress = status.scanning.then(|| ScanProgressView {
             phase: status.scan_phase.unwrap_or(IpcScanPhase::Walking),
             processed: status.scan_processed,
             total: status.scan_total,
@@ -231,7 +231,7 @@ impl App {
             root: status.scan_root,
             roots: status.scan_roots,
         });
-        self.daemon_active = daemon_liveness(self.daemon_age_secs, self.ipc_connected);
+        self.ipc.daemon_active = daemon_liveness(self.ipc.daemon_age_secs, self.ipc.connected);
     }
 
     pub(crate) fn send_wake_commands(&self, cx: &mut Context<Self>) {
@@ -242,7 +242,6 @@ impl App {
         self.wake_daemon(IpcRequest::WakeJobs, cx);
     }
 
-    #[allow(dead_code)] // Consumed by the Discord test/manual send actions (tasks 12–14).
     pub(crate) fn send_wake_sends(&self, cx: &mut Context<Self>) {
         self.wake_daemon(IpcRequest::WakeSends, cx);
     }
@@ -252,7 +251,7 @@ impl App {
             Ok(_) => {
                 self.send_wake_commands(cx);
                 self.toast_info(
-                    if self.ipc_connected {
+                    if self.ipc.connected {
                         tr!("daemon.rescan.requested")
                     } else {
                         tr!("daemon.rescan.queued")
@@ -268,12 +267,12 @@ impl App {
     }
 
     pub(crate) fn toggle_daemon_pause(&mut self, cx: &mut Context<Self>) {
-        if !self.ipc_connected {
+        if !self.ipc.connected {
             self.toast_warning(tr!("daemon.stopped"), cx);
             cx.notify();
             return;
         }
-        let paused = !self.daemon_paused;
+        let paused = !self.ipc.daemon_paused;
         let success = if paused {
             tr!("daemon.paused")
         } else {
@@ -283,18 +282,18 @@ impl App {
     }
 
     pub(crate) fn toggle_daemon_shutdown(&mut self, cx: &mut Context<Self>) {
-        if !self.ipc_connected {
+        if !self.ipc.connected {
             self.toast_warning(tr!("daemon.stopped"), cx);
             cx.notify();
             return;
         }
-        if !self.daemon_shutdown_armed {
-            self.daemon_shutdown_armed = true;
+        if !self.ipc.shutdown_armed {
+            self.ipc.shutdown_armed = true;
             self.toast_warning(tr!("daemon.quit.armed"), cx);
             cx.notify();
             return;
         }
-        self.daemon_shutdown_armed = false;
+        self.ipc.shutdown_armed = false;
         self.send_ipc_request(
             IpcRequest::Shutdown,
             Some(tr!("daemon.quit.done")),
@@ -322,25 +321,25 @@ impl App {
     /// `apply_live_snapshot` instead.
     pub(crate) fn refresh_monitor_sync(&mut self) {
         let now = Utc::now().timestamp();
-        self.daemon_age_secs = self
+        self.ipc.daemon_age_secs = self
             .db
             .get_setting("daemon_heartbeat")
             .ok()
             .flatten()
             .and_then(|value| value.parse::<i64>().ok())
             .map(|timestamp| (now - timestamp).max(0));
-        self.daemon_active = daemon_liveness(self.daemon_age_secs, self.ipc_connected);
-        self.daemon_supervisor = self.db.get_setting("daemon_supervisor").ok().flatten();
-        self.monitor_world = None;
-        self.monitor_instance = None;
-        self.monitor_players.clear();
+        self.ipc.daemon_active = daemon_liveness(self.ipc.daemon_age_secs, self.ipc.connected);
+        self.ipc.daemon_supervisor = self.db.get_setting("daemon_supervisor").ok().flatten();
+        self.ipc.monitor_world = None;
+        self.ipc.monitor_instance = None;
+        self.ipc.monitor_players.clear();
         if let Ok(Some(session)) = self.db.session_at(now) {
             if let Ok(Some(world)) = self.db.world_by_id(session.world_id) {
-                self.monitor_world = world.alias.or(world.name).or(Some(world.world_id));
+                self.ipc.monitor_world = world.alias.or(world.name).or(Some(world.world_id));
             }
-            self.monitor_instance = session.instance_id;
+            self.ipc.monitor_instance = session.instance_id;
             if let Ok(players) = self.db.players_at(session.id, now) {
-                self.monitor_players = players
+                self.ipc.monitor_players = players
                     .into_iter()
                     .map(|player| player.display_name)
                     .collect();

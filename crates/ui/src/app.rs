@@ -9,6 +9,8 @@ pub(crate) mod daemon;
 pub(crate) mod deletion;
 pub(crate) mod demo;
 #[cfg(feature = "demo")]
+pub(crate) mod demo_build;
+#[cfg(feature = "demo")]
 pub(crate) mod demo_fixture;
 pub(crate) mod discord;
 pub(crate) mod file_picker;
@@ -21,6 +23,7 @@ pub(crate) mod search;
 pub(crate) mod search_suggest;
 pub(crate) mod session;
 pub(crate) mod setup;
+pub(crate) mod state;
 pub(crate) mod tag_edit;
 pub(crate) mod viewer;
 
@@ -28,6 +31,7 @@ pub(crate) use cli::LaunchOptions;
 
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -40,11 +44,10 @@ use gpui_kit::component::notification::NotificationType;
 use gpui_kit::component::slider::{SliderEvent, SliderState};
 use gpui_kit::component::*;
 use gpui_kit::*;
-use vrc_photon_core::ai::{PhotoAi, PhotoAiTagView};
 use vrc_photon_core::db::Db;
 use vrc_photon_core::model::{
-    CompressionJob, CompressionProfile, DaemonError, DeletionCounts, DeletionRequest, Derivative,
-    LibraryStats, Photo, PhotoPlayer, PhotoTextFilter, SendHistoryEntry,
+    CompressionJob, CompressionProfile, DeletionCounts, DeletionRequest, LibraryStats,
+    SendHistoryEntry,
 };
 use vrc_photon_core::queue::{QueueCounts, QueueEntry, QueueProgress};
 use vrc_photon_core::settings::{
@@ -53,17 +56,16 @@ use vrc_photon_core::settings::{
 };
 use vrc_photon_core::thumbnail::ThumbnailCacheUsage;
 use vrc_photon_i18n::{tr, tr_args};
-use vrc_photon_ipc::Endpoint;
 
 use crate::app::background_read::BackgroundReader;
 use crate::app::cli::{log_timing, process_start, timing_enabled};
 use crate::app::compression::{ManualCompressionDialog, profile_name_update};
 use crate::app::daemon::start_daemon;
-use crate::app::demo::{DemoAssets, open_database};
+use crate::app::demo::{DemoAssets, OpenedDatabase, open_database};
 use crate::app::import::{ImportDialogState, ImportReportView};
-use crate::app::lifecycle::ScanProgressView;
 use crate::app::live::{LiveRefreshGate, should_announce_empty_library};
 use crate::app::photos::PendingFullImage;
+use crate::app::state::{IpcState, LibraryState, SearchState, SettingsState};
 use crate::state::display_image::{DecodeQueue, DisplayKey};
 use crate::state::full_image::FullImageTexture;
 use crate::state::motion::ToggleMotion;
@@ -169,21 +171,10 @@ pub struct App {
     /// Screen-enter progress: 0 = entering, 1 = settled.
     pub(crate) screen_motion: ToggleMotion,
     pub(crate) screen_direction: f32,
-    /// Scroll position of the settings section column, shared with its
-    /// scrollbar.
-    pub(crate) settings_scroll: ScrollHandle,
-    pub(crate) integrations_scroll: ScrollHandle,
-    pub(crate) integrations_selected: IntegrationsSection,
     pub(crate) ribbon_collapsed: bool,
     /// 0 = expanded, 1 = collapsed.
     pub(crate) ribbon_motion: ToggleMotion,
     pub(crate) render_epoch: u64,
-    pub(crate) library_bounds: CardBoundsMap,
-    pub(crate) search_bounds: CardBoundsMap,
-    /// Frame counters for the gallery-owned card bounds. Scroll repaints the
-    /// grid without re-rendering App, so App's render epoch cannot tag them.
-    pub(crate) library_bounds_epoch: Rc<Cell<u64>>,
-    pub(crate) search_bounds_epoch: Rc<Cell<u64>>,
     pub(crate) inspector_preview_bounds: InspectorBounds,
     pub(crate) viewer_morph: Option<ViewerMorph>,
     pub(crate) viewer_morph_view: Entity<crate::ui::viewer::ViewerMorphView>,
@@ -202,65 +193,15 @@ pub struct App {
     /// 0 = expanded, 1 = collapsed.
     pub(crate) inspector_motion: ToggleMotion,
     pub(crate) hovered_nav: Option<Screen>,
-    pub(crate) daemon_age_secs: Option<i64>,
-    pub(crate) daemon_supervisor: Option<String>,
-    pub(crate) daemon_pid: Option<u32>,
-    /// Version of the last daemon status snapshot applied from the event
-    /// stream. Snapshots stamped with an older version are stale (read
-    /// before a state change but published after it) and must not revive
-    /// state the daemon has already moved past.
-    pub(crate) last_status_version: u64,
-    pub(crate) ipc_endpoint: Option<Endpoint>,
-    pub(crate) ipc_connected: bool,
-    pub(crate) ipc_error: Option<String>,
-    pub(crate) daemon_paused: bool,
-    pub(crate) scan_progress: Option<ScanProgressView>,
-    /// Last daemon-side library revision observed by the UI. Path changes and
-    /// replacement status changes do not alter the photo count, so the count
-    /// alone cannot tell the grid to rebuild.
-    pub(crate) last_library_revision: i64,
-    /// Last daemon-side AI metadata revision observed by the UI. AI results do
-    /// not change the photo index, so this refresh path must not rebuild it.
-    pub(crate) last_ai_revision: i64,
-    /// Last daemon-side session revision observed by the UI. Session lifecycle
-    /// changes update summaries without rebuilding the photo index.
-    pub(crate) last_session_revision: i64,
-    pub(crate) library: Rc<RefCell<PhotoBrowser>>,
-    pub(crate) search_view: Rc<RefCell<PhotoBrowser>>,
-    pub(crate) library_gallery: Entity<GalleryView>,
-    pub(crate) search_gallery: Entity<GalleryView>,
-    /// The library index changed while another screen was mounted; the next
-    /// visit to Photos rebuilds it.
-    pub(crate) library_dirty: bool,
-    /// A failed index/page query kept the previous snapshot mounted; retry from
-    /// the Photos header.
-    pub(crate) library_error: Option<&'static str>,
-    /// The row-limit toast was already shown for the current truncated state.
-    /// Reset when a reload fits within the limit again.
-    pub(crate) library_truncated_notified: bool,
-    pub(crate) count_debounce: CountDebounce,
-    /// Quiet-period tracker for daemon revision bursts. A full index rebuild
-    /// waits until the revision has stopped moving for `LIBRARY_QUIET_PERIOD`.
-    pub(crate) revision_debounce: CountDebounce,
-    pub(crate) selected: Option<i64>,
-    /// Multi-selection in the current photo tab. `selected` is the primary
-    /// item used by the inspector and viewer. An empty selection means nothing
-    /// is selected; otherwise the primary is always included.
-    pub(crate) selected_ids: PhotoSelection,
-    pub(crate) selection_anchor: Option<i64>,
-    pub(crate) selected_photo: Option<Photo>,
-    pub(crate) selected_players: Vec<PhotoPlayer>,
-    pub(crate) selected_tags: Vec<String>,
-    pub(crate) selected_ai: Option<PhotoAi>,
-    pub(crate) selected_ai_tags: Vec<PhotoAiTagView>,
-    /// Bumped whenever the selected AI rows are reloaded. Keeps the cached
-    /// inspector block from surviving a tagging result or tag edit.
-    pub(crate) ai_meta_revision: u64,
-    /// Cached AI metadata block shared by the inspector and Quick Look.
-    pub(crate) ai_meta_cache: ai::AiMetaCache,
-    pub(crate) selected_derivatives: Vec<Derivative>,
-    pub(crate) compressed_ids: HashSet<i64>,
-    pub(crate) duplicate_ids: HashSet<i64>,
+    /// Library browser, index, selection, and the metadata the
+    /// inspector shows for the current selection.
+    pub(crate) library: LibraryState,
+    /// Search screen browser, filters, and suggestion state.
+    pub(crate) search: SearchState,
+    /// Daemon bridge, status snapshot, and monitor selection.
+    pub(crate) ipc: IpcState,
+    /// Settings draft, debounced save, and the settings screens' scroll state.
+    pub(crate) settings: SettingsState,
     pub(crate) thumbnails: Rc<RefCell<ThumbnailCache>>,
     /// Set when the device cannot create the BC7 texture array. The render
     /// path then shows a fatal error instead of the normal shell.
@@ -277,7 +218,6 @@ pub struct App {
     /// An allocator collection timer is already queued.
     pub(crate) allocator_collect_pending: bool,
     pub(crate) photo_grid_focus: FocusHandle,
-    pub(crate) search_grid_focus: FocusHandle,
     pub(crate) photo_context_menu: Option<context_menu::PhotoContextMenuState>,
     pub(crate) import_dialog_focus: FocusHandle,
     pub(crate) quick_look_open: bool,
@@ -337,10 +277,6 @@ pub struct App {
     pub(crate) profile_output_input: Entity<InputState>,
     pub(crate) _profile_output_subscription: Subscription,
     pub(crate) manual_compress: Option<ManualCompressionDialog>,
-    pub(crate) stats: LibraryStats,
-    /// Library revision the cached stats were computed for.
-    pub(crate) stats_revision: i64,
-    pub(crate) settings: AppSettings,
     /// AI tagging plugin, model, queue, and transient operation state.
     pub(crate) ai: ai::AiUiState,
     /// A 250 ms event-burst refresh of the AI cards is already queued.
@@ -404,7 +340,6 @@ pub struct App {
     pub(crate) discord_queue_progress: QueueProgress,
     pub(crate) tagging_queue_progress: QueueProgress,
     pub(crate) waiting_job_count: i64,
-    pub(crate) daemon_errors: Vec<DaemonError>,
     pub(crate) failed_job_count: i64,
     /// Failed jobs still below the retry cap, from a DB aggregate. Retry
     /// affordances read this rather than scanning the loaded page of
@@ -430,10 +365,6 @@ pub struct App {
     pub(crate) compression_refresh_scheduled: bool,
     /// The pending compression refresh must run the library-row pass.
     pub(crate) compression_library_refresh_pending: bool,
-    /// A debounced settings save timer is already scheduled.
-    pub(crate) settings_save_scheduled: bool,
-    /// Settings changed after the debounced save was scheduled.
-    pub(crate) settings_save_pending: bool,
     /// Photos that completed a compression job since the last coalesced
     /// refresh. The refresh resolves them in one batch and keeps only rows
     /// whose display source actually changed.
@@ -445,24 +376,8 @@ pub struct App {
     /// than the quiet period that requests it, so overlapping requests are
     /// folded into one follow-up pass.
     pub(crate) library_reload: LiveRefreshGate,
-    /// Preservation mode for the latest queued rebuild, if one is waiting for
-    /// the in-flight pass to finish.
-    pub(crate) pending_library_reload: Option<bool>,
-    /// A full rebuild is running on the background executor. The first frame
-    /// keeps the previous (possibly empty) snapshot mounted until it lands.
-    pub(crate) library_loading: bool,
-    /// The startup rebuild must select the first photo and report an empty
-    /// library once the background snapshot arrives.
-    pub(crate) pending_initial_select: bool,
     /// Focus the photo grid after the async startup snapshot has been applied.
     pub(crate) initial_focus_pending: bool,
-    pub(crate) monitor_world: Option<String>,
-    pub(crate) monitor_instance: Option<String>,
-    pub(crate) monitor_players: Vec<String>,
-    pub(crate) daemon_active: bool,
-    pub(crate) world_input: Entity<InputState>,
-    pub(crate) player_input: Entity<InputState>,
-    pub(crate) tag_input: Entity<InputState>,
     pub(crate) tag_edit_input: Entity<InputState>,
     pub(crate) tag_edit: tag_edit::TagEditState,
     /// First-run wizard state. The wizard owns the window until it closes.
@@ -472,26 +387,6 @@ pub struct App {
     pub(crate) photo_root_input: Entity<InputState>,
     pub(crate) log_dir_input: Entity<InputState>,
     pub(crate) import_dir_input: Entity<InputState>,
-    pub(crate) search_active: bool,
-    pub(crate) searching: bool,
-    pub(crate) search_request: u64,
-    pub(crate) applied_search: Option<PhotoTextFilter>,
-    pub(crate) pending_search_anchor: Option<i64>,
-    pub(crate) search_refresh_pending: bool,
-    /// A tag/AI edit changed the applied search while the Search screen was
-    /// hidden. Refresh once when the user returns to Search.
-    pub(crate) search_refresh_dirty: bool,
-    pub(crate) search_favorite: bool,
-    pub(crate) search_days: Option<i64>,
-    pub(crate) search_ai_tags: Vec<String>,
-    pub(crate) search_people_input: Entity<InputState>,
-    pub(crate) suggestion: Option<search_suggest::SuggestionState>,
-    pub(crate) suggestion_request: u64,
-    pub(crate) suggestion_bounds:
-        Rc<RefCell<HashMap<search_suggest::SuggestionKind, Bounds<Pixels>>>>,
-    pub(crate) _search_suggestion_subscriptions: Vec<Subscription>,
-    pub(crate) _suggestion_keys: Subscription,
-    pub(crate) daemon_shutdown_armed: bool,
     pub(crate) pending_toasts: Vec<ToastSpec>,
     pub(crate) toast_flush_scheduled: bool,
     pub(crate) notification_modal_open: bool,
@@ -615,12 +510,15 @@ impl App {
     /// Animation frame cap from settings, resolved against the window's
     /// display. `0` disables throttling.
     pub(crate) fn motion_fps(&self, window: &Window, cx: &Context<Self>) -> f32 {
-        effective_motion_fps(self.settings.ui_max_fps, window.refresh_interval(cx))
+        effective_motion_fps(
+            self.settings.current.ui_max_fps,
+            window.refresh_interval(cx),
+        )
     }
 
     /// Horizontal and vertical gap between photo cards, in pixels.
     pub(crate) fn grid_gap(&self) -> f32 {
-        f32::from(self.settings.ui_grid_gap)
+        f32::from(self.settings.current.ui_grid_gap)
     }
 
     pub(crate) fn overlay_open(&self) -> bool {
@@ -650,8 +548,8 @@ impl App {
     }
 
     pub(crate) fn note_library_error(&mut self, error: &'static str, cx: &mut Context<Self>) {
-        let notify = should_notify_library_error(self.library_error, error);
-        self.library_error = Some(error);
+        let notify = should_notify_library_error(self.library.error, error);
+        self.library.error = Some(error);
         if notify {
             self.toast_actionable(NotificationType::Error, tr!("app.library_error"), cx);
         }
@@ -661,8 +559,8 @@ impl App {
     /// state. A later reload that fits within the limit resets the latch, so a
     /// future truncation notifies again.
     pub(crate) fn note_library_truncation(&mut self, truncated: bool, cx: &mut Context<Self>) {
-        let notify = should_notify_truncation(self.library_truncated_notified, truncated);
-        self.library_truncated_notified = truncated;
+        let notify = should_notify_truncation(self.library.truncated_notified, truncated);
+        self.library.truncated_notified = truncated;
         if notify {
             self.toast_info(tr!("photos.index_truncated"), cx);
         }
@@ -672,21 +570,21 @@ impl App {
     /// can roll back on a failed write keep using `settings.save` directly;
     /// this is for value changes whose next write can safely supersede them.
     pub(crate) fn schedule_settings_save(&mut self, cx: &mut Context<Self>) {
-        self.settings_save_pending = true;
-        if self.settings_save_scheduled {
+        self.settings.save_pending = true;
+        if self.settings.save_scheduled {
             return;
         }
-        self.settings_save_scheduled = true;
+        self.settings.save_scheduled = true;
         cx.spawn(async move |this, cx| {
             cx.background_executor()
                 .timer(Duration::from_millis(350))
                 .await;
             this.update(cx, |this, cx| {
-                this.settings_save_scheduled = false;
-                if !std::mem::take(&mut this.settings_save_pending) {
+                this.settings.save_scheduled = false;
+                if !std::mem::take(&mut this.settings.save_pending) {
                     return;
                 }
-                if let Err(error) = this.settings.save(&this.db) {
+                if let Err(error) = this.settings.current.save(&this.db) {
                     tracing::warn!(%error, "cannot save app settings");
                     this.toast_error(tr_args!("settings.save_failed", error = error), cx);
                 }
@@ -699,42 +597,42 @@ impl App {
 
     /// Writes any pending settings before the process exits.
     pub(crate) fn flush_settings_save(&mut self) {
-        if !std::mem::take(&mut self.settings_save_pending) {
+        if !std::mem::take(&mut self.settings.save_pending) {
             return;
         }
-        if let Err(error) = self.settings.save(&self.db) {
+        if let Err(error) = self.settings.current.save(&self.db) {
             tracing::warn!(%error, "cannot flush app settings");
         }
     }
 
     pub(crate) fn set_language(&mut self, code: &str, window: &mut Window, cx: &mut Context<Self>) {
         let code = vrc_photon_i18n::normalize(code);
-        if self.settings.language == code {
+        if self.settings.current.language == code {
             return;
         }
-        let previous = self.settings.clone();
-        self.settings.language = code.clone();
-        if let Err(error) = self.settings.save(&self.db) {
-            self.settings = previous;
+        let previous = self.settings.current.clone();
+        self.settings.current.language = code.clone();
+        if let Err(error) = self.settings.current.save(&self.db) {
+            self.settings.current = previous;
             self.toast_error(tr_args!("settings.language.save_failed", error = error), cx);
             cx.notify();
             return;
         }
         vrc_photon_i18n::set_locale(&code);
         self.update_input_placeholders(window, cx);
-        self.library.borrow_mut().invalidate_labels();
-        self.search_view.borrow_mut().invalidate_labels();
+        self.library.browser.borrow_mut().invalidate_labels();
+        self.search.view.borrow_mut().invalidate_labels();
         // The connection detail was formatted when it arrived; the next
         // heartbeat/reconnect repopulates it in the new language.
-        self.ipc_error = None;
+        self.ipc.error = None;
         cx.notify();
     }
 
     fn update_input_placeholders(&self, window: &mut Window, cx: &mut Context<Self>) {
         let inputs = [
-            (&self.world_input, "input.world"),
-            (&self.player_input, "input.player"),
-            (&self.tag_input, "input.tag"),
+            (&self.search.world_input, "input.world"),
+            (&self.search.player_input, "input.player"),
+            (&self.search.tag_input, "input.tag"),
             (&self.tag_edit_input, "input.tag_add"),
             (&self.tag_edit.input, "input.tag_add"),
             (&self.photo_root_input, "input.photo_root"),
@@ -743,7 +641,7 @@ impl App {
             (&self.profile_name_input, "input.profile_name"),
             (&self.profile_suffix_input, "input.profile_suffix"),
             (&self.profile_output_input, "input.profile_output"),
-            (&self.search_people_input, "search.ai.people_placeholder"),
+            (&self.search.people_input, "search.ai.people_placeholder"),
             (
                 &self.ai_tag_picker.query,
                 "ai.tags.picker.search_placeholder",
@@ -776,45 +674,117 @@ impl App {
         cx: &mut Context<Self>,
         options: &LaunchOptions,
     ) -> Self {
-        let opened = open_database(options).unwrap_or_else(|error| {
-            crate::exit_startup_failure("cannot open the library database", error)
-        });
+        let (opened, db_path) = open_db(options);
+        let (settings, setup_open) = load_settings(&opened);
+        let health_token = std::env::var("VRC_PHOTON_HEALTH_TOKEN").ok();
+        let updating = health_token.is_some();
+        let mut app = Self::from_parts(
+            AppParts {
+                opened,
+                db_path,
+                settings,
+                setup_open,
+                health_token,
+            },
+            window,
+            cx,
+        );
+
+        app.finish_startup(window, cx, updating);
+        app
+    }
+
+    /// Runs the work that needs a fully built `App`: profiles, the first
+    /// library snapshot, the initial selection, and the background services.
+    fn finish_startup(&mut self, window: &mut Window, cx: &mut Context<Self>, updating: bool) {
+        self.ensure_profiles();
+        self.ai.apply_snapshot(ai::collect_ai_snapshot(&self.db));
+        // The file-backed startup index is built on the library reader; the
+        // first selection and the empty-library toast wait for that snapshot.
+        self.library.pending_initial_select = self.library_reader.is_some();
+        self.reload_all(true, cx);
+        self.apply_palette(self.palette, cx);
+        if should_announce_empty_library(
+            self.setup.open,
+            self.settings.current.photo_roots.is_empty(),
+        ) && !self.library.loading
+            && self.library.error.is_none()
+            && self.library.browser.borrow().index.total == 0
+        {
+            self.toast_info(tr!("app.empty_library"), cx);
+        }
+        if let Some(notice) = self.update.notice() {
+            self.toast_info(notice.message(), cx);
+        }
+        let first_photo_id = self
+            .library
+            .browser
+            .borrow()
+            .index
+            .entries
+            .first()
+            .map(|entry| entry.id);
+        if !self.library.loading
+            && let Some(id) = first_photo_id
+        {
+            self.select_photo(id, cx);
+            // The grid is not mounted until the first frame, so focus it once
+            // the initial render has attached it to the focus tree.
+            let photo_grid_focus = self.photo_grid_focus.clone();
+            window.defer(cx, move |window, cx| {
+                window.focus(&photo_grid_focus, cx);
+            });
+        }
+        // The supervisor is not loaded into App until the first monitor
+        // refresh, so read the recorded value from the database.
+        let supervisor = self.db.get_setting("daemon_supervisor").ok().flatten();
+        if !self.demo && !self.ipc.daemon_active && !updating {
+            cx.spawn(async move |this, cx| {
+                let result = cx
+                    .background_executor()
+                    .spawn(async move { start_daemon(supervisor.as_deref()) })
+                    .await;
+                if let Err(error) = result {
+                    this.update(cx, |this, cx| {
+                        this.toast_error(tr_args!("app.daemon_start_error", error = error), cx);
+                    })
+                    .ok();
+                }
+            })
+            .detach();
+        }
+        self.start_auto_refresh(cx);
+        if !self.demo {
+            self.start_ipc(cx);
+        }
+        self.start_update_timers(cx);
+        if updating {
+            cx.on_next_frame(window, move |app, window, cx| {
+                app.complete_update_startup(window, cx);
+            });
+        }
+        if timing_enabled() {
+            let started = process_start();
+            cx.on_next_frame(window, move |_, _, _| {
+                log_timing("first frame (from process start)", started)
+            });
+        }
+    }
+
+    /// Builds `App` from its already-opened database and settings.
+    fn from_parts(parts: AppParts, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let AppParts {
+            opened,
+            db_path,
+            settings: initial_settings,
+            setup_open,
+            health_token,
+        } = parts;
         let db = opened.db;
         let demo = opened.demo;
         let database_ok = opened.database_ok;
         let message = opened.message;
         let demo_assets = opened.demo_assets;
-        let db_path = db.path().and_then(|path| std::fs::canonicalize(path).ok());
-        let health_token = std::env::var("VRC_PHOTON_HEALTH_TOKEN").ok();
-        let updating = health_token.is_some();
-        let settings_row_present = db.get_setting("app_settings").ok().flatten().is_some();
-        let settings_load = AppSettings::load(&db);
-        let settings_load_failed = settings_load.is_err();
-        let mut initial_settings = settings_load.unwrap_or_else(|error| {
-            // `AppSettings::load` backs up malformed JSON before returning, so
-            // defaults only fill this first frame.
-            tracing::warn!(%error, "cannot load app settings; using defaults for this frame");
-            AppSettings::default()
-        });
-        if settings_load_failed {
-            // Never let a corrupt row fall back to a fresh-install default and
-            // rewrite itself as `setup_completed = false` later in the session.
-            initial_settings.setup_completed = true;
-        }
-        initial_settings.language = vrc_photon_i18n::set_locale(&initial_settings.language);
-        let library_photo_count = if settings_row_present {
-            0
-        } else {
-            db.count_photos().unwrap_or(0)
-        };
-        let setup_open = setup::should_show_setup(
-            demo,
-            database_ok,
-            settings_load_failed,
-            settings_row_present,
-            initial_settings.setup_completed,
-            library_photo_count,
-        );
         let initial_palette = resolve(
             &initial_settings.ui_theme_main,
             &initial_settings.ui_theme_accent,
@@ -823,6 +793,7 @@ impl App {
         let initial_ai_revision = db.ai_revision().unwrap_or(0);
         let initial_session_revision = db.session_revision().unwrap_or(0);
         cx.set_reduce_motion(initial_settings.ui_reduce_motion);
+
         let world_input = cx.new(|cx| InputState::new(window, cx).placeholder(tr!("input.world")));
         let player_input =
             cx.new(|cx| InputState::new(window, cx).placeholder(tr!("input.player")));
@@ -998,15 +969,15 @@ impl App {
             |this, _, event: &SliderEvent, cx| match event {
                 SliderEvent::Change(value) => {
                     let gap = clamp_grid_gap(value.end());
-                    if this.settings.ui_grid_gap != gap {
-                        this.settings.ui_grid_gap = gap;
+                    if this.settings.current.ui_grid_gap != gap {
+                        this.settings.current.ui_grid_gap = gap;
                         cx.notify();
                     }
                 }
                 SliderEvent::Release(value) => {
                     let gap = clamp_grid_gap(value.end());
-                    if this.settings.ui_grid_gap != gap {
-                        this.settings.ui_grid_gap = gap;
+                    if this.settings.current.ui_grid_gap != gap {
+                        this.settings.current.ui_grid_gap = gap;
                     }
                     // Do not capture the anchor here: the setting is already
                     // updated, and the gallery's `layout_changed` path reads
@@ -1027,15 +998,15 @@ impl App {
             |this, _, event: &SliderEvent, cx| match event {
                 SliderEvent::Change(value) => {
                     let radius = clamp_card_radius(value.end());
-                    if this.settings.ui_card_radius != radius {
-                        this.settings.ui_card_radius = radius;
+                    if this.settings.current.ui_card_radius != radius {
+                        this.settings.current.ui_card_radius = radius;
                         cx.notify();
                     }
                 }
                 SliderEvent::Release(value) => {
                     let radius = clamp_card_radius(value.end());
-                    if this.settings.ui_card_radius != radius {
-                        this.settings.ui_card_radius = radius;
+                    if this.settings.current.ui_card_radius != radius {
+                        this.settings.current.ui_card_radius = radius;
                     }
                     // Card radius does not change the grid geometry, so the
                     // scroll anchor does not need to be recaptured.
@@ -1210,9 +1181,6 @@ impl App {
             nav_epoch: 0,
             screen_motion: ToggleMotion::settled(1.0),
             screen_direction: 1.0,
-            settings_scroll: ScrollHandle::new(),
-            integrations_scroll: ScrollHandle::new(),
-            integrations_selected: IntegrationsSection::default(),
             ribbon_collapsed: initial_settings.ui_ribbon_collapsed,
             ribbon_motion: ToggleMotion::settled(if initial_settings.ui_ribbon_collapsed {
                 1.0
@@ -1220,10 +1188,6 @@ impl App {
                 0.0
             }),
             render_epoch: 0,
-            library_bounds,
-            search_bounds,
-            library_bounds_epoch,
-            search_bounds_epoch,
             inspector_preview_bounds: Rc::new(RefCell::new(None)),
             viewer_morph: None,
             viewer_morph_view: cx.new(|_| crate::ui::viewer::ViewerMorphView::new(initial_palette)),
@@ -1258,40 +1222,93 @@ impl App {
                 0.0
             }),
             hovered_nav: None,
-            daemon_age_secs: None,
-            daemon_supervisor: None,
-            daemon_pid: None,
-            last_status_version: 0,
-            ipc_endpoint: None,
-            ipc_connected: false,
-            ipc_error: None,
-            daemon_paused: false,
-            scan_progress: None,
-            last_library_revision: initial_library_revision,
-            last_ai_revision: initial_ai_revision,
-            last_session_revision: initial_session_revision,
-            library,
-            search_view,
-            library_gallery,
-            search_gallery,
-            library_dirty: false,
-            library_error: None,
-            library_truncated_notified: false,
-            count_debounce: CountDebounce::default(),
-            revision_debounce: CountDebounce::default(),
-            selected: None,
-            selected_ids: PhotoSelection::default(),
-            selection_anchor: None,
-            selected_photo: None,
-            selected_players: Vec::new(),
-            selected_tags: Vec::new(),
-            selected_ai: None,
-            selected_ai_tags: Vec::new(),
-            ai_meta_revision: 0,
-            ai_meta_cache: ai::AiMetaCache::default(),
-            selected_derivatives: Vec::new(),
-            compressed_ids: HashSet::new(),
-            duplicate_ids: HashSet::new(),
+            settings: SettingsState {
+                current: initial_settings.clone(),
+                save_scheduled: false,
+                save_pending: false,
+                scroll: ScrollHandle::new(),
+                integrations_scroll: ScrollHandle::new(),
+                integrations_selected: IntegrationsSection::default(),
+            },
+            ipc: IpcState {
+                daemon_age_secs: None,
+                daemon_supervisor: None,
+                daemon_pid: None,
+                daemon_paused: false,
+                daemon_active: false,
+                daemon_errors: Vec::new(),
+                last_status_version: 0,
+                endpoint: None,
+                connected: false,
+                error: None,
+                scan_progress: None,
+                shutdown_armed: false,
+                monitor_world: None,
+                monitor_instance: None,
+                monitor_players: Vec::new(),
+            },
+            library: LibraryState {
+                browser: library,
+                gallery: library_gallery,
+                bounds: library_bounds,
+                bounds_epoch: library_bounds_epoch,
+                dirty: false,
+                error: None,
+                truncated_notified: false,
+                count_debounce: CountDebounce::default(),
+                revision_debounce: CountDebounce::default(),
+                selected: None,
+                selected_ids: PhotoSelection::default(),
+                selection_anchor: None,
+                selected_photo: None,
+                selected_players: Vec::new(),
+                selected_tags: Vec::new(),
+                selected_ai: None,
+                selected_ai_tags: Vec::new(),
+                ai_meta_revision: 0,
+                ai_meta_cache: ai::AiMetaCache::default(),
+                selected_derivatives: Vec::new(),
+                compressed_ids: HashSet::new(),
+                duplicate_ids: HashSet::new(),
+                last_revision: initial_library_revision,
+                last_ai_revision: initial_ai_revision,
+                last_session_revision: initial_session_revision,
+                loading: false,
+                pending_reload: None,
+                pending_initial_select: false,
+                stats: LibraryStats::default(),
+                stats_revision: -1,
+            },
+            search: SearchState {
+                view: search_view,
+                gallery: search_gallery,
+                bounds: search_bounds,
+                bounds_epoch: search_bounds_epoch,
+                grid_focus: search_grid_focus,
+                active: false,
+                searching: false,
+                request: 0,
+                applied: None,
+                pending_anchor: None,
+                refresh_pending: false,
+                refresh_dirty: false,
+                favorite: false,
+                days: crate::app::search::DEFAULT_SEARCH_DAYS,
+                ai_tags: Vec::new(),
+                people_input: search_people_input,
+                world_input,
+                player_input,
+                tag_input,
+                suggestion: None,
+                suggestion_request: 0,
+                suggestion_bounds: Rc::new(RefCell::new(HashMap::new())),
+                _suggestion_subscriptions: vec![
+                    world_suggestion_subscription,
+                    player_suggestion_subscription,
+                    tag_suggestion_subscription,
+                ],
+                _suggestion_keys: suggestion_keys,
+            },
             thumbnails,
             thumbnail_notify_pending: false,
             thumbnail_notice: ThumbnailNoticeBatch::default(),
@@ -1299,7 +1316,6 @@ impl App {
             allocator_collect_epoch: 0,
             allocator_collect_pending: false,
             photo_grid_focus,
-            search_grid_focus,
             photo_context_menu: None,
             import_dialog_focus,
             quick_look_open: false,
@@ -1345,9 +1361,6 @@ impl App {
             profile_output_input,
             _profile_output_subscription: profile_output_subscription,
             manual_compress: None,
-            stats: LibraryStats::default(),
-            stats_revision: -1,
-            settings: initial_settings.clone(),
             ai: ai::AiUiState::default(),
             ai_refresh_scheduled: false,
             ai_selected_refresh_pending: false,
@@ -1392,7 +1405,6 @@ impl App {
             discord_queue_progress: QueueProgress::default(),
             tagging_queue_progress: QueueProgress::default(),
             waiting_job_count: 0,
-            daemon_errors: Vec::new(),
             failed_job_count: 0,
             retryable_failed_count: 0,
             failed_jobs: Vec::new(),
@@ -1405,22 +1417,10 @@ impl App {
             last_import_progress_notify: None,
             compression_refresh_scheduled: false,
             compression_library_refresh_pending: false,
-            settings_save_scheduled: false,
-            settings_save_pending: false,
             compression_replaced_candidates: HashSet::new(),
             live_refresh: LiveRefreshGate::default(),
             library_reload: LiveRefreshGate::default(),
-            pending_library_reload: None,
-            library_loading: false,
-            pending_initial_select: false,
             initial_focus_pending: false,
-            monitor_world: None,
-            monitor_instance: None,
-            monitor_players: Vec::new(),
-            daemon_active: false,
-            world_input,
-            player_input,
-            tag_input,
             tag_edit_input,
             tag_edit,
             setup,
@@ -1429,27 +1429,6 @@ impl App {
             photo_root_input,
             log_dir_input,
             import_dir_input,
-            search_active: false,
-            searching: false,
-            search_request: 0,
-            applied_search: None,
-            pending_search_anchor: None,
-            search_refresh_pending: false,
-            search_refresh_dirty: false,
-            search_favorite: false,
-            search_days: crate::app::search::DEFAULT_SEARCH_DAYS,
-            search_ai_tags: Vec::new(),
-            search_people_input,
-            suggestion: None,
-            suggestion_request: 0,
-            suggestion_bounds: Rc::new(RefCell::new(HashMap::new())),
-            _search_suggestion_subscriptions: vec![
-                world_suggestion_subscription,
-                player_suggestion_subscription,
-                tag_suggestion_subscription,
-            ],
-            _suggestion_keys: suggestion_keys,
-            daemon_shutdown_armed: false,
             pending_toasts: Vec::new(),
             toast_flush_scheduled: false,
             notification_modal_open: false,
@@ -1486,81 +1465,12 @@ impl App {
             demo,
             demo_assets,
         };
-        app.ensure_profiles();
-        app.ai.apply_snapshot(ai::collect_ai_snapshot(&app.db));
-        // The file-backed startup index is built on the library reader; the
-        // first selection and the empty-library toast wait for that snapshot.
-        app.pending_initial_select = app.library_reader.is_some();
-        app.reload_all(true, cx);
-        app.apply_palette(app.palette, cx);
         if let Some(message) = message {
             if database_ok {
                 app.toast_warning(message, cx);
             } else {
                 app.toast_error(message, cx);
             }
-        }
-        if should_announce_empty_library(app.setup.open, app.settings.photo_roots.is_empty())
-            && !app.library_loading
-            && app.library_error.is_none()
-            && app.library.borrow().index.total == 0
-        {
-            app.toast_info(tr!("app.empty_library"), cx);
-        }
-        if let Some(notice) = app.update.notice() {
-            app.toast_info(notice.message(), cx);
-        }
-        let first_photo_id = app
-            .library
-            .borrow()
-            .index
-            .entries
-            .first()
-            .map(|entry| entry.id);
-        if !app.library_loading
-            && let Some(id) = first_photo_id
-        {
-            app.select_photo(id, cx);
-            // The grid is not mounted until the first frame, so focus it once
-            // the initial render has attached it to the focus tree.
-            let photo_grid_focus = app.photo_grid_focus.clone();
-            window.defer(cx, move |window, cx| {
-                window.focus(&photo_grid_focus, cx);
-            });
-        }
-        // The supervisor is not loaded into App until the first monitor
-        // refresh, so read the recorded value from the database.
-        let supervisor = app.db.get_setting("daemon_supervisor").ok().flatten();
-        if !app.demo && !app.daemon_active && !updating {
-            cx.spawn(async move |this, cx| {
-                let result = cx
-                    .background_executor()
-                    .spawn(async move { start_daemon(supervisor.as_deref()) })
-                    .await;
-                if let Err(error) = result {
-                    this.update(cx, |this, cx| {
-                        this.toast_error(tr_args!("app.daemon_start_error", error = error), cx);
-                    })
-                    .ok();
-                }
-            })
-            .detach();
-        }
-        app.start_auto_refresh(cx);
-        if !app.demo {
-            app.start_ipc(cx);
-        }
-        app.start_update_timers(cx);
-        if updating {
-            cx.on_next_frame(window, move |app, window, cx| {
-                app.complete_update_startup(window, cx);
-            });
-        }
-        if timing_enabled() {
-            let started = process_start();
-            cx.on_next_frame(window, move |_, _, _| {
-                log_timing("first frame (from process start)", started)
-            });
         }
         app
     }
@@ -1577,7 +1487,7 @@ impl App {
                 crate::app::demo::DEMO_THUMBNAIL_HEIGHT,
             )
         } else {
-            self.settings.thumbnail_spec().dimensions()
+            self.settings.current.thumbnail_spec().dimensions()
         };
         match window.create_texture_array(
             size(DevicePixels(width as i32), DevicePixels(height as i32)),
@@ -1844,6 +1754,65 @@ impl Render for App {
             root
         }
     }
+}
+
+/// Inputs `App::new` gathers before the window-dependent construction.
+struct AppParts {
+    opened: OpenedDatabase,
+    db_path: Option<PathBuf>,
+    settings: AppSettings,
+    setup_open: bool,
+    health_token: Option<String>,
+}
+
+/// Opens the library database, exiting through the startup-failure path when
+/// it cannot be opened at all.
+fn open_db(options: &LaunchOptions) -> (OpenedDatabase, Option<PathBuf>) {
+    let opened = open_database(options).unwrap_or_else(|error| {
+        crate::exit_startup_failure("cannot open the library database", error)
+    });
+    let db_path = opened
+        .db
+        .path()
+        .and_then(|path| std::fs::canonicalize(path).ok());
+    (opened, db_path)
+}
+
+/// Loads the persisted settings and decides whether the setup wizard opens.
+///
+/// A corrupt settings row falls back to defaults for the first frame but keeps
+/// `setup_completed` set, so the failure is never rewritten as a fresh install.
+fn load_settings(opened: &OpenedDatabase) -> (AppSettings, bool) {
+    let db = &opened.db;
+    let settings_row_present = db.get_setting("app_settings").ok().flatten().is_some();
+    let settings_load = AppSettings::load(db);
+    let settings_load_failed = settings_load.is_err();
+    let mut settings = settings_load.unwrap_or_else(|error| {
+        // `AppSettings::load` backs up malformed JSON before returning, so
+        // defaults only fill this first frame.
+        tracing::warn!(%error, "cannot load app settings; using defaults for this frame");
+        AppSettings::default()
+    });
+    if settings_load_failed {
+        // Never let a corrupt row fall back to a fresh-install default and
+        // rewrite itself as `setup_completed = false` later in the session.
+        settings.setup_completed = true;
+    }
+    settings.language = vrc_photon_i18n::set_locale(&settings.language);
+    let library_photo_count = if settings_row_present {
+        0
+    } else {
+        db.count_photos().unwrap_or(0)
+    };
+    let setup_open = setup::should_show_setup(
+        opened.demo,
+        opened.database_ok,
+        settings_load_failed,
+        settings_row_present,
+        settings.setup_completed,
+        library_photo_count,
+    );
+    (settings, setup_open)
 }
 
 #[cfg(test)]

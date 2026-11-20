@@ -79,18 +79,18 @@ impl App {
 
     /// Applies metadata that was read on a background connection.
     pub(crate) fn apply_selected_meta(&mut self, snapshot: SelectedMetaSnapshot) {
-        self.selected = Some(snapshot.id);
-        self.selected_photo = snapshot.photo;
-        self.selected_players = snapshot.players;
-        self.selected_tags = snapshot.tags;
-        self.selected_derivatives = snapshot.derivatives;
-        self.selected_ai = snapshot.ai;
-        self.selected_ai_tags = snapshot.ai_tags;
+        self.library.selected = Some(snapshot.id);
+        self.library.selected_photo = snapshot.photo;
+        self.library.selected_players = snapshot.players;
+        self.library.selected_tags = snapshot.tags;
+        self.library.selected_derivatives = snapshot.derivatives;
+        self.library.selected_ai = snapshot.ai;
+        self.library.selected_ai_tags = snapshot.ai_tags;
         self.ai_tag_focused = None;
         // The inspector and Quick Look share this cache. Any reload (a
         // selection change, a tagging result, or a threshold/tag edit that
         // refreshes the selected photo) must invalidate it.
-        self.ai_meta_revision = self.ai_meta_revision.wrapping_add(1);
+        self.library.ai_meta_revision = self.library.ai_meta_revision.wrapping_add(1);
         if self
             .note_edit_id
             .is_some_and(|edit_id| edit_id != snapshot.id)
@@ -111,7 +111,7 @@ impl App {
         let spec = if self.demo_assets.is_some() {
             thumbnail::ThumbnailSpec::new(crate::app::demo::DEMO_THUMBNAIL_WIDTH)
         } else {
-            self.settings.thumbnail_spec()
+            self.settings.current.thumbnail_spec()
         };
         let cache_path = match &self.demo_assets {
             Some(assets) => demo_thumb_path(assets, id),
@@ -232,7 +232,7 @@ impl App {
     /// daemon connection is up. A batch held across a disconnect is kept for
     /// the reconnect path to flush.
     pub(crate) fn flush_thumbnail_notice(&mut self, cx: &mut Context<Self>) {
-        if !self.ipc_connected {
+        if !self.ipc.connected {
             return;
         }
         let Some((files, bytes)) = self.thumbnail_notice.take() else {
@@ -271,7 +271,11 @@ impl App {
             if self.thumbnails.borrow_mut().get(id).is_some() {
                 continue;
             }
-            let photo = self.selected_photo.clone().filter(|photo| photo.id == id);
+            let photo = self
+                .library
+                .selected_photo
+                .clone()
+                .filter(|photo| photo.id == id);
             if let Some(photo) = photo {
                 self.request_thumbnail(&photo, cx);
             }
@@ -280,8 +284,8 @@ impl App {
 
     pub(crate) fn select_photo(&mut self, id: i64, cx: &mut Context<Self>) {
         let select_start = Instant::now();
-        self.selected_ids.replace([id]);
-        self.selection_anchor = Some(id);
+        self.library.selected_ids.replace([id]);
+        self.library.selection_anchor = Some(id);
         self.set_primary_photo(id, cx);
         log_timing("select_photo", select_start);
         cx.notify();
@@ -290,8 +294,8 @@ impl App {
     /// Makes `id` the inspector/viewer photo without changing the selection
     /// list. Multi-selection toggles call this when the primary changes.
     fn set_primary_photo(&mut self, id: i64, cx: &mut Context<Self>) {
-        let previous = self.selected;
-        let changed = self.selected != Some(id) || self.selected_photo.is_none();
+        let previous = self.library.selected;
+        let changed = self.library.selected != Some(id) || self.library.selected_photo.is_none();
         // Selecting the photo is an explicit reload request: clear a recent
         // thumbnail failure so it is not hidden until the retry TTL.
         self.thumbnails.borrow_mut().retry(id);
@@ -313,7 +317,7 @@ impl App {
             self.thumbnails.borrow_mut().pin(id);
         }
         if self.thumbnails.borrow_mut().get(id).is_none()
-            && let Some(photo) = self.selected_photo.clone()
+            && let Some(photo) = self.library.selected_photo.clone()
         {
             self.request_thumbnail(&photo, cx);
         }
@@ -326,7 +330,7 @@ impl App {
             self.full_image_queue.cancel_wanted();
             return;
         }
-        let Some(photo) = self.selected_photo.as_ref() else {
+        let Some(photo) = self.library.selected_photo.as_ref() else {
             return;
         };
         let key = display_key(photo);
@@ -367,6 +371,7 @@ impl App {
                 return;
             };
             let Some(photo) = self
+                .library
                 .selected_photo
                 .as_ref()
                 .filter(|photo| display_key(photo) == key)
@@ -438,7 +443,7 @@ impl App {
                     {
                         this.full_image_cancel = None;
                     }
-                    let selected = this.selected_photo.as_ref().map(display_key);
+                    let selected = this.library.selected_photo.as_ref().map(display_key);
                     let applies =
                         should_apply_pending_full_image(this.quick_look_open, selected, key);
                     match attempt {
@@ -487,7 +492,7 @@ impl App {
         let Some(pending) = self.pending_full_image.take() else {
             return;
         };
-        let selected = self.selected_photo.as_ref().map(display_key);
+        let selected = self.library.selected_photo.as_ref().map(display_key);
         if !should_apply_pending_full_image(self.quick_look_open, selected, pending.key) {
             let PendingFullImage { key, rgba, permit } = pending;
             let (width, height) = rgba.dimensions();
@@ -582,7 +587,7 @@ impl App {
     /// request regenerates them from the derivative.
     pub(crate) fn invalidate_photo_media(&mut self, id: i64, cx: &mut Context<Self>) {
         self.thumbnails.borrow_mut().invalidate(id);
-        if self.selected == Some(id) {
+        if self.library.selected == Some(id) {
             self.reset_full_image();
             if let Some(image) = self.previous_image.take() {
                 self.drop_viewer_still(image);
@@ -592,31 +597,31 @@ impl App {
     }
 
     pub(crate) fn clear_selection(&mut self, cx: &mut Context<Self>) {
-        if let Some(id) = self.selected.take() {
+        if let Some(id) = self.library.selected.take() {
             self.thumbnails.borrow_mut().unpin(id);
         }
-        self.selected_ids.clear();
-        self.selection_anchor = None;
-        self.selected_photo = None;
-        self.selected_players.clear();
-        self.selected_tags.clear();
-        self.selected_ai = None;
-        self.selected_ai_tags.clear();
-        self.selected_derivatives.clear();
+        self.library.selected_ids.clear();
+        self.library.selection_anchor = None;
+        self.library.selected_photo = None;
+        self.library.selected_players.clear();
+        self.library.selected_tags.clear();
+        self.library.selected_ai = None;
+        self.library.selected_ai_tags.clear();
+        self.library.selected_derivatives.clear();
         self.reset_image_state();
         self.note_edit_id = None;
         cx.notify();
     }
 
     fn toggle_photo_selection(&mut self, id: i64, cx: &mut Context<Self>) {
-        if self.selected_ids.toggle(id) {
-            self.selection_anchor = Some(id);
+        if self.library.selected_ids.toggle(id) {
+            self.library.selection_anchor = Some(id);
             self.set_primary_photo(id, cx);
-        } else if self.selection_anchor == Some(id) {
-            self.selection_anchor = self.selected_ids.last();
+        } else if self.library.selection_anchor == Some(id) {
+            self.library.selection_anchor = self.library.selected_ids.last();
         }
-        if self.selected == Some(id) && !self.selected_ids.contains(id) {
-            if let Some(next) = self.selected_ids.last() {
+        if self.library.selected == Some(id) && !self.library.selected_ids.contains(id) {
+            if let Some(next) = self.library.selected_ids.last() {
                 self.set_primary_photo(next, cx);
             } else {
                 self.clear_selection(cx);
@@ -628,15 +633,15 @@ impl App {
 
     fn photo_browser(&self) -> Ref<'_, PhotoBrowser> {
         if self.screen == Screen::Search {
-            self.search_view.borrow()
+            self.search.view.borrow()
         } else {
-            self.library.borrow()
+            self.library.browser.borrow()
         }
     }
 
     fn select_photo_range(&mut self, id: i64, add: bool, cx: &mut Context<Self>) {
         let index = self.photo_browser().index.clone();
-        let Some(anchor) = self.selection_anchor else {
+        let Some(anchor) = self.library.selection_anchor else {
             self.select_photo(id, cx);
             return;
         };
@@ -646,10 +651,11 @@ impl App {
         };
         if add {
             for entry in entries {
-                self.selected_ids.insert(entry.id);
+                self.library.selected_ids.insert(entry.id);
             }
         } else {
-            self.selected_ids
+            self.library
+                .selected_ids
                 .replace(entries.iter().map(|entry| entry.id));
         }
         self.set_primary_photo(id, cx);
@@ -673,9 +679,9 @@ impl App {
 
     pub(crate) fn browser_mut(&self, search: bool) -> RefMut<'_, PhotoBrowser> {
         if search {
-            self.search_view.borrow_mut()
+            self.search.view.borrow_mut()
         } else {
-            self.library.borrow_mut()
+            self.library.browser.borrow_mut()
         }
     }
 
@@ -722,11 +728,12 @@ impl App {
             return;
         }
         let primary = self
+            .library
             .selected
             .filter(|selected| ids.contains(selected))
             .unwrap_or(ids[0]);
-        self.selection_anchor = Some(ids[0]);
-        self.selected_ids.replace(ids);
+        self.library.selection_anchor = Some(ids[0]);
+        self.library.selected_ids.replace(ids);
         self.set_primary_photo(primary, cx);
         cx.notify();
     }
@@ -734,10 +741,10 @@ impl App {
     /// IDs the ribbon's bulk actions operate on. The primary selection is the
     /// fallback while the multi-selection list is empty.
     pub(crate) fn selected_action_ids(&self) -> Vec<i64> {
-        if self.selected_ids.is_empty() {
-            self.selected.into_iter().collect()
+        if self.library.selected_ids.is_empty() {
+            self.library.selected.into_iter().collect()
         } else {
-            self.selected_ids.to_vec()
+            self.library.selected_ids.to_vec()
         }
     }
 
@@ -746,7 +753,7 @@ impl App {
     /// `!selected_action_ids().is_empty()`; rendering uses this, the clone
     /// stays on click paths.
     pub(crate) fn has_action_selection(&self) -> bool {
-        !self.selected_ids.is_empty() || self.selected.is_some()
+        !self.library.selected_ids.is_empty() || self.library.selected.is_some()
     }
 
     pub(crate) fn color_for(&self, photo: &Photo) -> u32 {
@@ -757,7 +764,8 @@ impl App {
     }
 
     pub(crate) fn selected_color(&self) -> u32 {
-        self.selected_photo
+        self.library
+            .selected_photo
             .as_ref()
             .map(|photo| self.color_for(photo))
             .unwrap_or(self.palette.bg)
@@ -829,7 +837,7 @@ impl App {
 
     /// Vertical arrow movement: one row is `columns` photos.
     pub(crate) fn move_grid_selection_vertical(&mut self, rows: isize, cx: &mut Context<Self>) {
-        let columns = self.library.borrow().columns.max(1) as isize;
+        let columns = self.library.browser.borrow().columns.max(1) as isize;
         self.move_grid_selection_by(rows * columns, cx);
     }
 
@@ -838,15 +846,18 @@ impl App {
             return;
         }
         let target = {
-            let browser = self.library.borrow();
+            let browser = self.library.browser.borrow();
             let entries = &browser.index.entries;
-            let current = self.selected.and_then(|id| browser.index.row_of_id(id));
+            let current = self
+                .library
+                .selected
+                .and_then(|id| browser.index.row_of_id(id));
             grid_move_target(current, delta, entries.len()).map(|pos| entries[pos].id)
         };
         let Some(target) = target else {
             return;
         };
-        if Some(target) == self.selected {
+        if Some(target) == self.library.selected {
             return;
         }
         self.select_photo(target, cx);
@@ -941,7 +952,8 @@ impl App {
 
     fn deletion_confirmation_description(&self, count: usize) -> String {
         if count == 1 {
-            self.selected_photo
+            self.library
+                .selected_photo
                 .as_ref()
                 .map(|photo| tr_args!("photos.delete.confirm_one", name = photo.captured_at_local))
                 .unwrap_or_else(|| tr!("photos.delete.confirm_none"))
@@ -1178,7 +1190,7 @@ impl App {
         }
         let removed: HashSet<i64> = requested.iter().copied().collect();
         self.remove_photos_from_ui(&removed, false, cx);
-        if self.daemon_active {
+        if self.ipc.daemon_active {
             self.toast_success(
                 tr_args!("photos.delete.registered", count = requested.len()),
                 cx,
@@ -1214,43 +1226,48 @@ impl App {
         let library_anchor = self.capture_top_photo(false);
         let search_anchor = self.capture_top_photo(true);
         self.library
+            .browser
             .borrow_mut()
             .remove_photos_with_anchor(removed, library_anchor);
-        self.search_view
+        self.search
+            .view
             .borrow_mut()
             .remove_photos_with_anchor(removed, search_anchor);
         if promoted {
             // Kept cards now display the promoted derivative.
-            self.library.borrow_mut().invalidate_pages();
-            self.search_view.borrow_mut().invalidate_pages();
+            self.library.browser.borrow_mut().invalidate_pages();
+            self.search.view.borrow_mut().invalidate_pages();
         }
         for id in removed {
             self.thumbnails.borrow_mut().remove_photo(*id);
         }
-        self.selected_ids.remove_all(removed);
+        self.library.selected_ids.remove_all(removed);
         if self
+            .library
             .selection_anchor
             .is_some_and(|anchor| removed.contains(&anchor))
         {
-            self.selection_anchor = None;
+            self.library.selection_anchor = None;
         }
         if self
+            .library
             .selected
             .is_some_and(|selected| removed.contains(&selected))
         {
-            self.selected = None;
+            self.library.selected = None;
         }
         if self
+            .library
             .selected_photo
             .as_ref()
             .is_some_and(|photo| removed.contains(&photo.id))
         {
-            self.selected_photo = None;
-            self.selected_players.clear();
-            self.selected_tags.clear();
-            self.selected_ai = None;
-            self.selected_ai_tags.clear();
-            self.selected_derivatives.clear();
+            self.library.selected_photo = None;
+            self.library.selected_players.clear();
+            self.library.selected_tags.clear();
+            self.library.selected_ai = None;
+            self.library.selected_ai_tags.clear();
+            self.library.selected_derivatives.clear();
             self.reset_image_state();
         }
         if self.note_edit_id.is_some_and(|id| removed.contains(&id)) {
@@ -1259,7 +1276,7 @@ impl App {
         if let Some(revision) = revision {
             // The local snapshot already reflects the deletions; claim the
             // revision so the next poll does not re-query 100k rows.
-            self.last_library_revision = revision;
+            self.library.last_revision = revision;
         }
         // Stats, compressed ids, and the job queue are collected by the
         // background live snapshot; the visible index was already updated
@@ -1308,13 +1325,25 @@ impl App {
                     if let Err(error) = self.db.mark_missing(id) {
                         tracing::warn!(%error, photo_id = id, "cannot mark trashed photo missing");
                     }
-                    let _ = self.db.clear_display_derivative(id);
+                    if let Err(error) = self.db.clear_display_derivative(id) {
+                        tracing::warn!(
+                            %error,
+                            photo_id = id,
+                            "cannot clear the display derivative of a trashed photo"
+                        );
+                    }
                     TrashOutcome::Removed
                 }
             }
             Err(error) => {
-                if derivative_to_promote.is_some() {
-                    let _ = self.db.restore_present(id);
+                if derivative_to_promote.is_some()
+                    && let Err(error) = self.db.restore_present(id)
+                {
+                    tracing::warn!(
+                        %error,
+                        photo_id = id,
+                        "cannot restore a photo after its trash move failed"
+                    );
                 }
                 tracing::warn!(%error, photo_id = id, "cannot move photo to trash");
                 TrashOutcome::Failed(tr_args!("photos.trash.move_error", error = error))
@@ -1331,8 +1360,8 @@ impl App {
         }
         self.load_selected_meta(photo_id);
         // A successful write is authoritative even if the metadata read failed.
-        if self.selected_tags.is_empty() && !tags.is_empty() {
-            self.selected_tags = tags;
+        if self.library.selected_tags.is_empty() && !tags.is_empty() {
+            self.library.selected_tags = tags;
         }
         self.refresh_search_after_tag_edit(cx);
         cx.notify();

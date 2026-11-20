@@ -228,8 +228,8 @@ impl App {
             .map(|threshold| (threshold.tag_key, threshold.threshold))
             .collect();
         self.ai_thresholds.draft.clear();
-        self.ai_thresholds.presence = self.settings.ai_presence_threshold;
-        self.ai_thresholds.presence_draft = self.settings.ai_presence_threshold;
+        self.ai_thresholds.presence = self.settings.current.ai_presence_threshold;
+        self.ai_thresholds.presence_draft = self.settings.current.ai_presence_threshold;
         self.ai_thresholds.tab = ThresholdTab::Outdoor;
         self.ai_thresholds.error = None;
         self.ai_thresholds
@@ -376,12 +376,12 @@ impl App {
             &self.ai_thresholds.draft,
         );
         let presence_changed =
-            self.ai_thresholds.presence_draft != self.settings.ai_presence_threshold;
+            self.ai_thresholds.presence_draft != self.settings.current.ai_presence_threshold;
         if presence_changed {
-            let previous = self.settings.ai_presence_threshold;
-            self.settings.ai_presence_threshold = self.ai_thresholds.presence_draft;
-            if let Err(error) = self.settings.save(&self.db) {
-                self.settings.ai_presence_threshold = previous;
+            let previous = self.settings.current.ai_presence_threshold;
+            self.settings.current.ai_presence_threshold = self.ai_thresholds.presence_draft;
+            if let Err(error) = self.settings.current.save(&self.db) {
+                self.settings.current.ai_presence_threshold = previous;
                 self.ai_thresholds.error = Some(tr_args!(
                     "settings.ai.thresholds.save_failed",
                     error = error

@@ -149,8 +149,11 @@ pub fn tr_args_in(locale: &str, key: &str, args: &[(&str, String)]) -> String {
         return missing_translation(locale, key);
     };
     let names: Vec<&str> = args.iter().map(|(name, _)| *name).collect();
-    let values: Vec<String> = args.iter().map(|(_, value)| value.clone()).collect();
-    rust_i18n::replace_patterns(&text, &names, &values)
+    let values: Vec<std::borrow::Cow<'_, str>> = args
+        .iter()
+        .map(|(_, value)| std::borrow::Cow::Borrowed(value.as_str()))
+        .collect();
+    rust_i18n::replace_patterns_cow(&text, &names, &values)
 }
 
 /// Every key defined for a locale.

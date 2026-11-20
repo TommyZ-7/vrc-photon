@@ -149,6 +149,7 @@ impl App {
             Ok(()) => {
                 self.close_tag_edit(window, cx);
                 if let Some(primary) = self
+                    .library
                     .selected
                     .filter(|id| ids.contains(id))
                     .or_else(|| ids.last().copied())

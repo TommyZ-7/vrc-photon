@@ -215,7 +215,7 @@ impl App {
         let dialog = ImportDialogState {
             origin: ImportDialogOrigin::New,
             mode,
-            dest: self.settings.import_dir(),
+            dest: self.settings.current.import_dir(),
             source_root: None,
             options: ImportOptions::default(),
             source: None,
@@ -304,7 +304,7 @@ impl App {
     }
 
     pub(crate) fn start_import_from_source(&mut self, cx: &mut Context<Self>) {
-        let folder_options = self.settings.import_options();
+        let folder_options = self.settings.current.import_options();
         let Some(dialog) = self.import_dialog.as_mut() else {
             return;
         };
@@ -557,9 +557,11 @@ impl App {
         cx: &mut Context<Self>,
     ) {
         let dest_string = report.dest.to_string_lossy().to_string();
-        if let Err(error) = add_photo_root_and_save(&mut self.settings, &dest_string, |settings| {
-            settings.save(&self.db)
-        }) {
+        if let Err(error) =
+            add_photo_root_and_save(&mut self.settings.current, &dest_string, |settings| {
+                settings.save(&self.db)
+            })
+        {
             tracing::warn!(%error, "cannot save photo roots after import");
             append_scan_error(
                 report,
@@ -595,7 +597,7 @@ impl App {
             Ok(_) => {
                 self.import_scan_target = Some(report.dest.to_string_lossy().to_string());
                 self.send_wake_commands(cx);
-                if !self.ipc_connected {
+                if !self.ipc.connected {
                     self.toast_warning(tr!("import.daemon_offline_scan"), cx);
                 }
             }
@@ -629,7 +631,7 @@ impl App {
         }
         let revision = self.db.library_revision().ok();
         if !self.apply_library_snapshot(revision, cx)
-            && let Some(error) = self.library_error
+            && let Some(error) = self.library.error
         {
             append_scan_error(report, error);
         }

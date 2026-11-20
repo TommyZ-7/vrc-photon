@@ -1341,7 +1341,7 @@ impl App {
                 ..
             }
         );
-        if !self.ipc_connected {
+        if !self.ipc.connected {
             if clears_install_busy {
                 self.ai.install_busy = false;
             }
@@ -1352,7 +1352,7 @@ impl App {
             cx.notify();
             return;
         }
-        let Some(endpoint) = self.ipc_endpoint.clone() else {
+        let Some(endpoint) = self.ipc.endpoint.clone() else {
             if clears_install_busy {
                 self.ai.install_busy = false;
             }
@@ -1495,7 +1495,7 @@ impl App {
             cx.notify();
             return;
         }
-        if needs_license_consent(self.settings.ai_model_license_consent_at) {
+        if needs_license_consent(self.settings.current.ai_model_license_consent_at) {
             self.open_ai_license_modal(window, cx);
             return;
         }
@@ -1513,10 +1513,10 @@ impl App {
     }
 
     pub(crate) fn accept_ai_model_license(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let previous = self.settings.ai_model_license_consent_at;
-        self.settings.ai_model_license_consent_at = Some(chrono::Utc::now().timestamp());
-        if let Err(error) = self.settings.save(&self.db) {
-            self.settings.ai_model_license_consent_at = previous;
+        let previous = self.settings.current.ai_model_license_consent_at;
+        self.settings.current.ai_model_license_consent_at = Some(chrono::Utc::now().timestamp());
+        if let Err(error) = self.settings.current.save(&self.db) {
+            self.settings.current.ai_model_license_consent_at = previous;
             self.toast_error(tr_args!("settings.save_failed", error = error), cx);
             cx.notify();
             return;
@@ -1655,10 +1655,10 @@ impl App {
         cx: &mut Context<Self>,
         apply: impl FnOnce(&mut AppSettings),
     ) {
-        let previous = self.settings.clone();
-        apply(&mut self.settings);
-        if let Err(error) = self.settings.save(&self.db) {
-            self.settings = previous;
+        let previous = self.settings.current.clone();
+        apply(&mut self.settings.current);
+        if let Err(error) = self.settings.current.save(&self.db) {
+            self.settings.current = previous;
             tracing::warn!(%error, "cannot save AI tagging settings");
             self.toast_error(tr_args!("settings.save_failed", error = error), cx);
             cx.notify();
@@ -1670,7 +1670,7 @@ impl App {
     }
 
     pub(crate) fn set_ai_tagging_enabled(&mut self, enabled: bool, cx: &mut Context<Self>) {
-        let was_enabled = self.settings.ai_tagging_enabled;
+        let was_enabled = self.settings.current.ai_tagging_enabled;
         let now = Utc::now().timestamp();
         self.save_ai_runtime_settings(cx, |settings| {
             settings.ai_tagging_enabled = enabled;
@@ -1700,7 +1700,7 @@ impl App {
     }
 
     pub(crate) fn set_ai_tagging_max_edge(&mut self, edge: u32, cx: &mut Context<Self>) {
-        if self.settings.ai_tagging_max_edge == edge {
+        if self.settings.current.ai_tagging_max_edge == edge {
             return;
         }
         self.save_ai_runtime_settings(cx, |settings| {
@@ -1713,7 +1713,7 @@ impl App {
     pub(crate) fn enqueue_ai_tagging(&mut self, photo_ids: &[i64], cx: &mut Context<Self>) {
         match enqueue_manual_retag(
             &self.db,
-            self.settings.ai_tagging_enabled,
+            self.settings.current.ai_tagging_enabled,
             self.ai.ready(),
             photo_ids,
         ) {
@@ -1809,10 +1809,10 @@ impl App {
     /// Queues every untagged photo and releases the waiting jobs to the
     /// daemon's tagging worker in one action.
     pub(crate) fn process_untagged_ai(&mut self, cx: &mut Context<Self>) {
-        match self
-            .db
-            .enqueue_tagging_backlog(AI_PLUGIN_ID, self.settings.ai_tagging_auto.bulk_since())
-        {
+        match self.db.enqueue_tagging_backlog(
+            AI_PLUGIN_ID,
+            self.settings.current.ai_tagging_auto.bulk_since(),
+        ) {
             Ok(queued) => match self.db.release_waiting_tagging_jobs(AI_PLUGIN_ID) {
                 Ok(0) if queued == 0 => self.toast_info(tr!("integrations.ai.bulk.empty"), cx),
                 Ok(count) if count > 0 => {
@@ -1994,7 +1994,7 @@ impl App {
     /// `load_selected_meta` also loads the AI rows, so this stays the single
     /// refresh path for the inspector.
     pub(crate) fn refresh_selected_ai(&mut self, cx: &mut Context<Self>) {
-        if let Some(id) = self.selected {
+        if let Some(id) = self.library.selected {
             self.load_selected_meta(id);
         }
         cx.notify();

@@ -40,9 +40,10 @@ impl App {
 
     fn search_results_card(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let p = self.palette;
-        let total = self.search_view.borrow().index.total;
+        let total = self.search.view.borrow().index.total;
         let count = tr_args!("search.count", total = total);
-        let selection = (self.selected_ids.len() > 1).then(|| self.selection_bar(window, cx));
+        let selection =
+            (self.library.selected_ids.len() > 1).then(|| self.selection_bar(window, cx));
         let mut card = glass_panel(&self.palette)
             .flex()
             .flex_col()
@@ -75,7 +76,7 @@ impl App {
                                     .child(tr!("search.results")),
                             ),
                     )
-                    .when(self.searching, |this| {
+                    .when(self.search.searching, |this| {
                         this.child(
                             div()
                                 .flex_shrink_0()
@@ -95,7 +96,7 @@ impl App {
                     .child(selection),
             );
         }
-        card.child(self.search_gallery.clone()).into_any_element()
+        card.child(self.search.gallery.clone()).into_any_element()
     }
 
     fn search_filter_panel(&mut self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
@@ -106,7 +107,7 @@ impl App {
                 .gap(px(4.))
                 .child(self.filter_field(
                     tr!("search.ai.people"),
-                    Input::new(&self.search_people_input),
+                    Input::new(&self.search.people_input),
                 ))
                 .child(
                     div()
@@ -139,19 +140,19 @@ impl App {
             .child(self.suggestion_field(
                 SuggestionKind::World,
                 tr!("search.world"),
-                Input::new(&self.world_input),
+                Input::new(&self.search.world_input),
                 cx,
             ))
             .child(self.suggestion_field(
                 SuggestionKind::Player,
                 tr!("search.player"),
-                Input::new(&self.player_input),
+                Input::new(&self.search.player_input),
                 cx,
             ))
             .child(self.suggestion_field(
                 SuggestionKind::Tag,
                 tr!("search.tag"),
-                Input::new(&self.tag_input),
+                Input::new(&self.search.tag_input),
                 cx,
             ))
             .child(ai_filter)
@@ -187,9 +188,9 @@ impl App {
                     .child(div().flex_1())
                     .child(
                         Switch::new("search-favorite")
-                            .checked(self.search_favorite)
+                            .checked(self.search.favorite)
                             .on_click(cx.listener(|this, value, _, cx| {
-                                this.search_favorite = *value;
+                                this.search.favorite = *value;
                                 this.run_search(cx);
                             })),
                     ),
@@ -199,14 +200,14 @@ impl App {
                     .gap(px(8.))
                     .child(
                         Button::new("search-run")
-                            .label(if self.searching {
+                            .label(if self.search.searching {
                                 tr!("search.searching")
                             } else {
                                 tr!("search.action")
                             })
                             .small()
                             .primary()
-                            .disabled(self.searching)
+                            .disabled(self.search.searching)
                             .on_click(cx.listener(|this, _, _, cx| this.run_search(cx))),
                     )
                     .child(
@@ -226,7 +227,7 @@ impl App {
     }
 
     fn has_ai_search(&self) -> bool {
-        !self.ai.tag_definitions.is_empty() || !self.search_ai_tags.is_empty()
+        !self.ai.tag_definitions.is_empty() || !self.search.ai_tags.is_empty()
     }
 
     fn ai_tag_filter_group(&mut self, cx: &mut Context<Self>) -> AnyElement {
@@ -236,7 +237,7 @@ impl App {
         let p = self.palette;
         let language = vrc_photon_i18n::current_locale();
         let definitions = self.ai.tag_definitions.clone();
-        let selected = self.search_ai_tags.clone();
+        let selected = self.search.ai_tags.clone();
         let selected_count = selected.len();
         let mut chips = Vec::with_capacity(selected.len());
         for key in selected {

@@ -21,7 +21,7 @@ use vrc_photon_core::queue::QueueFeature;
 use vrc_photon_core::tagging_image::TAGGING_MAX_EDGES;
 
 use crate::ui::auto_behavior::{
-    auto_mode_segmented, bulk_action_available, bulk_action_block, segment,
+    AutoBulkAction, auto_mode_segmented, bulk_action_available, bulk_action_block, segment,
 };
 use crate::ui::components::{card_divider, chip, compression_policy_warning, glass_panel};
 use crate::ui::queue::queue_section;
@@ -35,7 +35,7 @@ impl App {
     ) -> impl IntoElement {
         let viewport = content_viewport(window);
         let stacked = integrations_stacks(f32::from(viewport.width), self.sidebar_collapsed);
-        let selected = self.integrations_selected;
+        let selected = self.settings.integrations_selected;
 
         let list = self.integrations_list(selected, stacked, cx);
 
@@ -45,7 +45,7 @@ impl App {
             .min_w_0()
             .min_h_0()
             .overflow_y_scroll()
-            .track_scroll(&self.integrations_scroll)
+            .track_scroll(&self.settings.integrations_scroll)
             .gap(px(CARD_GAP));
         let detail_body = match selected {
             IntegrationsSection::Discord => detail_body.child(self.discord_card(cx)),
@@ -62,7 +62,7 @@ impl App {
             .min_h_0()
             .items_stretch()
             .child(detail_body)
-            .vertical_scrollbar(&self.integrations_scroll);
+            .vertical_scrollbar(&self.settings.integrations_scroll);
 
         if stacked {
             v_flex()
@@ -93,8 +93,10 @@ impl App {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let p = self.palette;
-        let ai_enabled =
-            effective_ai_tagging_enabled(self.settings.ai_tagging_enabled, self.ai.installed());
+        let ai_enabled = effective_ai_tagging_enabled(
+            self.settings.current.ai_tagging_enabled,
+            self.ai.installed(),
+        );
 
         let items = [
             (
@@ -107,7 +109,7 @@ impl App {
                 IntegrationsSection::AutoCompression,
                 "integrations-list-auto",
                 tr!("integrations.auto.title"),
-                self.settings.auto_compress_enabled,
+                self.settings.current.auto_compress_enabled,
             ),
             (
                 IntegrationsSection::AiTagging,
@@ -142,8 +144,10 @@ impl App {
                         .cursor_pointer()
                         .when(!active, |this| this.hover(|this| this.bg(rgb(p.panel_2))))
                         .on_click(cx.listener(move |this, _, _, cx| {
-                            this.integrations_selected = section;
-                            this.integrations_scroll.set_offset(point(px(0.), px(0.)));
+                            this.settings.integrations_selected = section;
+                            this.settings
+                                .integrations_scroll
+                                .set_offset(point(px(0.), px(0.)));
                             cx.notify();
                         }))
                         .child(
@@ -179,9 +183,9 @@ impl App {
 
     fn auto_compression_card(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let p = self.palette;
-        let enabled = self.settings.auto_compress_enabled;
-        let options = self.settings.auto_compression.clone();
-        let behavior = self.settings.auto_compress;
+        let enabled = self.settings.current.auto_compress_enabled;
+        let options = self.settings.current.auto_compression.clone();
+        let behavior = self.settings.current.auto_compress;
 
         let body = v_flex()
             .pt(px(12.))
@@ -190,13 +194,16 @@ impl App {
             .child(self.setting_switch(
                 tr!("settings.startup.keep_original"),
                 "",
-                self.settings.auto_compress_keep_original,
+                self.settings.current.auto_compress_keep_original,
                 false,
                 cx,
                 |settings, value| settings.auto_compress_keep_original = value,
             ))
             .when_some(
-                compression_policy_warning(self.settings.auto_compress_keep_original, enabled),
+                compression_policy_warning(
+                    self.settings.current.auto_compress_keep_original,
+                    enabled,
+                ),
                 |this, warning| {
                     this.child(card_divider(&p)).child(
                         div()
@@ -230,10 +237,12 @@ impl App {
             .child(card_divider(&p))
             .child(bulk_action_block(
                 &p,
-                "integrations-auto",
-                behavior,
-                enabled,
-                tr!("integrations.auto.process_uncompressed"),
+                AutoBulkAction {
+                    id_prefix: "integrations-auto",
+                    behavior,
+                    enabled,
+                    button_label: tr!("integrations.auto.process_uncompressed"),
+                },
                 cx,
                 App::set_auto_compress_scope,
                 App::process_uncompressed_compression_action,
@@ -244,7 +253,7 @@ impl App {
                 &self.compression_queue_entries,
                 self.compression_queue_counts,
                 enabled,
-                self.settings.auto_compress_queue_paused,
+                self.settings.current.auto_compress_queue_paused,
                 cx,
             ));
 
@@ -282,15 +291,16 @@ impl App {
         let p = self.palette;
         let ready = self.ai.ready();
         let installed = self.ai.installed();
-        let enabled = effective_ai_tagging_enabled(self.settings.ai_tagging_enabled, installed);
-        let behavior = self.settings.ai_tagging_auto;
+        let enabled =
+            effective_ai_tagging_enabled(self.settings.current.ai_tagging_enabled, installed);
+        let behavior = self.settings.current.ai_tagging_auto;
         let backend_selection_disabled =
             backend_selection_is_disabled_when_not_ready(ready, enabled);
         let backends = self
             .ai
             .probe
             .as_ref()
-            .map(|probe| backend_options(probe, &self.settings.ai_tagging_backend))
+            .map(|probe| backend_options(probe, &self.settings.current.ai_tagging_backend))
             .unwrap_or_default();
 
         let backend_section = v_flex()
@@ -348,7 +358,7 @@ impl App {
                         .border_color(rgb(p.border))
                         .bg(rgb(p.panel_inner))
                         .children(TAGGING_MAX_EDGES.into_iter().map(|edge| {
-                            let active = self.settings.ai_tagging_max_edge == edge;
+                            let active = self.settings.current.ai_tagging_max_edge == edge;
                             segment(
                                 &p,
                                 format!("integrations-ai-max-edge-{edge}"),
@@ -380,10 +390,12 @@ impl App {
             .child(card_divider(&p))
             .child(bulk_action_block(
                 &p,
-                "integrations-ai",
-                behavior,
-                bulk_action_available(enabled, ready),
-                tr!("integrations.ai.process_untagged"),
+                AutoBulkAction {
+                    id_prefix: "integrations-ai",
+                    behavior,
+                    enabled: bulk_action_available(enabled, ready),
+                    button_label: tr!("integrations.ai.process_untagged"),
+                },
                 cx,
                 App::set_ai_auto_scope,
                 App::process_untagged_ai_action,
@@ -394,7 +406,7 @@ impl App {
                 &self.tagging_queue_entries,
                 self.tagging_queue_counts,
                 enabled,
-                self.settings.ai_tagging_queue_paused,
+                self.settings.current.ai_tagging_queue_paused,
                 cx,
             ));
 
@@ -432,7 +444,7 @@ impl App {
 
     fn clipboard_card(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let p = self.palette;
-        let resize = self.settings.clipboard_compression;
+        let resize = self.settings.current.clipboard_compression;
 
         let body = v_flex()
             .pt(px(12.))
