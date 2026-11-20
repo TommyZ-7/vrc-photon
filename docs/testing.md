@@ -8,17 +8,8 @@
 cargo test --workspace --locked
 ```
 
-2026-11-11時点の例（CI の `test` ジョブの `test result` 行から更新。最新の件数はCIを正とする）:
-
-- `vrc-photon-core`: 561 passed / 1 ignored
-- `vrc-photon-daemon`: 306 passed / 1 ignored
-- `vrc-photon-ipc`: 41 passed
-- `vrc-photon-update`: 147 passed
-- `vrc-photon-release-tool`: 9 passed
-- `vrc-photon-signing`: 3 passed
-- UI: 571 passed（GPUIを起動しない純粋ヘルパーとIPCブリッジの単体テスト）
-
-件数は各クレートの lib 単体テスト（UI は bin）の passed / ignored。統合テストと
+件数はCIの `test` ジョブを正とする（この文書には固定値を書かない）。
+数える場合は各クレートの lib 単体テスト（UI は bin）の passed / ignored。統合テストと
 doc-test は含めない。`--list` で総数を確認する場合は
 `cargo test -p <crate> --lib -- --list | grep -c ': test$'`
 （UI は `cargo test -p vrc-photon-ui --bin vrc-photon -- --list`）を使う。
