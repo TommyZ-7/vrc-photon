@@ -751,7 +751,6 @@ impl App {
         }
         cx.notify();
     }
-    #[allow(dead_code)] // Used by the notification failure rows (Task 10).
     pub(crate) fn retry_job(&mut self, id: String, cx: &mut Context<Self>) {
         match self.db.retry_job(&id) {
             Ok(true) => {
