@@ -839,6 +839,8 @@ schema を変更するときは `SCHEMA_VERSION` を上げ、`MIGRATIONS` に次
 - 未検証の追加インデックス候補:
   - `photo_players(display_name COLLATE NOCASE)`
   - `photo_context(world_name)`
+- 全文検索（world / player / tag）は `LIKE '%...%'` のままで、先頭ワイルドカードのため索引を使わない。10万件規模では体感差がないことを確認済み。将来はFTS5（`photo_context` / `photo_players` / `photo_tags` の外部コンテンツ表）への置き換えを検討する。
+- プランナ統計は `Db::optimize()`（`ANALYZE`）で更新する。デーモンは初回スキャン完了後、`--once` の実行後、シャットダウン時に呼ぶ。統計がないと最新順の索引スナップショットは `idx_photos_move_match` + 一時Bツリーを選ぶ（20万件で0.270秒）。統計後は `idx_photos_captured_id` を使い、0.013秒。素の `PRAGMA optimize` はサンプリング統計のため索引選択が改善しないため使わない。20万件の `ANALYZE` は約0.14秒で、走査ループ内では呼ばない。
 
 ## 8. バックアップ
 
