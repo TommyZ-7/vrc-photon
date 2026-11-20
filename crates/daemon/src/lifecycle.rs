@@ -556,7 +556,7 @@ impl Daemon {
 
     /// Persists a technical daemon failure without a catalog key. Kept for
     /// errors whose detail text has no user-facing translation.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn report_daemon_error(
         &mut self,
         operation: DaemonOperation,
