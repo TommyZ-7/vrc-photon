@@ -63,6 +63,8 @@ pub(crate) struct GalleryShared {
 pub(crate) struct CardStrings {
     pub(crate) world: SharedString,
     pub(crate) meta: Option<SharedString>,
+    /// The compressed badge, which depends only on the language.
+    pub(crate) badge_compressed: SharedString,
 }
 
 /// Everything that can change a card's display strings between renders.
@@ -99,6 +101,7 @@ const MAX_CACHED_CARD_STRINGS: usize = 4096;
 pub(crate) struct CardStringsCache {
     key: Option<CardStringsKey>,
     entries: HashMap<i64, Rc<CardStrings>>,
+    badge_compressed: SharedString,
     computations: u64,
 }
 
@@ -111,6 +114,7 @@ impl CardStringsCache {
         if self.key.as_ref() != Some(key) {
             self.key = Some(key.clone());
             self.entries.clear();
+            self.badge_compressed = tr!("gallery.badge.compressed").into();
         }
         if let Some(strings) = self.entries.get(&photo.id) {
             return strings.clone();
@@ -128,6 +132,7 @@ impl CardStringsCache {
                 },
             )
             .map(Into::into),
+            badge_compressed: self.badge_compressed.clone(),
         });
         if self.entries.len() >= MAX_CACHED_CARD_STRINGS {
             self.entries.clear();
@@ -1862,7 +1867,7 @@ fn render_card(
                         .text_size(px(9.))
                         .font_medium()
                         .text_color(rgb(p.green))
-                        .child(tr!("gallery.badge.compressed")),
+                        .child(card_strings.badge_compressed.clone()),
                 ),
         );
     }
@@ -2055,6 +2060,7 @@ mod tests {
     use std::collections::HashSet;
     use vrc_photon_core::model::PhotoIndexEntry;
     use vrc_photon_core::settings::PhotosViewMode;
+    use vrc_photon_i18n::tr;
 
     fn ts(year: i32, month: u32, day: u32, hour: u32, minute: u32) -> i64 {
         FixedOffset::east_opt(9 * 3600)
@@ -2242,6 +2248,19 @@ mod tests {
             show_date,
             show_size,
         }
+    }
+
+    #[test]
+    fn card_strings_cache_translates_the_compressed_badge_once_per_key() {
+        let mut cache = CardStringsCache::default();
+        let photo = test_photo(1);
+        let key = card_key(0, "ja", true, true, true);
+
+        let first = cache.strings_for(&key, &photo);
+        assert_eq!(first.badge_compressed, tr!("gallery.badge.compressed"));
+        let second = cache.strings_for(&key, &photo);
+        assert!(std::rc::Rc::ptr_eq(&first, &second));
+        assert_eq!(cache.computations, 1);
     }
 
     #[test]
