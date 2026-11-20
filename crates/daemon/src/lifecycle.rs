@@ -547,9 +547,16 @@ impl Daemon {
         &self.settings
     }
 
+    /// Refreshes planner statistics; a failure is logged and never fatal.
+    fn optimize_database(&self) {
+        if let Err(error) = lock_db(&self.db).optimize() {
+            tracing::warn!(%error, "cannot refresh database planner statistics");
+        }
+    }
+
     /// Persists a technical daemon failure without a catalog key. Kept for
     /// errors whose detail text has no user-facing translation.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn report_daemon_error(
         &mut self,
         operation: DaemonOperation,
@@ -916,6 +923,7 @@ impl Daemon {
         self.run_full_asset_check();
         self.refresh_status()?;
         self.process_deletions()?;
+        self.optimize_database();
         Ok(())
     }
 
@@ -986,6 +994,7 @@ impl Daemon {
             return Ok(());
         }
         self.scan_photos_with_initial(Some(initial_scan))?;
+        self.optimize_database();
         Ok(())
     }
 
@@ -1781,6 +1790,7 @@ impl Daemon {
             }
         }
         self.stop_workers();
+        self.optimize_database();
         self.plugin.shutdown(plugin::SHUTDOWN_TIMEOUT);
         self.tray = None;
     }

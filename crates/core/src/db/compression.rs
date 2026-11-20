@@ -73,7 +73,10 @@ impl Db {
                 params![i64_from_usize(index), id],
             )?;
             if changed != 1 {
-                return Err(CoreError::NotFound(format!("compression profile {id}")));
+                return Err(CoreError::NotFound {
+                    entity: "compression profile",
+                    id: id.to_string(),
+                });
             }
         }
         tx.commit()?;
@@ -120,7 +123,10 @@ impl Db {
         let source_index = ordered
             .iter()
             .position(|(stored_id, _)| stored_id == id)
-            .ok_or_else(|| CoreError::NotFound(format!("compression profile {id}")))?;
+            .ok_or_else(|| CoreError::NotFound {
+                entity: "compression profile",
+                id: id.to_string(),
+            })?;
 
         let source_name = ordered[source_index].1.name.clone();
         let mut suffix = 1;
@@ -186,7 +192,10 @@ impl Db {
             |row| row.get(0),
         )?;
         if exists == 0 {
-            return Err(CoreError::NotFound(format!("compression profile {id}")));
+            return Err(CoreError::NotFound {
+                entity: "compression profile",
+                id: id.to_string(),
+            });
         }
 
         let active: i64 = tx.query_row(
@@ -215,7 +224,10 @@ impl Db {
             params![id],
         )?;
         if deleted == 0 {
-            return Err(CoreError::NotFound(format!("compression profile {id}")));
+            return Err(CoreError::NotFound {
+                entity: "compression profile",
+                id: id.to_string(),
+            });
         }
         tx.commit()?;
         Ok(())

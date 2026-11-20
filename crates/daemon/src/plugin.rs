@@ -749,7 +749,13 @@ impl PluginServiceInner {
         if let Err(error) = &result {
             // Never leave a failed package looking ready or keep using it.
             self.stop_sidecar();
-            let _ = self.db().set_plugin_probe_json(&install.plugin_id, None);
+            if let Err(error) = self.db().set_plugin_probe_json(&install.plugin_id, None) {
+                tracing::warn!(
+                    %error,
+                    plugin_id = %install.plugin_id,
+                    "cannot clear the stale plugin probe after a failed install"
+                );
+            }
 
             let restored_files = match &backup {
                 Some(backup) => match restore_installation_backup(Path::new(&install.path), backup)

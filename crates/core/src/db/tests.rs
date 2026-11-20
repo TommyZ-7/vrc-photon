@@ -4606,7 +4606,7 @@ fn ai_filters_use_the_ai_indexes() {
         result.people_max = Some(((index % 5) + 2) as u32);
         db.save_photo_ai(*photo_id, AI_PLUGIN, &result).unwrap();
     }
-    db.connection().execute("ANALYZE", []).unwrap();
+    db.optimize().unwrap();
 
     let filter = PhotoTextFilter {
         ai: AiPhotoFilter {
@@ -4633,6 +4633,33 @@ fn ai_filters_use_the_ai_indexes() {
             .any(|line| line.contains("SEARCH pa") && line.contains("INTEGER PRIMARY KEY")),
         "plan: {plan:#?}"
     );
+}
+
+#[test]
+fn ai_tag_filter_caps_the_placeholder_count() {
+    let db = Db::open_in_memory().unwrap();
+    let ids = seed_photos(&db, 2);
+    seed_ai_tag(&db, ids[0], AI_PLUGIN, "tag0", 0.9, true);
+
+    let mut tags: Vec<String> = (0..600).map(|index| format!("tag{index}")).collect();
+    let filter = PhotoTextFilter {
+        ai: AiPhotoFilter {
+            tags: tags.clone(),
+            people_count: None,
+        },
+        ..Default::default()
+    };
+    assert_eq!(db.count_photos_text(&filter).unwrap(), 1);
+
+    tags.rotate_left(1);
+    let filter = PhotoTextFilter {
+        ai: AiPhotoFilter {
+            tags,
+            people_count: None,
+        },
+        ..Default::default()
+    };
+    assert_eq!(db.count_photos_text(&filter).unwrap(), 0);
 }
 
 #[test]
@@ -6864,7 +6891,7 @@ fn reorder_profiles_persists_and_rolls_back_bad_lists() {
 
     assert!(matches!(
         db.reorder_profiles(&order(&["c", "a", "missing"])),
-        Err(CoreError::NotFound(_))
+        Err(CoreError::NotFound { .. })
     ));
     assert_eq!(ids(), vec!["c", "a", "b"]);
 }
@@ -6945,7 +6972,7 @@ fn duplicate_profile_inserts_named_copy_after_source() {
 
     assert!(matches!(
         db.duplicate_profile("missing"),
-        Err(CoreError::NotFound(_))
+        Err(CoreError::NotFound { .. })
     ));
 }
 
@@ -7049,7 +7076,7 @@ fn delete_profile_blocks_active_jobs_and_keeps_history() {
     assert_eq!(db.list_profiles().unwrap().len(), 1);
     assert!(matches!(
         db.delete_profile("missing"),
-        Err(CoreError::NotFound(_))
+        Err(CoreError::NotFound { .. })
     ));
 }
 
@@ -7641,6 +7668,50 @@ fn worlds_with_photo_counts_group_visible_photos_and_skip_missing() {
     let stats = db.stats().unwrap();
     assert_eq!(stats.photo_count, 3);
     assert_eq!(stats.world_count, 2);
+}
+
+#[test]
+fn optimize_makes_the_newest_snapshot_use_the_captured_index() {
+    let db = Db::open_in_memory().unwrap();
+    seed_photos(&db, 2_000);
+    db.optimize().unwrap();
+    let sql = format!("{} LIMIT 10", photo_index_sql(PhotoSort::Newest));
+    let plan = query_plan(&db, &sql).join("\n");
+    assert!(plan.contains("idx_photos_captured_id"), "{plan}");
+    assert!(!plan.contains("USE TEMP B-TREE"), "{plan}");
+}
+
+#[test]
+fn optimize_is_a_no_op_on_an_empty_library() {
+    let db = Db::open_in_memory().unwrap();
+    db.optimize().unwrap();
+}
+
+#[test]
+fn random_photos_text_matches_a_full_sort_sample() {
+    let db = Db::open_in_memory().unwrap();
+    let ids = seed_photos(&db, 1_000);
+    let mut reference: Vec<(u64, i64)> = ids
+        .iter()
+        .map(|&id| (splitmix64(42 ^ id.cast_unsigned()), id))
+        .collect();
+    reference.sort_unstable();
+    reference.truncate(7);
+    let expected: Vec<i64> = reference.into_iter().map(|(_, id)| id).collect();
+
+    let sample = db
+        .random_photos_text(&PhotoTextFilter::default(), 7, 42)
+        .unwrap();
+
+    assert_eq!(sample.total, 1_000);
+    assert_eq!(
+        sample
+            .photos
+            .iter()
+            .map(|photo| photo.id)
+            .collect::<Vec<_>>(),
+        expected
+    );
 }
 
 #[test]

@@ -287,14 +287,6 @@ impl Db {
         Ok(count)
     }
 
-    fn photo_ids_text(&self, filter: &PhotoTextFilter) -> Result<Vec<i64>> {
-        let (where_sql, values) = build_text_filter(filter);
-        let sql = format!("SELECT p.id{PHOTO_FROM} WHERE {where_sql}");
-        let mut stmt = self.conn.prepare_cached(&sql)?;
-        let rows = stmt.query_map(params_from_iter(values), |row| row.get(0))?;
-        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
-    }
-
     /// Deterministically samples up to `limit` matching photos using `seed`.
     /// `total` is the number of matches before sampling; `limit` follows
     /// [`clamp_limit`].
@@ -304,15 +296,31 @@ impl Db {
         limit: i64,
         seed: u64,
     ) -> Result<RandomPhotoSample> {
-        let ids = self.photo_ids_text(filter)?;
-        let total = i64_from_usize(ids.len());
+        let (where_sql, values) = build_text_filter(filter);
+        let sql = format!("SELECT p.id{PHOTO_FROM} WHERE {where_sql}");
         let take = usize_from_i64(clamp_limit(limit));
-        let mut keyed: Vec<(u64, i64)> = ids
-            .iter()
-            .map(|&id| (splitmix64(seed ^ id.cast_unsigned()), id))
-            .collect();
+        let mut stmt = self.conn.prepare_cached(&sql)?;
+        let rows = stmt.query_map(params_from_iter(values), |row| row.get::<_, i64>(0))?;
+        // Keep the `take` smallest keys in a max-heap so memory stays O(limit)
+        // while the output keeps the same order a full sort produced.
+        let mut best: std::collections::BinaryHeap<(u64, i64)> =
+            std::collections::BinaryHeap::with_capacity(take + 1);
+        let mut total = 0_i64;
+        for row in rows {
+            let id = row?;
+            total += 1;
+            let key = (splitmix64(seed ^ id.cast_unsigned()), id);
+            if best.len() < take {
+                best.push(key);
+            } else if let Some(worst) = best.peek()
+                && key < *worst
+            {
+                best.pop();
+                best.push(key);
+            }
+        }
+        let mut keyed = best.into_vec();
         keyed.sort_unstable();
-        keyed.truncate(take.min(keyed.len()));
         let ids: Vec<i64> = keyed.into_iter().map(|(_, id)| id).collect();
         let photos = self.photos_by_ids(&ids)?;
         Ok(RandomPhotoSample { photos, total })
@@ -1090,16 +1098,22 @@ fn photo_order(sort: PhotoSort) -> &'static str {
     }
 }
 
+/// Caps the AI tag filter at the same chunk size as bulk tag writes. SQLite
+/// accepts at most 32,766 bound parameters, and a filter built from an
+/// unbounded key list would fail the whole request.
+const MAX_AI_FILTER_TAGS: usize = 500;
+
 fn push_ai_filter(clauses: &mut Vec<String>, values: &mut Vec<Value>, ai: &AiPhotoFilter) {
-    if !ai.tags.is_empty() {
-        let placeholders = vec!["?"; ai.tags.len()].join(",");
+    let tags = &ai.tags[..ai.tags.len().min(MAX_AI_FILTER_TAGS)];
+    if !tags.is_empty() {
+        let placeholders = vec!["?"; tags.len()].join(",");
         clauses.push(format!(
             "EXISTS (SELECT 1 FROM photo_ai_tags at \
              WHERE at.photo_id = p.id AND at.plugin_id = ? AND at.applied = 1 \
              AND at.tag_key IN ({placeholders}))"
         ));
         values.push(Value::Text(AI_PLUGIN_ID.to_string()));
-        values.extend(ai.tags.iter().map(|tag| Value::Text(tag.clone())));
+        values.extend(tags.iter().map(|tag| Value::Text(tag.clone())));
     }
 
     if let Some(count) = ai.people_count {
