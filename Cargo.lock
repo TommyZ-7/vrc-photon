@@ -8227,7 +8227,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vrc-photon-ai-host"
-version = "1.0.0"
+version = "26.11.0"
 dependencies = [
  "assert_cmd",
  "hex",
@@ -8252,7 +8252,7 @@ dependencies = [
 
 [[package]]
 name = "vrc-photon-ai-mock-sidecar"
-version = "1.0.0"
+version = "26.11.0"
 dependencies = [
  "serde_json",
  "vrc-photon-ai-protocol",
@@ -8260,7 +8260,7 @@ dependencies = [
 
 [[package]]
 name = "vrc-photon-ai-protocol"
-version = "1.0.0"
+version = "26.11.0"
 dependencies = [
  "proptest",
  "serde",
@@ -8270,7 +8270,7 @@ dependencies = [
 
 [[package]]
 name = "vrc-photon-core"
-version = "1.0.0"
+version = "26.11.0"
 dependencies = [
  "blake3",
  "chrono",
@@ -8304,7 +8304,7 @@ dependencies = [
 
 [[package]]
 name = "vrc-photon-daemon"
-version = "1.0.0"
+version = "26.11.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -8335,7 +8335,7 @@ dependencies = [
 
 [[package]]
 name = "vrc-photon-i18n"
-version = "1.0.0"
+version = "26.11.0"
 dependencies = [
  "regex",
  "rust-i18n",
@@ -8344,7 +8344,7 @@ dependencies = [
 
 [[package]]
 name = "vrc-photon-ipc"
-version = "1.0.0"
+version = "26.11.0"
 dependencies = [
  "interprocess",
  "libc",
@@ -8360,7 +8360,7 @@ dependencies = [
 
 [[package]]
 name = "vrc-photon-mcp"
-version = "1.0.0"
+version = "26.11.0"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -8382,7 +8382,7 @@ dependencies = [
 
 [[package]]
 name = "vrc-photon-release-tool"
-version = "1.0.0"
+version = "26.11.0"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -8400,7 +8400,7 @@ dependencies = [
 
 [[package]]
 name = "vrc-photon-signing"
-version = "1.0.0"
+version = "26.11.0"
 dependencies = [
  "base64 0.23.1",
  "minisign-verify",
@@ -8409,7 +8409,7 @@ dependencies = [
 
 [[package]]
 name = "vrc-photon-ui"
-version = "1.0.0"
+version = "26.11.0"
 dependencies = [
  "anyhow",
  "async-channel",
@@ -8436,7 +8436,7 @@ dependencies = [
 
 [[package]]
 name = "vrc-photon-update"
-version = "1.0.0"
+version = "26.11.0"
 dependencies = [
  "base64 0.23.1",
  "chrono",

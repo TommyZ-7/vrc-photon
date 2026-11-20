@@ -14,6 +14,11 @@ pub const FORMAT_VERSION: u32 = 1;
 /// Backends the host can launch a sidecar for.
 pub const SUPPORTED_BACKENDS: &[&str] = &["vulkan", "cuda", "rocm", "cpu"];
 
+/// A `host_version_max` of this value declares that the plugin puts no ceiling
+/// on the host version. A plugin cannot know the host's future versions, so
+/// this is how a package states "the minimum is the only bound".
+pub const UNBOUNDED_HOST_VERSION: &str = "0.0.0";
+
 /// Root metadata of an AI plugin package.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PluginManifest {
@@ -21,7 +26,13 @@ pub struct PluginManifest {
     pub plugin_id: String,
     pub plugin_version: String,
     pub protocol_version: u32,
+    /// The oldest host version the plugin supports. Enforced strictly.
     pub host_version_min: String,
+    /// The newest host version in the major series the plugin was built for.
+    /// Enforced only within its own major version: a plugin cannot predict the
+    /// host's next major version, so `protocol_version` gates compatibility
+    /// across a major bump instead. [`UNBOUNDED_HOST_VERSION`] declares no
+    /// ceiling at all.
     pub host_version_max: String,
     pub platform: String,
     pub backend: String,
@@ -119,12 +130,19 @@ pub fn validate_manifest(
     let max = semver::Version::parse(&manifest.host_version_max).map_err(|error| {
         AiHostError::ManifestInvalid(format!("host_version_max is not semver: {error}"))
     })?;
-    if min > max {
+    // `0.0.0` means the plugin declares no ceiling, so there is nothing for
+    // `min` to be compared against.
+    let unbounded = manifest.host_version_max == UNBOUNDED_HOST_VERSION;
+    if !unbounded && min > max {
         return Err(AiHostError::ManifestInvalid(
             "host_version_min is greater than host_version_max".to_string(),
         ));
     }
-    if host < min || host > max {
+    // The upper bound only describes the major series the plugin was built
+    // for. A plugin cannot predict the host's next major version, so a host
+    // with a different major is accepted as long as `protocol_version`
+    // matches; that field is the actual compatibility contract.
+    if host < min || (!unbounded && host.major == max.major && host > max) {
         return Err(AiHostError::ManifestInvalid(format!(
             "host version {host_version} is outside {}..={}",
             manifest.host_version_min, manifest.host_version_max
@@ -333,6 +351,35 @@ mod tests {
     #[test]
     fn validate_accepts_a_supported_manifest() {
         validate_manifest(&sample_manifest(), "0.10.1", "linux").unwrap();
+    }
+
+    #[test]
+    fn validate_accepts_a_host_with_a_higher_major_than_the_declared_max() {
+        // The published 0.5.1 package declares these exact bounds, so enforcing
+        // the upper bound across a major bump (CalVer `26.11.0`) rejected every
+        // imported plugin. A plugin cannot predict the host's next major
+        // version, so `protocol_version` is the compatibility contract.
+        let mut manifest = sample_manifest();
+        manifest.host_version_min = "0.14.4".to_string();
+        manifest.host_version_max = "0.99.99".to_string();
+        validate_manifest(&manifest, "26.11.0", "linux").unwrap();
+    }
+
+    #[test]
+    fn validate_accepts_an_unbounded_max_for_every_later_host() {
+        // `0.0.0` declares no ceiling, so `min` is the only bound and a later
+        // host keeps working without a plugin re-release.
+        let mut manifest = sample_manifest();
+        manifest.host_version_max = UNBOUNDED_HOST_VERSION.to_string();
+        validate_manifest(&manifest, "26.11.0", "linux").unwrap();
+        validate_manifest(&manifest, "0.10.1", "linux").unwrap();
+        validate_manifest(&manifest, "999.0.0", "linux").unwrap();
+
+        // The minimum is still enforced.
+        let mut manifest = sample_manifest();
+        manifest.host_version_min = "0.11.0".to_string();
+        manifest.host_version_max = UNBOUNDED_HOST_VERSION.to_string();
+        assert_invalid(&manifest);
     }
 
     #[test]
