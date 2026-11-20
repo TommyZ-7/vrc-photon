@@ -21,7 +21,12 @@ pub struct PluginManifest {
     pub plugin_id: String,
     pub plugin_version: String,
     pub protocol_version: u32,
+    /// The oldest host version the plugin supports. Enforced strictly.
     pub host_version_min: String,
+    /// The newest host version in the major series the plugin was built for.
+    /// Enforced only within its own major version: a plugin cannot predict the
+    /// host's next major version, so `protocol_version` gates compatibility
+    /// across a major bump instead.
     pub host_version_max: String,
     pub platform: String,
     pub backend: String,
@@ -124,7 +129,11 @@ pub fn validate_manifest(
             "host_version_min is greater than host_version_max".to_string(),
         ));
     }
-    if host < min || host > max {
+    // The upper bound only describes the major series the plugin was built
+    // for. A plugin cannot predict the host's next major version, so a host
+    // with a different major is accepted as long as `protocol_version`
+    // matches; that field is the actual compatibility contract.
+    if host < min || (host.major == max.major && host > max) {
         return Err(AiHostError::ManifestInvalid(format!(
             "host version {host_version} is outside {}..={}",
             manifest.host_version_min, manifest.host_version_max
@@ -333,6 +342,18 @@ mod tests {
     #[test]
     fn validate_accepts_a_supported_manifest() {
         validate_manifest(&sample_manifest(), "0.10.1", "linux").unwrap();
+    }
+
+    #[test]
+    fn validate_accepts_a_host_with_a_higher_major_than_the_declared_max() {
+        // The published 0.5.1 package declares these exact bounds, so enforcing
+        // the upper bound across a major bump (CalVer `26.11.0`) rejected every
+        // imported plugin. A plugin cannot predict the host's next major
+        // version, so `protocol_version` is the compatibility contract.
+        let mut manifest = sample_manifest();
+        manifest.host_version_min = "0.14.4".to_string();
+        manifest.host_version_max = "0.99.99".to_string();
+        validate_manifest(&manifest, "26.11.0", "linux").unwrap();
     }
 
     #[test]

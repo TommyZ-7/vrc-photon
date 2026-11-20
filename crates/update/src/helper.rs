@@ -2568,10 +2568,11 @@ mod tests {
             .join(format!("health-{token}.json"));
         let marker_tmp = marker_path.with_extension("json.tmp");
         let new_script = dir.path().join("new.AppImage");
+        let to_version = next_version();
         write_script(
             &new_script,
             &format!(
-                "#!/bin/sh\nmkdir -p '{}'\nprintf '%s' '{{\"version\":\"9.9.9\",\"mode\":\"normal\"}}' > '{}'\nmv '{}' '{}'\nsleep 2\n",
+                "#!/bin/sh\nmkdir -p '{}'\nprintf '%s' '{{\"version\":\"{to_version}\",\"mode\":\"normal\"}}' > '{}'\nmv '{}' '{}'\nsleep 2\n",
                 marker_path.parent().unwrap().display(),
                 marker_tmp.display(),
                 marker_tmp.display(),
@@ -2655,7 +2656,7 @@ mod tests {
             schema: APPLY_SCHEMA,
             kind: ApplyKind::AppImage,
             from_version: "0.3.0".to_string(),
-            to_version: "9.9.9".to_string(),
+            to_version: next_version(),
             target,
             staged: staged.to_path_buf(),
             signature: "c2ln".to_string(),
@@ -2687,8 +2688,9 @@ mod tests {
         write_script(
             &new_script,
             &format!(
-                "#!/bin/sh\nmkdir -p '{}'\nprintf '%s' '{{\"version\":\"9.9.9\",\"mode\":\"normal\"}}' > '{}'\nmv '{}' '{}'\nsleep 2\n",
+                "#!/bin/sh\nmkdir -p '{}'\nprintf '%s' '{{\"version\":\"{}\",\"mode\":\"normal\"}}' > '{}'\nmv '{}' '{}'\nsleep 2\n",
                 marker_path.parent().unwrap().display(),
+                next_version(),
                 marker_tmp.display(),
                 marker_tmp.display(),
                 marker_path.display()
