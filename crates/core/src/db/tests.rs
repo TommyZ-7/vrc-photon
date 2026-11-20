@@ -4606,7 +4606,7 @@ fn ai_filters_use_the_ai_indexes() {
         result.people_max = Some(((index % 5) + 2) as u32);
         db.save_photo_ai(*photo_id, AI_PLUGIN, &result).unwrap();
     }
-    db.connection().execute("ANALYZE", []).unwrap();
+    db.optimize().unwrap();
 
     let filter = PhotoTextFilter {
         ai: AiPhotoFilter {
@@ -7668,6 +7668,23 @@ fn worlds_with_photo_counts_group_visible_photos_and_skip_missing() {
     let stats = db.stats().unwrap();
     assert_eq!(stats.photo_count, 3);
     assert_eq!(stats.world_count, 2);
+}
+
+#[test]
+fn optimize_makes_the_newest_snapshot_use_the_captured_index() {
+    let db = Db::open_in_memory().unwrap();
+    seed_photos(&db, 2_000);
+    db.optimize().unwrap();
+    let sql = format!("{} LIMIT 10", photo_index_sql(PhotoSort::Newest));
+    let plan = query_plan(&db, &sql).join("\n");
+    assert!(plan.contains("idx_photos_captured_id"), "{plan}");
+    assert!(!plan.contains("USE TEMP B-TREE"), "{plan}");
+}
+
+#[test]
+fn optimize_is_a_no_op_on_an_empty_library() {
+    let db = Db::open_in_memory().unwrap();
+    db.optimize().unwrap();
 }
 
 #[test]

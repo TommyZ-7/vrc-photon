@@ -249,6 +249,18 @@ impl Db {
         Ok(())
     }
 
+    /// Refreshes SQLite's planner statistics so index choices match the data.
+    ///
+    /// Must run on a writable connection: `ANALYZE` creates `sqlite_stat1`.
+    /// Full statistics are required — the sampled statistics a bare
+    /// `PRAGMA optimize` writes leave the planner on `idx_photos_move_match`
+    /// (measured 0.270 s vs 0.013 s for the 200k-row newest snapshot), so this
+    /// runs `ANALYZE` rather than `PRAGMA optimize`.
+    pub fn optimize(&self) -> Result<()> {
+        self.conn.execute_batch("ANALYZE")?;
+        Ok(())
+    }
+
     /// Borrows the underlying SQLite connection.
     ///
     /// `rusqlite::Connection` is `!Sync`. Callers must keep the `Db` on the
